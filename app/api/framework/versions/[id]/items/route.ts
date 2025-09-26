@@ -6,7 +6,8 @@ export async function GET(
   context: { params: { id: string } }
 ) {
   try {
-    const data = await getVersionTree(context.params.id);
+    const { id } = context.params;
+    const data = await getVersionTree(id);
     return NextResponse.json({ data });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
