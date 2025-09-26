@@ -1,18 +1,23 @@
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
-import { listVersions } from "@/lib/services/framework";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 export default async function PrimaryFrameworkPage() {
-  const versions = await listVersions();
-  const selected = versions?.[0] ?? null;
+  const { data: versions } = await supabaseBrowser
+    .from("framework_versions")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  const selected = versions?.[0];
 
   return (
     <div>
       <PageHeader
-        title="Primary Framework"
-        subtitle="Configure and review the SSC framework."
-        breadcrumb={
+        title="Primary Framework Editor"
+        group="SSC Configuration"
+        subtitle="Create and manage framework versions based on the catalogues"
+        breadcrumbs={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
@@ -23,7 +28,9 @@ export default async function PrimaryFrameworkPage() {
         }
       />
       <div className="mt-4">
-        {selected ? <FrameworkEditor versionId={selected.id} /> : <div>No versions found.</div>}
+        {selected && (
+          <FrameworkEditor versionId={selected.id} />
+        )}
       </div>
     </div>
   );

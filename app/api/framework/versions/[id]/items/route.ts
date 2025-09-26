@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVersionTree } from "@/lib/services/framework";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string }}) {
+type Params = { params: { id: string } };
+
+export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const data = await getVersionTree(params.id);
     return NextResponse.json({ data });

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string }}) {
+type Params = { params: { id: string } };
+
+export async function POST(_req: NextRequest, { params }: Params) {
   try {
     const { data, error } = await supabaseServer
       .from("framework_versions")
