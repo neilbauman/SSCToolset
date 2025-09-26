@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 
 type FrameworkEditorProps = {
-  versionId: string;
+  version: { id: string; name: string };
 };
 
-type FrameworkItem = {
+type FrameworkRow = {
   id: string;
+  version_id: string;
   sort_order: number;
   pillar_id: string | null;
   pillar_name: string | null;
@@ -27,105 +28,139 @@ type FrameworkItem = {
   subtheme_description: string | null;
 };
 
-export default function FrameworkEditor({ versionId }: FrameworkEditorProps) {
-  const [items, setItems] = useState<FrameworkItem[]>([]);
+export default function FrameworkEditor({ version }: FrameworkEditorProps) {
+  const [items, setItems] = useState<FrameworkRow[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
-    const loadStructure = async () => {
-      const { data, error } = await supabaseBrowser.rpc("get_framework_structure", {
-        version_id: versionId,
-      });
-
+    const load = async () => {
+      const { data, error } = await supabaseBrowser.rpc(
+        "get_framework_structure",
+        { version_id: version.id }
+      );
       if (error) {
         console.error("Error loading structure:", error);
       } else {
-        setItems(data as FrameworkItem[]);
+        setItems(data as FrameworkRow[]);
       }
     };
+    load();
+  }, [version.id]);
 
-    loadStructure();
-  }, [versionId]);
+  // group by pillar → theme → subtheme
+  const grouped = items.reduce((acc, row) => {
+    if (!row.pillar_id) return acc;
+    if (!acc[row.pillar_id]) {
+      acc[row.pillar_id] = {
+        ...row,
+        themes: {},
+      };
+    }
+    if (row.theme_id) {
+      if (!acc[row.pillar_id].themes[row.theme_id]) {
+        acc[row.pillar_id].themes[row.theme_id] = {
+          ...row,
+          subthemes: [],
+        };
+      }
+      if (row.subtheme_id) {
+        acc[row.pillar_id].themes[row.theme_id].subthemes.push(row);
+      }
+    }
+    return acc;
+  }, {} as Record<string, any>);
 
   const toggleExpand = (id: string) => {
-    const newExpanded = new Set(expanded);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpanded(newExpanded);
+    setExpanded((prev) => {
+      const copy = new Set(prev);
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
+      return copy;
+    });
   };
 
-  const grouped = groupByPillar(items);
-
-  return (
-    <div className="rounded border bg-white p-4 shadow">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-semibold text-red-900">
-          Version Structure: {versionId}
-        </h3>
-        <div className="space-x-2">
-          <button
-            onClick={() => setExpanded(new Set(items.map((i) => i.pillar_id!)))}
-            className="rounded border px-2 py-1 text-sm"
-          >
-            Expand All
-          </button>
-          <button
-            onClick={() => setExpanded(new Set())}
-            className="rounded border px-2 py-1 text-sm"
-          >
-            Collapse All
-          </button>
-          <button
-            onClick={() => setEditMode(!editMode)}
-            className="rounded bg-blue-600 px-3 py-1 text-white"
-          >
-            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-          </button>
-        </div>
-      </div>
-
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="p-2">Type/Ref Code</th>
-            <th className="p-2">Name/Description</th>
-            <th className="p-2">Sort Order</th>
-            <th className="p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.values(grouped).map((pillar) => (
-            <tr key={pillar.id} className="border-b">
-              <td className="p-2">
-                <button
-                  onClick={() => toggleExpand(pillar.id!)}
-                  className="flex items-center"
-                >
-                  {expanded.has(pillar.id!) ? (
-                    <ChevronDown size={16} />
-                  ) : (
-                    <ChevronRight size={16} />
-                  )}
-                  <span className="ml-1 font-semibold">
-                    P{pillar.sort_order}
-                  </span>
+  const renderPillar = (pillar: any) => {
+    const isOpen = expanded.has(pillar.pillar_id);
+    return (
+      <>
+        <tr>
+          <td className="px-4 py-2 font-medium text-blue-900">
+            <button onClick={() => toggleExpand(pillar.pillar_id)}>
+              {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>{" "}
+            P{pillar.sort_order}
+          </td>
+          <td className="px-4 py-2">
+            <div>{pillar.pillar_name}</div>
+            <div className="text-sm text-gray-500">{pillar.pillar_description}</div>
+          </td>
+          <td className="px-4 py-2">{pillar.sort_order}</td>
+          <td className="px-4 py-2">
+            {editMode && (
+              <>
+                <button className="text-blue-600 mr-2">
+                  <Pencil size={14} />
                 </button>
+                <button className="text-red-600">
+                  <Trash size={14} />
+                </button>
+              </>
+            )}
+          </td>
+        </tr>
+        {isOpen &&
+          Object.values(pillar.themes).map((theme: any) =>
+            renderTheme(pillar.pillar_id, theme)
+          )}
+      </>
+    );
+  };
+
+  const renderTheme = (pillarId: string, theme: any) => {
+    const isOpen = expanded.has(theme.theme_id);
+    return (
+      <>
+        <tr className="bg-gray-50">
+          <td className="pl-8 pr-4 py-2 text-blue-800">
+            <button onClick={() => toggleExpand(theme.theme_id)}>
+              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>{" "}
+            T{theme.sort_order}
+          </td>
+          <td className="px-4 py-2">
+            <div>{theme.theme_name}</div>
+            <div className="text-sm text-gray-500">{theme.theme_description}</div>
+          </td>
+          <td className="px-4 py-2">{theme.sort_order}</td>
+          <td className="px-4 py-2">
+            {editMode && (
+              <>
+                <button className="text-blue-600 mr-2">
+                  <Pencil size={14} />
+                </button>
+                <button className="text-red-600">
+                  <Trash size={14} />
+                </button>
+              </>
+            )}
+          </td>
+        </tr>
+        {isOpen &&
+          theme.subthemes.map((sub: FrameworkRow) => (
+            <tr key={sub.subtheme_id} className="bg-gray-100">
+              <td className="pl-16 pr-4 py-2 text-blue-700">
+                ST{sub.sort_order}
               </td>
-              <td className="p-2">
-                <div className="font-medium">{pillar.name}</div>
-                <div className="text-xs text-gray-500">
-                  {pillar.description}
-                </div>
+              <td className="px-4 py-2">
+                <div>{sub.subtheme_name}</div>
+                <div className="text-sm text-gray-500">{sub.subtheme_description}</div>
               </td>
-              <td className="p-2">{pillar.sort_order}</td>
-              <td className="p-2 space-x-2">
+              <td className="px-4 py-2">{sub.sort_order}</td>
+              <td className="px-4 py-2">
                 {editMode && (
                   <>
-                    <button className="text-blue-600">
+                    <button className="text-blue-600 mr-2">
                       <Pencil size={14} />
                     </button>
                     <button className="text-red-600">
@@ -136,44 +171,52 @@ export default function FrameworkEditor({ versionId }: FrameworkEditorProps) {
               </td>
             </tr>
           ))}
+      </>
+    );
+  };
+
+  return (
+    <div className="mt-6 border rounded-lg bg-white shadow-sm">
+      <div className="flex items-center justify-between px-4 py-2 border-b">
+        <h3 className="font-semibold text-red-900">
+          Version Structure: {version.name}
+        </h3>
+        <div className="space-x-2">
+          <button
+            onClick={() => setExpanded(new Set(items.map((i) => i.id)))}
+            className="px-3 py-1 text-sm border rounded"
+          >
+            Expand All
+          </button>
+          <button
+            onClick={() => setExpanded(new Set())}
+            className="px-3 py-1 text-sm border rounded"
+          >
+            Collapse All
+          </button>
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className="px-3 py-1 text-sm border rounded bg-blue-600 text-white"
+          >
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+          </button>
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-100 text-gray-700 text-left">
+          <tr>
+            <th className="px-4 py-2">Type/Ref Code</th>
+            <th className="px-4 py-2">Name/Description</th>
+            <th className="px-4 py-2">Sort Order</th>
+            <th className="px-4 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.values(grouped).map((pillar: any) =>
+            renderPillar(pillar)
+          )}
         </tbody>
       </table>
     </div>
   );
-}
-
-function groupByPillar(items: FrameworkItem[]) {
-  const grouped: Record<string, any> = {};
-  for (const item of items) {
-    if (!item.pillar_id) continue;
-    if (!grouped[item.pillar_id]) {
-      grouped[item.pillar_id] = {
-        id: item.pillar_id,
-        name: item.pillar_name,
-        description: item.pillar_description,
-        sort_order: item.sort_order,
-        themes: {},
-      };
-    }
-    if (item.theme_id) {
-      if (!grouped[item.pillar_id].themes[item.theme_id]) {
-        grouped[item.pillar_id].themes[item.theme_id] = {
-          id: item.theme_id,
-          name: item.theme_name,
-          description: item.theme_description,
-          sort_order: item.sort_order,
-          subthemes: [],
-        };
-      }
-      if (item.subtheme_id) {
-        grouped[item.pillar_id].themes[item.theme_id].subthemes.push({
-          id: item.subtheme_id,
-          name: item.subtheme_name,
-          description: item.subtheme_description,
-          sort_order: item.sort_order,
-        });
-      }
-    }
-  }
-  return grouped;
 }
