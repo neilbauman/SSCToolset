@@ -2,7 +2,6 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { listVersions } from "@/lib/services/framework";
 
-// ✅ Supabase page must be dynamic
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -13,6 +12,7 @@ export default async function DashboardPage() {
       <PageHeader
         title="Dashboard"
         subtitle="Overview of SSC framework data"
+        group="Dashboard"
         breadcrumbs={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
       />
       <div className="mt-4">
