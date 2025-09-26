@@ -1,19 +1,37 @@
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { listVersions } from "@/lib/services/framework";
 
-export default function AdminPage() {
+// ✅ Supabase page must be dynamic
+export const dynamic = "force-dynamic";
+
+export default async function AdminPage() {
+  const versions = await listVersions();
+
   return (
     <div>
       <PageHeader
         title="Admin"
-        group="Admin"
-        subtitle="Users & Auth (stub)"
-        breadcrumbs={<Breadcrumbs items={[{ label: "Admin" }]} />}
+        subtitle="Administrative SSC tools"
+        breadcrumb={
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Admin" },
+            ]}
+          />
+        }
       />
-      <div className="rounded-lg border bg-white p-4">
-        <p className="text-sm text-gray-700">
-          Admin features will be added later.
-        </p>
+      <div className="mt-4">
+        {versions.length > 0 ? (
+          <ul className="list-disc pl-6">
+            {versions.map((v) => (
+              <li key={v.id}>{v.name} ({v.status})</li>
+            ))}
+          </ul>
+        ) : (
+          <div>No framework versions found.</div>
+        )}
       </div>
     </div>
   );
