@@ -6,9 +6,12 @@ import { NAV } from "@/lib/ui/nav";
 
 export default function Sidebar() {
   const pathname = usePathname();
+
   return (
-    <aside className="w-72 bg-white border-r border-gray-200">
-      <div className="p-4 text-xl font-semibold text-brand-800">SSC Toolset</div>
+    <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
+      <div className="p-4 text-lg font-semibold text-red-700">
+        Shelter and Settlement Severity Classification Toolset
+      </div>
       <nav className="px-2 pb-6 space-y-6">
         {NAV.map((group) => (
           <div key={group.label}>
