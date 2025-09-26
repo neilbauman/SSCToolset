@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 
 type Props = {
-  title: string;               // Page title (e.g. Primary Framework Editor)
-  group: string;               // Toolset group (e.g. SSC Configuration)
-  subtitle?: string;           // Optional description
-  breadcrumbs?: ReactNode;     // Breadcrumbs component
-  actions?: ReactNode;         // Optional action buttons
+  title: string;
+  group: string;
+  subtitle?: string;
+  breadcrumbs?: ReactNode;
+  actions?: ReactNode;
 };
 
 export default function PageHeader({
