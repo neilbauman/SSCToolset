@@ -1,21 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { listVersions, createDraftFromCatalogue } from "@/lib/services/framework";
+import { NextResponse } from "next/server";
+import { listVersions } from "@/lib/services/framework";
 
-export async function GET(_req: NextRequest) {
+export async function GET(_req: Request) {
   try {
     const versions = await listVersions();
-    return NextResponse.json({ data: versions });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 400 });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const { name } = await req.json();
-    const created = await createDraftFromCatalogue(name);
-    return NextResponse.json({ data: created }, { status: 201 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 400 });
+    return NextResponse.json(versions);
+  } catch (err: any) {
+    console.error("GET /api/framework/versions", err);
+    return NextResponse.json({ error: err?.message ?? "Failed to load versions" }, { status: 500 });
   }
 }
