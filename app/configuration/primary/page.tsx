@@ -13,8 +13,9 @@ export default async function PrimaryFrameworkPage() {
     <div>
       <PageHeader
         title="Primary Framework Editor"
-        subtitle="Manage framework versions created from the SSC catalogue."
         group="SSC Configuration"
+        description="Manage framework versions created from the SSC catalogue."
+        tool="Primary Framework Editor"
         breadcrumbs={
           <Breadcrumbs
             items={[
