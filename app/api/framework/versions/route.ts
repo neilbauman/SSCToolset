@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
+import { listVersions, createDraftFromCatalogue } from "@/lib/services/framework";
 import { z } from "zod";
-import { createDraftFromCatalogue, listVersions } from "@/lib/services/framework";
 
-export async function GET(request: Request) {
+const CreateSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+});
+
+export async function GET() {
   try {
     const data = await listVersions();
     return NextResponse.json({ data });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: e.message }, { status: 400 });
   }
 }
-
-const CreateSchema = z.object({ name: z.string().min(1) });
 
 export async function POST(request: Request) {
   try {
