@@ -2,6 +2,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,13 @@ export default async function PrimaryFrameworkPage() {
           />
         }
       />
-      <div className="mt-4">
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="outline">Duplicate from Catalogue</Button>
+        <Button>Publish</Button>
+      </div>
+
+      <div className="mt-6">
         {selected ? (
           <FrameworkEditor versionId={selected.id} />
         ) : (
