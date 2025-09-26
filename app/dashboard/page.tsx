@@ -11,7 +11,7 @@ const groups = [
     title: "About",
     description: "Information about the SSC Toolset.",
     href: "/about",
-    color: "blue-600",
+    color: "blue",
     icon: Info,
   },
   {
@@ -19,7 +19,7 @@ const groups = [
     title: "Admin",
     description: "User management and permissions (future).",
     href: "/admin",
-    color: "gray-700",
+    color: "gray",
     icon: Settings,
   },
   {
@@ -27,7 +27,7 @@ const groups = [
     title: "SSC Configuration",
     description: "Configure the SSC catalogue and framework versions.",
     href: "/configuration/primary",
-    color: "red-600", // GSC primary red
+    color: "red", // GSC primary red
     icon: Layers,
   },
   {
@@ -36,7 +36,7 @@ const groups = [
     description:
       "Manage baseline data: mapping boundaries, population, PCodes, place names.",
     href: "/country",
-    color: "green-600",
+    color: "green",
     icon: Globe,
   },
   {
@@ -45,10 +45,18 @@ const groups = [
     description:
       "Upload and score response datasets with the SSC classification system.",
     href: "/instances",
-    color: "orange-500",
+    color: "orange",
     icon: BarChart,
   },
 ];
+
+const colorClasses: Record<string, string> = {
+  blue: "border-blue-600 text-blue-600 hover:bg-blue-50",
+  gray: "border-gray-600 text-gray-600 hover:bg-gray-50",
+  red: "border-red-600 text-red-600 hover:bg-red-50",
+  green: "border-green-600 text-green-600 hover:bg-green-50",
+  orange: "border-orange-500 text-orange-500 hover:bg-orange-50",
+};
 
 export default function DashboardPage() {
   return (
@@ -63,21 +71,16 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
         {groups.map((g) => {
           const Icon = g.icon;
+          const theme = colorClasses[g.color];
           return (
             <Link
               key={g.id}
               href={g.href}
-              className={`
-                rounded-lg border shadow-sm p-6 transition-colors
-                border-${g.color} text-${g.color}
-                hover:bg-${g.color}/10
-              `}
+              className={`rounded-lg border shadow-sm p-6 transition-colors bg-white ${theme}`}
             >
               <div className="flex items-center gap-3">
-                <Icon className={`w-6 h-6 text-${g.color}`} />
-                <h2 className={`text-lg font-semibold text-${g.color}`}>
-                  {g.title}
-                </h2>
+                <Icon className="w-6 h-6" />
+                <h2 className="text-lg font-semibold">{g.title}</h2>
               </div>
               <p className="mt-2 text-sm text-gray-600">{g.description}</p>
             </Link>
