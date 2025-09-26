@@ -1,44 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { Layers, Globe, BarChart, Info, Settings } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { Info, Settings, Layers, Globe, BarChart } from "lucide-react";
 import { groupThemes } from "@/lib/theme";
 
 const groups = [
-  { id: "about", label: "About", href: "/about", icon: Info },
-  { id: "admin", label: "Admin", href: "/admin", icon: Settings },
-  { id: "ssc-config", label: "SSC Configuration", href: "/configuration", icon: Layers },
-  { id: "country-config", label: "Country Configuration", href: "/country", icon: Globe },
-  { id: "ssc-instances", label: "SSC Instances", href: "/instances", icon: BarChart },
+  { id: "about", href: "/about", icon: Info },
+  { id: "admin", href: "/admin", icon: Settings },
+  { id: "ssc-config", href: "/configuration", icon: Layers },
+  { id: "country-config", href: "/country", icon: Globe },
+  { id: "ssc-instances", href: "/instances", icon: BarChart },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden md:block w-64 border-r border-gray-200 bg-white">
-      <div className="p-4 font-bold text-lg" style={{ color: "#630710" }}>
-        SSC Toolset
-      </div>
-      <nav className="space-y-1">
-        {groups.map((g) => {
-          const Icon = g.icon;
-          const theme = groupThemes[g.id as keyof typeof groupThemes];
-          const active = pathname.startsWith(g.href);
-          return (
-            <Link
-              key={g.id}
-              href={g.href}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors
-                ${active ? `${theme.text} bg-gray-50` : "text-gray-700 hover:bg-gray-100"}`}
-            >
-              <Icon className="w-4 h-4" />
-              {g.label}
-            </Link>
-          );
-        })}
-      </nav>
-    </aside>
+    <nav className="px-4 py-6 space-y-2">
+      <h2 className="gsc-page-title text-xl mb-4">SSC Toolset</h2>
+      {groups.map((g) => {
+        const Icon = g.icon;
+        const theme = groupThemes[g.id as keyof typeof groupThemes];
+        const isActive = pathname.startsWith(g.href);
+        return (
+          <Link
+            key={g.id}
+            href={g.href}
+            className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+              isActive ? `${theme.text} font-semibold` : "text-gray-700"
+            } hover:bg-gray-100`}
+          >
+            <Icon className="w-4 h-4" />
+            {theme.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
