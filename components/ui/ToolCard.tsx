@@ -26,8 +26,8 @@ export default function ToolCard({
       className={`rounded-lg bg-white shadow-sm p-6 transition-colors ${border} ${text} ${hover}`}
     >
       <div className="flex items-center gap-3">
-        <Icon className="w-6 h-6" /> {/* centralized icon size */}
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <Icon className="w-6 h-6" /> {/* Consistent icon size */}
+        <h2 className="text-lg font-semibold">{title}</h2> {/* Consistent title size */}
       </div>
       <p className="mt-2 text-sm text-gray-600">{description}</p>
     </Link>
