@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabaseBrowser } from "../lib/supabaseBrowser"; // ✅ fixed relative path
+import { supabaseBrowser } from "@/lib/supabaseBrowser"; // ✅ fixed relative path
 import {
   ChevronDown,
   ChevronRight,
