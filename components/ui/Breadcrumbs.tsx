@@ -1,9 +1,6 @@
 import Link from "next/link";
 
-type Crumb = {
-  label: string;
-  href?: string;
-};
+type Crumb = { label: string; href?: string };
 
 export default function Breadcrumbs({ items }: { items: Crumb[] }) {
   return (
@@ -12,10 +9,7 @@ export default function Breadcrumbs({ items }: { items: Crumb[] }) {
         {items.map((item, idx) => (
           <li key={idx} className="flex items-center">
             {item.href ? (
-              <Link
-                href={item.href}
-                className="text-brand-700 hover:underline"
-              >
+              <Link href={item.href} className="text-brand-700 hover:underline">
                 {item.label}
               </Link>
             ) : (
