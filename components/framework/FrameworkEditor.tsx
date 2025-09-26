@@ -10,10 +10,37 @@ type Version = {
   created_at: string;
 };
 
+type Pillar = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
+type Theme = {
+  id: string;
+  pillar_id: string;
+  name: string;
+  description: string | null;
+};
+
+type Subtheme = {
+  id: string;
+  theme_id: string;
+  name: string;
+  description: string | null;
+};
+
 export default function FrameworkEditor() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [newDraftName, setNewDraftName] = useState("Primary Framework v1");
   const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
+
+  const [pillars, setPillars] = useState<Pillar[]>([]);
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [subthemes, setSubthemes] = useState<Subtheme[]>([]);
+
+  const [expandedPillars, setExpandedPillars] = useState<string[]>([]);
+  const [expandedThemes, setExpandedThemes] = useState<string[]>([]);
 
   useEffect(() => {
     loadVersions();
@@ -98,6 +125,39 @@ export default function FrameworkEditor() {
     }
   }
 
+  async function loadStructure() {
+    const { data: pillarData } = await supabaseBrowser
+      .from("pillar_catalogue")
+      .select("*")
+      .order("name");
+
+    const { data: themeData } = await supabaseBrowser
+      .from("theme_catalogue")
+      .select("*")
+      .order("name");
+
+    const { data: subthemeData } = await supabaseBrowser
+      .from("subtheme_catalogue")
+      .select("*")
+      .order("name");
+
+    setPillars((pillarData as Pillar[]) || []);
+    setThemes((themeData as Theme[]) || []);
+    setSubthemes((subthemeData as Subtheme[]) || []);
+  }
+
+  function togglePillar(id: string) {
+    setExpandedPillars((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleTheme(id: string) {
+    setExpandedThemes((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* New Draft Form */}
@@ -140,7 +200,10 @@ export default function FrameworkEditor() {
             <tr key={v.id}>
               <td className="px-4 py-2 text-sm">
                 <button
-                  onClick={() => setSelectedVersion(v)}
+                  onClick={() => {
+                    setSelectedVersion(v);
+                    loadStructure();
+                  }}
                   className="text-brand-700 hover:underline"
                 >
                   {v.name}
@@ -187,15 +250,55 @@ export default function FrameworkEditor() {
         </tbody>
       </table>
 
-      {/* Version Structure Placeholder */}
+      {/* Version Structure Tree */}
       {selectedVersion && (
         <div className="mt-8 border rounded-lg bg-white p-4">
           <h3 className="text-lg font-semibold mb-4">
             Version Structure: {selectedVersion.name}
           </h3>
-          <p className="text-sm text-gray-600">
-            (Placeholder) Pillars → Themes → Subthemes will render here.
-          </p>
+          <ul className="space-y-2">
+            {pillars.map((p) => (
+              <li key={p.id}>
+                <button
+                  onClick={() => togglePillar(p.id)}
+                  className="text-left font-medium text-gray-800 hover:underline"
+                >
+                  {expandedPillars.includes(p.id) ? "▼" : "▶"} {p.name}
+                </button>
+                {expandedPillars.includes(p.id) && (
+                  <ul className="ml-6 mt-2 space-y-1">
+                    {themes
+                      .filter((t) => t.pillar_id === p.id)
+                      .map((t) => (
+                        <li key={t.id}>
+                          <button
+                            onClick={() => toggleTheme(t.id)}
+                            className="text-left text-gray-700 hover:underline"
+                          >
+                            {expandedThemes.includes(t.id) ? "▼" : "▶"}{" "}
+                            {t.name}
+                          </button>
+                          {expandedThemes.includes(t.id) && (
+                            <ul className="ml-6 mt-1 space-y-1">
+                              {subthemes
+                                .filter((s) => s.theme_id === t.id)
+                                .map((s) => (
+                                  <li
+                                    key={s.id}
+                                    className="text-gray-600 text-sm"
+                                  >
+                                    • {s.name}
+                                  </li>
+                                ))}
+                            </ul>
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
