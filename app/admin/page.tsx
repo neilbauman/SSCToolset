@@ -13,7 +13,7 @@ export default async function AdminPage() {
       <PageHeader
         title="Admin"
         subtitle="Administrative SSC tools"
-        breadcrumb={
+        breadcrumbs={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
@@ -26,7 +26,9 @@ export default async function AdminPage() {
         {versions.length > 0 ? (
           <ul className="list-disc pl-6">
             {versions.map((v) => (
-              <li key={v.id}>{v.name} ({v.status})</li>
+              <li key={v.id}>
+                {v.name} ({v.status})
+              </li>
             ))}
           </ul>
         ) : (
