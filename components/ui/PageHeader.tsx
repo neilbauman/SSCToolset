@@ -1,23 +1,43 @@
 import React from "react";
 
 type Props = {
-  title: string;
-  subtitle?: string;
-  group: string; // ✅ required
-  breadcrumbs?: React.ReactNode;
+  title: string; // Page Title (e.g. Dashboard, SSC Config)
+  group: string; // Group name (e.g. SSC Configuration)
+  tool?: string; // Tool name (e.g. Primary Framework Editor)
+  description?: string;
+  breadcrumbs: React.ReactNode;
+  groupColor?: string; // Tailwind color classes for theming group name
 };
 
-export default function PageHeader({ title, subtitle, group, breadcrumbs }: Props) {
+export default function PageHeader({
+  title,
+  group,
+  tool,
+  description,
+  breadcrumbs,
+  groupColor = "text-red-600", // default to GSC red
+}: Props) {
   return (
     <div className="mb-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          {subtitle && <p className="text-gray-600">{subtitle}</p>}
-        </div>
-        <div className="text-sm text-gray-500">{group}</div>
-      </div>
-      {breadcrumbs && <div className="mt-2">{breadcrumbs}</div>}
+      {/* Title */}
+      <h1
+        className="text-3xl font-bold"
+        style={{ color: "#630710", fontFamily: "Arial, sans-serif" }} // GSC branding
+      >
+        {title}
+      </h1>
+
+      {/* Group + Tool */}
+      <div className={`mt-1 text-lg font-semibold ${groupColor}`}>{group}</div>
+      {tool && <div className="text-xl font-medium text-gray-800">{tool}</div>}
+
+      {/* Description */}
+      {description && <p className="mt-1 text-gray-600">{description}</p>}
+
+      {/* Breadcrumbs with framing lines */}
+      <div className="my-3 border-t border-gray-200" />
+      <div>{breadcrumbs}</div>
+      <div className="my-3 border-t border-gray-200" />
     </div>
   );
 }
