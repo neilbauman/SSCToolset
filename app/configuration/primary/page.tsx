@@ -12,22 +12,23 @@ export default async function PrimaryFrameworkPage() {
   return (
     <div>
       <PageHeader
-        title="Primary Framework"
-        subtitle="Configure and review the SSC framework."
+        title="Primary Framework Editor"
+        subtitle="Manage framework versions created from the SSC catalogue."
         group="SSC Configuration"
         breadcrumbs={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
               { label: "SSC Configuration", href: "/configuration" },
-              { label: "Primary Framework" },
+              { label: "Primary Framework Editor" },
             ]}
           />
         }
       />
 
+      {/* Action buttons */}
       <div className="mt-4 flex justify-end gap-2">
-        <button className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200 text-sm">
+        <button className="px-4 py-2 rounded border border-red-600 text-red-600 hover:bg-red-50 text-sm">
           Duplicate from Catalogue
         </button>
         <button className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm">
@@ -35,11 +36,16 @@ export default async function PrimaryFrameworkPage() {
         </button>
       </div>
 
+      {/* Editor */}
       <div className="mt-6">
         {selected ? (
-          <FrameworkEditor versionId={selected.id} />
+          <div className="rounded-lg border border-red-600 bg-white shadow-sm p-4">
+            <FrameworkEditor versionId={selected.id} />
+          </div>
         ) : (
-          <div>No versions found.</div>
+          <div className="text-sm text-gray-600">
+            No framework versions found.
+          </div>
         )}
       </div>
     </div>
