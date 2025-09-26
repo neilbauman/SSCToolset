@@ -20,42 +20,42 @@ export const groupThemes: Record<
 > = {
   dashboard: {
     label: "Dashboard",
-    border: "border-[color:var(--gsc-gray)]",
+    border: "border border-[color:var(--gsc-gray)]",
     text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
     groupText: "text-[color:var(--gsc-gray)]",
   },
   about: {
     label: "About",
-    border: "border-[color:var(--gsc-blue)]",
+    border: "border border-[color:var(--gsc-blue)]",
     text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
     groupText: "text-[color:var(--gsc-blue)]",
   },
   admin: {
     label: "Admin",
-    border: "border-[color:var(--gsc-gray)]",
+    border: "border border-[color:var(--gsc-gray)]",
     text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
     groupText: "text-[color:var(--gsc-gray)]",
   },
   "ssc-config": {
     label: "SSC Configuration",
-    border: "border-[color:var(--gsc-blue)]",
+    border: "border border-[color:var(--gsc-blue)]", // ✅ colored outline
     text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
     groupText: "text-[color:var(--gsc-blue)]",
   },
   "country-config": {
     label: "Country Configuration",
-    border: "border-[color:var(--gsc-green)]",
+    border: "border border-[color:var(--gsc-green)]",
     text: "text-[color:var(--gsc-green)]",
     hover: "hover:bg-green-50",
     groupText: "text-[color:var(--gsc-green)]",
   },
   "ssc-instances": {
     label: "SSC Instances",
-    border: "border-[color:var(--gsc-orange)]",
+    border: "border border-[color:var(--gsc-orange)]",
     text: "text-[color:var(--gsc-orange)]",
     hover: "hover:bg-orange-50",
     groupText: "text-[color:var(--gsc-orange)]",
