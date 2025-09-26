@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { supabaseBrowser } from "@/lib/services/supabaseBrowser"; // ✅ fixed
 import { ChevronDown, ChevronRight, Pencil, Trash } from "lucide-react";
 
 type Version = {
@@ -25,7 +25,7 @@ type FrameworkItem = {
 };
 
 type FrameworkEditorProps = {
-  version: Version; // ✅ pass full version, not just id
+  version: Version;
 };
 
 export default function FrameworkEditor({ version }: FrameworkEditorProps) {
@@ -38,7 +38,7 @@ export default function FrameworkEditor({ version }: FrameworkEditorProps) {
       const { data, error } = await supabaseBrowser
         .from("framework_version_items")
         .select("*")
-        .eq("version_id", version.id); // ✅ use version.id
+        .eq("version_id", version.id);
 
       if (error) {
         console.error("Error loading structure:", error);
