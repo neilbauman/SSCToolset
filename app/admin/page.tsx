@@ -1,17 +1,11 @@
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { listVersions } from "@/lib/services/framework";
 
-export const dynamic = "force-dynamic";
-
-export default async function AdminPage() {
-  const versions = await listVersions();
-
+export default function AdminPage() {
   return (
     <div>
       <PageHeader
-        title="Admin"
-        group="Admin"
+        group="admin"   // ✅ lowercase key
         description="Administrative SSC tools"
         breadcrumbs={
           <Breadcrumbs
@@ -23,18 +17,11 @@ export default async function AdminPage() {
         }
       />
 
-      <div className="mt-4">
-        {versions.length > 0 ? (
-          <ul className="list-disc pl-6">
-            {versions.map((v) => (
-              <li key={v.id}>
-                {v.name} ({v.status})
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div>No framework versions found.</div>
-        )}
+      <div className="mt-4 prose">
+        <p>
+          This area will support future administrative features, including user
+          management and permissions.
+        </p>
       </div>
     </div>
   );
