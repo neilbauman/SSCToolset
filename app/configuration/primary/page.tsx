@@ -2,7 +2,6 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
-import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +27,12 @@ export default async function PrimaryFrameworkPage() {
       />
 
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline">Duplicate from Catalogue</Button>
-        <Button>Publish</Button>
+        <button className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200 text-sm">
+          Duplicate from Catalogue
+        </button>
+        <button className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm">
+          Publish
+        </button>
       </div>
 
       <div className="mt-6">
