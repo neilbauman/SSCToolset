@@ -16,6 +16,7 @@ type FrameworkVersion = {
 
 export default function PrimaryFrameworkPage() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
+  const [pendingSelected, setPendingSelected] = useState<FrameworkVersion | null>(null);
   const [selected, setSelected] = useState<FrameworkVersion | null>(null);
   const theme = groupThemes["ssc-config"];
 
@@ -24,7 +25,7 @@ export default function PrimaryFrameworkPage() {
       const v = await listVersions();
       setVersions(v || []);
       if (v && v.length > 0) {
-        setSelected(v[0]); // default to first version
+        setPendingSelected(v[0]); // default to first version
       }
     }
     load();
@@ -54,9 +55,9 @@ export default function PrimaryFrameworkPage() {
         </label>
         <select
           id="version"
-          value={selected?.id || ""}
+          value={pendingSelected?.id || ""}
           onChange={(e) =>
-            setSelected(versions.find((v) => v.id === e.target.value) || null)
+            setPendingSelected(versions.find((v) => v.id === e.target.value) || null)
           }
           className="rounded border px-3 py-2 text-sm"
         >
@@ -67,47 +68,50 @@ export default function PrimaryFrameworkPage() {
           ))}
         </select>
 
-        {selected && (
+        {pendingSelected && (
           <span
             className={`px-2 py-1 text-xs rounded ${
-              selected.status === "published"
+              pendingSelected.status === "published"
                 ? "bg-green-100 text-green-700"
                 : "bg-gray-100 text-gray-700"
             }`}
           >
-            {selected.status === "published" ? "Published" : "Draft"}
+            {pendingSelected.status === "published" ? "Published" : "Draft"}
           </span>
         )}
+
+        <button
+          onClick={() => setSelected(pendingSelected)}
+          disabled={!pendingSelected}
+          className={`px-4 py-2 rounded text-sm ${theme.border} ${theme.text} ${theme.hover}`}
+        >
+          Open Version
+        </button>
       </div>
 
-      {/* Actions */}
+      {/* Actions + Editor */}
       {selected && (
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            className={`px-4 py-2 rounded border text-sm ${theme.border} ${theme.text} ${theme.hover}`}
-          >
-            Duplicate from Catalogue
-          </button>
-          <button
-            className={`px-4 py-2 rounded text-sm text-white ${theme.text} ${theme.hover} bg-[color:var(--gsc-blue)] hover:bg-blue-900`}
-          >
-            Publish
-          </button>
-        </div>
-      )}
+        <>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              className={`px-4 py-2 rounded border text-sm ${theme.border} ${theme.text} ${theme.hover}`}
+            >
+              Duplicate from Catalogue
+            </button>
+            <button
+              className={`px-4 py-2 rounded text-sm text-white ${theme.text} ${theme.hover} bg-[color:var(--gsc-blue)] hover:bg-blue-900`}
+            >
+              Publish
+            </button>
+          </div>
 
-      {/* Editor */}
-      <div className="mt-6">
-        {selected ? (
-          <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
-            <FrameworkEditor versionId={selected.id} />
+          <div className="mt-6">
+            <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
+              <FrameworkEditor versionId={selected.id} />
+            </div>
           </div>
-        ) : (
-          <div className="text-sm text-gray-600">
-            No framework versions found.
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
