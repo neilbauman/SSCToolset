@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
 
 type Version = {
   id: string;
@@ -9,154 +10,173 @@ type Version = {
   created_at: string;
 };
 
-type Tree = Array<{
-  pillar: { id: string; name: string; description: string | null };
-  themes: Array<{
-    theme: { id: string; name: string; description: string | null };
-    subthemes: Array<{ id: string; name: string; description: string | null }>;
-  }>;
-}>;
-
 export default function FrameworkEditor() {
   const [versions, setVersions] = useState<Version[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [tree, setTree] = useState<Tree>([]);
-  const [name, setName] = useState("Primary Framework v1");
+  const [newDraftName, setNewDraftName] = useState("Primary Framework v1");
+
+  useEffect(() => {
+    loadVersions();
+  }, []);
 
   async function loadVersions() {
-    const res = await fetch("/api/framework/versions");
-    const json = await res.json();
-    setVersions(json.data || []);
+    const { data, error } = await supabaseBrowser
+      .from("framework_versions")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading versions:", error);
+    } else {
+      setVersions(data as Version[]);
+    }
   }
 
   async function createDraft() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/framework/versions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
-      });
-      if (!res.ok) throw new Error("Failed to create draft");
-      await loadVersions();
-    } finally {
-      setLoading(false);
+    const { error } = await supabaseBrowser.from("framework_versions").insert({
+      name: newDraftName,
+      status: "draft",
+    });
+
+    if (error) {
+      console.error("Error creating draft:", error);
+    } else {
+      setNewDraftName(`Primary Framework v${versions.length + 2}`);
+      loadVersions();
     }
   }
 
-  async function loadItems(id: string) {
-    setExpandedId(id === expandedId ? null : id);
-    if (id === expandedId) return;
-    const res = await fetch(`/api/framework/versions/${id}/items`);
-    const json = await res.json();
-    setTree(json.data || []);
-  }
+  async function publishVersion(id: string) {
+    const { error } = await supabaseBrowser
+      .from("framework_versions")
+      .update({ status: "published" })
+      .eq("id", id);
 
-  async function publish(id: string) {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/framework/versions/${id}/publish`, { method: "POST" });
-      if (!res.ok) throw new Error("Publish failed");
-      await loadVersions();
-    } finally {
-      setLoading(false);
+    if (error) {
+      console.error("Error publishing version:", error);
+    } else {
+      loadVersions();
     }
   }
 
-  useEffect(() => { loadVersions(); }, []);
+  async function cloneVersion(id: string) {
+    const version = versions.find((v) => v.id === id);
+    if (!version) return;
+
+    const newName = `${version.name} (copy)`;
+
+    const { error } = await supabaseBrowser.from("framework_versions").insert({
+      name: newName,
+      status: "draft",
+    });
+
+    if (error) {
+      console.error("Error cloning version:", error);
+    } else {
+      loadVersions();
+    }
+  }
+
+  async function deleteVersion(id: string) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this version?"
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabaseBrowser
+      .from("framework_versions")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting version:", error);
+    } else {
+      loadVersions();
+    }
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-white p-4">
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700">New Draft Name</label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              placeholder="Primary Framework vX"
-            />
-          </div>
-          <button
-            onClick={createDraft}
-            disabled={loading || !name.trim()}
-            className="rounded-md bg-brand-600 text-white px-4 py-2 hover:bg-brand-700 disabled:opacity-50"
-          >
-            Create Draft from Catalogue
-          </button>
-        </div>
+    <div className="space-y-6">
+      {/* New Draft Form */}
+      <div className="flex items-center gap-4">
+        <input
+          type="text"
+          value={newDraftName}
+          onChange={(e) => setNewDraftName(e.target.value)}
+          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
+          placeholder="New Draft Name"
+        />
+        <button
+          onClick={createDraft}
+          className="px-4 py-2 rounded-md bg-green-600 text-white text-sm hover:bg-green-700"
+        >
+          Create Draft from Catalogue
+        </button>
       </div>
 
-      <div className="rounded-lg border bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b bg-gray-50">
-              <th className="p-3">Name</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Created</th>
-              <th className="p-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map(v => (
-              <tr key={v.id} className="border-b hover:bg-gray-50">
-                <td className="p-3">
-                  <button className="underline" onClick={() => loadItems(v.id)}>{v.name}</button>
-                </td>
-                <td className="p-3">
-                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
-                    v.status === "published" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                  }`}>
-                    {v.status}
-                  </span>
-                </td>
-                <td className="p-3">{new Date(v.created_at).toLocaleString()}</td>
-                <td className="p-3 text-right">
+      {/* Versions Table */}
+      <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+              Name
+            </th>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+              Status
+            </th>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+              Created
+            </th>
+            <th className="px-4 py-2 text-right text-sm font-semibold text-gray-700">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200 bg-white">
+          {versions.map((v) => (
+            <tr key={v.id}>
+              <td className="px-4 py-2 text-sm text-brand-700 hover:underline cursor-pointer">
+                {v.name}
+              </td>
+              <td className="px-4 py-2">
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    v.status === "published"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-yellow-100 text-yellow-800"
+                  }`}
+                >
+                  {v.status}
+                </span>
+              </td>
+              <td className="px-4 py-2 text-sm text-gray-600">
+                {new Date(v.created_at).toLocaleString()}
+              </td>
+              <td className="px-4 py-2 text-right space-x-2">
+                {v.status === "draft" && (
                   <button
-                    onClick={() => publish(v.id)}
-                    disabled={v.status === "published" || loading}
-                    className="rounded-md border px-3 py-1 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={() => publishVersion(v.id)}
+                    className="px-3 py-1 rounded-md bg-green-600 text-white text-xs hover:bg-green-700"
                   >
                     Publish
                   </button>
-                </td>
-              </tr>
-            ))}
-            {versions.length === 0 && (
-              <tr><td colSpan={4} className="p-3 text-gray-500">No versions yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {expandedId && (
-        <div className="rounded-lg border bg-white p-4">
-          <h3 className="font-medium text-gray-900 mb-3">Version Structure</h3>
-          <div className="space-y-4">
-            {tree.map((p) => (
-              <div key={p.pillar.id} className="border rounded-md">
-                <div className="px-3 py-2 bg-gray-50 font-medium">{p.pillar.name}</div>
-                <div className="p-3 space-y-2">
-                  {p.themes.map((t) => (
-                    <div key={t.theme.id} className="border rounded-md">
-                      <div className="px-3 py-2 bg-white font-medium">{t.theme.name}</div>
-                      {t.subthemes.length > 0 && (
-                        <ul className="px-5 py-2 list-disc text-sm text-gray-700">
-                          {t.subthemes.map(s => <li key={s.id}>{s.name}</li>)}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                  {p.themes.length === 0 && <div className="text-sm text-gray-600">No themes.</div>}
-                </div>
-              </div>
-            ))}
-            {tree.length === 0 && <div className="text-sm text-gray-600">No items found.</div>}
-          </div>
-        </div>
-      )}
+                )}
+                <button
+                  onClick={() => cloneVersion(v.id)}
+                  className="px-3 py-1 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700"
+                >
+                  Clone
+                </button>
+                <button
+                  onClick={() => deleteVersion(v.id)}
+                  className="px-3 py-1 rounded-md bg-red-600 text-white text-xs hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
