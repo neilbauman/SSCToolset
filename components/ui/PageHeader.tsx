@@ -1,41 +1,23 @@
-import type { ReactNode } from "react";
+import React from "react";
 
 type Props = {
   title: string;
-  group: string;
   subtitle?: string;
-  breadcrumbs?: ReactNode;
-  actions?: ReactNode;
+  group: string; // ✅ required
+  breadcrumbs?: React.ReactNode;
 };
 
-export default function PageHeader({
-  title,
-  group,
-  subtitle,
-  breadcrumbs,
-  actions,
-}: Props) {
+export default function PageHeader({ title, subtitle, group, breadcrumbs }: Props) {
   return (
-    <header className="mb-8 font-sans">
-      <h1 className="text-2xl font-bold text-red-700 mb-2">
-        Shelter and Settlement Severity Classification Toolset
-      </h1>
-
-      <div className="text-lg font-semibold text-green-600 mb-1">
-        {group}
-      </div>
-
-      <div className="flex items-start justify-between">
+    <div className="mb-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          {subtitle && (
-            <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
-          )}
+          <h1 className="text-2xl font-bold">{title}</h1>
+          {subtitle && <p className="text-gray-600">{subtitle}</p>}
         </div>
-        {actions && <div className="flex gap-2">{actions}</div>}
+        <div className="text-sm text-gray-500">{group}</div>
       </div>
-
-      {breadcrumbs && <div className="mt-3">{breadcrumbs}</div>}
-    </header>
+      {breadcrumbs && <div className="mt-2">{breadcrumbs}</div>}
+    </div>
   );
 }
