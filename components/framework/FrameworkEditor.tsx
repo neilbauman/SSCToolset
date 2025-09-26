@@ -14,14 +14,13 @@ type Version = {
 type FrameworkItem = {
   id: string;
   version_id: string;
-  type: "pillar" | "theme" | "subtheme";
   sort_order: number;
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  pillar?: { name: string; description: string | null };
-  theme?: { name: string; description: string | null; pillar_id: string };
-  subtheme?: { name: string; description: string | null; theme_id: string };
+  pillar?: { name: string; description: string | null } | null;
+  theme?: { name: string; description: string | null; pillar_id: string } | null;
+  subtheme?: { name: string; description: string | null; theme_id: string } | null;
 };
 
 export default function FrameworkEditor() {
@@ -121,7 +120,14 @@ export default function FrameworkEditor() {
     if (error) {
       console.error("Error loading structure:", error);
     } else {
-      setItems(data as FrameworkItem[]);
+      // Supabase returns arrays for relations -> flatten them
+      const normalized = (data || []).map((row: any) => ({
+        ...row,
+        pillar: row.pillar?.[0] || null,
+        theme: row.theme?.[0] || null,
+        subtheme: row.subtheme?.[0] || null,
+      }));
+      setItems(normalized as FrameworkItem[]);
     }
   }
 
@@ -362,7 +368,9 @@ export default function FrameworkEditor() {
 
                     {isPExpanded &&
                       tChildren.map((t) => {
-                        const sChildren = subthemes.filter((s) => s.subtheme?.theme_id === t.theme_id);
+                        const sChildren = subthemes.filter(
+                          (s) => s.subtheme?.theme_id === t.theme_id
+                        );
                         const isTExpanded = expandedThemes.includes(t.id);
                         const tRef = formatRefCode("theme", p.sort_order, t.sort_order);
 
@@ -408,14 +416,25 @@ export default function FrameworkEditor() {
 
                             {isTExpanded &&
                               sChildren.map((s) => {
-                                const sRef = formatRefCode("subtheme", p.sort_order, t.sort_order, s.sort_order);
+                                const sRef = formatRefCode(
+                                  "subtheme",
+                                  p.sort_order,
+                                  t.sort_order,
+                                  s.sort_order
+                                );
                                 return (
                                   <tr key={s.id}>
-                                    <td className="px-4 py-2 text-sm pl-14 text-[#003764]">{sRef}</td>
+                                    <td className="px-4 py-2 text-sm pl-14 text-[#003764]">
+                                      {sRef}
+                                    </td>
                                     <td className="px-4 py-2">
-                                      <div className="font-medium text-gray-900">{s.subtheme?.name}</div>
+                                      <div className="font-medium text-gray-900">
+                                        {s.subtheme?.name}
+                                      </div>
                                       {s.subtheme?.description && (
-                                        <div className="text-sm text-gray-600">{s.subtheme.description}</div>
+                                        <div className="text-sm text-gray-600">
+                                          {s.subtheme.description}
+                                        </div>
                                       )}
                                     </td>
                                     <td className="px-4 py-2">
@@ -423,7 +442,9 @@ export default function FrameworkEditor() {
                                         <input
                                           type="number"
                                           defaultValue={s.sort_order}
-                                          onBlur={(e) => updateSortOrder(s.id, Number(e.target.value))}
+                                          onBlur={(e) =>
+                                            updateSortOrder(s.id, Number(e.target.value))
+                                          }
                                           className="w-16 rounded border px-2 py-1 text-sm"
                                         />
                                       ) : (
