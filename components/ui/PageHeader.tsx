@@ -1,12 +1,12 @@
 import React from "react";
+import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
-  title: string;       // Page Title (biggest text, GSC red)
-  group: string;       // Group name (e.g. SSC Configuration)
-  tool?: string;       // Tool name (e.g. Primary Framework Editor)
-  description?: string; // Optional description
+  title: string;          // Page Title (biggest text, GSC red)
+  group: GroupKey;        // Group key to theme from lib/theme.ts
+  tool?: string;          // Tool name (e.g. Primary Framework Editor)
+  description?: string;   // Optional description
   breadcrumbs: React.ReactNode;
-  groupColor?: string; // Tailwind class for group theming
 };
 
 export default function PageHeader({
@@ -15,8 +15,9 @@ export default function PageHeader({
   tool,
   description,
   breadcrumbs,
-  groupColor = "text-red-600",
 }: Props) {
+  const theme = groupThemes[group];
+
   return (
     <div className="mb-6">
       {/* Main Title */}
@@ -28,7 +29,9 @@ export default function PageHeader({
       </h1>
 
       {/* Group + Tool */}
-      <div className={`mt-1 text-lg font-semibold ${groupColor}`}>{group}</div>
+      <div className={`mt-1 text-lg font-semibold ${theme.groupText}`}>
+        {group}
+      </div>
       {tool && <div className="text-xl font-medium text-gray-800">{tool}</div>}
 
       {/* Description */}
