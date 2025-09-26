@@ -1,5 +1,3 @@
-// lib/types/framework.ts
-
 export type FrameworkVersion = {
   id: string;
   name: string;
@@ -28,7 +26,7 @@ export type FrameworkItem = {
   subtheme?: FrameworkEntity | null;
 };
 
-// Normalized tree structure used by FrameworkEditor
+// ✅ Used by FrameworkEditor
 export type NormalizedFramework = FrameworkEntity & {
   themes: (FrameworkEntity & {
     subthemes: FrameworkEntity[];
