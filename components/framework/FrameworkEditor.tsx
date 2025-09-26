@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, CheckCircle, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 type Props = { versionId: string };
 
@@ -45,12 +43,18 @@ export default function FrameworkEditor({ versionId }: Props) {
   return (
     <div className="mt-4 space-y-4">
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={expandAll}>
+        <button
+          onClick={expandAll}
+          className="px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200 text-sm"
+        >
           Expand All
-        </Button>
-        <Button size="sm" variant="outline" onClick={collapseAll}>
+        </button>
+        <button
+          onClick={collapseAll}
+          className="px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200 text-sm"
+        >
           Collapse All
-        </Button>
+        </button>
       </div>
 
       {data.map((pillar) => (
