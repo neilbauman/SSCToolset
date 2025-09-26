@@ -6,13 +6,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
 import { groupThemes } from "@/lib/theme";
-
-type FrameworkVersion = {
-  id: string;
-  name: string;
-  status: "draft" | "published";
-  created_at: string;
-};
+import type { FrameworkVersion } from "@/lib/types/framework";
 
 export default function PrimaryFrameworkPage() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
@@ -63,22 +57,10 @@ export default function PrimaryFrameworkPage() {
         >
           {versions.map((v) => (
             <option key={v.id} value={v.id}>
-              {v.name} ({v.status})
+              {v.name}
             </option>
           ))}
         </select>
-
-        {pendingSelected && (
-          <span
-            className={`px-2 py-1 text-xs rounded ${
-              pendingSelected.status === "published"
-                ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
-            }`}
-          >
-            {pendingSelected.status === "published" ? "Published" : "Draft"}
-          </span>
-        )}
 
         <button
           onClick={() => setSelected(pendingSelected)}
@@ -88,6 +70,27 @@ export default function PrimaryFrameworkPage() {
           Open Version
         </button>
       </div>
+
+      {/* Metadata */}
+      {pendingSelected && (
+        <div className="mt-2 text-sm text-gray-700">
+          <span
+            className={`px-2 py-1 mr-2 text-xs rounded ${
+              pendingSelected.status === "published"
+                ? "bg-green-100 text-green-700"
+                : "bg-gray-100 text-gray-700"
+            }`}
+          >
+            {pendingSelected.status === "published" ? "Published" : "Draft"}
+          </span>
+          Created:{" "}
+          {new Date(pendingSelected.created_at).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}
+        </div>
+      )}
 
       {/* Actions + Editor */}
       {selected && (
