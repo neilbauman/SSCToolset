@@ -1,23 +1,21 @@
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { listVersions } from "@/lib/services/framework";
+
+// ✅ Supabase pages must be dynamic
+export const dynamic = "force-dynamic";
 
 export default async function PrimaryFrameworkPage() {
-  const { data: versions } = await supabaseBrowser
-    .from("framework_versions")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  const selected = versions?.[0];
+  const versions = await listVersions();
+  const selected = versions?.[0] ?? null;
 
   return (
     <div>
       <PageHeader
-        title="Primary Framework Editor"
-        group="SSC Configuration"
-        subtitle="Create and manage framework versions based on the catalogues"
-        breadcrumbs={
+        title="Primary Framework"
+        subtitle="Configure and review the SSC framework."
+        breadcrumb={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
@@ -28,8 +26,10 @@ export default async function PrimaryFrameworkPage() {
         }
       />
       <div className="mt-4">
-        {selected && (
+        {selected ? (
           <FrameworkEditor versionId={selected.id} />
+        ) : (
+          <div>No versions found.</div>
         )}
       </div>
     </div>
