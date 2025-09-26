@@ -3,28 +3,26 @@
 import { useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 
+type Version = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
 export default function PrimaryFrameworkPage() {
-  const [versions, setVersions] = useState<any[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<any | null>(null);
-
-  // Load versions when page loads
-  useState(() => {
-    const loadVersions = async () => {
-      const { data, error } = await supabaseBrowser
-        .from("framework_versions")
-        .select("*")
-        .order("created_at", { ascending: true });
-
-      if (!error && data) setVersions(data);
-    };
-    loadVersions();
-  });
+  const [versions] = useState<Version[]>([
+    {
+      id: "823751b3-b877-48fa-8f60-6e2a5513f9d5",
+      name: "Primary Framework v1",
+      created_at: "2025-09-26T07:21:07.000Z",
+    },
+  ]);
+  const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
 
   return (
-    <div>
+    <div className="p-6">
       <PageHeader
         title="Primary Framework Editor"
         group="SSC Configuration"
@@ -32,7 +30,7 @@ export default function PrimaryFrameworkPage() {
         breadcrumbs={
           <Breadcrumbs
             items={[
-              { label: "Dashboard", href: "/" },
+              { label: "Dashboard", href: "/dashboard" },
               { label: "SSC Configuration", href: "/configuration" },
               { label: "Primary Framework" },
             ]}
@@ -40,39 +38,31 @@ export default function PrimaryFrameworkPage() {
         }
       />
 
-      <div className="mt-6 space-y-4">
-        <div className="rounded border bg-white p-4 shadow">
-          <h2 className="mb-2 font-semibold">Available Versions</h2>
-          <ul className="divide-y">
-            {versions.map((version) => (
-              <li
-                key={version.id}
-                className="flex items-center justify-between py-2"
-              >
-                <button
-                  className={`text-blue-600 hover:underline ${
-                    selectedVersion?.id === version.id
-                      ? "font-bold"
-                      : "font-normal"
-                  }`}
-                  onClick={() => setSelectedVersion(version)}
-                >
-                  {version.name}
-                </button>
-                <span className="text-sm text-gray-500">
-                  {new Date(version.created_at).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {selectedVersion && (
-          <div className="mt-6">
-            <FrameworkEditor versionId={selectedVersion.id} />
-          </div>
-        )}
+      {/* Versions List */}
+      <div className="mt-6 bg-white shadow rounded-lg p-4">
+        <h2 className="text-md font-semibold mb-4">Available Versions</h2>
+        <ul className="divide-y divide-gray-200">
+          {versions.map((version) => (
+            <li
+              key={version.id}
+              className="py-2 cursor-pointer text-blue-600 hover:underline"
+              onClick={() => setSelectedVersion(version)}
+            >
+              {version.name}
+              <span className="ml-4 text-sm text-gray-500">
+                {new Date(version.created_at).toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
+
+      {/* Version Editor */}
+      {selectedVersion && (
+        <div className="mt-6">
+          <FrameworkEditor version={selectedVersion} />
+        </div>
+      )}
     </div>
   );
 }
