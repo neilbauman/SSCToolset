@@ -1,10 +1,14 @@
+// app/api/framework/versions/[id]/items/route.ts
 import { NextResponse } from "next/server";
 import { getVersionTree } from "@/lib/services/framework";
 
-export async function GET(request: Request, context: any) {
+// GET /api/framework/versions/:id/items
+export async function GET(
+  _request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const id = context.params.id as string;
-    const data = await getVersionTree(id);
+    const data = await getVersionTree(params.id);
     return NextResponse.json({ data });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
