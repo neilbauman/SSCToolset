@@ -7,11 +7,17 @@ export default function PrimaryFrameworkPage() {
     <div>
       <PageHeader
         title="Primary Framework Editor"
-        subtitle="Catalogue → Version (draft → publish)"
-        breadcrumbs={<Breadcrumbs items={[
-          { label: "SSC Configuration" },
-          { label: "Primary Framework Editor" }
-        ]} />}
+        group="SSC Configuration"
+        subtitle="Define and manage pillars, themes, and subthemes of the SSC framework."
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "SSC Configuration" },
+              { label: "Primary Framework" },
+            ]}
+          />
+        }
       />
       <FrameworkEditor />
     </div>
