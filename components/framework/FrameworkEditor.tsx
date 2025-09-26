@@ -2,6 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
+import {
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Trash,
+  X,
+} from "lucide-react";
 
 type Version = {
   id: string;
@@ -14,6 +21,7 @@ type Pillar = {
   id: string;
   name: string;
   description: string | null;
+  sort_order: number;
 };
 
 type Theme = {
@@ -21,6 +29,7 @@ type Theme = {
   pillar_id: string;
   name: string;
   description: string | null;
+  sort_order: number;
 };
 
 type Subtheme = {
@@ -28,6 +37,7 @@ type Subtheme = {
   theme_id: string;
   name: string;
   description: string | null;
+  sort_order: number;
 };
 
 export default function FrameworkEditor() {
@@ -41,6 +51,7 @@ export default function FrameworkEditor() {
 
   const [expandedPillars, setExpandedPillars] = useState<string[]>([]);
   const [expandedThemes, setExpandedThemes] = useState<string[]>([]);
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     loadVersions();
@@ -79,11 +90,8 @@ export default function FrameworkEditor() {
       .update({ status: "published" })
       .eq("id", id);
 
-    if (error) {
-      console.error("Error publishing version:", error);
-    } else {
-      loadVersions();
-    }
+    if (error) console.error("Error publishing version:", error);
+    else loadVersions();
   }
 
   async function cloneVersion(id: string) {
@@ -97,17 +105,12 @@ export default function FrameworkEditor() {
       status: "draft",
     });
 
-    if (error) {
-      console.error("Error cloning version:", error);
-    } else {
-      loadVersions();
-    }
+    if (error) console.error("Error cloning version:", error);
+    else loadVersions();
   }
 
   async function deleteVersion(id: string) {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this version?"
-    );
+    const confirmed = window.confirm("Delete this version?");
     if (!confirmed) return;
 
     const { error } = await supabaseBrowser
@@ -115,13 +118,10 @@ export default function FrameworkEditor() {
       .delete()
       .eq("id", id);
 
-    if (error) {
-      console.error("Error deleting version:", error);
-    } else {
+    if (error) console.error("Error deleting version:", error);
+    else {
       loadVersions();
-      if (selectedVersion?.id === id) {
-        setSelectedVersion(null);
-      }
+      if (selectedVersion?.id === id) setSelectedVersion(null);
     }
   }
 
@@ -129,21 +129,54 @@ export default function FrameworkEditor() {
     const { data: pillarData } = await supabaseBrowser
       .from("pillar_catalogue")
       .select("*")
-      .order("name");
+      .order("sort_order");
 
     const { data: themeData } = await supabaseBrowser
       .from("theme_catalogue")
       .select("*")
-      .order("name");
+      .order("sort_order");
 
     const { data: subthemeData } = await supabaseBrowser
       .from("subtheme_catalogue")
       .select("*")
-      .order("name");
+      .order("sort_order");
 
     setPillars((pillarData as Pillar[]) || []);
     setThemes((themeData as Theme[]) || []);
     setSubthemes((subthemeData as Subtheme[]) || []);
+  }
+
+  async function updateSortOrder(
+    type: "pillar" | "theme" | "subtheme",
+    id: string,
+    value: number
+  ) {
+    const table =
+      type === "pillar"
+        ? "pillar_catalogue"
+        : type === "theme"
+        ? "theme_catalogue"
+        : "subtheme_catalogue";
+
+    const { error } = await supabaseBrowser
+      .from(table)
+      .update({ sort_order: value })
+      .eq("id", id);
+
+    if (error) console.error("Error updating sort order:", error);
+    else loadStructure();
+  }
+
+  function formatRefCode(
+    type: "pillar" | "theme" | "subtheme",
+    pillarSort: number,
+    themeSort?: number,
+    subthemeSort?: number
+  ) {
+    if (type === "pillar") return `P${pillarSort}`;
+    if (type === "theme") return `T${pillarSort}.${themeSort}`;
+    if (type === "subtheme") return `ST${pillarSort}.${themeSort}.${subthemeSort}`;
+    return "";
   }
 
   function togglePillar(id: string) {
@@ -156,6 +189,16 @@ export default function FrameworkEditor() {
     setExpandedThemes((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  }
+
+  function expandAll() {
+    setExpandedPillars(pillars.map((p) => p.id));
+    setExpandedThemes(themes.map((t) => t.id));
+  }
+
+  function collapseAll() {
+    setExpandedPillars([]);
+    setExpandedThemes([]);
   }
 
   return (
@@ -171,7 +214,7 @@ export default function FrameworkEditor() {
         />
         <button
           onClick={createDraft}
-          className="px-4 py-2 rounded-md bg-green-600 text-white text-sm hover:bg-green-700"
+          className="px-4 py-2 rounded-md bg-[#630710] text-white text-sm hover:bg-red-800"
         >
           Create Draft from Catalogue
         </button>
@@ -204,7 +247,7 @@ export default function FrameworkEditor() {
                     setSelectedVersion(v);
                     loadStructure();
                   }}
-                  className="text-brand-700 hover:underline"
+                  className="text-[#003764] hover:underline"
                 >
                   {v.name}
                 </button>
@@ -213,8 +256,8 @@ export default function FrameworkEditor() {
                 <span
                   className={`px-2 py-1 rounded-full text-xs font-medium ${
                     v.status === "published"
-                      ? "bg-green-100 text-green-800"
-                      : "bg-yellow-100 text-yellow-800"
+                      ? "bg-green-100 text-[#00b398]"
+                      : "bg-orange-100 text-[#f3732c]"
                   }`}
                 >
                   {v.status}
@@ -227,20 +270,20 @@ export default function FrameworkEditor() {
                 {v.status === "draft" && (
                   <button
                     onClick={() => publishVersion(v.id)}
-                    className="px-3 py-1 rounded-md bg-green-600 text-white text-xs hover:bg-green-700"
+                    className="px-3 py-1 rounded-md bg-[#630710] text-white text-xs hover:bg-red-800"
                   >
                     Publish
                   </button>
                 )}
                 <button
                   onClick={() => cloneVersion(v.id)}
-                  className="px-3 py-1 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700"
+                  className="px-3 py-1 rounded-md bg-[#0082cb] text-white text-xs hover:bg-blue-700"
                 >
                   Clone
                 </button>
                 <button
                   onClick={() => deleteVersion(v.id)}
-                  className="px-3 py-1 rounded-md bg-red-600 text-white text-xs hover:bg-red-700"
+                  className="px-3 py-1 rounded-md bg-[#f3732c] text-white text-xs hover:bg-orange-700"
                 >
                   Delete
                 </button>
@@ -250,55 +293,97 @@ export default function FrameworkEditor() {
         </tbody>
       </table>
 
-      {/* Version Structure Tree */}
+      {/* Version Structure Table */}
       {selectedVersion && (
         <div className="mt-8 border rounded-lg bg-white p-4">
-          <h3 className="text-lg font-semibold mb-4">
-            Version Structure: {selectedVersion.name}
-          </h3>
-          <ul className="space-y-2">
-            {pillars.map((p) => (
-              <li key={p.id}>
-                <button
-                  onClick={() => togglePillar(p.id)}
-                  className="text-left font-medium text-gray-800 hover:underline"
-                >
-                  {expandedPillars.includes(p.id) ? "▼" : "▶"} {p.name}
-                </button>
-                {expandedPillars.includes(p.id) && (
-                  <ul className="ml-6 mt-2 space-y-1">
-                    {themes
-                      .filter((t) => t.pillar_id === p.id)
-                      .map((t) => (
-                        <li key={t.id}>
-                          <button
-                            onClick={() => toggleTheme(t.id)}
-                            className="text-left text-gray-700 hover:underline"
-                          >
-                            {expandedThemes.includes(t.id) ? "▼" : "▶"}{" "}
-                            {t.name}
-                          </button>
-                          {expandedThemes.includes(t.id) && (
-                            <ul className="ml-6 mt-1 space-y-1">
-                              {subthemes
-                                .filter((s) => s.theme_id === t.id)
-                                .map((s) => (
-                                  <li
-                                    key={s.id}
-                                    className="text-gray-600 text-sm"
-                                  >
-                                    • {s.name}
-                                  </li>
-                                ))}
-                            </ul>
-                          )}
-                        </li>
-                      ))}
-                  </ul>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-[#630710]">
+              Version Structure: {selectedVersion.name}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={expandAll}
+                className="flex items-center gap-1 px-3 py-1 rounded-md border text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <ChevronDown className="w-4 h-4" /> Expand All
+              </button>
+              <button
+                onClick={collapseAll}
+                className="flex items-center gap-1 px-3 py-1 rounded-md border text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <ChevronRight className="w-4 h-4" /> Collapse All
+              </button>
+              <button
+                onClick={() => setEditMode(!editMode)}
+                className="flex items-center gap-1 px-3 py-1 rounded-md bg-[#0082cb] text-white text-sm hover:bg-blue-700"
+              >
+                {editMode ? (
+                  <>
+                    <X className="w-4 h-4" /> Exit Edit Mode
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="w-4 h-4" /> Enter Edit Mode
+                  </>
                 )}
-              </li>
-            ))}
-          </ul>
+              </button>
+            </div>
+          </div>
+
+          <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+                  Type/Ref Code
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+                  Name/Description
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
+                  Sort Order
+                </th>
+                <th className="px-4 py-2 text-right text-sm font-semibold text-gray-700">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {pillars.map((p) => (
+                <tr key={p.id}>
+                  <td className="px-4 py-2 text-sm font-medium text-[#003764]">
+                    {formatRefCode("pillar", p.sort_order)}
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="font-medium text-gray-900">{p.name}</div>
+                    {p.description && (
+                      <div className="text-sm text-gray-600">{p.description}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {editMode ? (
+                      <input
+                        type="number"
+                        defaultValue={p.sort_order}
+                        onBlur={(e) =>
+                          updateSortOrder("pillar", p.id, Number(e.target.value))
+                        }
+                        className="w-16 rounded border px-2 py-1 text-sm"
+                      />
+                    ) : (
+                      <span>{p.sort_order}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {editMode && (
+                      <button className="text-red-600 hover:text-red-800">
+                        <Trash className="w-4 h-4 inline" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
