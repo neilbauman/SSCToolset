@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global defaults */
 html, body {
   @apply font-sans bg-gray-50 text-gray-900;
 }
