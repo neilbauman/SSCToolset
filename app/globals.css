@@ -2,17 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg: #f8fafc;
-  --text: #0f172a;
-}
-
 html, body {
-  height: 100%;
-  background: var(--bg);
-  color: var(--text);
+  @apply font-sans bg-gray-50 text-gray-900;
 }
 
 a {
-  @apply text-brand-700 hover:text-brand-900 underline-offset-2;
+  @apply text-brand-700 hover:underline;
+}
+
+h1, h2, h3, h4 {
+  @apply font-sans;
 }
