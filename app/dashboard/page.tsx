@@ -50,12 +50,12 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        group="dashboard"   // ✅ lowercase GroupKey
+        group="dashboard"
         description="Global Shelter Cluster – Shelter Severity Classification Toolset"
         breadcrumbs={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
         {groups.map((g) => {
           const Icon = g.icon;
           const theme = groupThemes[g.id as keyof typeof groupThemes];
@@ -63,7 +63,7 @@ export default function DashboardPage() {
             <Link
               key={g.id}
               href={g.href}
-              className={`gsc-card p-6 gsc-card-hover bg-white ${theme.border} ${theme.text} ${theme.hover}`}
+              className={`rounded-lg bg-white shadow-sm p-6 transition-colors ${theme.border} ${theme.text} ${theme.hover}`}
             >
               <div className="flex items-center gap-3">
                 <Icon className="w-6 h-6" />
