@@ -5,8 +5,7 @@ export default function HomePage() {
   return (
     <div>
       <PageHeader
-        title="SSC Toolset"
-        group="General"
+        group="dashboard"  // ✅ valid GroupKey
         description="Global Shelter Cluster – Shelter Severity Classification"
         breadcrumbs={<Breadcrumbs items={[{ label: "Home" }]} />}
       />
