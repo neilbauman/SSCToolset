@@ -18,9 +18,19 @@ type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  pillar?: { name: string; description: string | null } | null;
-  theme?: { name: string; description: string | null; pillar_id: string } | null;
-  subtheme?: { name: string; description: string | null; theme_id: string } | null;
+  pillar?: { id: string; name: string; description: string | null } | null;
+  theme?: {
+    id: string;
+    name: string;
+    description: string | null;
+    pillar_id: string;
+  } | null;
+  subtheme?: {
+    id: string;
+    name: string;
+    description: string | null;
+    theme_id: string;
+  } | null;
 };
 
 export default function FrameworkEditor() {
@@ -109,9 +119,9 @@ export default function FrameworkEditor() {
         `
         id, version_id, sort_order,
         pillar_id, theme_id, subtheme_id,
-        pillar:pillar_id (name, description),
-        theme:theme_id (name, description, pillar_id),
-        subtheme:subtheme_id (name, description, theme_id)
+        pillar:pillar_id (id, name, description),
+        theme:theme_id (id, name, description, pillar_id),
+        subtheme:subtheme_id (id, name, description, theme_id)
       `
       )
       .eq("version_id", versionId)
@@ -120,7 +130,6 @@ export default function FrameworkEditor() {
     if (error) {
       console.error("Error loading structure:", error);
     } else {
-      // Supabase returns arrays for relations -> flatten them
       const normalized = (data || []).map((row: any) => ({
         ...row,
         pillar: row.pillar?.[0] || null,
@@ -369,7 +378,7 @@ export default function FrameworkEditor() {
                     {isPExpanded &&
                       tChildren.map((t) => {
                         const sChildren = subthemes.filter(
-                          (s) => s.subtheme?.theme_id === t.theme_id
+                          (s) => s.subtheme?.theme_id === t.theme?.id
                         );
                         const isTExpanded = expandedThemes.includes(t.id);
                         const tRef = formatRefCode("theme", p.sort_order, t.sort_order);
