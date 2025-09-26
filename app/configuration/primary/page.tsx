@@ -3,7 +3,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
 
-// ✅ Supabase pages must be dynamic
+// ✅ Supabase page must be dynamic
 export const dynamic = "force-dynamic";
 
 export default async function PrimaryFrameworkPage() {
