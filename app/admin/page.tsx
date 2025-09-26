@@ -11,8 +11,8 @@ export default async function AdminPage() {
     <div>
       <PageHeader
         title="Admin"
-        subtitle="Administrative SSC tools"
         group="Admin"
+        description="Administrative SSC tools"
         breadcrumbs={
           <Breadcrumbs
             items={[
@@ -22,6 +22,7 @@ export default async function AdminPage() {
           />
         }
       />
+
       <div className="mt-4">
         {versions.length > 0 ? (
           <ul className="list-disc pl-6">
