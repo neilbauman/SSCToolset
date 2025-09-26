@@ -56,18 +56,18 @@ export default function SSCConfigPage() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
         {tools.map((tool) => {
           const Icon = tool.icon;
           return (
             <Link
               key={tool.id}
               href={tool.href}
-              className={`rounded-lg bg-white shadow-sm p-4 transition-colors ${theme.border} ${theme.text} ${theme.hover}`}
+              className={`rounded-lg bg-white shadow-sm p-6 transition-colors ${theme.border} ${theme.text} ${theme.hover}`}
             >
               <div className="flex items-center gap-3">
                 <Icon className="w-5 h-5" />
-                <h2 className="font-semibold">{tool.title}</h2>
+                <h2 className="text-lg font-semibold">{tool.title}</h2>
               </div>
               <p className="mt-2 text-sm text-gray-600">{tool.description}</p>
             </Link>
