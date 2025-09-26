@@ -3,7 +3,6 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
 
-// ✅ Supabase page must be dynamic
 export const dynamic = "force-dynamic";
 
 export default async function PrimaryFrameworkPage() {
@@ -15,6 +14,7 @@ export default async function PrimaryFrameworkPage() {
       <PageHeader
         title="Primary Framework"
         subtitle="Configure and review the SSC framework."
+        group="SSC Configuration"
         breadcrumbs={
           <Breadcrumbs
             items={[
