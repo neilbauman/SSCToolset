@@ -12,7 +12,7 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
     .order("created_at", { ascending: true });
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as FrameworkVersion[];
 }
 
 export async function createDraftFromCatalogue(
@@ -57,7 +57,7 @@ export async function getVersionItems(
 
   if (error) throw error;
 
-  // 🔑 Normalize Supabase response into FrameworkItem[]
+  // Normalize Supabase response into FrameworkItem[]
   return (data ?? []).map((row: any) => ({
     id: row.id,
     version_id: row.version_id,
