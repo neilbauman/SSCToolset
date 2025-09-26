@@ -15,7 +15,7 @@ export default async function PrimaryFrameworkPage() {
       <PageHeader
         title="Primary Framework"
         subtitle="Configure and review the SSC framework."
-        breadcrumb={
+        breadcrumbs={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
