@@ -1,46 +1,36 @@
-export type UUID = string;
-
-export type PillarCatalogue = {
-  id: UUID;
-  name: string;
-  description: string | null;
-};
-
-export type ThemeCatalogue = {
-  id: UUID;
-  pillar_id: UUID;
-  name: string;
-  description: string | null;
-};
-
-export type SubthemeCatalogue = {
-  id: UUID;
-  theme_id: UUID;
-  name: string;
-  description: string | null;
-};
+// lib/types/framework.ts
 
 export type FrameworkVersion = {
-  id: UUID;
+  id: string;
   name: string;
   status: "draft" | "published";
   created_at: string;
+  updated_at?: string | null;
 };
 
-export type FrameworkVersionItem = {
-  id: UUID;
-  version_id: UUID;
-  pillar_id: UUID | null;
-  theme_id: UUID | null;
-  subtheme_id: UUID | null;
-  ref_code: string;
+export type FrameworkEntity = {
+  id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  icon?: string | null;
+};
+
+export type FrameworkItem = {
+  id: string;
+  version_id: string;
   sort_order: number;
+  pillar_id: string | null;
+  theme_id: string | null;
+  subtheme_id: string | null;
+  pillar?: FrameworkEntity | null;
+  theme?: FrameworkEntity | null;
+  subtheme?: FrameworkEntity | null;
 };
 
-export type VersionTreeNode = {
-  pillar: PillarCatalogue;
-  themes: Array<{
-    theme: ThemeCatalogue;
-    subthemes: SubthemeCatalogue[];
-  }>;
+// Normalized tree structure used by FrameworkEditor
+export type NormalizedFramework = FrameworkEntity & {
+  themes: (FrameworkEntity & {
+    subthemes: FrameworkEntity[];
+  })[];
 };
