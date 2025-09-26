@@ -6,8 +6,8 @@ export default function HomePage() {
     <div>
       <PageHeader
         title="SSC Toolset"
-        subtitle="Global Shelter Cluster – Shelter Severity Classification"
         group="General"
+        description="Global Shelter Cluster – Shelter Severity Classification"
         breadcrumbs={<Breadcrumbs items={[{ label: "Home" }]} />}
       />
       <div className="mt-4 prose">
