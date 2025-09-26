@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 
-type Params = { params: { id: string } };
-
-export async function POST(_req: NextRequest, { params }: Params) {
+export async function POST(_req: NextRequest, context: any) {
   try {
+    const { id } = context.params;
     const { data, error } = await supabaseServer
       .from("framework_versions")
       .update({ status: "published" })
-      .eq("id", params.id)
+      .eq("id", id)
       .select("*")
       .single();
     if (error) throw error;
