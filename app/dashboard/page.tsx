@@ -10,7 +10,7 @@ const groups = [
     id: "about",
     title: "About",
     description: "Information about the SSC Toolset.",
-    href: "/about", // About is standalone
+    href: "/about",
     color: "blue",
     icon: Info,
   },
@@ -18,7 +18,7 @@ const groups = [
     id: "admin",
     title: "Admin",
     description: "User management and permissions (future).",
-    href: "/admin", // Admin is standalone
+    href: "/admin",
     color: "gray",
     icon: Settings,
   },
@@ -26,8 +26,8 @@ const groups = [
     id: "ssc-config",
     title: "SSC Configuration",
     description: "Configure the SSC catalogue, frameworks, and indicators.",
-    href: "/configuration", // ✅ Group hub page
-    color: "red", // GSC primary
+    href: "/configuration",
+    color: "red",
     icon: Layers,
   },
   {
@@ -35,7 +35,7 @@ const groups = [
     title: "Country Configuration",
     description:
       "Manage baseline data: mapping boundaries, population, PCodes, place names.",
-    href: "/country", // ✅ Group hub page (future)
+    href: "/country",
     color: "green",
     icon: Globe,
   },
@@ -44,13 +44,12 @@ const groups = [
     title: "SSC Instances",
     description:
       "Upload and score response datasets with the SSC classification system.",
-    href: "/instances", // ✅ Group hub page (future)
+    href: "/instances",
     color: "orange",
     icon: BarChart,
   },
 ];
 
-// ✅ Explicit Tailwind classes so purge keeps them
 const colorClasses: Record<string, string> = {
   blue: "border-blue-600 text-blue-600 hover:bg-blue-50",
   gray: "border-gray-600 text-gray-600 hover:bg-gray-50",
@@ -64,8 +63,8 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Global Shelter Cluster – Shelter Severity Classification Toolset"
         group="Dashboard"
+        description="Global Shelter Cluster – Shelter Severity Classification Toolset"
         breadcrumbs={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
       />
 
