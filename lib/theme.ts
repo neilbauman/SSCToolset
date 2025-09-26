@@ -10,39 +10,51 @@ export type GroupKey =
 
 export const groupThemes: Record<
   GroupKey,
-  { border: string; text: string; hover: string; groupText: string }
+  {
+    label: string;
+    border: string;
+    text: string;
+    hover: string;
+    groupText: string;
+  }
 > = {
   dashboard: {
+    label: "Dashboard",
     border: "border-[color:var(--gsc-gray)]",
     text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
     groupText: "text-[color:var(--gsc-gray)]",
   },
   about: {
+    label: "About",
     border: "border-[color:var(--gsc-blue)]",
     text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
     groupText: "text-[color:var(--gsc-blue)]",
   },
   admin: {
+    label: "Admin",
     border: "border-[color:var(--gsc-gray)]",
     text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
     groupText: "text-[color:var(--gsc-gray)]",
   },
   "ssc-config": {
+    label: "SSC Configuration",
     border: "border-[color:var(--gsc-blue)]",
     text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
     groupText: "text-[color:var(--gsc-blue)]",
   },
   "country-config": {
+    label: "Country Configuration",
     border: "border-[color:var(--gsc-green)]",
     text: "text-[color:var(--gsc-green)]",
     hover: "hover:bg-green-50",
     groupText: "text-[color:var(--gsc-green)]",
   },
   "ssc-instances": {
+    label: "SSC Instances",
     border: "border-[color:var(--gsc-orange)]",
     text: "text-[color:var(--gsc-orange)]",
     hover: "hover:bg-orange-50",
