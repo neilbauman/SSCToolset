@@ -1,15 +1,15 @@
+// app/api/framework/versions/[id]/publish/route.ts
 import { NextResponse } from "next/server";
 import { publishVersion } from "@/lib/services/framework";
 
-// Next.js 15 route handlers: second arg must be typed properly
+// POST /api/framework/versions/:id/publish
 export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
+  _request: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await context.params; // params is now async in Next 15
-    const result = await publishVersion(id);
-    return NextResponse.json({ data: result });
+    const data = await publishVersion(params.id);
+    return NextResponse.json({ data });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
