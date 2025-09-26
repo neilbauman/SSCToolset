@@ -6,8 +6,8 @@ export default function AboutPage() {
     <div>
       <PageHeader
         title="About"
-        subtitle="About the SSC Toolset"
         group="General"
+        description="Information about the SSC Toolset"
         breadcrumbs={
           <Breadcrumbs
             items={[
