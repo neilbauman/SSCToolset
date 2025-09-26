@@ -7,6 +7,7 @@ export default function AboutPage() {
       <PageHeader
         title="About"
         subtitle="About the SSC Toolset"
+        group="General"
         breadcrumbs={
           <Breadcrumbs
             items={[
