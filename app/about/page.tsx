@@ -5,8 +5,7 @@ export default function AboutPage() {
   return (
     <div>
       <PageHeader
-        title="About"
-        group="General"
+        group="about"  // ✅ use the key, not "General"
         description="Information about the SSC Toolset"
         breadcrumbs={
           <Breadcrumbs
