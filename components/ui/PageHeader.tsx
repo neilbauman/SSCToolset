@@ -2,9 +2,9 @@ import React from "react";
 import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
-  group: GroupKey;        // Group key for theming
-  tool?: string;          // Tool name (e.g. Primary Framework Editor)
-  description?: string;   // Optional description
+  group: GroupKey;
+  tool?: string;
+  description?: string;
   breadcrumbs: React.ReactNode;
 };
 
@@ -25,7 +25,7 @@ export default function PageHeader({
 
       {/* Group + Tool */}
       <div className={`mt-1 text-lg font-semibold ${theme.groupText}`}>
-        {group.replace("-", " ")}
+        {theme.label}
       </div>
       {tool && <div className="text-xl font-medium text-gray-800">{tool}</div>}
 
