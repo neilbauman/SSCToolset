@@ -1,12 +1,12 @@
 import React from "react";
 
 type Props = {
-  title: string; // Page Title (e.g. Dashboard, SSC Config)
-  group: string; // Group name (e.g. SSC Configuration)
-  tool?: string; // Tool name (e.g. Primary Framework Editor)
-  description?: string;
+  title: string;       // Page Title (biggest text, GSC red)
+  group: string;       // Group name (e.g. SSC Configuration)
+  tool?: string;       // Tool name (e.g. Primary Framework Editor)
+  description?: string; // Optional description
   breadcrumbs: React.ReactNode;
-  groupColor?: string; // Tailwind color classes for theming group name
+  groupColor?: string; // Tailwind class for group theming
 };
 
 export default function PageHeader({
@@ -15,14 +15,14 @@ export default function PageHeader({
   tool,
   description,
   breadcrumbs,
-  groupColor = "text-red-600", // default to GSC red
+  groupColor = "text-red-600",
 }: Props) {
   return (
     <div className="mb-6">
-      {/* Title */}
+      {/* Main Title */}
       <h1
         className="text-3xl font-bold"
-        style={{ color: "#630710", fontFamily: "Arial, sans-serif" }} // GSC branding
+        style={{ color: "#630710", fontFamily: "Arial, sans-serif" }}
       >
         {title}
       </h1>
@@ -34,7 +34,7 @@ export default function PageHeader({
       {/* Description */}
       {description && <p className="mt-1 text-gray-600">{description}</p>}
 
-      {/* Breadcrumbs with framing lines */}
+      {/* Breadcrumbs framed */}
       <div className="my-3 border-t border-gray-200" />
       <div>{breadcrumbs}</div>
       <div className="my-3 border-t border-gray-200" />
