@@ -41,8 +41,7 @@ export default function SSCConfigPage() {
   return (
     <div>
       <PageHeader
-        title="SSC Configuration"
-        group="SSC Configuration"
+        group="ssc-config"  // ✅ valid GroupKey
         description="Configure the SSC framework, catalogue, and indicators."
         breadcrumbs={
           <Breadcrumbs
