@@ -10,7 +10,7 @@ const groups = [
     id: "about",
     title: "About",
     description: "Information about the SSC Toolset.",
-    href: "/about",
+    href: "/about", // About is standalone
     color: "blue",
     icon: Info,
   },
@@ -18,16 +18,16 @@ const groups = [
     id: "admin",
     title: "Admin",
     description: "User management and permissions (future).",
-    href: "/admin",
+    href: "/admin", // Admin is standalone
     color: "gray",
     icon: Settings,
   },
   {
     id: "ssc-config",
     title: "SSC Configuration",
-    description: "Configure the SSC catalogue and framework versions.",
-    href: "/configuration/primary",
-    color: "red", // GSC primary red
+    description: "Configure the SSC catalogue, frameworks, and indicators.",
+    href: "/configuration", // ✅ Group hub page
+    color: "red", // GSC primary
     icon: Layers,
   },
   {
@@ -35,7 +35,7 @@ const groups = [
     title: "Country Configuration",
     description:
       "Manage baseline data: mapping boundaries, population, PCodes, place names.",
-    href: "/country",
+    href: "/country", // ✅ Group hub page (future)
     color: "green",
     icon: Globe,
   },
@@ -44,12 +44,13 @@ const groups = [
     title: "SSC Instances",
     description:
       "Upload and score response datasets with the SSC classification system.",
-    href: "/instances",
+    href: "/instances", // ✅ Group hub page (future)
     color: "orange",
     icon: BarChart,
   },
 ];
 
+// ✅ Explicit Tailwind classes so purge keeps them
 const colorClasses: Record<string, string> = {
   blue: "border-blue-600 text-blue-600 hover:bg-blue-50",
   gray: "border-gray-600 text-gray-600 hover:bg-gray-50",
