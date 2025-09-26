@@ -2,15 +2,128 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global defaults */
-html, body {
-  @apply font-sans bg-gray-50 text-gray-900;
+/* ==== GSC Brand Tokens (CSS Variables) ==== */
+:root {
+  /* Primary GSC deep red */
+  --gsc-red: #630710;
+
+  /* Accent palette used in app (kept modest) */
+  --gsc-blue: #1e40af;     /* blue-800-ish */
+  --gsc-green: #2e7d32;    /* green-700-ish */
+  --gsc-orange: #c2410c;   /* orange-700-ish */
+  --gsc-gray-900: #111827; /* slate-900-ish */
+  --gsc-gray-700: #374151; /* slate-700-ish */
+  --gsc-gray-600: #4b5563; /* slate-600-ish */
+  --gsc-gray-200: #e5e7eb; /* slate-200 */
+  --gsc-beige-50: #f5f2ee; /* light neutral paper tone */
+
+  /* Layout */
+  --gsc-max-width: 72rem;  /* matches max-w-6xl */
 }
 
-a {
-  @apply text-brand-700 hover:underline;
+/* ==== Base / Typography ==== */
+@layer base {
+  html, body {
+    @apply antialiased;
+    color: var(--gsc-gray-900);
+    background: theme(colors.gray.50);
+  }
+
+  /* GSC headline color on all H1 by default */
+  h1 {
+    color: var(--gsc-red);
+  }
+
+  /* sensible defaults */
+  h1 { @apply text-3xl font-bold; }
+  h2 { @apply text-2xl font-semibold; }
+  h3 { @apply text-xl font-semibold; }
+
+  a {
+    @apply underline-offset-4;
+    color: theme(colors.red.700);
+  }
+  a:hover {
+    color: theme(colors.red.800);
+    text-decoration: underline;
+  }
+
+  /* tables, code blocks, prose basics */
+  table { @apply w-full border-collapse; }
+  th, td { @apply border border-gray-200 p-2 text-sm; }
+  code, pre { @apply text-sm; }
 }
 
-h1, h2, h3, h4 {
-  @apply font-sans;
+/* ==== Components Layer (utility composition) ==== */
+@layer components {
+  /* Page container to keep content readable */
+  .gsc-container {
+    max-width: var(--gsc-max-width);
+    @apply mx-auto px-6;
+  }
+
+  /* PageHeader bits */
+  .gsc-page-title {
+    /* Prefer using this instead of inline style in components */
+    color: var(--gsc-red);
+    @apply text-3xl font-bold;
+  }
+
+  /* Subtle divider used above/below breadcrumbs */
+  .gsc-divider {
+    @apply my-3 border-t border-gray-200;
+  }
+
+  /* Breadcrumbs */
+  .gsc-breadcrumbs {
+    @apply text-sm text-gray-600;
+  }
+  .gsc-breadcrumbs a {
+    @apply hover:underline;
+  }
+  .gsc-breadcrumbs-current {
+    @apply font-semibold text-gray-900;
+  }
+
+  /* Card look used across dashboard + SSC pages */
+  .gsc-card {
+    @apply rounded-lg bg-white shadow-sm border;
+  }
+  .gsc-card-hover {
+    @apply transition-colors;
+  }
+
+  /* Buttons (plain elements styled with classes;
+     kept for occasional use without bespoke components) */
+  .gsc-btn {
+    @apply inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors;
+  }
+  .gsc-btn-primary {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+  .gsc-btn-outline {
+    @apply border border-gray-300 text-gray-700 hover:bg-gray-100;
+  }
+}
+
+/* ==== Optional “theme accent” helpers for group identity =====
+   Use in addition to Tailwind classes when you want consistent accents
+   without repeating lots of utility classes. */
+@layer utilities {
+  .theme-red      { --accent: theme(colors.red.600); }
+  .theme-blue     { --accent: theme(colors.blue.600); }
+  .theme-green    { --accent: theme(colors.green.600); }
+  .theme-gray     { --accent: theme(colors.gray.600); }
+  .theme-orange   { --accent: theme(colors.orange.500); }
+
+  .accent-text    { color: var(--accent); }
+  .accent-border  { border-color: var(--accent); }
+  .accent-hover   { background-color: color-mix(in srgb, var(--accent) 10%, white); }
+}
+
+/* ==== Print niceties (export/share PDFs later) ==== */
+@media print {
+  .no-print { display: none !important; }
+  .gsc-card { box-shadow: none !important; }
+  a { text-decoration: none; color: var(--gsc-gray-900); }
 }
