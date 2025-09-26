@@ -56,7 +56,19 @@ export async function getVersionItems(
     .order("sort_order", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as FrameworkItem[];
+
+  // 🔑 Normalize Supabase response into FrameworkItem[]
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    version_id: row.version_id,
+    sort_order: row.sort_order,
+    pillar_id: row.pillar_id,
+    theme_id: row.theme_id,
+    subtheme_id: row.subtheme_id,
+    pillar: Array.isArray(row.pillar) ? row.pillar[0] ?? null : row.pillar,
+    theme: Array.isArray(row.theme) ? row.theme[0] ?? null : row.theme,
+    subtheme: Array.isArray(row.subtheme) ? row.subtheme[0] ?? null : row.subtheme,
+  })) as FrameworkItem[];
 }
 
 export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[] {
