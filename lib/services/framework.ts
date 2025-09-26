@@ -1,5 +1,8 @@
 import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
 
+/**
+ * Fetch a version tree with pillars, themes, subthemes, names & descriptions
+ */
 export async function getVersionTree(versionId: string) {
   const { data, error } = await supabaseBrowser
     .from("framework_version_items")
@@ -31,7 +34,6 @@ export async function getVersionTree(versionId: string) {
     throw error;
   }
 
-  // Normalize into flat JSON with names/descriptions
   return (data || []).map((item: any) => ({
     id: item.id,
     version_id: item.version_id,
@@ -46,4 +48,56 @@ export async function getVersionTree(versionId: string) {
     subtheme_name: item.subtheme?.name || null,
     subtheme_description: item.subtheme?.description || null,
   }));
+}
+
+/**
+ * List framework versions
+ */
+export async function listVersions() {
+  const { data, error } = await supabaseBrowser
+    .from("framework_versions")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error listing versions:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Publish a framework version
+ */
+export async function publishVersion(versionId: string) {
+  const { error } = await supabaseBrowser
+    .from("framework_versions")
+    .update({ status: "published" })
+    .eq("id", versionId);
+
+  if (error) {
+    console.error("Error publishing version:", error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+/**
+ * Create a draft version from the catalogue
+ */
+export async function createDraftFromCatalogue() {
+  const { data, error } = await supabaseBrowser
+    .from("framework_versions")
+    .insert([{ status: "draft" }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating draft:", error);
+    throw error;
+  }
+
+  return data;
 }
