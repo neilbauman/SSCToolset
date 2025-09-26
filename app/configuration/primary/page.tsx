@@ -2,17 +2,19 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FrameworkEditor from "@/components/framework/FrameworkEditor";
 import { listVersions } from "@/lib/services/framework";
+import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
 export default async function PrimaryFrameworkPage() {
   const versions = await listVersions();
   const selected = versions?.[0] ?? null;
+  const theme = groupThemes["ssc-config"];
 
   return (
     <div>
       <PageHeader
-        group="ssc-config"  // ✅ lowercase GroupKey
+        group="ssc-config"
         tool="Primary Framework Editor"
         description="Manage framework versions created from the SSC catalogue."
         breadcrumbs={
@@ -28,10 +30,14 @@ export default async function PrimaryFrameworkPage() {
 
       {/* Action buttons */}
       <div className="mt-4 flex justify-end gap-2">
-        <button className="px-4 py-2 rounded border border-red-600 text-red-600 hover:bg-red-50 text-sm">
+        <button
+          className={`px-4 py-2 rounded border text-sm ${theme.border} ${theme.text} ${theme.hover}`}
+        >
           Duplicate from Catalogue
         </button>
-        <button className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm">
+        <button
+          className={`px-4 py-2 rounded text-sm text-white ${theme.text} ${theme.hover} bg-[color:var(--gsc-blue)] hover:bg-blue-900`}
+        >
           Publish
         </button>
       </div>
@@ -39,7 +45,7 @@ export default async function PrimaryFrameworkPage() {
       {/* Editor */}
       <div className="mt-6">
         {selected ? (
-          <div className="rounded-lg border border-red-600 bg-white shadow-sm p-4">
+          <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
             <FrameworkEditor versionId={selected.id} />
           </div>
         ) : (
