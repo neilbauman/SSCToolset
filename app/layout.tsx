@@ -1,19 +1,28 @@
 import "./globals.css";
-import type { ReactNode } from "react";
 import Sidebar from "@/components/ui/Sidebar";
+import type { Metadata } from "next";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "SSC Toolset",
-  description: "Global Shelter Cluster SSC Toolset",
+  description: "Global Shelter Cluster – Shelter Severity Classification Toolset",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased bg-gray-50 text-gray-900 font-sans">
+      <body className="bg-gray-50 text-gray-900">
         <div className="flex min-h-screen">
+          {/* Sidebar */}
           <Sidebar />
-          <main className="flex-1 p-8">{children}</main>
+
+          {/* Main Content */}
+          <main className="flex-1">
+            <div className="max-w-6xl mx-auto px-6 py-6">{children}</div>
+          </main>
         </div>
       </body>
     </html>
