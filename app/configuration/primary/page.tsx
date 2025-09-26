@@ -12,10 +12,9 @@ export default async function PrimaryFrameworkPage() {
   return (
     <div>
       <PageHeader
-        title="Primary Framework Editor"
-        group="SSC Configuration"
-        description="Manage framework versions created from the SSC catalogue."
+        group="ssc-config"  // ✅ lowercase GroupKey
         tool="Primary Framework Editor"
+        description="Manage framework versions created from the SSC catalogue."
         breadcrumbs={
           <Breadcrumbs
             items={[
