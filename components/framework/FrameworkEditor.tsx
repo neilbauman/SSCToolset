@@ -13,6 +13,7 @@ type Version = {
 export default function FrameworkEditor() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [newDraftName, setNewDraftName] = useState("Primary Framework v1");
+  const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
 
   useEffect(() => {
     loadVersions();
@@ -91,6 +92,9 @@ export default function FrameworkEditor() {
       console.error("Error deleting version:", error);
     } else {
       loadVersions();
+      if (selectedVersion?.id === id) {
+        setSelectedVersion(null);
+      }
     }
   }
 
@@ -134,8 +138,13 @@ export default function FrameworkEditor() {
         <tbody className="divide-y divide-gray-200 bg-white">
           {versions.map((v) => (
             <tr key={v.id}>
-              <td className="px-4 py-2 text-sm text-brand-700 hover:underline cursor-pointer">
-                {v.name}
+              <td className="px-4 py-2 text-sm">
+                <button
+                  onClick={() => setSelectedVersion(v)}
+                  className="text-brand-700 hover:underline"
+                >
+                  {v.name}
+                </button>
               </td>
               <td className="px-4 py-2">
                 <span
@@ -177,6 +186,18 @@ export default function FrameworkEditor() {
           ))}
         </tbody>
       </table>
+
+      {/* Version Structure Placeholder */}
+      {selectedVersion && (
+        <div className="mt-8 border rounded-lg bg-white p-4">
+          <h3 className="text-lg font-semibold mb-4">
+            Version Structure: {selectedVersion.name}
+          </h3>
+          <p className="text-sm text-gray-600">
+            (Placeholder) Pillars → Themes → Subthemes will render here.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
