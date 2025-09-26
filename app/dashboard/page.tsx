@@ -2,6 +2,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Link from "next/link";
 import { Info, Settings, Layers, Globe, BarChart } from "lucide-react";
+import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,6 @@ const groups = [
     title: "About",
     description: "Information about the SSC Toolset.",
     href: "/about",
-    color: "blue",
     icon: Info,
   },
   {
@@ -19,7 +19,6 @@ const groups = [
     title: "Admin",
     description: "User management and permissions (future).",
     href: "/admin",
-    color: "gray",
     icon: Settings,
   },
   {
@@ -27,7 +26,6 @@ const groups = [
     title: "SSC Configuration",
     description: "Configure the SSC catalogue, frameworks, and indicators.",
     href: "/configuration",
-    color: "red",
     icon: Layers,
   },
   {
@@ -36,7 +34,6 @@ const groups = [
     description:
       "Manage baseline data: mapping boundaries, population, PCodes, place names.",
     href: "/country",
-    color: "green",
     icon: Globe,
   },
   {
@@ -45,18 +42,9 @@ const groups = [
     description:
       "Upload and score response datasets with the SSC classification system.",
     href: "/instances",
-    color: "orange",
     icon: BarChart,
   },
 ];
-
-const colorClasses: Record<string, string> = {
-  blue: "border-blue-600 text-blue-600 hover:bg-blue-50",
-  gray: "border-gray-600 text-gray-600 hover:bg-gray-50",
-  red: "border-red-600 text-red-600 hover:bg-red-50",
-  green: "border-green-600 text-green-600 hover:bg-green-50",
-  orange: "border-orange-500 text-orange-500 hover:bg-orange-50",
-};
 
 export default function DashboardPage() {
   return (
@@ -71,12 +59,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
         {groups.map((g) => {
           const Icon = g.icon;
-          const theme = colorClasses[g.color];
+          const theme = groupThemes[g.id as keyof typeof groupThemes];
           return (
             <Link
               key={g.id}
               href={g.href}
-              className={`rounded-lg border shadow-sm p-6 transition-colors bg-white ${theme}`}
+              className={`gsc-card p-6 gsc-card-hover bg-white ${theme.border} ${theme.text} ${theme.hover}`}
             >
               <div className="flex items-center gap-3">
                 <Icon className="w-6 h-6" />
