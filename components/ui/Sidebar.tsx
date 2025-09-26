@@ -18,7 +18,7 @@ export default function Sidebar() {
             <div className="px-2 text-xs uppercase tracking-wide text-gray-500 mb-2">
               {group.label}
             </div>
-            <ul className="space-y-1">
+            <ul className="space-y-1 list-none">
               {group.items.map((item) => {
                 const active = pathname === item.href;
                 return (
