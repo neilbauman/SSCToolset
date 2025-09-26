@@ -19,16 +19,13 @@ export default function PageHeader({
   return (
     <div className="mb-6">
       {/* App Title */}
-      <h1
-        className="text-3xl font-bold"
-        style={{ color: "#630710", fontFamily: "Arial, sans-serif" }}
-      >
+      <h1 className="gsc-page-title">
         Shelter and Settlements Severity Classification Toolset
       </h1>
 
       {/* Group + Tool */}
       <div className={`mt-1 text-lg font-semibold ${theme.groupText}`}>
-        {groupThemes[group] ? group.replace("-", " ") : group}
+        {group.replace("-", " ")}
       </div>
       {tool && <div className="text-xl font-medium text-gray-800">{tool}</div>}
 
