@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { supabaseBrowser } from "../../lib/supabaseBrowser"; // ✅ fixed import
 import {
   ChevronDown,
   ChevronRight,
@@ -50,7 +50,7 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const renderRows = (parentId: string | null, level: number) => {
+  const renderRows = (level: number) => {
     return items
       .filter((item) => {
         if (level === 0) return item.pillar_id && !item.theme_id && !item.subtheme_id;
@@ -81,7 +81,10 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
 
         return (
           <div key={id} className="border-b">
-            <div className="flex items-center px-4 py-2">
+            <div
+              className={`flex items-center px-4 py-2`}
+              style={{ paddingLeft: `${level * 1.5}rem` }} // ✅ indent per level
+            >
               <button onClick={() => toggleExpand(id)} className="mr-2">
                 {level < 2 && (
                   isExpanded ? (
@@ -112,11 +115,7 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
               </div>
             </div>
 
-            {isExpanded && (
-              <div className="ml-6">
-                {renderRows(id, level + 1)}
-              </div>
-            )}
+            {isExpanded && <div>{renderRows(level + 1)}</div>}
           </div>
         );
       });
@@ -153,7 +152,7 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
         <div>Actions</div>
       </div>
 
-      <div>{renderRows(null, 0)}</div>
+      <div>{renderRows(0)}</div>
     </div>
   );
 }
