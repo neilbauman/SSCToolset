@@ -1,4 +1,12 @@
-import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
+
+// Utility: generate ref code from sort order & type
+function generateRefCode(sortOrder: number, type: string): string {
+  if (type === "pillar") return `P${sortOrder}`;
+  if (type === "theme") return `T${sortOrder}`;
+  if (type === "subtheme") return `ST${sortOrder}`;
+  return `X${sortOrder}`;
+}
 
 export async function getVersionTree(versionId: string) {
   const { data, error } = await supabaseBrowser
@@ -8,60 +16,41 @@ export async function getVersionTree(versionId: string) {
       version_id,
       sort_order,
       pillar_id,
+      pillar_name:pillar_catalogue(name, description),
       theme_id,
+      theme_name:theme_catalogue(name, description),
       subtheme_id,
-      pillar:pillar_id (name, description),
-      theme:theme_id (name, description),
-      subtheme:subtheme_id (name, description)
+      subtheme_name:subtheme_catalogue(name, description)
     `)
     .eq("version_id", versionId)
     .order("sort_order", { ascending: true });
 
   if (error) throw error;
 
-  return (data || []).map((item: any) => ({
-    id: item.id,
-    version_id: item.version_id,
-    sort_order: item.sort_order,
-    pillar_id: item.pillar_id,
-    pillar_name: item.pillar?.name || null,
-    pillar_description: item.pillar?.description || null,
-    theme_id: item.theme_id,
-    theme_name: item.theme?.name || null,
-    theme_description: item.theme?.description || null,
-    subtheme_id: item.subtheme_id,
-    subtheme_name: item.subtheme?.name || null,
-    subtheme_description: item.subtheme?.description || null,
-  }));
-}
+  return (data || []).map((row: any) => {
+    let type = "pillar";
+    let name = row.pillar_name?.[0]?.name || "Untitled";
+    let description = row.pillar_name?.[0]?.description || "";
 
-export async function listVersions() {
-  const { data, error } = await supabaseBrowser
-    .from("framework_versions")
-    .select("*")
-    .order("created_at", { ascending: false });
+    if (row.theme_id) {
+      type = "theme";
+      name = row.theme_name?.[0]?.name || "Untitled";
+      description = row.theme_name?.[0]?.description || "";
+    }
+    if (row.subtheme_id) {
+      type = "subtheme";
+      name = row.subtheme_name?.[0]?.name || "Untitled";
+      description = row.subtheme_name?.[0]?.description || "";
+    }
 
-  if (error) throw error;
-  return data || [];
-}
-
-export async function publishVersion(versionId: string) {
-  const { error } = await supabaseBrowser
-    .from("framework_versions")
-    .update({ status: "published" })
-    .eq("id", versionId);
-
-  if (error) throw error;
-  return { success: true };
-}
-
-export async function createDraftFromCatalogue(name: string) {
-  const { data, error } = await supabaseBrowser
-    .from("framework_versions")
-    .insert([{ status: "draft", name }])
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+    return {
+      id: row.id,
+      version_id: row.version_id,
+      sort_order: row.sort_order,
+      ref_code: generateRefCode(row.sort_order, type),
+      type,
+      name,
+      description,
+    };
+  });
 }
