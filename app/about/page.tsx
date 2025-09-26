@@ -6,13 +6,21 @@ export default function AboutPage() {
     <div>
       <PageHeader
         title="About"
-        group="General"
-        subtitle="Global Shelter Cluster SSC App"
-        breadcrumbs={<Breadcrumbs items={[{ label: "About" }]} />}
+        subtitle="About the SSC Toolset"
+        breadcrumb={
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "About" },
+            ]}
+          />
+        }
       />
-      <div className="rounded-lg border bg-white p-4">
-        <p className="text-sm text-gray-700">
-          This app is a modular, scalable toolset for SSC: catalogues → versions → standards → instances.
+      <div className="mt-4 prose">
+        <p>
+          The SSC Toolset implements the Global Shelter Cluster’s Shelter Severity
+          Classification (SSC) framework for cataloguing pillars, themes, and
+          subthemes with clear version control.
         </p>
       </div>
     </div>
