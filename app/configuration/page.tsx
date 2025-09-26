@@ -2,6 +2,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Link from "next/link";
 import { Layers, BookOpen, Settings, Library } from "lucide-react";
+import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,12 @@ const tools = [
 ];
 
 export default function SSCConfigPage() {
+  const theme = groupThemes["ssc-config"];
+
   return (
     <div>
       <PageHeader
-        group="ssc-config"  // ✅ valid GroupKey
+        group="ssc-config"
         description="Configure the SSC framework, catalogue, and indicators."
         breadcrumbs={
           <Breadcrumbs
@@ -60,7 +63,7 @@ export default function SSCConfigPage() {
             <Link
               key={tool.id}
               href={tool.href}
-              className="rounded-lg border border-red-600 bg-white shadow-sm p-4 transition-colors hover:bg-red-50 text-red-600"
+              className={`rounded-lg bg-white shadow-sm p-4 transition-colors ${theme.border} ${theme.text} ${theme.hover}`}
             >
               <div className="flex items-center gap-3">
                 <Icon className="w-5 h-5" />
