@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { publishVersion } from "@/lib/services/framework";
 
-export async function POST(request: Request, context: any) {
+export async function POST(request: Request, context: { params: { id: string } }) {
   try {
-    const id = context.params.id as string;
-    await publishVersion(id);
-    return NextResponse.json({ ok: true });
+    const id = context.params.id;
+    const result = await publishVersion(id);
+    return NextResponse.json({ data: result });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
