@@ -11,7 +11,7 @@ const groups = [
     title: "About",
     description: "Information about the SSC Toolset.",
     href: "/about",
-    color: "bg-blue-600 hover:bg-blue-700",
+    color: "blue-600",
     icon: Info,
   },
   {
@@ -19,7 +19,7 @@ const groups = [
     title: "Admin",
     description: "User management and permissions (future).",
     href: "/admin",
-    color: "bg-gray-700 hover:bg-gray-800",
+    color: "gray-700",
     icon: Settings,
   },
   {
@@ -27,7 +27,7 @@ const groups = [
     title: "SSC Configuration",
     description: "Configure the SSC catalogue and framework versions.",
     href: "/configuration/primary",
-    color: "bg-red-600 hover:bg-red-700", // GSC primary red
+    color: "red-600", // GSC primary red
     icon: Layers,
   },
   {
@@ -36,7 +36,7 @@ const groups = [
     description:
       "Manage baseline data: mapping boundaries, population, PCodes, place names.",
     href: "/country",
-    color: "bg-green-600 hover:bg-green-700",
+    color: "green-600",
     icon: Globe,
   },
   {
@@ -45,7 +45,7 @@ const groups = [
     description:
       "Upload and score response datasets with the SSC classification system.",
     href: "/instances",
-    color: "bg-orange-500 hover:bg-orange-600",
+    color: "orange-500",
     icon: BarChart,
   },
 ];
@@ -67,13 +67,19 @@ export default function DashboardPage() {
             <Link
               key={g.id}
               href={g.href}
-              className={`rounded-lg shadow-md p-6 text-white transition-colors ${g.color}`}
+              className={`
+                rounded-lg border shadow-sm p-6 transition-colors
+                border-${g.color} text-${g.color}
+                hover:bg-${g.color}/10
+              `}
             >
               <div className="flex items-center gap-3">
-                <Icon className="w-6 h-6" />
-                <h2 className="text-lg font-semibold">{g.title}</h2>
+                <Icon className={`w-6 h-6 text-${g.color}`} />
+                <h2 className={`text-lg font-semibold text-${g.color}`}>
+                  {g.title}
+                </h2>
               </div>
-              <p className="mt-2 text-sm opacity-90">{g.description}</p>
+              <p className="mt-2 text-sm text-gray-600">{g.description}</p>
             </Link>
           );
         })}
