@@ -1,17 +1,20 @@
+// lib/types/framework.ts
+
 export type FrameworkVersion = {
   id: string;
   name: string;
   status: "draft" | "published";
   created_at: string;
-  updated_at?: string | null;
+  updated_at?: string;
+  created_by?: string;
 };
 
 export type FrameworkEntity = {
   id: string;
   name: string;
-  description?: string | null;
-  color?: string | null;
-  icon?: string | null;
+  description: string;
+  color: string | null;
+  icon: string | null;
 };
 
 export type FrameworkItem = {
@@ -21,14 +24,29 @@ export type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  pillar?: FrameworkEntity | null;
-  theme?: FrameworkEntity | null;
-  subtheme?: FrameworkEntity | null;
+  pillar: FrameworkEntity | null;
+  theme: FrameworkEntity | null;
+  subtheme: FrameworkEntity | null;
 };
 
-// ✅ Used by FrameworkEditor
-export type NormalizedFramework = FrameworkEntity & {
-  themes: (FrameworkEntity & {
-    subthemes: FrameworkEntity[];
-  })[];
+export type NormalizedFramework = {
+  id: string;
+  name: string;
+  description: string;
+  color: string | null;
+  icon: string | null;
+  themes: {
+    id: string;
+    name: string;
+    description: string;
+    color: string | null;
+    icon: string | null;
+    subthemes: {
+      id: string;
+      name: string;
+      description: string;
+      color: string | null;
+      icon: string | null;
+    }[];
+  }[];
 };
