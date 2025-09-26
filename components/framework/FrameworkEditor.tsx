@@ -2,13 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser } from "@/lib/services/supabaseBrowser";
-import {
-  ChevronDown,
-  ChevronRight,
-  Pencil,
-  Trash,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Trash, X } from "lucide-react";
 
 type Version = {
   id: string;
@@ -17,37 +11,24 @@ type Version = {
   created_at: string;
 };
 
-type Pillar = {
+type FrameworkItem = {
   id: string;
-  name: string;
-  description: string | null;
+  version_id: string;
+  type: "pillar" | "theme" | "subtheme";
   sort_order: number;
-};
-
-type Theme = {
-  id: string;
-  pillar_id: string;
-  name: string;
-  description: string | null;
-  sort_order: number;
-};
-
-type Subtheme = {
-  id: string;
-  theme_id: string;
-  name: string;
-  description: string | null;
-  sort_order: number;
+  pillar_id: string | null;
+  theme_id: string | null;
+  subtheme_id: string | null;
+  pillar?: { name: string; description: string | null };
+  theme?: { name: string; description: string | null; pillar_id: string };
+  subtheme?: { name: string; description: string | null; theme_id: string };
 };
 
 export default function FrameworkEditor() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [newDraftName, setNewDraftName] = useState("Primary Framework v1");
   const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
-
-  const [pillars, setPillars] = useState<Pillar[]>([]);
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const [subthemes, setSubthemes] = useState<Subtheme[]>([]);
+  const [items, setItems] = useState<FrameworkItem[]>([]);
 
   const [expandedPillars, setExpandedPillars] = useState<string[]>([]);
   const [expandedThemes, setExpandedThemes] = useState<string[]>([]);
@@ -63,11 +44,8 @@ export default function FrameworkEditor() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error loading versions:", error);
-    } else {
-      setVersions(data as Version[]);
-    }
+    if (error) console.error("Error loading versions:", error);
+    else setVersions(data as Version[]);
   }
 
   async function createDraft() {
@@ -125,58 +103,48 @@ export default function FrameworkEditor() {
     }
   }
 
-  async function loadStructure() {
-    const { data: pillarData } = await supabaseBrowser
-      .from("pillar_catalogue")
-      .select("*")
-      .order("sort_order");
+  async function loadStructure(versionId: string) {
+    const { data, error } = await supabaseBrowser
+      .from("framework_version_items")
+      .select(
+        `
+        id, version_id, sort_order,
+        pillar_id, theme_id, subtheme_id,
+        pillar:pillar_id (name, description),
+        theme:theme_id (name, description, pillar_id),
+        subtheme:subtheme_id (name, description, theme_id)
+      `
+      )
+      .eq("version_id", versionId)
+      .order("sort_order", { ascending: true });
 
-    const { data: themeData } = await supabaseBrowser
-      .from("theme_catalogue")
-      .select("*")
-      .order("sort_order");
-
-    const { data: subthemeData } = await supabaseBrowser
-      .from("subtheme_catalogue")
-      .select("*")
-      .order("sort_order");
-
-    setPillars((pillarData as Pillar[]) || []);
-    setThemes((themeData as Theme[]) || []);
-    setSubthemes((subthemeData as Subtheme[]) || []);
+    if (error) {
+      console.error("Error loading structure:", error);
+    } else {
+      setItems(data as FrameworkItem[]);
+    }
   }
 
-  async function updateSortOrder(
-    type: "pillar" | "theme" | "subtheme",
-    id: string,
-    value: number
-  ) {
-    const table =
-      type === "pillar"
-        ? "pillar_catalogue"
-        : type === "theme"
-        ? "theme_catalogue"
-        : "subtheme_catalogue";
-
+  async function updateSortOrder(id: string, newValue: number) {
     const { error } = await supabaseBrowser
-      .from(table)
-      .update({ sort_order: value })
+      .from("framework_version_items")
+      .update({ sort_order: newValue })
       .eq("id", id);
 
     if (error) console.error("Error updating sort order:", error);
-    else loadStructure();
+    else if (selectedVersion) loadStructure(selectedVersion.id);
   }
 
-  function formatRefCode(
-    type: "pillar" | "theme" | "subtheme",
-    pillarSort: number,
-    themeSort?: number,
-    subthemeSort?: number
-  ) {
-    if (type === "pillar") return `P${pillarSort}`;
-    if (type === "theme") return `T${pillarSort}.${themeSort}`;
-    if (type === "subtheme") return `ST${pillarSort}.${themeSort}.${subthemeSort}`;
-    return "";
+  function expandAll() {
+    const pIds = items.filter((i) => i.pillar_id).map((i) => i.id);
+    const tIds = items.filter((i) => i.theme_id).map((i) => i.id);
+    setExpandedPillars(pIds);
+    setExpandedThemes(tIds);
+  }
+
+  function collapseAll() {
+    setExpandedPillars([]);
+    setExpandedThemes([]);
   }
 
   function togglePillar(id: string) {
@@ -191,19 +159,26 @@ export default function FrameworkEditor() {
     );
   }
 
-  function expandAll() {
-    setExpandedPillars(pillars.map((p) => p.id));
-    setExpandedThemes(themes.map((t) => t.id));
+  function formatRefCode(
+    type: "pillar" | "theme" | "subtheme",
+    pSort: number,
+    tSort?: number,
+    sSort?: number
+  ) {
+    if (type === "pillar") return `P${pSort}`;
+    if (type === "theme") return `T${pSort}.${tSort}`;
+    if (type === "subtheme") return `ST${pSort}.${tSort}.${sSort}`;
+    return "";
   }
 
-  function collapseAll() {
-    setExpandedPillars([]);
-    setExpandedThemes([]);
-  }
+  // --- Build hierarchy -----------------------------------------------------
+  const pillars = items.filter((i) => i.pillar_id && !i.theme_id && !i.subtheme_id);
+  const themes = items.filter((i) => i.theme_id && !i.subtheme_id);
+  const subthemes = items.filter((i) => i.subtheme_id);
 
   return (
     <div className="space-y-6">
-      {/* New Draft Form */}
+      {/* Create Draft */}
       <div className="flex items-center gap-4">
         <input
           type="text"
@@ -224,18 +199,10 @@ export default function FrameworkEditor() {
       <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-              Name
-            </th>
-            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-              Status
-            </th>
-            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-              Created
-            </th>
-            <th className="px-4 py-2 text-right text-sm font-semibold text-gray-700">
-              Actions
-            </th>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Name</th>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Status</th>
+            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Created</th>
+            <th className="px-4 py-2 text-right text-sm font-semibold text-gray-700">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 bg-white">
@@ -245,7 +212,7 @@ export default function FrameworkEditor() {
                 <button
                   onClick={() => {
                     setSelectedVersion(v);
-                    loadStructure();
+                    loadStructure(v.id);
                   }}
                   className="text-[#003764] hover:underline"
                 >
@@ -293,7 +260,7 @@ export default function FrameworkEditor() {
         </tbody>
       </table>
 
-      {/* Version Structure Table */}
+      {/* Version Structure */}
       {selectedVersion && (
         <div className="mt-8 border rounded-lg bg-white p-4">
           <div className="flex items-center justify-between mb-4">
@@ -348,40 +315,137 @@ export default function FrameworkEditor() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {pillars.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-2 text-sm font-medium text-[#003764]">
-                    {formatRefCode("pillar", p.sort_order)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="font-medium text-gray-900">{p.name}</div>
-                    {p.description && (
-                      <div className="text-sm text-gray-600">{p.description}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        defaultValue={p.sort_order}
-                        onBlur={(e) =>
-                          updateSortOrder("pillar", p.id, Number(e.target.value))
-                        }
-                        className="w-16 rounded border px-2 py-1 text-sm"
-                      />
-                    ) : (
-                      <span>{p.sort_order}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {editMode && (
-                      <button className="text-red-600 hover:text-red-800">
-                        <Trash className="w-4 h-4 inline" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {pillars.map((p) => {
+                const tChildren = themes.filter((t) => t.theme?.pillar_id === p.pillar_id);
+                const isPExpanded = expandedPillars.includes(p.id);
+                const pRef = formatRefCode("pillar", p.sort_order);
+
+                return (
+                  <>
+                    <tr key={p.id}>
+                      <td className="px-4 py-2 text-sm font-medium text-[#003764]">
+                        <button onClick={() => togglePillar(p.id)} className="mr-2">
+                          {isPExpanded ? (
+                            <ChevronDown className="w-4 h-4 inline" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 inline" />
+                          )}
+                        </button>
+                        {pRef}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-gray-900">{p.pillar?.name}</div>
+                        {p.pillar?.description && (
+                          <div className="text-sm text-gray-600">{p.pillar.description}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        {editMode ? (
+                          <input
+                            type="number"
+                            defaultValue={p.sort_order}
+                            onBlur={(e) => updateSortOrder(p.id, Number(e.target.value))}
+                            className="w-16 rounded border px-2 py-1 text-sm"
+                          />
+                        ) : (
+                          <span>{p.sort_order}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {editMode && (
+                          <button className="text-red-600 hover:text-red-800">
+                            <Trash className="w-4 h-4 inline" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+
+                    {isPExpanded &&
+                      tChildren.map((t) => {
+                        const sChildren = subthemes.filter((s) => s.subtheme?.theme_id === t.theme_id);
+                        const isTExpanded = expandedThemes.includes(t.id);
+                        const tRef = formatRefCode("theme", p.sort_order, t.sort_order);
+
+                        return (
+                          <>
+                            <tr key={t.id}>
+                              <td className="px-4 py-2 text-sm pl-8 text-[#003764]">
+                                <button onClick={() => toggleTheme(t.id)} className="mr-2">
+                                  {isTExpanded ? (
+                                    <ChevronDown className="w-4 h-4 inline" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 inline" />
+                                  )}
+                                </button>
+                                {tRef}
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="font-medium text-gray-900">{t.theme?.name}</div>
+                                {t.theme?.description && (
+                                  <div className="text-sm text-gray-600">{t.theme.description}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-2">
+                                {editMode ? (
+                                  <input
+                                    type="number"
+                                    defaultValue={t.sort_order}
+                                    onBlur={(e) => updateSortOrder(t.id, Number(e.target.value))}
+                                    className="w-16 rounded border px-2 py-1 text-sm"
+                                  />
+                                ) : (
+                                  <span>{t.sort_order}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {editMode && (
+                                  <button className="text-red-600 hover:text-red-800">
+                                    <Trash className="w-4 h-4 inline" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+
+                            {isTExpanded &&
+                              sChildren.map((s) => {
+                                const sRef = formatRefCode("subtheme", p.sort_order, t.sort_order, s.sort_order);
+                                return (
+                                  <tr key={s.id}>
+                                    <td className="px-4 py-2 text-sm pl-14 text-[#003764]">{sRef}</td>
+                                    <td className="px-4 py-2">
+                                      <div className="font-medium text-gray-900">{s.subtheme?.name}</div>
+                                      {s.subtheme?.description && (
+                                        <div className="text-sm text-gray-600">{s.subtheme.description}</div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      {editMode ? (
+                                        <input
+                                          type="number"
+                                          defaultValue={s.sort_order}
+                                          onBlur={(e) => updateSortOrder(s.id, Number(e.target.value))}
+                                          className="w-16 rounded border px-2 py-1 text-sm"
+                                        />
+                                      ) : (
+                                        <span>{s.sort_order}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2 text-right">
+                                      {editMode && (
+                                        <button className="text-red-600 hover:text-red-800">
+                                          <Trash className="w-4 h-4 inline" />
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </>
+                        );
+                      })}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
