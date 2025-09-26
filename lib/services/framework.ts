@@ -5,6 +5,7 @@ import type {
   NormalizedFramework,
 } from "@/lib/types/framework";
 
+/** ---------------- Versions ---------------- */
 export async function listVersions(): Promise<FrameworkVersion[]> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
@@ -34,31 +35,59 @@ export async function createDraftFromCatalogue(
   return data as FrameworkVersion;
 }
 
-export async function getVersionItems(
-  versionId: string
-): Promise<FrameworkItem[]> {
-  const { data, error } = await supabaseServer
-    .from("framework_items")
-    .select(
-      `
-      id,
-      version_id,
-      sort_order,
-      pillar_id,
-      theme_id,
-      subtheme_id,
-      pillar:pillar_id ( id, name, description, color, icon ),
-      theme:theme_id ( id, name, description, color, icon ),
-      subtheme:subtheme_id ( id, name, description, color, icon )
-    `
-    )
-    .eq("version_id", versionId)
-    .order("sort_order", { ascending: true });
+/** ---------------- Items / Tree ---------------- */
 
-  if (error) throw error;
+const SELECT_FRAGMENT = `
+  id,
+  version_id,
+  sort_order,
+  pillar_id,
+  theme_id,
+  subtheme_id,
+  pillar:pillar_id ( id, name, description, color, icon ),
+  theme:theme_id ( id, name, description, color, icon ),
+  subtheme:subtheme_id ( id, name, description, color, icon )
+`;
 
-  // Normalize Supabase response into FrameworkItem[]
-  return (data ?? []).map((row: any) => ({
+/**
+ * Prefer the canonical table name `framework_version_items`.
+ * Fall back to the legacy name `framework_items` if the canonical one doesn't exist.
+ */
+export async function getVersionItems(versionId: string): Promise<FrameworkItem[]> {
+  // helper to run a query against a given table
+  async function query(table: string) {
+    const { data, error } = await supabaseServer
+      .from(table)
+      .select(SELECT_FRAGMENT)
+      .eq("version_id", versionId)
+      .order("sort_order", { ascending: true });
+
+    if (error) throw Object.assign(new Error(error.message), error);
+    return (data ?? []) as any[];
+  }
+
+  // First try the canonical table
+  try {
+    const rows = await query("framework_version_items");
+    return normalizeRows(rows);
+  } catch (e: any) {
+    // If the table truly doesn't exist in this DB, try the legacy name
+    const isMissingTable =
+      e?.code === "PGRST205" ||
+      /Could not find the table/i.test(String(e?.message ?? "")) ||
+      /relation .* does not exist/i.test(String(e?.message ?? ""));
+
+    if (!isMissingTable) throw e;
+
+    // Legacy fallback
+    const rows = await query("framework_items");
+    return normalizeRows(rows);
+  }
+}
+
+/** convert raw supabase rows -> FrameworkItem[] with single objects (not arrays) */
+function normalizeRows(rows: any[]): FrameworkItem[] {
+  return rows.map((row: any) => ({
     id: row.id,
     version_id: row.version_id,
     sort_order: row.sort_order,
@@ -123,9 +152,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
   return Array.from(pillarMap.values());
 }
 
-export async function getVersionTree(
-  versionId: string
-): Promise<NormalizedFramework[]> {
+export async function getVersionTree(versionId: string): Promise<NormalizedFramework[]> {
   const items = await getVersionItems(versionId);
   return normalizeFramework(items);
 }
