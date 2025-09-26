@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { publishVersion } from "@/lib/services/framework";
 
-export async function POST(request: Request, context: { params: { id: string } }) {
+// Correct typing for route handlers in Next.js 15
+export async function POST(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const id = context.params.id;
+    const id = params.id;
     const result = await publishVersion(id);
     return NextResponse.json({ data: result });
   } catch (e: any) {
