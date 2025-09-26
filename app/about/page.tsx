@@ -6,6 +6,7 @@ export default function AboutPage() {
     <div>
       <PageHeader
         title="About"
+        group="General"
         subtitle="Global Shelter Cluster SSC App"
         breadcrumbs={<Breadcrumbs items={[{ label: "About" }]} />}
       />
