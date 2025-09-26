@@ -42,8 +42,8 @@ export default function SSCConfigPage() {
     <div>
       <PageHeader
         title="SSC Configuration"
-        subtitle="Configure the SSC framework, catalogue, and indicators."
         group="SSC Configuration"
+        description="Configure the SSC framework, catalogue, and indicators."
         breadcrumbs={
           <Breadcrumbs
             items={[
