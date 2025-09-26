@@ -13,40 +13,40 @@ export const groupThemes: Record<
   { border: string; text: string; hover: string; groupText: string }
 > = {
   dashboard: {
-    border: "border-gray-600",
-    text: "text-gray-700",
+    border: "border-[color:var(--gsc-gray)]",
+    text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
-    groupText: "text-gray-700",
+    groupText: "text-[color:var(--gsc-gray)]",
   },
   about: {
-    border: "border-[#004b87]",   // GSC institutional blue
-    text: "text-[#004b87]",
+    border: "border-[color:var(--gsc-blue)]",
+    text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
-    groupText: "text-[#004b87]",
+    groupText: "text-[color:var(--gsc-blue)]",
   },
   admin: {
-    border: "border-gray-600",
-    text: "text-gray-700",
+    border: "border-[color:var(--gsc-gray)]",
+    text: "text-[color:var(--gsc-gray)]",
     hover: "hover:bg-gray-50",
-    groupText: "text-gray-700",
+    groupText: "text-[color:var(--gsc-gray)]",
   },
   "ssc-config": {
-    border: "border-[#004b87]",   // dark GSC blue instead of red
-    text: "text-[#004b87]",
+    border: "border-[color:var(--gsc-blue)]",
+    text: "text-[color:var(--gsc-blue)]",
     hover: "hover:bg-blue-50",
-    groupText: "text-[#004b87]",
+    groupText: "text-[color:var(--gsc-blue)]",
   },
   "country-config": {
-    border: "border-[#2e7d32]",   // GSC green
-    text: "text-[#2e7d32]",
+    border: "border-[color:var(--gsc-green)]",
+    text: "text-[color:var(--gsc-green)]",
     hover: "hover:bg-green-50",
-    groupText: "text-[#2e7d32]",
+    groupText: "text-[color:var(--gsc-green)]",
   },
   "ssc-instances": {
-    border: "border-[#d35400]",   // GSC orange
-    text: "text-[#d35400]",
+    border: "border-[color:var(--gsc-orange)]",
+    text: "text-[color:var(--gsc-orange)]",
     hover: "hover:bg-orange-50",
-    groupText: "text-[#d35400]",
+    groupText: "text-[color:var(--gsc-orange)]",
   },
 };
 
