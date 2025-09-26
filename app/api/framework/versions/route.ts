@@ -1,11 +1,11 @@
+// app/api/framework/versions/route.ts
 import { NextResponse } from "next/server";
-import { listVersions, createDraftFromCatalogue } from "@/lib/services/framework";
-import { z } from "zod";
+import {
+  listVersions,
+  createDraftFromCatalogue,
+} from "@/lib/services/framework";
 
-const CreateSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-});
-
+// GET /api/framework/versions
 export async function GET() {
   try {
     const data = await listVersions();
@@ -15,10 +15,16 @@ export async function GET() {
   }
 }
 
+// POST /api/framework/versions
+// body: { name: string }
 export async function POST(request: Request) {
   try {
-    const json = await request.json();
-    const { name } = CreateSchema.parse(json);
+    const json = await request.json().catch(() => ({}));
+    const name =
+      typeof json?.name === "string" && json.name.trim().length > 0
+        ? json.name.trim()
+        : "New Framework Version";
+
     const version = await createDraftFromCatalogue(name);
     return NextResponse.json({ data: version }, { status: 201 });
   } catch (e: any) {
