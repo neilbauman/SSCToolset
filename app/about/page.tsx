@@ -7,7 +7,7 @@ export default function AboutPage() {
       <PageHeader
         title="About"
         subtitle="About the SSC Toolset"
-        breadcrumb={
+        breadcrumbs={
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
