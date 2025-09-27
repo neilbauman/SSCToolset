@@ -1,41 +1,63 @@
+"use client";
+
 import React from "react";
 import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
+  /** Main page title */
+  title: string;
+  /** Group key (used for theming: "dashboard", "about", "admin", "ssc-config", etc.) */
   group: GroupKey;
-  tool?: string;
+  /** Short description text shown under the title */
   description?: string;
-  breadcrumbs: React.ReactNode;
+  /** Optional tool name (e.g. "Primary Framework Editor") */
+  tool?: string;
+  /** Breadcrumbs element */
+  breadcrumbs?: React.ReactNode;
 };
 
 export default function PageHeader({
+  title,
   group,
-  tool,
   description,
+  tool,
   breadcrumbs,
 }: Props) {
   const theme = groupThemes[group];
 
   return (
     <div className="mb-6">
-      {/* App Title */}
-      <h1 className="gsc-page-title">
-        Shelter and Settlements Severity Classification Toolset
+      {/* Title */}
+      <h1 className="text-2xl font-bold" style={{ color: "#630710" }}>
+        {title}
       </h1>
 
       {/* Group + Tool */}
-      <div className={`mt-1 text-lg font-semibold ${theme.groupText}`}>
-        {theme.label}
+      <div className="mt-1 flex items-center gap-2">
+        <span
+          className={`font-semibold ${theme.text}`}
+        >
+          {theme.label}
+        </span>
+        {tool && (
+          <>
+            <span className="text-gray-400">/</span>
+            <span className="font-medium text-gray-700">{tool}</span>
+          </>
+        )}
       </div>
-      {tool && <div className="text-xl font-medium text-gray-800">{tool}</div>}
 
       {/* Description */}
-      {description && <p className="mt-1 text-gray-600">{description}</p>}
+      {description && (
+        <p className="mt-1 text-sm text-gray-600">{description}</p>
+      )}
 
-      {/* Breadcrumbs framed */}
-      <div className="my-3 border-t border-gray-200" />
-      <div>{breadcrumbs}</div>
-      <div className="my-3 border-t border-gray-200" />
+      {/* Breadcrumbs framed with subtle spacing */}
+      {breadcrumbs && (
+        <div className="mt-4 mb-4 border-t border-b border-gray-200 py-2">
+          {breadcrumbs}
+        </div>
+      )}
     </div>
   );
 }
