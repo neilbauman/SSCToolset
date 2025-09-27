@@ -42,16 +42,10 @@ export default function FrameworkEditor({ versionId }: Props) {
       {/* Controls */}
       <div className="flex justify-between mb-2">
         <div className="flex gap-2">
-          <button
-            onClick={expandAll}
-            className="px-2 py-1 border rounded text-sm bg-gray-50 hover:bg-gray-100"
-          >
+          <button onClick={expandAll} className="px-2 py-1 border rounded text-sm bg-gray-50 hover:bg-gray-100">
             Expand All
           </button>
-          <button
-            onClick={collapseAll}
-            className="px-2 py-1 border rounded text-sm bg-gray-50 hover:bg-gray-100"
-          >
+          <button onClick={collapseAll} className="px-2 py-1 border rounded text-sm bg-gray-50 hover:bg-gray-100">
             Collapse All
           </button>
           {editMode && (
@@ -80,52 +74,104 @@ export default function FrameworkEditor({ versionId }: Props) {
         </thead>
         <tbody>
           {tree.map((pillar, i) => (
-            <tr key={pillar.id} className="border-t">
-              {/* Type / Ref Code */}
-              <td className="px-4 py-2 align-top">
-                <div
-                  className="flex items-center gap-2 cursor-pointer"
-                  onClick={() => toggle(pillar.id)}
-                >
-                  {expanded[pillar.id] ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
+            <>
+              {/* Pillar row */}
+              <tr key={pillar.id} className="border-t">
+                <td className="px-4 py-2 align-top">
+                  <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggle(pillar.id)}>
+                    {expanded[pillar.id] ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4" />
+                    )}
+                    <span className="rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">Pillar</span>
+                    <span className="text-xs text-gray-500">P{i + 1}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-2">
+                  <div className="font-semibold">{pillar.name}</div>
+                  {pillar.description && (
+                    <div className="text-xs text-gray-600">{pillar.description}</div>
                   )}
-                  <span className="rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">
-                    Pillar
-                  </span>
-                  <span className="text-xs text-gray-500">P{i + 1}</span>
-                </div>
-              </td>
+                </td>
+                <td className="px-4 py-2 text-right text-gray-600">{i + 1}</td>
+                <td className="px-4 py-2 text-right">
+                  {editMode && (
+                    <div className="flex justify-end gap-2">
+                      <button className="text-gray-500 hover:text-blue-600"><Pencil className="w-4 h-4" /></button>
+                      <button className="text-gray-500 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  )}
+                </td>
+              </tr>
 
-              {/* Name / Description */}
-              <td className="px-4 py-2">
-                <div className="font-semibold">{pillar.name}</div>
-                {pillar.description && (
-                  <div className="text-xs text-gray-600">
-                    {pillar.description}
-                  </div>
-                )}
-              </td>
+              {/* Themes under pillar */}
+              {expanded[pillar.id] &&
+                pillar.themes.map((theme, j) => (
+                  <>
+                    <tr key={theme.id} className="border-t bg-gray-50">
+                      <td className="px-8 py-2 align-top">
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggle(theme.id)}>
+                          {expanded[theme.id] ? (
+                            <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4" />
+                          )}
+                          <span className="rounded bg-green-100 text-green-700 px-2 py-0.5 text-xs">Theme</span>
+                          <span className="text-xs text-gray-500">T{j + 1}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="font-semibold">{theme.name}</div>
+                        {theme.description && (
+                          <div className="text-xs text-gray-600">{theme.description}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">{j + 1}</td>
+                      <td className="px-4 py-2 text-right">
+                        {editMode && (
+                          <div className="flex justify-end gap-2">
+                            <button className="text-gray-500 hover:text-blue-600"><Pencil className="w-4 h-4" /></button>
+                            <button className="text-gray-500 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
 
-              {/* Sort Order */}
-              <td className="px-4 py-2 text-right text-gray-600">{i + 1}</td>
-
-              {/* Actions */}
-              <td className="px-4 py-2 text-right">
-                {editMode && (
-                  <div className="flex justify-end gap-2">
-                    <button className="text-gray-500 hover:text-blue-600">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button className="text-gray-500 hover:text-red-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
+                    {/* Subthemes under theme */}
+                    {expanded[theme.id] &&
+                      theme.subthemes.map((sub, k) => (
+                        <tr key={sub.id} className="border-t">
+                          <td className="px-12 py-2 align-top">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded bg-purple-100 text-purple-700 px-2 py-0.5 text-xs">
+                                Subtheme
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                ST{j + 1}.{k + 1}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="font-semibold">{sub.name}</div>
+                            {sub.description && (
+                              <div className="text-xs text-gray-600">{sub.description}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right text-gray-600">{k + 1}</td>
+                          <td className="px-4 py-2 text-right">
+                            {editMode && (
+                              <div className="flex justify-end gap-2">
+                                <button className="text-gray-500 hover:text-blue-600"><Pencil className="w-4 h-4" /></button>
+                                <button className="text-gray-500 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </>
+                ))}
+            </>
           ))}
         </tbody>
       </table>
