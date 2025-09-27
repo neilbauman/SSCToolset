@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import { ChevronRight, ChevronDown, Edit2, Trash2, Plus } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Plus } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -17,176 +17,184 @@ export default function FrameworkEditor({ tree }: Props) {
   };
 
   const expandAll = () => {
-    const all: Record<string, boolean> = {};
-    tree.forEach((p) => {
-      all[p.id] = true;
-      p.themes.forEach((t) => {
-        all[t.id] = true;
-        t.subthemes.forEach((s) => {
-          all[s.id] = true;
+    const allIds: Record<string, boolean> = {};
+    tree.forEach((pillar) => {
+      allIds[pillar.id] = true;
+      pillar.themes.forEach((theme) => {
+        allIds[theme.id] = true;
+        theme.subthemes.forEach((st) => {
+          allIds[st.id] = true;
         });
       });
     });
-    setExpanded(all);
+    setExpanded(allIds);
   };
 
   const collapseAll = () => {
     setExpanded({});
   };
 
+  const generateRefCode = (
+    type: "pillar" | "theme" | "subtheme",
+    parentIndex: number,
+    index: number
+  ): string => {
+    if (type === "pillar") return `P${index + 1}`;
+    if (type === "theme") return `T${parentIndex + 1}.${index + 1}`;
+    if (type === "subtheme") return `ST${parentIndex + 1}.${index + 1}`;
+    return "-";
+  };
+
+  const renderRow = (
+    item: any,
+    type: "pillar" | "theme" | "subtheme",
+    parentIndex: number,
+    index: number
+  ) => {
+    const isExpanded = expanded[item.id] ?? false;
+    const refCode = generateRefCode(type, parentIndex, index);
+
+    return (
+      <>
+        <tr key={item.id} className="border-b">
+          {/* Type / Ref Code */}
+          <td className="w-[20%] px-3 py-2 text-sm align-top">
+            <div className="flex items-center gap-2">
+              {item.themes || item.subthemes ? (
+                <button
+                  onClick={() => toggleExpand(item.id)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+              ) : (
+                <span className="inline-block w-4" />
+              )}
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  type === "pillar"
+                    ? "bg-blue-100 text-blue-700"
+                    : type === "theme"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-purple-100 text-purple-700"
+                }`}
+              >
+                {type}
+              </span>
+              <span className="text-xs text-gray-500">{refCode}</span>
+            </div>
+          </td>
+
+          {/* Name / Description */}
+          <td className="w-[55%] px-3 py-2 text-sm align-top">
+            <div>
+              <div className="font-medium">{item.name}</div>
+              {item.description && (
+                <div className="text-gray-500 text-xs">{item.description}</div>
+              )}
+            </div>
+          </td>
+
+          {/* Sort Order */}
+          <td className="w-[15%] px-3 py-2 text-sm align-top">
+            {item.sort_order ?? "-"}
+          </td>
+
+          {/* Actions */}
+          <td className="w-[10%] px-3 py-2 text-sm align-top text-right">
+            {editMode ? (
+              <div className="flex justify-end gap-2">
+                <button className="text-blue-600 hover:text-blue-800">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button className="text-red-600 hover:text-red-800">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="h-4" /> // keeps column width consistent
+            )}
+          </td>
+        </tr>
+
+        {/* Children */}
+        {isExpanded && type === "pillar" && (
+          <>
+            {item.themes.map((theme: any, i: number) =>
+              renderRow(theme, "theme", index, i)
+            )}
+          </>
+        )}
+        {isExpanded && type === "theme" && (
+          <>
+            {item.subthemes.map((st: any, i: number) =>
+              renderRow(st, "subtheme", index, i)
+            )}
+          </>
+        )}
+      </>
+    );
+  };
+
   return (
     <div>
-      {/* Controls row */}
+      {/* Toolbar */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex gap-2">
           <button
             onClick={expandAll}
-            className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50"
+            className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
           >
             Expand All
           </button>
           <button
             onClick={collapseAll}
-            className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50"
+            className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
           >
             Collapse All
           </button>
           {editMode && (
-            <button className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50">
-              + Add Pillar
+            <button className="ml-2 px-3 py-1 border rounded text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1">
+              <Plus className="h-4 w-4" /> Add Pillar
             </button>
           )}
         </div>
-        <div>
-          <button
-            onClick={() => setEditMode((v) => !v)}
-            className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50"
-          >
-            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-          </button>
-        </div>
+        <button
+          onClick={() => setEditMode(!editMode)}
+          className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+        >
+          {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+        </button>
       </div>
 
-      {/* Framework Table */}
-      <table className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase">
-            <th className="px-4 py-2 w-[20%]">Type / Ref Code</th>
-            <th className="px-4 py-2 w-[55%]">Name / Description</th>
-            <th className="px-4 py-2 w-[10%] text-right">Sort Order</th>
-            <th className="px-4 py-2 w-[15%] text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tree.map((pillar, pi) => (
-            <>
-              {/* Pillar Row */}
-              <tr key={pillar.id} className="border-b">
-                <td className="px-4 py-2 w-[20%]">
-                  <button
-                    onClick={() => toggleExpand(pillar.id)}
-                    className="inline-flex items-center"
-                  >
-                    {expanded[pillar.id] ? (
-                      <ChevronDown className="w-4 h-4 mr-1" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 mr-1" />
-                    )}
-                    Pillar
-                  </button>
-                </td>
-                <td className="px-4 py-2 w-[55%]">
-                  <div className="font-medium">{pillar.name}</div>
-                  {pillar.description && (
-                    <div className="text-xs text-gray-500">{pillar.description}</div>
-                  )}
-                </td>
-                <td className="px-4 py-2 w-[10%] text-right">{pi + 1}</td>
-                <td className="px-4 py-2 w-[15%] text-right">
-                  {editMode ? (
-                    <div className="flex justify-end gap-2">
-                      <Edit2 className="w-4 h-4 cursor-pointer text-gray-600 hover:text-gray-800" />
-                      <Trash2 className="w-4 h-4 cursor-pointer text-red-600 hover:text-red-800" />
-                      <Plus className="w-4 h-4 cursor-pointer text-green-600 hover:text-green-800" />
-                    </div>
-                  ) : (
-                    <div className="h-4" />
-                  )}
-                </td>
-              </tr>
-
-              {/* Themes */}
-              {expanded[pillar.id] &&
-                pillar.themes.map((theme, ti) => (
-                  <>
-                    <tr key={theme.id} className="border-b">
-                      <td className="px-4 py-2 pl-8 w-[20%]">
-                        <button
-                          onClick={() => toggleExpand(theme.id)}
-                          className="inline-flex items-center"
-                        >
-                          {expanded[theme.id] ? (
-                            <ChevronDown className="w-4 h-4 mr-1" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 mr-1" />
-                          )}
-                          Theme
-                        </button>
-                      </td>
-                      <td className="px-4 py-2 w-[55%]">
-                        <div className="font-medium">{theme.name}</div>
-                        {theme.description && (
-                          <div className="text-xs text-gray-500">{theme.description}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 w-[10%] text-right">
-                        {pi + 1}.{ti + 1}
-                      </td>
-                      <td className="px-4 py-2 w-[15%] text-right">
-                        {editMode ? (
-                          <div className="flex justify-end gap-2">
-                            <Edit2 className="w-4 h-4 cursor-pointer text-gray-600 hover:text-gray-800" />
-                            <Trash2 className="w-4 h-4 cursor-pointer text-red-600 hover:text-red-800" />
-                            <Plus className="w-4 h-4 cursor-pointer text-green-600 hover:text-green-800" />
-                          </div>
-                        ) : (
-                          <div className="h-4" />
-                        )}
-                      </td>
-                    </tr>
-
-                    {/* Subthemes */}
-                    {expanded[theme.id] &&
-                      theme.subthemes.map((sub, si) => (
-                        <tr key={sub.id} className="border-b">
-                          <td className="px-4 py-2 pl-16 w-[20%]">Subtheme</td>
-                          <td className="px-4 py-2 w-[55%]">
-                            <div className="font-medium">{sub.name}</div>
-                            {sub.description && (
-                              <div className="text-xs text-gray-500">{sub.description}</div>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 w-[10%] text-right">
-                            {pi + 1}.{ti + 1}.{si + 1}
-                          </td>
-                          <td className="px-4 py-2 w-[15%] text-right">
-                            {editMode ? (
-                              <div className="flex justify-end gap-2">
-                                <Edit2 className="w-4 h-4 cursor-pointer text-gray-600 hover:text-gray-800" />
-                                <Trash2 className="w-4 h-4 cursor-pointer text-red-600 hover:text-red-800" />
-                              </div>
-                            ) : (
-                              <div className="h-4" />
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </>
-                ))}
-            </>
-          ))}
-        </tbody>
-      </table>
+      {/* Table */}
+      <div className="overflow-x-auto border rounded">
+        <table className="w-full border-collapse">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="w-[20%] px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                Type / Ref Code
+              </th>
+              <th className="w-[55%] px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                Name / Description
+              </th>
+              <th className="w-[15%] px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                Sort Order
+              </th>
+              <th className="w-[10%] px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {tree.map((pillar, i) => renderRow(pillar, "pillar", i, i))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
