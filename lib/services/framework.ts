@@ -44,9 +44,9 @@ const SELECT_FRAGMENT = `
   pillar_id,
   theme_id,
   subtheme_id,
-  pillar:pillar_id ( id, name, description, color, icon ),
-  theme:theme_id ( id, name, description, color, icon ),
-  subtheme:subtheme_id ( id, name, description, color, icon )
+  pillar:pillar_id ( id, name, description ),
+  theme:theme_id ( id, name, description ),
+  subtheme:subtheme_id ( id, name, description )
 `;
 
 /**
@@ -54,7 +54,6 @@ const SELECT_FRAGMENT = `
  * Fall back to the legacy name `framework_items` if the canonical one doesn't exist.
  */
 export async function getVersionItems(versionId: string): Promise<FrameworkItem[]> {
-  // helper to run a query against a given table
   async function query(table: string) {
     const { data, error } = await supabaseServer
       .from(table)
@@ -66,12 +65,10 @@ export async function getVersionItems(versionId: string): Promise<FrameworkItem[
     return (data ?? []) as any[];
   }
 
-  // First try the canonical table
   try {
     const rows = await query("framework_version_items");
     return normalizeRows(rows);
   } catch (e: any) {
-    // If the table truly doesn't exist in this DB, try the legacy name
     const isMissingTable =
       e?.code === "PGRST205" ||
       /Could not find the table/i.test(String(e?.message ?? "")) ||
@@ -79,7 +76,6 @@ export async function getVersionItems(versionId: string): Promise<FrameworkItem[
 
     if (!isMissingTable) throw e;
 
-    // Legacy fallback
     const rows = await query("framework_items");
     return normalizeRows(rows);
   }
@@ -100,6 +96,7 @@ function normalizeRows(rows: any[]): FrameworkItem[] {
   })) as FrameworkItem[];
 }
 
+/** normalize items into a nested pillar -> theme -> subtheme tree */
 export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[] {
   const pillarMap = new Map<string, NormalizedFramework>();
 
@@ -113,8 +110,8 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
         id: pid,
         name: it.pillar?.name ?? "",
         description: it.pillar?.description ?? "",
-        color: it.pillar?.color ?? null,
-        icon: it.pillar?.icon ?? null,
+        color: null,
+        icon: null,
         themes: [],
       };
       pillarMap.set(pid, pillar);
@@ -127,8 +124,8 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
           id: it.theme?.id ?? it.theme_id!,
           name: it.theme?.name ?? "",
           description: it.theme?.description ?? "",
-          color: it.theme?.color ?? null,
-          icon: it.theme?.icon ?? null,
+          color: null,
+          icon: null,
           subthemes: [],
         };
         pillar.themes.push(theme);
@@ -141,8 +138,8 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
             id: sid!,
             name: it.subtheme?.name ?? "",
             description: it.subtheme?.description ?? "",
-            color: it.subtheme?.color ?? null,
-            icon: it.subtheme?.icon ?? null,
+            color: null,
+            icon: null,
           });
         }
       }
