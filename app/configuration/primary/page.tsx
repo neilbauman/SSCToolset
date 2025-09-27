@@ -6,10 +6,13 @@ import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
-export default async function PrimaryFrameworkPage(props: {
+// 🚨 No PageProps import, no constraints
+export default async function PrimaryFrameworkPage({
+  searchParams,
+}: {
   searchParams?: { version?: string };
 }) {
-  const openedId = props?.searchParams?.version ?? undefined;
+  const openedId = searchParams?.version ?? undefined;
 
   const versions = await listVersions();
   const theme = groupThemes["ssc-config"];
