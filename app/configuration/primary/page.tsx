@@ -1,3 +1,4 @@
+import { PageProps } from "next";
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { listVersions } from "@/lib/services/framework";
@@ -6,13 +7,9 @@ import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
-export default async function PrimaryFrameworkPage({
-  searchParams,
-}: {
-  searchParams: { version?: string };
-}) {
+export default async function PrimaryFrameworkPage({ searchParams }: PageProps) {
   const versions = await listVersions();
-  const openedId = searchParams.version;
+  const openedId = (searchParams?.version as string) || undefined;
   const theme = groupThemes["ssc-config"];
 
   return (
