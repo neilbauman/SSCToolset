@@ -12,11 +12,10 @@ type Props = {
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
+  const [selectedId, setSelectedId] = useState(openedId ?? "");
   const [tree, setTree] = useState<NormalizedFramework[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [selectedId, setSelectedId] = useState(openedId);
 
   const theme = groupThemes["ssc-config"];
 
@@ -30,9 +29,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     setError(null);
 
     getVersionTree(selectedId)
-      .then((res) => {
-        setTree(res);
-      })
+      .then((res) => setTree(res))
       .catch((e) => {
         console.error("Failed to load framework tree", e);
         setError("Failed to load framework tree.");
@@ -42,9 +39,29 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   return (
     <div>
-      {/* Version actions row */}
-      {selectedId && (
-        <div className="mb-4 flex justify-between items-center">
+      {/* Version Selector + Actions */}
+      <div className="mb-6 flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex items-center gap-3">
+          <label htmlFor="version" className="text-sm font-medium text-gray-700">
+            Select Version:
+          </label>
+          <select
+            id="version"
+            name="version"
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+          >
+            <option value="">-- Select a version --</option>
+            {versions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name} {v.status === "draft" ? "(Draft)" : "(Published)"}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedId && (
           <div className="flex gap-3">
             <button
               className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50"
@@ -59,10 +76,10 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
               Publish
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Framework display */}
+      {/* Framework Tree */}
       <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
         {!selectedId && (
           <div className="text-sm text-gray-600">
