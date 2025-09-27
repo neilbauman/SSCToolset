@@ -5,11 +5,11 @@ import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClien
 
 export const dynamic = "force-dynamic";
 
-export default async function PrimaryFrameworkPage({
-  searchParams,
-}: {
+type PageProps = {
   searchParams?: { version?: string };
-}) {
+};
+
+export default async function PrimaryFrameworkPage({ searchParams }: PageProps) {
   const openedId = searchParams?.version ?? undefined;
   const versions = await listVersions();
 
@@ -31,7 +31,6 @@ export default async function PrimaryFrameworkPage({
         }
       />
 
-      {/* Pass versions + openedId down */}
       <PrimaryFrameworkClient versions={versions} openedId={openedId} />
     </div>
   );
