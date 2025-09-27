@@ -50,6 +50,7 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
+        title="Dashboard"
         group="dashboard"
         description="Global Shelter Cluster – Shelter Severity Classification Toolset"
         breadcrumbs={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
