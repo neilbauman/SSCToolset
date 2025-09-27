@@ -16,10 +16,12 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedId, setSelectedId] = useState(openedId);
+
   const theme = groupThemes["ssc-config"];
 
   useEffect(() => {
-    if (!openedId) {
+    if (!selectedId) {
       setTree(null);
       return;
     }
@@ -27,7 +29,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     setLoading(true);
     setError(null);
 
-    getVersionTree(openedId)
+    getVersionTree(selectedId)
       .then((res) => {
         setTree(res);
       })
@@ -36,25 +38,48 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         setError("Failed to load framework tree.");
       })
       .finally(() => setLoading(false));
-  }, [openedId]);
+  }, [selectedId]);
 
   return (
-    <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
-      {!openedId && (
-        <div className="text-sm text-gray-600">
-          Select a version and click “Open Version”.
+    <div>
+      {/* Version actions row */}
+      {selectedId && (
+        <div className="mb-4 flex justify-between items-center">
+          <div className="flex gap-3">
+            <button
+              className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50"
+              onClick={() => window.location.reload()}
+            >
+              Open Version
+            </button>
+            <button className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50">
+              Clone
+            </button>
+            <button className="px-3 py-1 rounded border text-sm bg-white hover:bg-gray-50">
+              Publish
+            </button>
+          </div>
         </div>
       )}
 
-      {openedId && loading && (
-        <div className="text-sm text-gray-600">Loading framework tree…</div>
-      )}
+      {/* Framework display */}
+      <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
+        {!selectedId && (
+          <div className="text-sm text-gray-600">
+            Select a version and click “Open Version”.
+          </div>
+        )}
 
-      {openedId && error && (
-        <div className="text-sm text-red-600">{error}</div>
-      )}
+        {selectedId && loading && (
+          <div className="text-sm text-gray-600">Loading framework tree…</div>
+        )}
 
-      {openedId && tree && <FrameworkEditor tree={tree} />}
+        {selectedId && error && (
+          <div className="text-sm text-red-600">{error}</div>
+        )}
+
+        {selectedId && tree && <FrameworkEditor tree={tree} />}
+      </div>
     </div>
   );
 }
