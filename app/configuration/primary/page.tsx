@@ -6,12 +6,9 @@ import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
-// 🚨 No PageProps import, no constraints
-export default async function PrimaryFrameworkPage({
-  searchParams,
-}: {
-  searchParams?: { version?: string };
-}) {
+// ✅ Make props untyped (or very loose) to avoid PageProps collision
+export default async function PrimaryFrameworkPage(props: any) {
+  const searchParams = props?.searchParams as { version?: string } | undefined;
   const openedId = searchParams?.version ?? undefined;
 
   const versions = await listVersions();
