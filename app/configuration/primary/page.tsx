@@ -5,7 +5,12 @@ import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClien
 
 export const dynamic = "force-dynamic";
 
-export default async function PrimaryFrameworkPage() {
+export default async function PrimaryFrameworkPage({
+  searchParams,
+}: {
+  searchParams?: { version?: string };
+}) {
+  const openedId = searchParams?.version ?? undefined;
   const versions = await listVersions();
 
   return (
@@ -26,8 +31,8 @@ export default async function PrimaryFrameworkPage() {
         }
       />
 
-      {/* Hand off *all interactivity* to the client */}
-      <PrimaryFrameworkClient versions={versions} />
+      {/* Pass versions + openedId down */}
+      <PrimaryFrameworkClient versions={versions} openedId={openedId} />
     </div>
   );
 }
