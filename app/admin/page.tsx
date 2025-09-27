@@ -5,7 +5,8 @@ export default function AdminPage() {
   return (
     <div>
       <PageHeader
-        group="admin"   // ✅ lowercase key
+        title="Admin"
+        group="admin"
         description="Administrative SSC tools"
         breadcrumbs={
           <Breadcrumbs
@@ -17,10 +18,9 @@ export default function AdminPage() {
         }
       />
 
-      <div className="mt-4 prose">
+      <div className="prose max-w-none mt-4">
         <p>
-          This area will support future administrative features, including user
-          management and permissions.
+          Future space for user management, permissions, and administration of the SSC Toolset.
         </p>
       </div>
     </div>
