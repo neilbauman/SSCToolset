@@ -5,7 +5,8 @@ export default function AboutPage() {
   return (
     <div>
       <PageHeader
-        group="about"  // ✅ use the key, not "General"
+        title="About"
+        group="about"
         description="Information about the SSC Toolset"
         breadcrumbs={
           <Breadcrumbs
@@ -16,11 +17,13 @@ export default function AboutPage() {
           />
         }
       />
-      <div className="mt-4 prose">
+
+      <div className="prose max-w-none mt-4">
         <p>
-          The SSC Toolset implements the Global Shelter Cluster’s Shelter Severity
-          Classification (SSC) framework for cataloguing pillars, themes, and
-          subthemes with clear version control.
+          The Shelter and Settlements Severity Classification (SSC) Toolset is
+          part of the Global Shelter Cluster initiative. It helps catalog pillars,
+          themes, and subthemes to standardize the assessment and reporting of
+          shelter severity across contexts.
         </p>
       </div>
     </div>
