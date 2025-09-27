@@ -29,7 +29,35 @@ export default async function PrimaryFrameworkPage(props: any) {
         }
       />
 
-      {/* All interactivity lives in the client component */}
+      {/* Versions selector */}
+      <div className="mb-6 flex items-center gap-3">
+        <label htmlFor="version" className="text-sm font-medium text-gray-700">
+          Select Version:
+        </label>
+        <select
+          id="version"
+          name="version"
+          defaultValue={openedId ?? ""}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (id) {
+              window.location.href = `/configuration/primary?version=${id}`;
+            } else {
+              window.location.href = `/configuration/primary`;
+            }
+          }}
+          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+        >
+          <option value="">-- Select a version --</option>
+          {versions.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name} {v.status === "draft" ? "(Draft)" : "(Published)"}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Framework Client */}
       <PrimaryFrameworkClient versions={versions} openedId={openedId} />
     </div>
   );
