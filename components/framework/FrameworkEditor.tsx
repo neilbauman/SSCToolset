@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NormalizedFramework } from "@/lib/types/framework";
 import {
   ChevronDown,
@@ -11,22 +11,22 @@ import {
   Plus,
 } from "lucide-react";
 
-type FrameworkEditorProps = {
+type Props = {
   tree: NormalizedFramework[];
   versionId: string;
   onChanged: () => Promise<void>;
   onAddPillar?: () => void;
 };
 
-type AnyNode = NormalizedFramework & {
+type Item = NormalizedFramework & {
   type: "pillar" | "theme" | "subtheme";
-  themes?: AnyNode[];
-  subthemes?: AnyNode[];
+  themes?: Item[];
+  subthemes?: Item[];
   sort_order?: number | null;
 };
 
 type RowProps = {
-  item: AnyNode;
+  item: Item;
   level: number;
   editMode: boolean;
   expanded: Record<string, boolean>;
@@ -35,7 +35,7 @@ type RowProps = {
   indexWithinParent: number;
 };
 
-function badgeClasses(type: AnyNode["type"]) {
+function badgeClasses(type: Item["type"]) {
   switch (type) {
     case "pillar":
       return "bg-blue-100 text-blue-800";
@@ -46,19 +46,24 @@ function badgeClasses(type: AnyNode["type"]) {
   }
 }
 
-// ✅ Ref code formatting
-function deriveRefCode(
-  type: AnyNode["type"],
-  parentIndexes: { pillar?: number; theme?: number },
+// Compute UI ref codes: P1, T1.2, ST1.2.3
+function makeRefCode(
+  type: Item["type"],
+  parents: { pillar?: number; theme?: number },
   indexWithinParent: number
 ) {
-  const pillarIdx = (parentIndexes.pillar ?? indexWithinParent) + 1;
-  const themeIdx = (parentIndexes.theme ?? indexWithinParent) + 1;
-  const subIdx = indexWithinParent + 1;
-
-  if (type === "pillar") return `P${pillarIdx}`;
-  if (type === "theme") return `T${pillarIdx}.${themeIdx}`;
-  return `ST${pillarIdx}.${themeIdx}.${subIdx}`;
+  if (type === "pillar") {
+    return `P${indexWithinParent + 1}`;
+  }
+  if (type === "theme") {
+    const p = (parents.pillar ?? 0) + 1;
+    const t = indexWithinParent + 1;
+    return `T${p}.${t}`;
+  }
+  const p = (parents.pillar ?? 0) + 1;
+  const t = (parents.theme ?? 0) + 1;
+  const s = indexWithinParent + 1;
+  return `ST${p}.${t}.${s}`;
 }
 
 const Row: React.FC<RowProps> = ({
@@ -75,11 +80,7 @@ const Row: React.FC<RowProps> = ({
     (item.subthemes && item.subthemes.length > 0);
 
   const padding = level * 20;
-  const refCode = deriveRefCode(
-    item.type,
-    parentIndexes,
-    indexWithinParent
-  );
+  const refCode = makeRefCode(item.type, parentIndexes, indexWithinParent);
 
   return (
     <tr className="border-b">
@@ -102,7 +103,7 @@ const Row: React.FC<RowProps> = ({
             <span className="inline-block w-4" />
           )}
 
-          {/* drag placeholder */}
+          {/* reorder placeholder (disabled this phase) */}
           <span className="mx-1 text-gray-300">
             <GripVertical className="h-3.5 w-3.5" />
           </span>
@@ -127,7 +128,7 @@ const Row: React.FC<RowProps> = ({
         )}
       </td>
 
-      {/* Sort Order (tooltip shows DB value) */}
+      {/* Sort Order: simple 1-based visual index per parent */}
       <td
         className="py-2 text-center"
         title={
@@ -139,18 +140,18 @@ const Row: React.FC<RowProps> = ({
         {indexWithinParent + 1}
       </td>
 
-      {/* Actions */}
+      {/* Actions column always present; icons only when edit mode */}
       <td className="py-2 pr-3">
         <div className="flex items-center justify-end gap-2">
           {editMode ? (
             <>
-              <button className="text-gray-500 hover:text-gray-700">
+              <button className="text-gray-500 hover:text-gray-700" title="Edit">
                 <Pencil className="h-4 w-4" />
               </button>
-              <button className="text-gray-500 hover:text-gray-700">
+              <button className="text-gray-500 hover:text-gray-700" title="Delete">
                 <Trash2 className="h-4 w-4" />
               </button>
-              <button className="text-gray-500 hover:text-gray-700">
+              <button className="text-gray-500 hover:text-gray-700" title="Add">
                 <Plus className="h-4 w-4" />
               </button>
             </>
@@ -163,20 +164,19 @@ const Row: React.FC<RowProps> = ({
   );
 };
 
-const FrameworkEditor: React.FC<FrameworkEditorProps> = ({
+const FrameworkEditor: React.FC<Props> = ({
   tree,
   versionId,
   onChanged,
   onAddPillar,
 }) => {
-  const [editMode, setEditMode] = useState(true);
+  // default collapsed as requested
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editMode, setEditMode] = useState(true);
 
-  useMemo(() => {
-    const init: Record<string, boolean> = {};
-    tree.forEach((p) => (init[p.id] = true));
-    setExpanded(init);
-  }, [versionId, tree]);
+  useEffect(() => {
+    setExpanded({}); // reset to collapsed whenever version changes
+  }, [versionId]);
 
   const toggleExpand = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -196,8 +196,8 @@ const FrameworkEditor: React.FC<FrameworkEditorProps> = ({
   const collapseAll = () => setExpanded({});
 
   return (
-    <div className="mt-4 border rounded-md overflow-hidden">
-      {/* Controls row */}
+    <div className="border rounded-md overflow-hidden">
+      {/* Toolbar row above the table */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
         <div className="flex items-center gap-4 text-sm">
           <button className="text-blue-600 hover:underline" onClick={collapseAll}>
@@ -224,7 +224,7 @@ const FrameworkEditor: React.FC<FrameworkEditorProps> = ({
         </button>
       </div>
 
-      {/* Table */}
+      {/* Tree table */}
       <table className="w-full text-sm">
         <colgroup>
           <col style={{ width: "28%" }} />
