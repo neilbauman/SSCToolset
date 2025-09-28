@@ -53,6 +53,7 @@ export type NormalizedFramework = {
   icon: string | null;
   can_have_indicators?: boolean;
   sort_order?: number;
+  ref_code: string; // ✅ Added
   type: "pillar" | "theme" | "subtheme";
   themes?: NormalizedFramework[];    // only present on pillars
   subthemes?: NormalizedFramework[]; // only present on themes
