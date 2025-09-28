@@ -28,9 +28,10 @@ export default function FrameworkEditor({ tree }: Props) {
           ? `${parentRef}.${index + 1}`
           : `${parentRef}.${index + 1}`;
 
+      // Only check subthemes if item actually has them
       const hasChildren =
-        (level === 0 && item.themes?.length > 0) ||
-        (level === 1 && item.subthemes?.length > 0);
+        (level === 0 && item.themes && item.themes.length > 0) ||
+        (level === 1 && "subthemes" in item && item.subthemes.length > 0);
 
       const isExpanded = expanded[item.id];
       const indent = level * 12; // subtle indent per level
@@ -79,7 +80,7 @@ export default function FrameworkEditor({ tree }: Props) {
 
           {/* Sort Order */}
           <td className="px-2 py-2 text-sm text-center w-[10%]">
-            {item.sort_order ?? "-"}
+            {"sort_order" in item ? item.sort_order ?? "-" : "-"}
           </td>
 
           {/* Actions */}
@@ -108,7 +109,7 @@ export default function FrameworkEditor({ tree }: Props) {
         if (level === 0 && item.themes) {
           children.push(...renderRows(item.themes, 1, refCode));
         }
-        if (level === 1 && item.subthemes) {
+        if (level === 1 && "subthemes" in item && item.subthemes) {
           children.push(...renderRows(item.subthemes, 2, refCode));
         }
       }
