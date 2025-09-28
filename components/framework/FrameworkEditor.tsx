@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import {
   ChevronRight,
@@ -12,25 +12,66 @@ import {
 } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { createPillar } from "@/lib/services/framework";
 
 type Props = {
   tree: NormalizedFramework[];
-  versionId?: string;
+  versionId?: string; // passed in by PrimaryFrameworkClient
+};
+
+type CataloguePillar = {
+  id: string;
+  name: string;
+  description: string | null;
+  can_have_indicators: boolean | null;
+  alreadyIn: boolean;
 };
 
 export default function FrameworkEditor({ tree, versionId }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [editMode, setEditMode] = useState(false);
 
+  // Add Pillar modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<any | null>(null);
+  const [includeChildren, setIncludeChildren] = useState(true);
+
+  const [catalogue, setCatalogue] = useState<CataloguePillar[] | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (!showAddModal || !versionId || tab !== "catalogue") return;
+    const run = async () => {
+      try {
+        const q = new URLSearchParams({ version: versionId });
+        const res = await fetch(`/api/catalogue/pillars?${q.toString()}`);
+        const json = await res.json();
+        setCatalogue(json.data ?? []);
+      } catch (e) {
+        console.error(e);
+        addToast("Failed to load catalogue", "error");
+      }
+    };
+    run();
+  }, [showAddModal, versionId, tab, addToast]);
+
+  const filteredCatalogue = useMemo(() => {
+    if (!catalogue) return [];
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? catalogue.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            (p.description ?? "").toLowerCase().includes(q)
+        )
+      : catalogue;
+    return base;
+  }, [catalogue, search]);
 
   const toggleExpand = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -42,20 +83,47 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
     }
 
     try {
-      if (tab === "catalogue" && selected) {
-        await createPillar(versionId, { existingId: selected.id });
+      if (tab === "catalogue" && selectedId) {
+        const res = await fetch("/api/catalogue/pillars", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            versionId,
+            existingId: selectedId,
+            includeChildren,
+          }),
+        });
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
         addToast("Pillar added from catalogue", "success");
-      } else if (tab === "new" && name) {
-        await createPillar(versionId, { name, description });
+      } else if (tab === "new" && name.trim()) {
+        const res = await fetch("/api/catalogue/pillars", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            versionId,
+            name: name.trim(),
+            description: description || null,
+            includeChildren: false,
+          }),
+        });
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
         addToast("New pillar created", "success");
       }
+      // Soft reset modal
       setShowAddModal(false);
-      setSelected(null);
+      setSelectedId(null);
       setName("");
       setDescription("");
+      setIncludeChildren(true);
+
+      // NOTE: We rely on page-level reload or a refetch in PrimaryFrameworkClient
+      // to refresh the tree. Keeping UI drift to a minimum per your guardrails.
+      window.location.reload();
     } catch (e: any) {
       console.error("Failed to add pillar", e);
-      addToast("Error adding pillar", "error");
+      addToast(e?.message ?? "Error adding pillar", "error");
     }
   };
 
@@ -67,16 +135,12 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
     return items.flatMap((item, index) => {
       const refCode =
         level === 0 ? `P${index + 1}` : `${parentRef}.${index + 1}`;
-
-      let hasChildren = false;
-      if (level === 0 && item.themes && item.themes.length > 0) {
-        hasChildren = true;
-      }
-      if (level === 1 && item.subthemes && item.subthemes.length > 0) {
-        hasChildren = true;
-      }
-
       const isExpanded = expanded[item.id];
+
+      const hasChildren =
+        (level === 0 && item.themes && item.themes.length > 0) ||
+        (level === 1 && item.subthemes && item.subthemes.length > 0);
+
       const indent = level === 2 ? level * 16 : level * 12;
 
       const row = (
@@ -257,10 +321,56 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            {/* For now, placeholder since catalogue fetch not wired yet */}
-            <div className="text-xs text-gray-500">
-              Catalogue lookup not wired yet
-            </div>
+            <ul className="max-h-48 overflow-y-auto border rounded divide-y">
+              {filteredCatalogue.map((pillar) => (
+                <li
+                  key={pillar.id}
+                  className={`px-2 py-2 flex items-start gap-2 ${
+                    pillar.alreadyIn
+                      ? "text-gray-400 bg-gray-50"
+                      : "hover:bg-gray-50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    disabled={pillar.alreadyIn}
+                    checked={selectedId === pillar.id}
+                    onChange={() =>
+                      !pillar.alreadyIn &&
+                      setSelectedId(
+                        selectedId === pillar.id ? null : pillar.id
+                      )
+                    }
+                  />
+                  <div>
+                    <div className="font-medium text-sm">{pillar.name}</div>
+                    {pillar.description && (
+                      <div className="text-xs text-gray-500">
+                        {pillar.description}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {filteredCatalogue.length === 0 && (
+                <li className="px-2 py-2 text-xs text-gray-500">
+                  No results
+                </li>
+              )}
+            </ul>
+
+            {selectedId && (
+              <label className="mt-3 flex items-center text-sm">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={includeChildren}
+                  onChange={(e) => setIncludeChildren(e.target.checked)}
+                />
+                Include child Themes & Subthemes
+              </label>
+            )}
           </div>
         )}
 
@@ -299,11 +409,11 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
           </button>
           <button
             className={`px-3 py-1 text-sm rounded ${
-              (tab === "catalogue" && selected) || (tab === "new" && name)
+              (tab === "catalogue" && selectedId) || (tab === "new" && name)
                 ? "bg-blue-600 text-white hover:bg-blue-700"
                 : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
-            disabled={!(tab === "catalogue" ? selected : name)}
+            disabled={!(tab === "catalogue" ? selectedId : name)}
             onClick={handleAdd}
           >
             Add Pillar
