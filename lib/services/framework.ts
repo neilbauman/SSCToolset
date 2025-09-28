@@ -157,30 +157,12 @@ export async function getVersionTree(versionId: string): Promise<NormalizedFrame
 
 /** ---------------- Catalogue helpers ---------------- */
 
-export type PillarCatalogueRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  can_have_indicators: boolean | null;
-};
-
-export async function listPillarCatalogue(): Promise<PillarCatalogueRow[]> {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .select("id, name, description, can_have_indicators")
-    .order("name", { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []) as PillarCatalogueRow[];
-}
-
 export async function listThemesByPillar(pillarId: string) {
   const { data, error } = await supabaseServer
     .from("theme_catalogue")
     .select("id, name, description, can_have_indicators, sort_order")
     .eq("pillar_id", pillarId)
-    .order("sort_order", { ascending: true, nullsFirst: false })
-    .order("name", { ascending: true });
+    .order("sort_order", { ascending: true, nullsFirst: false });
   if (error) throw error;
   return data ?? [];
 }
@@ -190,26 +172,27 @@ export async function listSubthemesByTheme(themeId: string) {
     .from("subtheme_catalogue")
     .select("id, name, description, can_have_indicators, sort_order")
     .eq("theme_id", themeId)
-    .order("sort_order", { ascending: true, nullsFirst: false })
-    .order("name", { ascending: true });
+    .order("sort_order", { ascending: true, nullsFirst: false });
   if (error) throw error;
   return data ?? [];
 }
 
-/** Utility: compute composite sort key as p*1e6 + t*1e3 + s (1-based indices). */
-function sortKey(pIdx: number, tIdx?: number, sIdx?: number) {
-  const a = pIdx * 1_000_000;
-  const b = tIdx ? tIdx * 1_000 : 0;
-  const c = sIdx ? sIdx : 0;
-  return a + b + c;
+/** Utility: generate sort order numbers */
+function pillarSortKey(pIdx: number) {
+  return pIdx * 1_000_000;
+}
+function themeSortKey(pIdx: number, tIdx: number) {
+  return pIdx * 1_000_000 + tIdx * 1_000;
+}
+function subthemeSortKey(pIdx: number, tIdx: number, sIdx: number) {
+  return pIdx * 1_000_000 + tIdx * 1_000 + sIdx;
 }
 
-/** Count distinct pillars already in a version to determine next pillar index. */
+/** Count distinct pillars already in a version */
 async function nextPillarIndex(versionId: string): Promise<number> {
   const { data, error } = await supabaseServer
     .from("framework_version_items")
-    .select("pillar_id", { count: "exact", head: false })
-    .neq("pillar_id", null);
+    .select("pillar_id", { head: false });
   if (error) throw error;
 
   const distinct = new Set<string>();
@@ -256,7 +239,7 @@ export async function createPillar(
     pillar_id: pillarId,
     theme_id: null,
     subtheme_id: null,
-    sort_order: sortKey(pIndex, 1, 1), // place pillar before its children segment
+    sort_order: pillarSortKey(pIndex),
     ref_code: `P${pIndex}`,
   };
 
@@ -267,7 +250,7 @@ export async function createPillar(
     .single();
   if (insPillarErr) throw insPillarErr;
 
-  // 4) Optionally include children from catalogue
+  // 4) Optionally include children
   if (data.includeChildren) {
     const themes = await listThemesByPillar(pillarId!);
 
@@ -281,12 +264,11 @@ export async function createPillar(
         pillar_id: pillarId,
         theme_id: t.id,
         subtheme_id: null,
-        sort_order: sortKey(pIndex, themeIndex, 1),
+        sort_order: themeSortKey(pIndex, themeIndex),
         ref_code: `P${pIndex}.T${themeIndex}`,
       });
     });
 
-    // Bulk fetch subthemes per theme
     for (let tIdx = 0; tIdx < themes.length; tIdx++) {
       const t = themes[tIdx];
       const themeIndex = tIdx + 1;
@@ -298,13 +280,12 @@ export async function createPillar(
           pillar_id: pillarId,
           theme_id: t.id,
           subtheme_id: s.id,
-          sort_order: sortKey(pIndex, themeIndex, subIndex),
+          sort_order: subthemeSortKey(pIndex, themeIndex, subIndex),
           ref_code: `P${pIndex}.T${themeIndex}.S${subIndex}`,
         });
       });
     }
 
-    // Insert themes then subthemes
     if (themeRows.length) {
       const { error: themeErr } = await supabaseServer
         .from("framework_version_items")
