@@ -15,11 +15,8 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [tree, setTree] = useState<NormalizedFramework[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState(false);
 
   const theme = groupThemes["ssc-config"];
-
-  const selectedVersion = versions.find((v) => v.id === openedId);
 
   useEffect(() => {
     if (!openedId) {
@@ -41,15 +38,11 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
       .finally(() => setLoading(false));
   }, [openedId]);
 
-  const createdAt = selectedVersion?.created_at
-    ? new Date(selectedVersion.created_at).toLocaleDateString()
-    : "Unknown";
-
   return (
     <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
       {!openedId && (
         <div className="text-sm text-gray-600">
-          Select a version and click “Open Version”.
+          Select a version to view its framework.
         </div>
       )}
 
@@ -61,17 +54,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         <div className="text-sm text-red-600">{error}</div>
       )}
 
-      {openedId && selectedVersion && (
-        <div className="mb-4 text-sm text-gray-700">
-          <div><strong>Name:</strong> {selectedVersion.name}</div>
-          <div><strong>Status:</strong> {selectedVersion.status}</div>
-          <div><strong>Created:</strong> {createdAt}</div>
-        </div>
-      )}
-
-      {openedId && tree && (
-        <FrameworkEditor tree={tree} editMode={editMode} setEditMode={setEditMode} />
-      )}
+      {openedId && tree && <FrameworkEditor tree={tree} />}
     </div>
   );
 }
