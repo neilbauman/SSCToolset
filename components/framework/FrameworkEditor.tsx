@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { NormalizedFramework, Theme, Subtheme } from "@/lib/types/framework";
+import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Edit, Trash, Plus } from "lucide-react";
 
 type Props = {
@@ -16,11 +16,11 @@ export default function FrameworkEditor({ tree }: Props) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const renderRows = (
-    items: (NormalizedFramework | Theme | Subtheme)[],
+    items: any[],
     level: number = 0,
     parentRef: string = ""
   ): JSX.Element[] => {
-    return items.flatMap((item: any, index) => {
+    return items.flatMap((item, index) => {
       const refCode =
         level === 0
           ? `P${index + 1}`
@@ -35,7 +35,7 @@ export default function FrameworkEditor({ tree }: Props) {
       }
 
       const isExpanded = expanded[item.id];
-      const indent = level * 12; // subtle indent per level
+      const indent = level * 12; // subtle indent
 
       const row = (
         <tr key={item.id} className="border-b">
@@ -99,7 +99,7 @@ export default function FrameworkEditor({ tree }: Props) {
                 </button>
               </div>
             ) : (
-              <div className="h-4" /> // keeps column width stable
+              <div className="h-4" />
             )}
           </td>
         </tr>
@@ -134,11 +134,9 @@ export default function FrameworkEditor({ tree }: Props) {
               const allExpanded: Record<string, boolean> = {};
               tree.forEach((pillar) => {
                 allExpanded[pillar.id] = true;
-                pillar.themes?.forEach((theme) => {
+                pillar.themes?.forEach((theme: any) => {
                   allExpanded[theme.id] = true;
-                  theme.subthemes?.forEach(
-                    (st) => (allExpanded[st.id] = true)
-                  );
+                  theme.subthemes?.forEach((st: any) => (allExpanded[st.id] = true));
                 });
               });
               setExpanded(allExpanded);
