@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/Toast";
 type Props = {
   tree: NormalizedFramework[];
   versionId?: string;
-  onChanged?: () => void; // new: tells parent to refetch after mutation
+  onChanged?: () => void; // callback for refetch
 };
 
 type CataloguePillar = {
@@ -64,14 +64,13 @@ export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
   const filteredCatalogue = useMemo(() => {
     if (!catalogue) return [];
     const q = search.trim().toLowerCase();
-    const base = q
+    return q
       ? catalogue.filter(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             (p.description ?? "").toLowerCase().includes(q)
         )
       : catalogue;
-    return base;
   }, [catalogue, search]);
 
   const toggleExpand = (id: string) =>
@@ -128,15 +127,11 @@ export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
     }
   };
 
-  const renderRows = (
-    items: any[],
-    level: number = 0
-  ): JSX.Element[] => {
+  const renderRows = (items: any[], level: number = 0): JSX.Element[] => {
     return items.flatMap((item) => {
       const refCode = item.ref_code ?? "";
 
       const isExpanded = expanded[item.id];
-
       const hasChildren =
         (level === 0 && item.themes && item.themes.length > 0) ||
         (level === 1 && item.subthemes && item.subthemes.length > 0);
@@ -187,7 +182,7 @@ export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
             </div>
           </td>
 
-          {/* Sort Order (use DB ref_code for clarity) */}
+          {/* Sort Order column: show ref_code for clarity */}
           <td className="px-2 py-2 text-sm text-center w-[10%]">
             {item.ref_code}
           </td>
@@ -350,13 +345,16 @@ export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
                         {pillar.description}
                       </div>
                     )}
+                    {pillar.alreadyIn && (
+                      <div className="text-xs text-gray-400 italic">
+                        Already in framework
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}
               {filteredCatalogue.length === 0 && (
-                <li className="px-2 py-2 text-xs text-gray-500">
-                  No results
-                </li>
+                <li className="px-2 py-2 text-xs text-gray-500">No results</li>
               )}
             </ul>
 
