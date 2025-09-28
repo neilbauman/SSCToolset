@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { NormalizedFramework, Theme, Subtheme } from "@/lib/types/framework";
+import type { NormalizedFramework } from "@/lib/types/framework";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -44,14 +44,17 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
     });
   };
 
-  const renderThemes = (themes: Theme[], parentRef: string): JSX.Element[] => {
+  const renderThemes = (
+    themes: NormalizedFramework["themes"],
+    parentRef: string
+  ): JSX.Element[] => {
     return themes.flatMap((theme, tIndex) => {
-      const refCode = `T${parentRef}.${tIndex + 1}`;
+      const refCode = `${parentRef}.${tIndex + 1}`;
       const isExpanded = expanded[theme.id];
       const hasChildren = theme.subthemes.length > 0;
 
       return [
-        renderRow("Theme", refCode, theme.name, theme.description, tIndex + 1, hasChildren, isExpanded, () =>
+        renderRow("Theme", `T${refCode}`, theme.name, theme.description, tIndex + 1, hasChildren, isExpanded, () =>
           toggleExpand(theme.id)
         ),
         ...(hasChildren && isExpanded ? renderSubthemes(theme.subthemes, refCode) : []),
@@ -59,10 +62,13 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
     });
   };
 
-  const renderSubthemes = (subthemes: Subtheme[], parentRef: string): JSX.Element[] => {
+  const renderSubthemes = (
+    subthemes: NormalizedFramework["themes"][0]["subthemes"],
+    parentRef: string
+  ): JSX.Element[] => {
     return subthemes.map((st, stIndex) => {
-      const refCode = `ST${parentRef}.${stIndex + 1}`;
-      return renderRow("Subtheme", refCode, st.name, st.description, stIndex + 1, false, false);
+      const refCode = `${parentRef}.${stIndex + 1}`;
+      return renderRow("Subtheme", `ST${refCode}`, st.name, st.description, stIndex + 1, false, false);
     });
   };
 
@@ -80,7 +86,7 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
       <tr key={refCode} className="border-b">
         {/* Type / Ref */}
         <td className="w-[20%] px-2 py-2 align-top">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {hasChildren && (
               <button onClick={onToggle} className="text-xs text-gray-500">
                 {isExpanded ? "▾" : "▸"}
@@ -108,19 +114,21 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
         </td>
 
         {/* Sort Order */}
-        <td className="w-[15%] px-2 py-2 align-top text-sm text-gray-600">
+        <td className="w-[10%] px-2 py-2 align-top text-sm text-gray-600">
           {sortOrder}
         </td>
 
         {/* Actions */}
-        <td className="w-[15%] px-2 py-2 align-top text-right">
-          {editMode && (
-            <div className="flex gap-2 justify-end text-gray-500 text-sm">
-              <button>✎</button>
-              <button>＋</button>
-              <button>🗑</button>
-            </div>
-          )}
+        <td className="w-[20%] px-2 py-2 align-top text-right">
+          <div className="flex gap-2 justify-end text-gray-500 text-sm">
+            {editMode && (
+              <>
+                <button>✎</button>
+                <button>＋</button>
+                <button>🗑</button>
+              </>
+            )}
+          </div>
         </td>
       </tr>
     );
@@ -166,8 +174,8 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
           <tr>
             <th className="text-left px-2 py-2 w-[20%]">Type / Ref Code</th>
             <th className="text-left px-2 py-2 w-[50%]">Name / Description</th>
-            <th className="text-left px-2 py-2 w-[15%]">Sort Order</th>
-            <th className="text-right px-2 py-2 w-[15%]">Actions</th>
+            <th className="text-left px-2 py-2 w-[10%]">Sort Order</th>
+            <th className="text-right px-2 py-2 w-[20%]">Actions</th>
           </tr>
         </thead>
         <tbody>{renderPillars(tree)}</tbody>
