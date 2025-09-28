@@ -112,6 +112,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
         description: it.pillar?.description ?? "",
         color: null,
         icon: null,
+        sort_order: it.sort_order ?? undefined,
         themes: [],
       };
       pillarMap.set(pid, pillar);
@@ -126,6 +127,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
           description: it.theme?.description ?? "",
           color: null,
           icon: null,
+          sort_order: it.sort_order ?? undefined,
           subthemes: [],
         };
         pillar.themes.push(theme);
@@ -140,6 +142,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
             description: it.subtheme?.description ?? "",
             color: null,
             icon: null,
+            sort_order: it.sort_order ?? undefined,
           });
         }
       }
