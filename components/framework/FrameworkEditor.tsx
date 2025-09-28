@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import { ChevronRight, ChevronDown, Edit, Trash, Plus } from "lucide-react";
+import { ChevronRight, ChevronDown, Edit, Trash, Plus, GripVertical } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -35,7 +35,7 @@ export default function FrameworkEditor({ tree }: Props) {
       }
 
       const isExpanded = expanded[item.id];
-      const indent = level * 12; // subtle indent
+      const indent = level === 2 ? level * 16 : level * 12; // bigger indent for subthemes
 
       const row = (
         <tr key={item.id} className="border-b">
@@ -65,13 +65,13 @@ export default function FrameworkEditor({ tree }: Props) {
               >
                 {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}
               </span>
-              <span className="ml-2 font-mono text-gray-600">{refCode}</span>
+              <span className="ml-2 text-xs text-gray-500 font-mono">{refCode}</span>
             </div>
           </td>
 
           {/* Name / Description */}
           <td className="px-4 py-2 text-sm w-[55%]">
-            <div>
+            <div style={{ marginLeft: indent }}>
               <div className="font-medium text-gray-900">{item.name}</div>
               {item.description && (
                 <div className="text-gray-500 text-xs">{item.description}</div>
@@ -81,13 +81,16 @@ export default function FrameworkEditor({ tree }: Props) {
 
           {/* Sort Order */}
           <td className="px-2 py-2 text-sm text-center w-[10%]">
-            {"sort_order" in item ? item.sort_order ?? "-" : "-"}
+            {item.sort_order ?? "-"}
           </td>
 
           {/* Actions */}
           <td className="px-2 py-2 text-sm text-right w-[15%]">
             {editMode ? (
               <div className="flex justify-end gap-2">
+                <button className="text-gray-400 cursor-not-allowed">
+                  <GripVertical size={16} />
+                </button>
                 <button className="text-gray-500 hover:text-gray-700">
                   <Edit size={16} />
                 </button>
