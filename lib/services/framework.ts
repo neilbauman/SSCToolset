@@ -44,9 +44,9 @@ const SELECT_FRAGMENT = `
   pillar_id,
   theme_id,
   subtheme_id,
-  pillar:pillar_id ( id, name, description ),
-  theme:theme_id ( id, name, description ),
-  subtheme:subtheme_id ( id, name, description )
+  pillar:pillar_id ( id, name, description, can_have_indicators ),
+  theme:theme_id ( id, name, description, can_have_indicators ),
+  subtheme:subtheme_id ( id, name, description, can_have_indicators )
 `;
 
 /**
@@ -112,6 +112,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
         description: it.pillar?.description ?? "",
         color: null,
         icon: null,
+        can_have_indicators: it.pillar?.can_have_indicators ?? false,
         sort_order: it.sort_order ?? undefined,
         themes: [],
       };
@@ -127,6 +128,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
           description: it.theme?.description ?? "",
           color: null,
           icon: null,
+          can_have_indicators: it.theme?.can_have_indicators ?? false,
           sort_order: it.sort_order ?? undefined,
           subthemes: [],
         };
@@ -142,6 +144,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
             description: it.subtheme?.description ?? "",
             color: null,
             icon: null,
+            can_have_indicators: it.subtheme?.can_have_indicators ?? true, // subthemes default true
             sort_order: it.sort_order ?? undefined,
           });
         }
