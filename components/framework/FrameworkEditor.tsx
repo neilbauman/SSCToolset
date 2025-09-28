@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Edit2, Trash2, Copy } from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
+import { ChevronRight, ChevronDown, Edit2, Trash2, Copy, Plus } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
+  editMode: boolean;
+  setEditMode: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
-export default function FrameworkEditor({ tree }: Props) {
+export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [editMode, setEditMode] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const renderRows = (
-    items: any[],
+    items: NormalizedFramework[],
     level: number = 0,
     parentRef: string = ""
   ): JSX.Element[] => {
@@ -32,16 +33,13 @@ export default function FrameworkEditor({ tree }: Props) {
       const isExpanded = expanded[item.id];
       const hasChildren =
         (level === 0 && item.themes?.length > 0) ||
-        (level === 1 && item.subthemes?.length > 0);
+        (level === 1 && (item as any).subthemes?.length > 0);
 
       const row = (
         <tr key={item.id} className="border-b">
           {/* Type / Ref Code */}
-          <td
-            className="px-3 py-2 text-sm text-gray-600"
-            style={{ width: "20%" }}
-          >
-            <div className="flex items-center gap-2">
+          <td className="px-2 py-2 w-[20%]">
+            <div className="flex items-center gap-1">
               {hasChildren && (
                 <button
                   onClick={() => toggleExpand(item.id)}
@@ -54,35 +52,28 @@ export default function FrameworkEditor({ tree }: Props) {
                   )}
                 </button>
               )}
-              {!hasChildren && (
-                <span className="inline-block w-4 h-4" /> // keeps alignment
-              )}
               <span
-                className={`font-medium ${
+                className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${
                   level === 0
-                    ? "text-indigo-700"
+                    ? "bg-blue-100 text-blue-800"
                     : level === 1
-                    ? "text-green-700"
-                    : "text-gray-700"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-purple-100 text-purple-800"
                 }`}
               >
-                {level === 0
-                  ? "Pillar"
-                  : level === 1
-                  ? "Theme"
-                  : "Subtheme"}{" "}
-                {refCode}
+                {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}
               </span>
+              <span className="text-sm font-mono">{refCode}</span>
             </div>
           </td>
 
           {/* Name / Description */}
-          <td
-            className="px-3 py-2 text-sm"
-            style={{ width: "45%" }}
-          >
-            <div className="ml-2">
-              <div className="font-medium">{item.name}</div>
+          <td className="px-2 py-2 w-[45%]">
+            <div
+              className="ml-2"
+              style={{ marginLeft: `${level * 0.75}rem` }} // subtle indent
+            >
+              <div className="font-medium text-gray-900">{item.name}</div>
               {item.description && (
                 <div className="text-xs text-gray-500">{item.description}</div>
               )}
@@ -90,29 +81,23 @@ export default function FrameworkEditor({ tree }: Props) {
           </td>
 
           {/* Sort Order */}
-          <td
-            className="px-3 py-2 text-sm text-gray-600 text-center"
-            style={{ width: "15%" }}
-          >
-            {item.sort_order ?? "-"}
+          <td className="px-2 py-2 w-[15%] text-center">
+            {(item as any).sort_order ?? "-"}
           </td>
 
           {/* Actions */}
-          <td
-            className="px-3 py-2 text-sm text-gray-600"
-            style={{ width: "20%" }}
-          >
+          <td className="px-2 py-2 w-[20%]">
             <div className="flex justify-end gap-2">
               {editMode && (
                 <>
-                  <button className="text-blue-600 hover:text-blue-800">
+                  <button className="text-gray-500 hover:text-gray-700">
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button className="text-red-600 hover:text-red-800">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button className="text-gray-600 hover:text-gray-800">
+                  <button className="text-gray-500 hover:text-gray-700">
                     <Copy className="w-4 h-4" />
+                  </button>
+                  <button className="text-red-500 hover:text-red-700">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </>
               )}
@@ -121,65 +106,72 @@ export default function FrameworkEditor({ tree }: Props) {
         </tr>
       );
 
-      return [
-        row,
-        hasChildren && isExpanded
-          ? renderRows(
-              level === 0 ? item.themes : item.subthemes,
-              level + 1,
-              refCode
-            )
-          : null,
-      ].filter(Boolean) as JSX.Element[];
+      const children: JSX.Element[] = [];
+      if (isExpanded && level === 0 && item.themes) {
+        children.push(...renderRows(item.themes as any, 1, refCode));
+      }
+      if (isExpanded && level === 1 && (item as any).subthemes) {
+        children.push(...renderRows((item as any).subthemes, 2, refCode));
+      }
+
+      return [row, ...children];
     });
   };
 
   return (
     <div>
-      {/* Controls */}
+      {/* Toolbar */}
       <div className="flex justify-between items-center mb-3">
         <div className="flex gap-2">
           <button
-            onClick={() =>
-              setExpanded(
-                tree.reduce((acc, p) => ({ ...acc, [p.id]: true }), {})
-              )
-            }
-            className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200"
-          >
-            Expand All
-          </button>
-          <button
             onClick={() => setExpanded({})}
-            className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200"
+            className="text-sm text-gray-600 hover:text-gray-800"
           >
             Collapse All
           </button>
+          <button
+            onClick={() => {
+              const allExpanded: Record<string, boolean> = {};
+              tree.forEach((p) => {
+                allExpanded[p.id] = true;
+                p.themes?.forEach((t) => {
+                  allExpanded[t.id] = true;
+                  (t.subthemes ?? []).forEach((s) => {
+                    allExpanded[s.id] = true;
+                  });
+                });
+              });
+              setExpanded(allExpanded);
+            }}
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            Expand All
+          </button>
         </div>
-        <button
-          onClick={() => setEditMode(!editMode)}
-          className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
-        >
-          {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-        </button>
+        <div className="flex gap-2">
+          {editMode && (
+            <button className="flex items-center gap-1 text-sm text-green-700 hover:text-green-900">
+              <Plus className="w-4 h-4" />
+              Add Pillar
+            </button>
+          )}
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+          </button>
+        </div>
       </div>
 
       {/* Table */}
-      <table className="w-full border border-gray-200 rounded-lg text-left">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-sm font-semibold text-gray-700">
-              Type / Ref Code
-            </th>
-            <th className="px-3 py-2 text-sm font-semibold text-gray-700">
-              Name / Description
-            </th>
-            <th className="px-3 py-2 text-sm font-semibold text-gray-700 text-center">
-              Sort Order
-            </th>
-            <th className="px-3 py-2 text-sm font-semibold text-gray-700 text-right">
-              Actions
-            </th>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b text-left">
+            <th className="px-2 py-2 w-[20%]">Type / Ref Code</th>
+            <th className="px-2 py-2 w-[45%]">Name / Description</th>
+            <th className="px-2 py-2 w-[15%] text-center">Sort Order</th>
+            <th className="px-2 py-2 w-[20%] text-right">Actions</th>
           </tr>
         </thead>
         <tbody>{renderRows(tree)}</tbody>
