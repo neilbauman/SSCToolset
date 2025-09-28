@@ -35,18 +35,21 @@ export type NormalizedFramework = {
   description: string;
   color: string | null;
   icon: string | null;
+  sort_order?: number;
   themes: {
     id: string;
     name: string;
     description: string;
     color: string | null;
     icon: string | null;
+    sort_order?: number;
     subthemes: {
       id: string;
       name: string;
       description: string;
       color: string | null;
       icon: string | null;
+      sort_order?: number;
     }[];
   }[];
 };
