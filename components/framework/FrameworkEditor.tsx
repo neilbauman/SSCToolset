@@ -3,6 +3,11 @@
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 
+type Item = NormalizedFramework & {
+  themes?: NormalizedFramework[];
+  subthemes?: NormalizedFramework[];
+};
+
 type Props = {
   tree: NormalizedFramework[];
   versionId: string;
@@ -56,11 +61,6 @@ export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
   );
 }
 
-type Item = NormalizedFramework & {
-  themes?: NormalizedFramework[];
-  subthemes?: NormalizedFramework[];
-};
-
 function Row({
   item,
   level,
@@ -113,6 +113,7 @@ function Row({
         </td>
       </tr>
 
+      {/* Render themes */}
       {item.themes?.map((theme) => (
         <Row
           key={theme.id}
@@ -121,6 +122,8 @@ function Row({
           editMode={editMode}
         />
       ))}
+
+      {/* Render subthemes */}
       {item.subthemes?.map((sub) => (
         <Row
           key={sub.id}
