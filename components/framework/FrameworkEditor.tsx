@@ -1,167 +1,149 @@
 "use client";
 
 import { useState } from "react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Edit,
+  Trash,
+  Plus,
+  Copy,
+  Upload,
+} from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 
 type Props = {
   tree: NormalizedFramework[];
-  editMode: boolean;
-  setEditMode: (val: boolean) => void;
 };
 
-export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) {
+export default function FrameworkEditor({ tree }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editMode, setEditMode] = useState(false);
 
-  const toggleExpand = (id: string) =>
+  const toggleExpand = (id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const expandAll = () => {
-    const all: Record<string, boolean> = {};
-    tree.forEach((pillar) => {
-      all[pillar.id] = true;
-      pillar.themes.forEach((theme) => {
-        all[theme.id] = true;
-        theme.subthemes.forEach((st) => (all[st.id] = true));
-      });
-    });
-    setExpanded(all);
   };
 
-  const collapseAll = () => setExpanded({});
-
-  const renderPillars = (pillars: NormalizedFramework[]): JSX.Element[] => {
-    return pillars.flatMap((pillar, pIndex) => {
-      const refCode = `P${pIndex + 1}`;
-      const isExpanded = expanded[pillar.id];
-      const hasChildren = pillar.themes.length > 0;
-
-      return [
-        renderRow("Pillar", refCode, pillar.name, pillar.description, pIndex + 1, hasChildren, isExpanded, () =>
-          toggleExpand(pillar.id)
-        ),
-        ...(hasChildren && isExpanded ? renderThemes(pillar.themes, refCode) : []),
-      ];
-    });
-  };
-
-  const renderThemes = (
-    themes: NormalizedFramework["themes"],
-    parentRef: string
+  const renderRows = (
+    items: NormalizedFramework[],
+    level: number = 0,
+    parentRef: string = ""
   ): JSX.Element[] => {
-    return themes.flatMap((theme, tIndex) => {
-      const refCode = `${parentRef}.${tIndex + 1}`;
-      const isExpanded = expanded[theme.id];
-      const hasChildren = theme.subthemes.length > 0;
+    return items.flatMap((item, index) => {
+      const refCode =
+        level === 0
+          ? `P${index + 1}`
+          : level === 1
+          ? `${parentRef}.${index + 1}`
+          : `${parentRef}.${index + 1}`;
 
-      return [
-        renderRow("Theme", `T${refCode}`, theme.name, theme.description, tIndex + 1, hasChildren, isExpanded, () =>
-          toggleExpand(theme.id)
-        ),
-        ...(hasChildren && isExpanded ? renderSubthemes(theme.subthemes, refCode) : []),
-      ];
-    });
-  };
+      const hasChildren =
+        (level === 0 && item.themes?.length > 0) ||
+        (level === 1 && (item as any).subthemes?.length > 0);
 
-  const renderSubthemes = (
-    subthemes: NormalizedFramework["themes"][0]["subthemes"],
-    parentRef: string
-  ): JSX.Element[] => {
-    return subthemes.map((st, stIndex) => {
-      const refCode = `${parentRef}.${stIndex + 1}`;
-      return renderRow("Subtheme", `ST${refCode}`, st.name, st.description, stIndex + 1, false, false);
-    });
-  };
+      const isExpanded = expanded[item.id];
 
-  const renderRow = (
-    type: "Pillar" | "Theme" | "Subtheme",
-    refCode: string,
-    name: string,
-    description: string,
-    sortOrder: number,
-    hasChildren: boolean,
-    isExpanded: boolean,
-    onToggle?: () => void
-  ): JSX.Element => {
-    return (
-      <tr key={refCode} className="border-b">
-        {/* Type / Ref */}
-        <td className="w-[20%] px-2 py-2 align-top">
-          <div className="flex items-center gap-1">
-            {hasChildren && (
-              <button onClick={onToggle} className="text-xs text-gray-500">
-                {isExpanded ? "▾" : "▸"}
-              </button>
+      const row = (
+        <tr key={item.id} className="border-b">
+          {/* Type / Ref Code */}
+          <td
+            className="px-3 py-2 whitespace-nowrap text-sm text-gray-700"
+            style={{ width: "20%" }}
+          >
+            <div className="flex items-center">
+              <div style={{ marginLeft: `${level * 12}px` }}>
+                {hasChildren ? (
+                  <button
+                    onClick={() => toggleExpand(item.id)}
+                    className="mr-2 text-gray-500 hover:text-gray-700"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4" />
+                    )}
+                  </button>
+                ) : (
+                  <span className="inline-block w-4 h-4 mr-2" />
+                )}
+              </div>
+              <span className="font-medium">{refCode}</span>
+            </div>
+          </td>
+
+          {/* Name / Description */}
+          <td
+            className="px-3 py-2 text-sm"
+            style={{ width: "50%" }}
+          >
+            <div className="font-medium text-gray-900">{item.name}</div>
+            {item.description && (
+              <div className="text-gray-500">{item.description}</div>
             )}
-            <span
-              className={`text-xs px-2 py-0.5 rounded ${
-                type === "Pillar"
-                  ? "bg-blue-100 text-blue-700"
-                  : type === "Theme"
-                  ? "bg-green-100 text-green-700"
-                  : "bg-purple-100 text-purple-700"
-              }`}
-            >
-              {type}
-            </span>
-            <span className="text-xs text-gray-600">{refCode}</span>
-          </div>
-        </td>
+          </td>
 
-        {/* Name / Desc */}
-        <td className="w-[50%] px-2 py-2 align-top">
-          <div className="font-medium">{name}</div>
-          {description && <div className="text-xs text-gray-500">{description}</div>}
-        </td>
+          {/* Sort Order */}
+          <td
+            className="px-3 py-2 text-sm text-gray-500 text-center"
+            style={{ width: "15%" }}
+          >
+            {item.sort_order ?? "-"}
+          </td>
 
-        {/* Sort Order */}
-        <td className="w-[10%] px-2 py-2 align-top text-sm text-gray-600">
-          {sortOrder}
-        </td>
+          {/* Actions */}
+          <td
+            className="px-3 py-2 text-sm text-right"
+            style={{ width: "15%" }}
+          >
+            <div className="flex items-center justify-end gap-2">
+              {editMode && (
+                <>
+                  <button className="text-blue-600 hover:text-blue-800">
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button className="text-red-600 hover:text-red-800">
+                    <Trash className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
+          </td>
+        </tr>
+      );
 
-        {/* Actions */}
-        <td className="w-[20%] px-2 py-2 align-top text-right">
-          <div className="flex gap-2 justify-end text-gray-500 text-sm">
-            {editMode && (
-              <>
-                <button>✎</button>
-                <button>＋</button>
-                <button>🗑</button>
-              </>
-            )}
-          </div>
-        </td>
-      </tr>
-    );
+      const children =
+        level === 0 && isExpanded && item.themes
+          ? renderRows(item.themes as any, 1, refCode)
+          : level === 1 && isExpanded && (item as any).subthemes
+          ? renderRows((item as any).subthemes, 2, refCode)
+          : [];
+
+      return [row, ...children];
+    });
   };
 
   return (
-    <div className="mt-4">
-      {/* Controls */}
-      <div className="flex justify-between items-center mb-2">
+    <div>
+      {/* Toolbar */}
+      <div className="flex justify-between items-center mb-4">
         <div className="flex gap-2">
-          <button
-            onClick={expandAll}
-            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
-          >
+          <button className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">
             Expand All
           </button>
-          <button
-            onClick={collapseAll}
-            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
-          >
+          <button className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">
             Collapse All
           </button>
         </div>
-
         <div className="flex gap-2">
           {editMode && (
-            <button className="px-2 py-1 text-xs border rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
-              ＋ Add Pillar
+            <button className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200">
+              <Plus className="w-4 h-4 inline mr-1" />
+              Add Pillar
             </button>
           )}
           <button
-            onClick={() => setEditMode(!editMode)}
-            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
+            onClick={() => setEditMode((prev) => !prev)}
+            className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200"
           >
             {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
           </button>
@@ -169,17 +151,40 @@ export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) 
       </div>
 
       {/* Table */}
-      <table className="w-full border text-sm">
+      <table className="min-w-full border border-gray-200 bg-white">
         <thead className="bg-gray-50">
           <tr>
-            <th className="text-left px-2 py-2 w-[20%]">Type / Ref Code</th>
-            <th className="text-left px-2 py-2 w-[50%]">Name / Description</th>
-            <th className="text-left px-2 py-2 w-[10%]">Sort Order</th>
-            <th className="text-right px-2 py-2 w-[20%]">Actions</th>
+            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">
+              Type / Ref Code
+            </th>
+            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">
+              Name / Description
+            </th>
+            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+              Sort Order
+            </th>
+            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">
+              Actions
+            </th>
           </tr>
         </thead>
-        <tbody>{renderPillars(tree)}</tbody>
+        <tbody>{renderRows(tree)}</tbody>
       </table>
+
+      {/* Version controls */}
+      <div className="flex gap-2 mt-4">
+        <button className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+          Open Version
+        </button>
+        <button className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+          <Copy className="w-4 h-4 inline mr-1" />
+          Clone
+        </button>
+        <button className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200">
+          <Upload className="w-4 h-4 inline mr-1" />
+          Publish
+        </button>
+      </div>
     </div>
   );
 }
