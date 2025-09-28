@@ -11,17 +11,6 @@ import {
   MoveVertical,
 } from "lucide-react";
 
-/**
- * Renders a 3-level tree table for Pillar > Theme > Subtheme.
- * - Indentation on both columns for child rows.
- * - Fixed column layout to prevent “bouncing” when toggling.
- * - Actions column is always present; icons are hidden unless edit mode.
- * - Ref codes:
- *   Pillar:  P{pillarIndex}
- *   Theme:   T{pillarIndex}.{themeIndex}
- *   Subtheme: ST{pillarIndex}.{themeIndex}.{subIndex}
- */
-
 type Props = {
   tree: NormalizedFramework[];
   editMode?: boolean;
@@ -35,20 +24,18 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
     () => new Set<string>()
   );
 
-  const togglePillar = (id: string) => {
+  const togglePillar = (id: string) =>
     setOpenPillars((s) => {
       const n = new Set(s);
       n.has(id) ? n.delete(id) : n.add(id);
       return n;
     });
-  };
-  const toggleTheme = (id: string) => {
+  const toggleTheme = (id: string) =>
     setOpenThemes((s) => {
       const n = new Set(s);
       n.has(id) ? n.delete(id) : n.add(id);
       return n;
     });
-  };
 
   const rows = useMemo(() => {
     const out: Array<{
@@ -114,7 +101,6 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
     return out;
   }, [tree]);
 
-  // Helpers for indentation and badges
   const badge = (label: string, tone: "blue" | "green" | "violet") => {
     const tones =
       tone === "blue"
@@ -130,12 +116,11 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
   };
 
   const indentCls = (level: 0 | 1 | 2) =>
-    level === 0 ? "" : level === 1 ? "pl-8" : "pl-16";
+    level === 0 ? "" : level === 1 ? "pl-4" : "pl-8";
 
   const isRowVisible = (r: (typeof rows)[number]) => {
     if (r.level === 0) return true;
     if (r.level === 1) return openPillars.has(r.pillarId!);
-    // subtheme visible only if pillar AND theme open
     return openPillars.has(r.pillarId!) && openThemes.has(r.themeId!);
   };
 
@@ -149,7 +134,6 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
         <button
           onClick={() => togglePillar(r.pillarId!)}
           className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded hover:bg-gray-100"
-          aria-label={open ? "Collapse pillar" : "Expand pillar"}
         >
           <Icon className="h-4 w-4 text-gray-600" />
         </button>
@@ -163,7 +147,6 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
         <button
           onClick={() => toggleTheme(r.themeId!)}
           className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded hover:bg-gray-100"
-          aria-label={open ? "Collapse theme" : "Expand theme"}
         >
           <Icon className="h-4 w-4 text-gray-600" />
         </button>
@@ -182,11 +165,10 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
 
   return (
     <div className="w-full">
-      {/* Table header with fixed layout to prevent column shift */}
       <div
         className="grid items-center border-b bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600"
         style={{
-          gridTemplateColumns: "32% 48% 10% 10%",
+          gridTemplateColumns: "32% 46% 12% 10%",
         }}
       >
         <div>TYPE / REF CODE</div>
@@ -195,7 +177,6 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
         <div className="text-right">ACTIONS</div>
       </div>
 
-      {/* Rows */}
       <div className="divide-y">
         {rows.map((r) =>
           isRowVisible(r) ? (
@@ -203,17 +184,15 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
               key={r.key}
               className="grid items-center px-3 py-2 text-sm"
               style={{
-                gridTemplateColumns: "32% 48% 10% 10%",
+                gridTemplateColumns: "32% 46% 12% 10%",
               }}
             >
-              {/* Type / RefCode */}
               <div className={`flex items-center ${indentCls(r.level)}`}>
                 {caretFor(r)}
                 {typeBadgeFor(r)}
                 <span className="ml-3 text-gray-500">{r.ref}</span>
               </div>
 
-              {/* Name / Description */}
               <div className={`${indentCls(r.level)} -ml-2`}>
                 <div className="font-medium text-gray-900">{r.name}</div>
                 {r.description ? (
@@ -223,12 +202,10 @@ export default function FrameworkEditor({ tree, editMode = false }: Props) {
                 ) : null}
               </div>
 
-              {/* Sort */}
               <div className="text-right text-gray-700">
                 {typeof r.sort === "number" ? r.sort : ""}
               </div>
 
-              {/* Actions (always reserve space; hide icons when not in edit mode) */}
               <div className="flex justify-end gap-2">
                 <button
                   className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-gray-100 ${
