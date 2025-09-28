@@ -3,7 +3,6 @@
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Edit, Trash, Plus } from "lucide-react";
-import clsx from "clsx";
 
 type Props = {
   tree: NormalizedFramework[];
