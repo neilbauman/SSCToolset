@@ -15,6 +15,7 @@ export type FrameworkEntity = {
   description: string;
   color: string | null;
   icon: string | null;
+  can_have_indicators?: boolean; // NEW: matches DB column
 };
 
 export type FrameworkItem = {
@@ -35,6 +36,7 @@ export type NormalizedFramework = {
   description: string;
   color: string | null;
   icon: string | null;
+  can_have_indicators?: boolean; // NEW
   sort_order?: number;
   themes: {
     id: string;
@@ -42,6 +44,7 @@ export type NormalizedFramework = {
     description: string;
     color: string | null;
     icon: string | null;
+    can_have_indicators?: boolean; // NEW
     sort_order?: number;
     subthemes: {
       id: string;
@@ -49,6 +52,7 @@ export type NormalizedFramework = {
       description: string;
       color: string | null;
       icon: string | null;
+      can_have_indicators?: boolean; // NEW
       sort_order?: number;
     }[];
   }[];
