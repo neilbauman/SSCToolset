@@ -2,13 +2,7 @@
 
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import {
-  ChevronRight,
-  ChevronDown,
-  Edit,
-  Trash,
-  Plus,
-} from "lucide-react";
+import { ChevronRight, ChevronDown, Edit, Trash, Plus } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -18,194 +12,158 @@ export default function FrameworkEditor({ tree }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [editMode, setEditMode] = useState(false);
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const renderRows = (
+    items: NormalizedFramework[],
+    level: number = 0,
+    parentRef: string = ""
+  ): JSX.Element[] => {
+    return items.flatMap((item, index) => {
+      const refCode =
+        level === 0
+          ? `P${index + 1}`
+          : level === 1
+          ? `${parentRef}.${index + 1}`
+          : `${parentRef}.${index + 1}`;
+
+      const hasChildren =
+        (level === 0 && item.themes?.length > 0) ||
+        (level === 1 && item.subthemes?.length > 0);
+
+      const isExpanded = expanded[item.id];
+      const indent = level * 12; // subtle indent per level
+
+      const row = (
+        <tr key={item.id} className="border-b">
+          {/* Type / Ref Code */}
+          <td className="px-2 py-2 text-sm align-top w-[20%]">
+            <div className="flex items-center" style={{ marginLeft: indent }}>
+              {hasChildren && (
+                <button
+                  onClick={() => toggleExpand(item.id)}
+                  className="mr-1 text-gray-500 hover:text-gray-700"
+                >
+                  {isExpanded ? (
+                    <ChevronDown size={16} />
+                  ) : (
+                    <ChevronRight size={16} />
+                  )}
+                </button>
+              )}
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  level === 0
+                    ? "bg-blue-100 text-blue-800"
+                    : level === 1
+                    ? "bg-green-100 text-green-800"
+                    : "bg-purple-100 text-purple-800"
+                }`}
+              >
+                {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}
+              </span>
+              <span className="ml-2 font-mono text-gray-600">{refCode}</span>
+            </div>
+          </td>
+
+          {/* Name / Description */}
+          <td className="px-4 py-2 text-sm w-[55%]">
+            <div>
+              <div className="font-medium text-gray-900">{item.name}</div>
+              {item.description && (
+                <div className="text-gray-500 text-xs">{item.description}</div>
+              )}
+            </div>
+          </td>
+
+          {/* Sort Order */}
+          <td className="px-2 py-2 text-sm text-center w-[10%]">
+            {item.sort_order ?? "-"}
+          </td>
+
+          {/* Actions */}
+          <td className="px-2 py-2 text-sm text-right w-[15%]">
+            {editMode ? (
+              <div className="flex justify-end gap-2">
+                <button className="text-gray-500 hover:text-gray-700">
+                  <Edit size={16} />
+                </button>
+                <button className="text-gray-500 hover:text-gray-700">
+                  <Trash size={16} />
+                </button>
+                <button className="text-gray-500 hover:text-gray-700">
+                  <Plus size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="h-4" /> // keeps column width stable
+            )}
+          </td>
+        </tr>
+      );
+
+      const children: JSX.Element[] = [];
+      if (isExpanded && hasChildren) {
+        if (level === 0 && item.themes) {
+          children.push(...renderRows(item.themes, 1, refCode));
+        }
+        if (level === 1 && item.subthemes) {
+          children.push(...renderRows(item.subthemes, 2, refCode));
+        }
+      }
+
+      return [row, ...children];
+    });
   };
 
   return (
-    <div className="overflow-x-auto">
-      {/* Controls */}
-      <div className="flex justify-between items-center mb-4">
-        <div className="space-x-2">
-          <button
-            onClick={() => {
-              const all: Record<string, boolean> = {};
-              tree.forEach((p) => {
-                all[p.id] = true;
-                p.themes.forEach((t) => {
-                  all[t.id] = true;
-                  t.subthemes.forEach((s) => {
-                    all[s.id] = true;
-                  });
-                });
-              });
-              setExpanded(all);
-            }}
-            className="px-3 py-1 text-sm border rounded"
-          >
-            Expand All
-          </button>
+    <div>
+      <div className="mb-2 flex justify-between items-center">
+        <div className="flex gap-2">
           <button
             onClick={() => setExpanded({})}
-            className="px-3 py-1 text-sm border rounded"
+            className="text-xs text-gray-600 hover:underline"
           >
-            Collapse All
+            Collapse all
           </button>
-        </div>
-        <div className="space-x-2">
           <button
-            onClick={() => setEditMode((prev) => !prev)}
-            className="px-3 py-1 text-sm border rounded"
+            onClick={() => {
+              const allExpanded: Record<string, boolean> = {};
+              tree.forEach((pillar) => {
+                allExpanded[pillar.id] = true;
+                pillar.themes?.forEach((theme) => {
+                  allExpanded[theme.id] = true;
+                  theme.subthemes?.forEach(
+                    (st) => (allExpanded[st.id] = true)
+                  );
+                });
+              });
+              setExpanded(allExpanded);
+            }}
+            className="text-xs text-gray-600 hover:underline"
           >
-            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+            Expand all
           </button>
-          {editMode && (
-            <button className="px-3 py-1 text-sm border rounded bg-blue-600 text-white">
-              + Add Pillar
-            </button>
-          )}
         </div>
+        <button
+          onClick={() => setEditMode((prev) => !prev)}
+          className="text-xs text-gray-600 hover:underline"
+        >
+          {editMode ? "Exit edit mode" : "Enter edit mode"}
+        </button>
       </div>
 
-      {/* Table */}
-      <table className="min-w-full border border-gray-300 text-sm">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="px-4 py-2 text-left w-[35%]">Type / Ref Code</th>
-            <th className="px-4 py-2 text-left w-[35%]">Name / Description</th>
-            <th className="px-4 py-2 text-center w-[15%]">Sort Order</th>
-            <th className="px-4 py-2 text-right w-[15%]">Actions</th>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-gray-50 text-left text-sm font-medium text-gray-700">
+            <th className="px-2 py-2 w-[20%]">Type / Ref Code</th>
+            <th className="px-4 py-2 w-[55%]">Name / Description</th>
+            <th className="px-2 py-2 text-center w-[10%]">Sort Order</th>
+            <th className="px-2 py-2 text-right w-[15%]">Actions</th>
           </tr>
         </thead>
-        <tbody>
-          {tree.map((pillar, pi) => {
-            const pillarExpanded = expanded[pillar.id];
-            return (
-              <>
-                <tr key={pillar.id} className="border-b">
-                  <td className="px-4 py-2 flex items-center space-x-2">
-                    <button
-                      onClick={() => toggleExpand(pillar.id)}
-                      className="text-gray-500"
-                    >
-                      {pillarExpanded ? (
-                        <ChevronDown size={16} />
-                      ) : (
-                        <ChevronRight size={16} />
-                      )}
-                    </button>
-                    <span className="inline-block bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">
-                      Pillar
-                    </span>
-                    <span className="text-xs font-mono">P{pi + 1}</span>
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="font-medium">{pillar.name}</div>
-                    <div className="text-xs text-gray-600">
-                      {pillar.description}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2 text-center">-</td>
-                  <td className="px-4 py-2 text-right">
-                    {editMode && (
-                      <div className="flex justify-end space-x-2">
-                        <button className="text-gray-600 hover:text-blue-600">
-                          <Edit size={16} />
-                        </button>
-                        <button className="text-gray-600 hover:text-red-600">
-                          <Trash size={16} />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-
-                {pillarExpanded &&
-                  pillar.themes.map((theme, ti) => {
-                    const themeExpanded = expanded[theme.id];
-                    return (
-                      <>
-                        <tr key={theme.id} className="border-b">
-                          <td className="px-4 py-2 pl-10 flex items-center space-x-2">
-                            <button
-                              onClick={() => toggleExpand(theme.id)}
-                              className="text-gray-500"
-                            >
-                              {themeExpanded ? (
-                                <ChevronDown size={16} />
-                              ) : (
-                                <ChevronRight size={16} />
-                              )}
-                            </button>
-                            <span className="inline-block bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">
-                              Theme
-                            </span>
-                            <span className="text-xs font-mono">
-                              T{pi + 1}.{ti + 1}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="font-medium">{theme.name}</div>
-                            <div className="text-xs text-gray-600">
-                              {theme.description}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-center">-</td>
-                          <td className="px-4 py-2 text-right">
-                            {editMode && (
-                              <div className="flex justify-end space-x-2">
-                                <button className="text-gray-600 hover:text-blue-600">
-                                  <Edit size={16} />
-                                </button>
-                                <button className="text-gray-600 hover:text-red-600">
-                                  <Trash size={16} />
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-
-                        {themeExpanded &&
-                          theme.subthemes.map((subtheme, si) => (
-                            <tr key={subtheme.id} className="border-b">
-                              <td className="px-4 py-2 pl-16 flex items-center space-x-2">
-                                <span className="inline-block bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs">
-                                  Subtheme
-                                </span>
-                                <span className="text-xs font-mono">
-                                  ST{pi + 1}.{ti + 1}.{si + 1}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2">
-                                <div className="font-medium">
-                                  {subtheme.name}
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  {subtheme.description}
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 text-center">-</td>
-                              <td className="px-4 py-2 text-right">
-                                {editMode && (
-                                  <div className="flex justify-end space-x-2">
-                                    <button className="text-gray-600 hover:text-blue-600">
-                                      <Edit size={16} />
-                                    </button>
-                                    <button className="text-gray-600 hover:text-red-600">
-                                      <Trash size={16} />
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                      </>
-                    );
-                  })}
-              </>
-            );
-          })}
-        </tbody>
+        <tbody>{renderRows(tree)}</tbody>
       </table>
     </div>
   );
