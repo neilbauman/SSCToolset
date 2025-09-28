@@ -1,60 +1,66 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { getVersionTree } from "@/lib/services/framework";
-import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
+import PageHeader from "@/components/ui/PageHeader";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { listVersions } from "@/lib/services/framework";
+import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClient";
 import { groupThemes } from "@/lib/theme";
 
-type Props = {
-  versions: FrameworkVersion[];
-  openedId?: string;
-};
+export const dynamic = "force-dynamic";
 
-export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
-  const [tree, setTree] = useState<NormalizedFramework[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default async function PrimaryFrameworkPage(props: { searchParams?: { version?: string } }) {
+  const searchParams = props?.searchParams ?? {};
+  const openedId = searchParams.version ?? undefined;
 
+  const versions = await listVersions();
   const theme = groupThemes["ssc-config"];
 
-  useEffect(() => {
-    if (!openedId) {
-      setTree(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    getVersionTree(openedId)
-      .then((res) => {
-        setTree(res);
-      })
-      .catch((e) => {
-        console.error("Failed to load framework tree", e);
-        setError("Failed to load framework tree.");
-      })
-      .finally(() => setLoading(false));
-  }, [openedId]);
-
   return (
-    <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
-      {!openedId && (
-        <div className="text-sm text-gray-600">
-          Select a version to view its framework.
-        </div>
-      )}
+    <div>
+      <PageHeader
+        title="Primary Framework Editor"
+        group="ssc-config"
+        description="Manage framework versions created from the SSC catalogue."
+        tool="Primary Framework Editor"
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "SSC Configuration", href: "/configuration" },
+              { label: "Primary Framework Editor" },
+            ]}
+          />
+        }
+      />
 
-      {openedId && loading && (
-        <div className="text-sm text-gray-600">Loading framework tree…</div>
-      )}
+      {/* Versions selector */}
+      <div className="mb-6 flex items-center gap-3">
+        <label htmlFor="version" className="text-sm font-medium text-gray-700">
+          Select Version:
+        </label>
+        <select
+          id="version"
+          name="version"
+          defaultValue={openedId ?? ""}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (id) {
+              window.location.href = `/configuration/primary?version=${id}`;
+            } else {
+              window.location.href = `/configuration/primary`;
+            }
+          }}
+          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+        >
+          <option value="">-- Select a version --</option>
+          {versions.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name} {v.status === "draft" ? "(Draft)" : "(Published)"}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      {openedId && error && (
-        <div className="text-sm text-red-600">{error}</div>
-      )}
-
-      {openedId && tree && <FrameworkEditor tree={tree} />}
+      {/* Framework Client */}
+      <PrimaryFrameworkClient versions={versions} openedId={openedId} />
     </div>
   );
 }
