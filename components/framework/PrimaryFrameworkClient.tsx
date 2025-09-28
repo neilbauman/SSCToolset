@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { getVersionTree } from "@/lib/services/framework";
-import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
+import type {
+  FrameworkVersion,
+  NormalizedFramework,
+} from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import { groupThemes } from "@/lib/theme";
 
@@ -20,6 +23,10 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const selectedVersion = versions.find((v) => v.id === openedId);
 
   const loadTree = async (id: string) => {
+    if (!id) {
+      setTree(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -33,9 +40,13 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   };
 
+  // Initial + when openedId changes
   useEffect(() => {
-    if (openedId) loadTree(openedId);
-    else setTree(null);
+    if (openedId) {
+      loadTree(openedId);
+    } else {
+      setTree(null);
+    }
   }, [openedId]);
 
   return (
@@ -45,7 +56,10 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           {/* Version selector */}
           <div className="flex items-center gap-3">
-            <label htmlFor="version" className="text-sm font-medium text-gray-700">
+            <label
+              htmlFor="version"
+              className="text-sm font-medium text-gray-700"
+            >
               Select Version:
             </label>
             <select
@@ -83,4 +97,25 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
               >
                 {selectedVersion.status === "draft" ? "Draft" : "Published"}
               </span>
-              <
+              <span>
+                Version ID:{" "}
+                <code className="text-gray-500">{selectedVersion.id}</code>
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Framework tree */}
+      {loading && <p className="text-sm text-gray-500">Loading framework…</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {tree && openedId && (
+        <FrameworkEditor
+          tree={tree}
+          versionId={openedId}
+          onChanged={() => loadTree(openedId)} // 🔑 refresh after mutation
+        />
+      )}
+    </div>
+  );
+}
