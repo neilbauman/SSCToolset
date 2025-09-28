@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
-import { listPillarCatalogue } from "@/lib/services/framework";
+import { listPillarCatalogue, createPillar } from "@/lib/services/framework";
 
 /** GET /api/catalogue/pillars?version=:id
- *  Returns catalogue pillars + alreadyIn flag for a given version.
+ *  Returns all catalogue pillars + alreadyIn flag for a given version.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const versionId = searchParams.get("version");
 
   try {
-    // 1. Load all catalogue pillars
+    // Load all catalogue pillars
     const pillars = await listPillarCatalogue();
 
     if (!versionId) {
-      return NextResponse.json({ data: pillars.map((p) => ({ ...p, alreadyIn: false })) });
+      return NextResponse.json({
+        data: pillars.map((p) => ({ ...p, alreadyIn: false })),
+      });
     }
 
-    // 2. Find which pillars are already in this version
+    // Find pillars already in this version
     const { data: existing, error } = await supabaseServer
       .from("framework_version_items")
       .select("pillar_id")
@@ -27,7 +29,6 @@ export async function GET(req: NextRequest) {
 
     const existingIds = new Set((existing ?? []).map((r: any) => r.pillar_id));
 
-    // 3. Mark alreadyIn
     const data = pillars.map((p) => ({
       ...p,
       alreadyIn: existingIds.has(p.id),
@@ -35,7 +36,43 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ data });
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ error: e?.message ?? "Failed to load catalogue" }, { status: 500 });
+    console.error("GET /api/catalogue/pillars failed", e);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to load catalogue" },
+      { status: 500 }
+    );
+  }
+}
+
+/** POST /api/catalogue/pillars
+ *  Body: { versionId, existingId?, name?, description?, includeChildren? }
+ *  Adds a pillar to the framework version, either from catalogue or new.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { versionId, existingId, name, description, includeChildren } = body;
+
+    if (!versionId) {
+      return NextResponse.json(
+        { error: "Missing versionId" },
+        { status: 400 }
+      );
+    }
+
+    const result = await createPillar(versionId, {
+      existingId,
+      name,
+      description,
+      includeChildren: !!includeChildren,
+    });
+
+    return NextResponse.json({ data: result });
+  } catch (e: any) {
+    console.error("POST /api/catalogue/pillars failed", e);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to add pillar" },
+      { status: 500 }
+    );
   }
 }
