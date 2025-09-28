@@ -10,10 +10,6 @@ import FrameworkEditor from "./FrameworkEditor";
 import { groupThemes } from "@/lib/theme";
 import { Copy, Trash2, Upload } from "lucide-react";
 
-/**
- * Shows the version selector + version metadata + actions,
- * and loads/renders the framework tree for the selected version.
- */
 type Props = {
   versions: FrameworkVersion[];
   openedId?: string;
@@ -28,7 +24,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   const theme = groupThemes["ssc-config"];
 
-  // Keep selectedId in sync with URL-provided openedId
   useEffect(() => setSelectedId(openedId), [openedId]);
 
   const selectedVersion = useMemo(
@@ -59,7 +54,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   }, [loadTree]);
 
   const onOpen = () => {
-    // Push a new URL so a refresh/bookmark preserves the selection.
     if (selectedId) {
       window.location.href = `/configuration/primary?version=${selectedId}`;
     } else {
@@ -80,7 +74,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   return (
     <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
-      {/* Version selector */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label htmlFor="version" className="text-sm font-medium text-gray-700">
           Select Version:
@@ -108,7 +101,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
           Open Version
         </button>
 
-        {/* Version-level actions (not wired yet) */}
         <div className="ml-auto flex items-center gap-2">
           <button
             className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1 text-sm hover:bg-gray-50"
@@ -141,7 +133,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         </div>
       </div>
 
-      {/* Metadata strip */}
       {selectedVersion && (
         <div className="mb-4 flex flex-wrap items-center gap-4 text-sm">
           <div>
@@ -180,21 +171,17 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         </div>
       )}
 
-      {/* Tree panel */}
       {!selectedId && (
         <div className="text-sm text-gray-600">
           Select a version and click “Open Version”.
         </div>
       )}
-
       {selectedId && loading && (
         <div className="text-sm text-gray-600">Loading framework tree…</div>
       )}
-
       {selectedId && error && (
         <div className="text-sm text-red-600">{error}</div>
       )}
-
       {selectedId && tree && (
         <FrameworkEditor tree={tree} editMode={editMode} />
       )}
