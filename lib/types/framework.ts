@@ -1,5 +1,8 @@
 // lib/types/framework.ts
 
+/** FrameworkVersion
+ * Represents a version of the SSC framework.
+ */
 export type FrameworkVersion = {
   id: string;
   name: string;
@@ -9,15 +12,21 @@ export type FrameworkVersion = {
   created_by?: string;
 };
 
+/** FrameworkEntity
+ * Base catalogue entity (pillar, theme, subtheme).
+ */
 export type FrameworkEntity = {
   id: string;
   name: string;
   description: string;
   color: string | null;
   icon: string | null;
-  can_have_indicators?: boolean; // NEW: matches DB column
+  can_have_indicators?: boolean; // matches DB column
 };
 
+/** FrameworkItem
+ * A version-specific item linking to catalogue entities.
+ */
 export type FrameworkItem = {
   id: string;
   version_id: string;
@@ -30,30 +39,21 @@ export type FrameworkItem = {
   subtheme: FrameworkEntity | null;
 };
 
+/** NormalizedFramework
+ * Recursive tree structure for rendering frameworks:
+ * - Pillars may contain themes
+ * - Themes may contain subthemes
+ * - Subthemes are leaves
+ */
 export type NormalizedFramework = {
   id: string;
   name: string;
   description: string;
   color: string | null;
   icon: string | null;
-  can_have_indicators?: boolean; // NEW
+  can_have_indicators?: boolean;
   sort_order?: number;
-  themes: {
-    id: string;
-    name: string;
-    description: string;
-    color: string | null;
-    icon: string | null;
-    can_have_indicators?: boolean; // NEW
-    sort_order?: number;
-    subthemes: {
-      id: string;
-      name: string;
-      description: string;
-      color: string | null;
-      icon: string | null;
-      can_have_indicators?: boolean; // NEW
-      sort_order?: number;
-    }[];
-  }[];
+  type: "pillar" | "theme" | "subtheme";
+  themes?: NormalizedFramework[];    // only present on pillars
+  subthemes?: NormalizedFramework[]; // only present on themes
 };
