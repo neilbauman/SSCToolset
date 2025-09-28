@@ -1,40 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import type { NormalizedFramework } from "@/lib/types/framework";
 
-type Item = {
-  id: string;
-  name: string;
-  description: string | null;
-  ref_code: string;
-  sort_order: number;
-  type: "pillar" | "theme" | "subtheme";
-  themes?: Item[];
-  subthemes?: Item[];
+type Props = {
+  tree: NormalizedFramework[];
+  versionId: string;
+  onChanged: () => Promise<void>;
 };
 
-export default function FrameworkEditor({ versionId }: { versionId: string }) {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
   const [editMode, setEditMode] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/framework/tree?version=${versionId}`);
-        const { data } = await res.json();
-        setItems(data ?? []);
-      } catch (err) {
-        console.error("Failed to load framework tree", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (versionId) load();
-  }, [versionId]);
-
-  if (loading) return <div>Loading...</div>;
 
   return (
     <div className="border rounded p-4 bg-white">
@@ -58,14 +34,14 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
           </tr>
         </thead>
         <tbody>
-          {items.length === 0 ? (
+          {tree.length === 0 ? (
             <tr>
               <td colSpan={4} className="text-center py-4">
                 No items yet. Use “Add Pillar” to begin.
               </td>
             </tr>
           ) : (
-            items.map((pillar) => (
+            tree.map((pillar) => (
               <Row
                 key={pillar.id}
                 item={pillar}
@@ -80,6 +56,11 @@ export default function FrameworkEditor({ versionId }: { versionId: string }) {
   );
 }
 
+type Item = NormalizedFramework & {
+  themes?: NormalizedFramework[];
+  subthemes?: NormalizedFramework[];
+};
+
 function Row({
   item,
   level,
@@ -89,7 +70,7 @@ function Row({
   level: number;
   editMode: boolean;
 }) {
-  const padding = level * 20; // indent
+  const padding = level * 20;
 
   return (
     <>
@@ -132,7 +113,6 @@ function Row({
         </td>
       </tr>
 
-      {/* Render children */}
       {item.themes?.map((theme) => (
         <Row
           key={theme.id}
