@@ -49,10 +49,6 @@ const SELECT_FRAGMENT = `
   subtheme:subtheme_id ( id, name, description, can_have_indicators )
 `;
 
-/**
- * Prefer the canonical table name `framework_version_items`.
- * Fall back to the legacy name `framework_items` if the canonical one doesn't exist.
- */
 export async function getVersionItems(versionId: string): Promise<FrameworkItem[]> {
   async function query(table: string) {
     const { data, error } = await supabaseServer
@@ -144,7 +140,7 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
             description: it.subtheme?.description ?? "",
             color: null,
             icon: null,
-            can_have_indicators: it.subtheme?.can_have_indicators ?? true, // subthemes default true
+            can_have_indicators: it.subtheme?.can_have_indicators ?? true,
             sort_order: it.sort_order ?? undefined,
           });
         }
@@ -158,4 +154,45 @@ export function normalizeFramework(items: FrameworkItem[]): NormalizedFramework[
 export async function getVersionTree(versionId: string): Promise<NormalizedFramework[]> {
   const items = await getVersionItems(versionId);
   return normalizeFramework(items);
+}
+
+/** ---------------- Create Pillar ---------------- */
+export async function createPillar(
+  versionId: string,
+  data: { name?: string; description?: string; existingId?: string }
+) {
+  let pillarId = data.existingId;
+
+  // If creating new → insert into pillar_catalogue
+  if (!pillarId) {
+    const { data: newPillar, error } = await supabaseServer
+      .from("pillar_catalogue")
+      .insert({
+        name: data.name,
+        description: data.description,
+        can_have_indicators: false,
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    pillarId = newPillar.id;
+  }
+
+  // Insert into framework_version_items
+  const { data: item, error: itemError } = await supabaseServer
+    .from("framework_version_items")
+    .insert({
+      version_id: versionId,
+      pillar_id: pillarId,
+      theme_id: null,
+      subtheme_id: null,
+      sort_order: Date.now(), // placeholder: will render as relative index
+      ref_code: "temp", // ref code derived in UI
+    })
+    .select("*")
+    .single();
+
+  if (itemError) throw itemError;
+  return item;
 }
