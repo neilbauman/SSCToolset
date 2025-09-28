@@ -1,10 +1,12 @@
+// components/framework/FrameworkEditor.tsx
+
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { NormalizedFramework } from "@/lib/types/framework";
 import {
-  ChevronDown,
   ChevronRight,
+  ChevronDown,
   GripVertical,
   Pencil,
   Trash2,
@@ -12,279 +14,316 @@ import {
 } from "lucide-react";
 
 type Props = {
-  tree: NormalizedFramework[];
-  versionId: string;
-  onChanged: () => Promise<void>;
-  onAddPillar?: () => void;
+  tree: any[];              // raw RPC response (pillars with nested themes/subthemes)
+  versionId: string;        // current version id
+  onChanged?: () => void;   // call to refetch after mutations
 };
 
-type Item = NormalizedFramework & {
-  type: "pillar" | "theme" | "subtheme";
-  themes?: Item[];
-  subthemes?: Item[];
-  sort_order?: number | null;
-};
+/**
+ * Normalize incoming RPC tree and derive:
+ * - type for each node
+ * - sort_order per level (1..N within its parent)
+ * - ref_code: P{p}, T{p}.{t}, ST{p}.{t}.{s}
+ */
+function useNormalized(tree: any[]): NormalizedFramework[] {
+  return useMemo(() => {
+    if (!Array.isArray(tree)) return [];
+
+    const pillars = (tree ?? []) as any[];
+
+    const out: NormalizedFramework[] = pillars.map((p, pIdx) => {
+      const pillarIndex = pIdx + 1;
+
+      const pillar: NormalizedFramework = {
+        id: p.id,
+        type: "pillar",
+        name: p.name ?? "",
+        description: p.description ?? "",
+        color: p.color ?? null,
+        icon: p.icon ?? null,
+        can_have_indicators: p.can_have_indicators ?? false,
+        sort_order: pillarIndex,
+        ref_code: `P${pillarIndex}`,
+        themes: [],
+      };
+
+      const rawThemes: any[] = Array.isArray(p.themes) ? p.themes : [];
+      pillar.themes = rawThemes.map((t, tIdx) => {
+        const themeIndex = tIdx + 1;
+
+        const theme: NormalizedFramework = {
+          id: t.id,
+          type: "theme",
+          name: t.name ?? "",
+          description: t.description ?? "",
+          color: t.color ?? null,
+          icon: t.icon ?? null,
+          can_have_indicators: t.can_have_indicators ?? true,
+          sort_order: themeIndex,
+          ref_code: `T${pillarIndex}.${themeIndex}`,
+          subthemes: [],
+        };
+
+        const rawSubs: any[] = Array.isArray(t.subthemes) ? t.subthemes : [];
+        theme.subthemes = rawSubs.map((s, sIdx) => {
+          const subIndex = sIdx + 1;
+
+          const sub: NormalizedFramework = {
+            id: s.id,
+            type: "subtheme",
+            name: s.name ?? "",
+            description: s.description ?? "",
+            color: s.color ?? null,
+            icon: s.icon ?? null,
+            can_have_indicators: s.can_have_indicators ?? true,
+            sort_order: subIndex,
+            ref_code: `ST${pillarIndex}.${themeIndex}.${subIndex}`,
+          };
+
+          return sub;
+        });
+
+        return theme;
+      });
+
+      return pillar;
+    });
+
+    return out;
+  }, [tree]);
+}
 
 type RowProps = {
-  item: Item;
+  item: NormalizedFramework;
   level: number;
+  openSet: Set<string>;
+  toggle: (id: string) => void;
   editMode: boolean;
-  expanded: Record<string, boolean>;
-  toggleExpand: (id: string) => void;
-  parentIndexes: { pillar?: number; theme?: number };
-  indexWithinParent: number;
 };
 
-function badgeClasses(type: Item["type"]) {
-  switch (type) {
-    case "pillar":
-      return "bg-blue-100 text-blue-800";
-    case "theme":
-      return "bg-green-100 text-green-800";
-    default:
-      return "bg-purple-100 text-purple-800";
-  }
+function Badge({ kind }: { kind: "pillar" | "theme" | "subtheme" }) {
+  const style =
+    kind === "pillar"
+      ? "bg-blue-100 text-blue-700"
+      : kind === "theme"
+      ? "bg-green-100 text-green-700"
+      : "bg-purple-100 text-purple-700";
+  const label =
+    kind === "pillar" ? "Pillar" : kind === "theme" ? "Theme" : "Subtheme";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${style}`}>
+      {label}
+    </span>
+  );
 }
 
-// Compute UI ref codes: P1, T1.2, ST1.2.3
-function makeRefCode(
-  type: Item["type"],
-  parents: { pillar?: number; theme?: number },
-  indexWithinParent: number
-) {
-  if (type === "pillar") {
-    return `P${indexWithinParent + 1}`;
-  }
-  if (type === "theme") {
-    const p = (parents.pillar ?? 0) + 1;
-    const t = indexWithinParent + 1;
-    return `T${p}.${t}`;
-  }
-  const p = (parents.pillar ?? 0) + 1;
-  const t = (parents.theme ?? 0) + 1;
-  const s = indexWithinParent + 1;
-  return `ST${p}.${t}.${s}`;
-}
-
-const Row: React.FC<RowProps> = ({
-  item,
-  level,
-  editMode,
-  expanded,
-  toggleExpand,
-  parentIndexes,
-  indexWithinParent,
-}) => {
+function Row({ item, level, openSet, toggle, editMode }: RowProps) {
   const hasChildren =
-    (item.themes && item.themes.length > 0) ||
-    (item.subthemes && item.subthemes.length > 0);
+    (item.type === "pillar" && item.themes && item.themes.length > 0) ||
+    (item.type === "theme" && item.subthemes && item.subthemes.length > 0);
 
-  const padding = level * 20;
-  const refCode = makeRefCode(item.type, parentIndexes, indexWithinParent);
+  const isOpen = openSet.has(item.id);
+  const padding = 12 + level * 20;
 
   return (
-    <tr className="border-b">
-      {/* Type / Ref Code */}
-      <td className="py-2 pl-2">
-        <div className="flex items-center" style={{ paddingLeft: `${padding}px` }}>
-          {hasChildren ? (
-            <button
-              onClick={() => toggleExpand(item.id)}
-              className="mr-1 text-gray-500 hover:text-gray-700"
-              aria-label={expanded[item.id] ? "Collapse" : "Expand"}
-            >
-              {expanded[item.id] ? (
-                <ChevronDown className="h-4 w-4" />
+    <>
+      <tr className="border-b last:border-b-0">
+        {/* Type / Ref Code */}
+        <td className="py-2 align-top">
+          <div className="flex items-center">
+            <div className="w-5 flex items-center justify-center">
+              {hasChildren ? (
+                <button
+                  onClick={() => toggle(item.id)}
+                  className="text-gray-500 hover:text-gray-700"
+                  aria-label={isOpen ? "Collapse" : "Expand"}
+                >
+                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
               ) : (
-                <ChevronRight className="h-4 w-4" />
+                <div className="w-4" />
               )}
+            </div>
+
+            {/* drag placeholder (disabled) */}
+            <div className="w-5 flex items-center justify-center opacity-30">
+              <GripVertical size={14} />
+            </div>
+
+            <div className="ml-1">
+              <Badge kind={item.type} />
+              <span className="ml-2 text-gray-500 text-xs">{item.ref_code}</span>
+            </div>
+          </div>
+        </td>
+
+        {/* Name / Description */}
+        <td className="py-2 align-top" style={{ paddingLeft: padding }}>
+          <div className="font-medium">{item.name || "—"}</div>
+          {item.description ? (
+            <div className="text-gray-500 text-xs">{item.description}</div>
+          ) : null}
+        </td>
+
+        {/* Sort Order */}
+        <td className="py-2 align-top">
+          <div className="text-center text-sm">{item.sort_order ?? "-"}</div>
+        </td>
+
+        {/* Actions (always keeps column visible; icons appear only in edit mode) */}
+        <td className="py-2 align-top">
+          <div className="flex items-center gap-3 justify-end">
+            {/* Edit */}
+            <button
+              className={`text-gray-500 hover:text-gray-700 ${editMode ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              title="Edit"
+            >
+              <Pencil size={16} />
             </button>
-          ) : (
-            <span className="inline-block w-4" />
-          )}
+            {/* Delete */}
+            <button
+              className={`text-gray-500 hover:text-gray-700 ${editMode ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              title="Delete"
+            >
+              <Trash2 size={16} />
+            </button>
+            {/* Add child (Theme or Subtheme) */}
+            <button
+              className={`text-gray-500 hover:text-gray-700 ${editMode ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              title="Add"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        </td>
+      </tr>
 
-          {/* reorder placeholder (disabled this phase) */}
-          <span className="mx-1 text-gray-300">
-            <GripVertical className="h-3.5 w-3.5" />
-          </span>
+      {/* Children */}
+      {isOpen && item.type === "pillar" && item.themes?.map((t) => (
+        <Row
+          key={t.id}
+          item={t}
+          level={level + 1}
+          openSet={openSet}
+          toggle={toggle}
+          editMode={editMode}
+        />
+      ))}
 
-          <span
-            className={`px-2 py-0.5 rounded-full text-[11px] ${badgeClasses(
-              item.type
-            )}`}
-          >
-            {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
-          </span>
-
-          <span className="ml-2 text-gray-500 text-[11px]">{refCode}</span>
-        </div>
-      </td>
-
-      {/* Name / Description */}
-      <td className="py-2">
-        <div className="font-medium">{item.name}</div>
-        {item.description && (
-          <div className="text-xs text-gray-500">{item.description}</div>
-        )}
-      </td>
-
-      {/* Sort Order: simple 1-based visual index per parent */}
-      <td
-        className="py-2 text-center"
-        title={
-          item.sort_order != null
-            ? `Stored sort_order: ${item.sort_order}`
-            : undefined
-        }
-      >
-        {indexWithinParent + 1}
-      </td>
-
-      {/* Actions column always present; icons only when edit mode */}
-      <td className="py-2 pr-3">
-        <div className="flex items-center justify-end gap-2">
-          {editMode ? (
-            <>
-              <button className="text-gray-500 hover:text-gray-700" title="Edit">
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button className="text-gray-500 hover:text-gray-700" title="Delete">
-                <Trash2 className="h-4 w-4" />
-              </button>
-              <button className="text-gray-500 hover:text-gray-700" title="Add">
-                <Plus className="h-4 w-4" />
-              </button>
-            </>
-          ) : (
-            <span className="inline-block h-4 w-16" />
-          )}
-        </div>
-      </td>
-    </tr>
+      {isOpen && item.type === "theme" && item.subthemes?.map((s) => (
+        <Row
+          key={s.id}
+          item={s}
+          level={level + 1}
+          openSet={openSet}
+          toggle={toggle}
+          editMode={editMode}
+        />
+      ))}
+    </>
   );
-};
+}
 
-const FrameworkEditor: React.FC<Props> = ({
-  tree,
-  versionId,
-  onChanged,
-  onAddPillar,
-}) => {
-  // default collapsed as requested
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
+  const data = useNormalized(tree);
+
+  // Collapsed by default
+  const [openSet, setOpenSet] = useState<Set<string>>(new Set());
   const [editMode, setEditMode] = useState(true);
 
-  useEffect(() => {
-    setExpanded({}); // reset to collapsed whenever version changes
-  }, [versionId]);
-
-  const toggleExpand = (id: string) =>
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const expandAll = () => {
-    const all: Record<string, boolean> = {};
-    tree.forEach((p) => {
-      all[p.id] = true;
-      p.themes?.forEach((t) => {
-        all[t.id] = true;
-        t.subthemes?.forEach((s) => (all[s.id] = true));
-      });
+  const toggle = useCallback((id: string) => {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    setExpanded(all);
-  };
+  }, []);
 
-  const collapseAll = () => setExpanded({});
+  const expandAll = useCallback(() => {
+    const all = new Set<string>();
+    for (const p of data) {
+      all.add(p.id);
+      p.themes?.forEach((t) => {
+        all.add(t.id);
+      });
+    }
+    setOpenSet(all);
+  }, [data]);
+
+  const collapseAll = useCallback(() => {
+    setOpenSet(new Set());
+  }, []);
 
   return (
     <div className="border rounded-md overflow-hidden">
-      {/* Toolbar row above the table */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-        <div className="flex items-center gap-4 text-sm">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-white">
+        <div className="flex items-center gap-3">
           <button className="text-blue-600 hover:underline" onClick={collapseAll}>
             Collapse all
           </button>
           <button className="text-blue-600 hover:underline" onClick={expandAll}>
             Expand all
           </button>
-          {editMode && (
-            <button
-              onClick={onAddPillar}
-              className="ml-2 inline-flex items-center gap-1 rounded bg-blue-600 text-white px-2.5 py-1 text-sm hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" />
-              Add Pillar
-            </button>
-          )}
+          <button
+            className="ml-2 inline-flex items-center gap-1 rounded bg-blue-600 text-white text-sm px-3 py-1.5"
+            title="Add Pillar"
+          >
+            <Plus size={16} /> Add Pillar
+          </button>
         </div>
+
         <button
           onClick={() => setEditMode((v) => !v)}
-          className="text-sm text-gray-600 hover:text-gray-800"
+          className="text-gray-600 hover:underline text-sm"
         >
           {editMode ? "Exit edit mode" : "Enter edit mode"}
         </button>
       </div>
 
-      {/* Tree table */}
-      <table className="w-full text-sm">
-        <colgroup>
-          <col style={{ width: "28%" }} />
-          <col style={{ width: "52%" }} />
-          <col style={{ width: "10%" }} />
-          <col style={{ width: "10%" }} />
-        </colgroup>
-        <thead className="bg-gray-100 text-left">
-          <tr>
-            <th className="py-2 pl-2">Type / Ref Code</th>
-            <th className="py-2">Name / Description</th>
-            <th className="py-2 text-center">Sort Order</th>
-            <th className="py-2 text-right pr-3">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tree.map((pillar, pi) => (
-            <React.Fragment key={pillar.id}>
+      {/* Table header */}
+      <div className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            {/* Type/RefCode ~22%, Name ~58%, Sort ~10%, Actions ~10% */}
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "58%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+          </colgroup>
+
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="text-left text-sm font-medium text-gray-600 py-2 px-2">
+                Type / Ref Code
+              </th>
+              <th className="text-left text-sm font-medium text-gray-600 py-2 px-2">
+                Name / Description
+              </th>
+              <th className="text-center text-sm font-medium text-gray-600 py-2 px-2">
+                Sort Order
+              </th>
+              <th className="text-right text-sm font-medium text-gray-600 py-2 px-2">
+                Actions
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="bg-white">
+            {data.map((pillar) => (
               <Row
-                item={{ ...pillar, type: "pillar" }}
+                key={pillar.id}
+                item={pillar}
                 level={0}
+                openSet={openSet}
+                toggle={toggle}
                 editMode={editMode}
-                expanded={expanded}
-                toggleExpand={toggleExpand}
-                parentIndexes={{}}
-                indexWithinParent={pi}
               />
-              {expanded[pillar.id] &&
-                (pillar.themes ?? []).map((theme, ti) => (
-                  <React.Fragment key={theme.id}>
-                    <Row
-                      item={{ ...theme, type: "theme" }}
-                      level={1}
-                      editMode={editMode}
-                      expanded={expanded}
-                      toggleExpand={toggleExpand}
-                      parentIndexes={{ pillar: pi }}
-                      indexWithinParent={ti}
-                    />
-                    {expanded[theme.id] &&
-                      (theme.subthemes ?? []).map((sub, si) => (
-                        <Row
-                          key={sub.id}
-                          item={{ ...sub, type: "subtheme" }}
-                          level={2}
-                          editMode={editMode}
-                          expanded={expanded}
-                          toggleExpand={toggleExpand}
-                          parentIndexes={{ pillar: pi, theme: ti }}
-                          indexWithinParent={si}
-                        />
-                      ))}
-                  </React.Fragment>
-                ))}
-            </React.Fragment>
-          ))}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-};
-
-export default FrameworkEditor;
+}
