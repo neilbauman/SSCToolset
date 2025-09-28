@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const versionId = searchParams.get("version");
 
   try {
-    // Load all catalogue pillars
+    // Load all catalogue pillars (no sort_order column)
     const pillars = await listPillarCatalogue();
 
     if (!versionId) {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Find which pillars are already in this version
+    // Which pillars already exist in this version?
     const { data: existing, error } = await supabaseServer
       .from("framework_version_items")
       .select("pillar_id")
@@ -34,7 +34,6 @@ export async function GET(req: NextRequest) {
       alreadyIn: existingIds.has(p.id),
     }));
 
-    // ✅ Ensure response is always { data: [...] }
     return NextResponse.json({ data });
   } catch (e: any) {
     console.error("GET /api/catalogue/pillars failed", e);
