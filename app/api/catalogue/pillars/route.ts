@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
       alreadyIn: existingIds.has(p.id),
     }));
 
+    // ✅ Ensure response is always { data: [...] }
     return NextResponse.json({ data });
   } catch (e: any) {
     console.error("GET /api/catalogue/pillars failed", e);
