@@ -25,6 +25,7 @@ export type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
+  ref_code?: string; // added for UI
   pillar: FrameworkEntity | null;
   theme: FrameworkEntity | null;
   subtheme: FrameworkEntity | null;
@@ -39,6 +40,7 @@ export type NormalizedFramework = {
   icon: string | null;
   can_have_indicators?: boolean;
   sort_order?: number;
+  ref_code?: string; // ✅ ensure this exists for UI rendering
   themes?: NormalizedFramework[];
   subthemes?: NormalizedFramework[];
 };
