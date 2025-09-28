@@ -79,9 +79,9 @@ export default function FrameworkEditor({ tree }: Props) {
             </div>
           </td>
 
-          {/* Sort Order */}
+          {/* Sort Order (display relative index) */}
           <td className="px-2 py-2 text-sm text-center w-[10%]">
-            {item.sort_order ?? "-"}
+            {index + 1}
           </td>
 
           {/* Actions */}
