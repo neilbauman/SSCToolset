@@ -1,24 +1,7 @@
 import { supabaseServer } from "@/lib/supabase";
+import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 
-/** ---------------- Types ---------------- */
-
-export type FrameworkVersion = {
-  id: string;
-  name: string;
-  status: string;
-  created_at?: string;
-};
-
-export type NormalizedFramework = {
-  id: string;
-  name: string;
-  description: string | null;
-  ref_code: string;
-  sort_order: number;
-  themes?: NormalizedFramework[];
-  subthemes?: NormalizedFramework[];
-};
-
+/** ---------------- Pillar Catalogue Row ---------------- */
 export type PillarCatalogueRow = {
   id: string;
   name: string;
@@ -204,7 +187,7 @@ export async function deleteSubtheme(id: string) {
 export async function listPillarCatalogue(): Promise<PillarCatalogueRow[]> {
   const { data, error } = await supabaseServer
     .from("pillar_catalogue")
-    .select("id, name, description, can_have_indicators") // ✅ fixed
+    .select("id, name, description, can_have_indicators") // no sort_order
     .order("name", { ascending: true });
   if (error) throw error;
   return (data ?? []) as PillarCatalogueRow[];
