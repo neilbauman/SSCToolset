@@ -1,249 +1,174 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import {
-  ChevronRight,
-  ChevronDown,
-  Plus,
-  Edit3,
-  Trash2,
-  MoveVertical,
-} from "lucide-react";
+import { ChevronRight, ChevronDown, Edit2, Trash2, Plus } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
-  editMode?: boolean;
 };
 
-export default function FrameworkEditor({ tree, editMode = false }: Props) {
-  const [openPillars, setOpenPillars] = useState<Set<string>>(
-    () => new Set<string>()
-  );
-  const [openThemes, setOpenThemes] = useState<Set<string>>(
-    () => new Set<string>()
-  );
+export default function FrameworkEditor({ tree }: Props) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editMode, setEditMode] = useState(false);
 
-  const togglePillar = (id: string) =>
-    setOpenPillars((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  const toggleTheme = (id: string) =>
-    setOpenThemes((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-
-  const rows = useMemo(() => {
-    const out: Array<{
-      level: 0 | 1 | 2;
-      key: string;
-      ref: string;
-      typeLabel: "Pillar" | "Theme" | "Subtheme";
-      name: string;
-      description?: string | null;
-      sort?: number | null;
-      pillarId?: string;
-      themeId?: string;
-      hasChildren?: boolean;
-    }> = [];
-
-    tree.forEach((p, pi) => {
-      const pRef = `P${pi + 1}`;
-      out.push({
-        level: 0,
-        key: `pillar:${p.id}`,
-        ref: pRef,
-        typeLabel: "Pillar",
-        name: p.name,
-        description: p.description ?? "",
-        sort: pi + 1,
-        pillarId: p.id,
-        hasChildren: (p.themes?.length ?? 0) > 0,
-      });
-
-      p.themes?.forEach((t, ti) => {
-        const tRef = `T${pi + 1}.${ti + 1}`;
-        out.push({
-          level: 1,
-          key: `theme:${t.id}`,
-          ref: tRef,
-          typeLabel: "Theme",
-          name: t.name,
-          description: t.description ?? "",
-          sort: ti + 1,
-          pillarId: p.id,
-          themeId: t.id,
-          hasChildren: (t.subthemes?.length ?? 0) > 0,
-        });
-
-        t.subthemes?.forEach((s, si) => {
-          const stRef = `ST${pi + 1}.${ti + 1}.${si + 1}`;
-          out.push({
-            level: 2,
-            key: `subtheme:${s.id}`,
-            ref: stRef,
-            typeLabel: "Subtheme",
-            name: s.name,
-            description: s.description ?? "",
-            sort: si + 1,
-            pillarId: p.id,
-            themeId: t.id,
-            hasChildren: false,
-          });
-        });
-      });
-    });
-
-    return out;
-  }, [tree]);
-
-  const badge = (label: string, tone: "blue" | "green" | "violet") => {
-    const tones =
-      tone === "blue"
-        ? "bg-blue-50 text-blue-700 ring-blue-200"
-        : tone === "green"
-        ? "bg-green-50 text-green-700 ring-green-200"
-        : "bg-violet-50 text-violet-700 ring-violet-200";
-    return (
-      <span className={`rounded-full px-2 py-0.5 text-xs ring-1 ${tones}`}>
-        {label.toLowerCase()}
-      </span>
-    );
+  const toggle = (id: string) => {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const indentCls = (level: 0 | 1 | 2) =>
-    level === 0 ? "" : level === 1 ? "pl-4" : "pl-8";
+  const renderRows = (
+    items: any[],
+    level: number,
+    parentRef: string = ""
+  ): JSX.Element[] => {
+    return items.flatMap((item, index) => {
+      const refCode =
+        level === 0
+          ? `P${index + 1}`
+          : level === 1
+          ? `${parentRef}.${index + 1}`
+          : `${parentRef}.${index + 1}`;
 
-  const isRowVisible = (r: (typeof rows)[number]) => {
-    if (r.level === 0) return true;
-    if (r.level === 1) return openPillars.has(r.pillarId!);
-    return openPillars.has(r.pillarId!) && openThemes.has(r.themeId!);
+      const hasChildren =
+        (item.themes && item.themes.length > 0) ||
+        (item.subthemes && item.subthemes.length > 0);
+
+      const id = `${level}-${item.id}`;
+      const isExpanded = expanded[id] ?? false;
+
+      const children =
+        level === 0
+          ? item.themes
+          : level === 1
+          ? item.subthemes
+          : undefined;
+
+      return [
+        <tr key={id} className="align-top">
+          {/* Type/Ref Code */}
+          <td className="w-[18%] text-sm text-gray-800">
+            <div className="flex items-center">
+              {hasChildren && (
+                <button
+                  onClick={() => toggle(id)}
+                  className="mr-1 text-gray-600 hover:text-gray-900"
+                >
+                  {isExpanded ? (
+                    <ChevronDown size={16} />
+                  ) : (
+                    <ChevronRight size={16} />
+                  )}
+                </button>
+              )}
+              <span
+                className="font-medium"
+                style={{ paddingLeft: `${level * 8}px` }} // very subtle indent
+              >
+                {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}{" "}
+                ({refCode})
+              </span>
+            </div>
+          </td>
+
+          {/* Name / Description */}
+          <td className="w-[52%]">
+            <div
+              className="ml-1"
+              style={{ paddingLeft: `${level * 8}px` }} // match indent
+            >
+              <div className="font-semibold">{item.name}</div>
+              {item.description && (
+                <div className="text-xs text-gray-500">{item.description}</div>
+              )}
+            </div>
+          </td>
+
+          {/* Sort Order */}
+          <td className="w-[10%] text-sm text-gray-600 text-center pr-6">
+            {item.sort_order ?? "-"}
+          </td>
+
+          {/* Actions */}
+          <td className="w-[20%] text-right">
+            {editMode && (
+              <div className="flex justify-end gap-3">
+                <button className="text-blue-600 hover:text-blue-800">
+                  <Edit2 size={16} />
+                </button>
+                <button className="text-red-600 hover:text-red-800">
+                  <Trash2 size={16} />
+                </button>
+                <button className="text-green-600 hover:text-green-800">
+                  <Plus size={16} />
+                </button>
+              </div>
+            )}
+          </td>
+        </tr>,
+        isExpanded && children
+          ? renderRows(children, level + 1, refCode)
+          : null,
+      ];
+    });
   };
-
-  const caretFor = (r: (typeof rows)[number]) => {
-    if (!r.hasChildren) return <span className="w-4" />;
-
-    if (r.level === 0) {
-      const open = openPillars.has(r.pillarId!);
-      const Icon = open ? ChevronDown : ChevronRight;
-      return (
-        <button
-          onClick={() => togglePillar(r.pillarId!)}
-          className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded hover:bg-gray-100"
-        >
-          <Icon className="h-4 w-4 text-gray-600" />
-        </button>
-      );
-    }
-
-    if (r.level === 1) {
-      const open = openThemes.has(r.themeId!);
-      const Icon = open ? ChevronDown : ChevronRight;
-      return (
-        <button
-          onClick={() => toggleTheme(r.themeId!)}
-          className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded hover:bg-gray-100"
-        >
-          <Icon className="h-4 w-4 text-gray-600" />
-        </button>
-      );
-    }
-
-    return <span className="w-4" />;
-  };
-
-  const typeBadgeFor = (r: (typeof rows)[number]) =>
-    r.typeLabel === "Pillar"
-      ? badge("pillar", "blue")
-      : r.typeLabel === "Theme"
-      ? badge("theme", "green")
-      : badge("subtheme", "violet");
 
   return (
-    <div className="w-full">
-      <div
-        className="grid items-center border-b bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600"
-        style={{
-          gridTemplateColumns: "32% 46% 12% 10%",
-        }}
-      >
-        <div>TYPE / REF CODE</div>
-        <div>NAME / DESCRIPTION</div>
-        <div className="text-right">SORT</div>
-        <div className="text-right">ACTIONS</div>
+    <div>
+      {/* Controls */}
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setExpanded({})}
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            Collapse All
+          </button>
+          <button
+            onClick={() => {
+              const allExpanded: Record<string, boolean> = {};
+              const expandAll = (items: any[], level: number) => {
+                items.forEach((it) => {
+                  const id = `${level}-${it.id}`;
+                  allExpanded[id] = true;
+                  if (level === 0 && it.themes) expandAll(it.themes, 1);
+                  if (level === 1 && it.subthemes) expandAll(it.subthemes, 2);
+                });
+              };
+              expandAll(tree, 0);
+              setExpanded(allExpanded);
+            }}
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            Expand All
+          </button>
+        </div>
+        <div className="flex gap-2">
+          {editMode && (
+            <button className="px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700">
+              + Add Pillar
+            </button>
+          )}
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className="px-3 py-1 rounded bg-gray-200 text-sm hover:bg-gray-300"
+          >
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+          </button>
+        </div>
       </div>
 
-      <div className="divide-y">
-        {rows.map((r) =>
-          isRowVisible(r) ? (
-            <div
-              key={r.key}
-              className="grid items-center px-3 py-2 text-sm"
-              style={{
-                gridTemplateColumns: "32% 46% 12% 10%",
-              }}
-            >
-              <div className={`flex items-center ${indentCls(r.level)}`}>
-                {caretFor(r)}
-                {typeBadgeFor(r)}
-                <span className="ml-3 text-gray-500">{r.ref}</span>
-              </div>
-
-              <div className={`${indentCls(r.level)} -ml-2`}>
-                <div className="font-medium text-gray-900">{r.name}</div>
-                {r.description ? (
-                  <div className="text-xs leading-5 text-gray-600">
-                    {r.description}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="text-right text-gray-700">
-                {typeof r.sort === "number" ? r.sort : ""}
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-gray-100 ${
-                    editMode ? "opacity-100" : "opacity-0"
-                  }`}
-                  title="Move (not wired)"
-                >
-                  <MoveVertical className="h-4 w-4 text-gray-600" />
-                </button>
-                <button
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-gray-100 ${
-                    editMode ? "opacity-100" : "opacity-0"
-                  }`}
-                  title="Edit (not wired)"
-                >
-                  <Edit3 className="h-4 w-4 text-gray-600" />
-                </button>
-                <button
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-gray-100 ${
-                    editMode ? "opacity-100" : "opacity-0"
-                  }`}
-                  title="Add child (not wired)"
-                >
-                  <Plus className="h-4 w-4 text-gray-600" />
-                </button>
-                <button
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-gray-100 ${
-                    editMode ? "opacity-100" : "opacity-0"
-                  }`}
-                  title="Delete (not wired)"
-                >
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </button>
-              </div>
-            </div>
-          ) : null
-        )}
-      </div>
+      {/* Table */}
+      <table className="w-full border border-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="w-[18%] text-left px-2 py-2">Type / Ref Code</th>
+            <th className="w-[52%] text-left px-2 py-2">Name / Description</th>
+            <th className="w-[10%] text-center px-2 py-2">Sort Order</th>
+            <th className="w-[20%] text-right px-2 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody>{renderRows(tree, 0)}</tbody>
+      </table>
     </div>
   );
 }
