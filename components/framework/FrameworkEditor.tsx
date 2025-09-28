@@ -2,22 +2,38 @@
 
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus } from "lucide-react";
 
 type Props = {
   tree: NormalizedFramework[];
+  editMode: boolean;
+  setEditMode: (val: boolean) => void;
 };
 
-export default function FrameworkEditor({ tree }: Props) {
+export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [editMode, setEditMode] = useState(false);
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const expandAll = () => {
+    const all: Record<string, boolean> = {};
+    const mark = (items: NormalizedFramework[]) => {
+      items.forEach((p) => {
+        all[p.id] = true;
+        p.themes.forEach((t) => {
+          all[t.id] = true;
+          t.subthemes.forEach((s) => (all[s.id] = true));
+        });
+      });
+    };
+    mark(tree);
+    setExpanded(all);
   };
 
-  const renderRows = (
-    items: any[],
+  const collapseAll = () => setExpanded({});
+
+  const renderTree = (
+    items: NormalizedFramework[],
     level: number = 0,
     parentRef: string = ""
   ): JSX.Element[] => {
@@ -26,50 +42,45 @@ export default function FrameworkEditor({ tree }: Props) {
         level === 0
           ? `P${index + 1}`
           : level === 1
-          ? `${parentRef}.${index + 1}`
-          : `${parentRef}.${index + 1}`;
+          ? `T${parentRef}.${index + 1}`
+          : `ST${parentRef}.${index + 1}`;
 
       const isExpanded = expanded[item.id];
-
-      // check children correctly by level
       const hasChildren =
-        (level === 0 && item.themes && item.themes.length > 0) ||
-        (level === 1 && item.subthemes && item.subthemes.length > 0);
+        (level === 0 && item.themes.length > 0) ||
+        (level === 1 && item.subthemes.length > 0);
 
       const row = (
         <tr key={item.id} className="border-b">
-          {/* Type / Ref Code */}
+          {/* Type / Ref */}
           <td className="w-[20%] px-2 py-2 align-top">
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
+              {hasChildren && (
+                <button
+                  onClick={() => toggleExpand(item.id)}
+                  className="text-xs text-gray-500"
+                >
+                  {isExpanded ? "▾" : "▸"}
+                </button>
+              )}
               <span
-                className="flex items-center cursor-pointer"
-                style={{ marginLeft: `${level * 12}px` }} // subtle indent
-                onClick={() => hasChildren && toggleExpand(item.id)}
-              >
-                {hasChildren ? (
-                  isExpanded ? (
-                    <ChevronDown className="w-4 h-4 mr-1" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 mr-1" />
-                  )
-                ) : (
-                  <span className="w-4 h-4 mr-1" />
-                )}
-                <span className="text-xs font-semibold uppercase text-gray-500">
-                  {level === 0
-                    ? "Pillar"
+                className={`text-xs px-2 py-0.5 rounded ${
+                  level === 0
+                    ? "bg-blue-100 text-blue-700"
                     : level === 1
-                    ? "Theme"
-                    : "Subtheme"}
-                </span>
+                    ? "bg-green-100 text-green-700"
+                    : "bg-purple-100 text-purple-700"
+                }`}
+              >
+                {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}
               </span>
-              <span className="ml-2 text-sm text-gray-800">{refCode}</span>
+              <span className="text-xs text-gray-600">{refCode}</span>
             </div>
           </td>
 
-          {/* Name / Description */}
+          {/* Name / Desc */}
           <td className="w-[55%] px-2 py-2 align-top">
-            <div>
+            <div className={`pl-${level * 2}`}>
               <div className="font-medium">{item.name}</div>
               {item.description && (
                 <div className="text-xs text-gray-500">{item.description}</div>
@@ -77,102 +88,82 @@ export default function FrameworkEditor({ tree }: Props) {
             </div>
           </td>
 
-          {/* Sort Order */}
-          <td className="w-[10%] px-2 py-2 align-top text-sm text-gray-600 text-center">
-            {item.sort_order ?? "-"}
+          {/* Sort */}
+          <td className="w-[15%] px-2 py-2 align-top text-sm text-gray-600">
+            {index + 1}
           </td>
 
           {/* Actions */}
-          <td className="w-[15%] px-4 py-2 align-top text-right">
-            <div className="flex justify-end gap-2">
-              {editMode ? (
-                <>
-                  <button className="p-1 text-blue-600 hover:text-blue-800">
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button className="p-1 text-red-600 hover:text-red-800">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  {level < 2 && (
-                    <button className="p-1 text-green-600 hover:text-green-800">
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-gray-400">—</span>
-              )}
-            </div>
+          <td className="w-[10%] px-2 py-2 align-top text-right">
+            {editMode && (
+              <div className="flex gap-2 justify-end text-gray-500 text-sm">
+                <button>✎</button>
+                <button>＋</button>
+                <button>🗑</button>
+              </div>
+            )}
           </td>
         </tr>
       );
 
-      const children: JSX.Element[] = [];
-      if (isExpanded) {
-        if (level === 0 && item.themes) {
-          children.push(...renderRows(item.themes, level + 1, refCode));
-        }
-        if (level === 1 && item.subthemes) {
-          children.push(...renderRows(item.subthemes, level + 1, refCode));
-        }
-      }
-
-      return [row, ...children];
+      return [
+        row,
+        ...(hasChildren && isExpanded
+          ? renderTree(
+              level === 0 ? item.themes : (item.subthemes as any),
+              level + 1,
+              refCode
+            )
+          : []),
+      ];
     });
   };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-3">
+    <div className="mt-4">
+      {/* Controls */}
+      <div className="flex justify-between items-center mb-2">
         <div className="flex gap-2">
           <button
-            onClick={() => setExpanded({})}
-            className="text-sm text-gray-600 hover:underline"
-          >
-            Collapse All
-          </button>
-          <button
-            onClick={() =>
-              setExpanded(
-                Object.fromEntries(
-                  tree.flatMap((p) => [
-                    [p.id, true],
-                    ...(p.themes?.map((t) => [t.id, true]) || []),
-                  ])
-                )
-              )
-            }
-            className="text-sm text-gray-600 hover:underline"
+            onClick={expandAll}
+            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
           >
             Expand All
           </button>
+          <button
+            onClick={collapseAll}
+            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
+          >
+            Collapse All
+          </button>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {editMode && (
-            <button className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">
-              + Add Pillar
+            <button className="px-2 py-1 text-xs border rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
+              ＋ Add Pillar
             </button>
           )}
           <button
-            onClick={() => setEditMode((prev) => !prev)}
-            className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+            onClick={() => setEditMode(!editMode)}
+            className="px-2 py-1 text-xs border rounded bg-gray-50 hover:bg-gray-100"
           >
             {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
           </button>
         </div>
       </div>
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="bg-gray-100 text-left">
-            <th className="w-[20%] px-2 py-2">Type / Ref Code</th>
-            <th className="w-[55%] px-2 py-2">Name / Description</th>
-            <th className="w-[10%] px-2 py-2 text-center">Sort Order</th>
-            <th className="w-[15%] px-4 py-2 text-right">Actions</th>
+      {/* Table */}
+      <table className="w-full border text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="text-left px-2 py-2 w-[20%]">Type / Ref Code</th>
+            <th className="text-left px-2 py-2 w-[55%]">Name / Description</th>
+            <th className="text-left px-2 py-2 w-[15%]">Sort Order</th>
+            <th className="text-right px-2 py-2 w-[10%]">Actions</th>
           </tr>
         </thead>
-        <tbody>{renderRows(tree)}</tbody>
+        <tbody>{renderTree(tree)}</tbody>
       </table>
     </div>
   );
