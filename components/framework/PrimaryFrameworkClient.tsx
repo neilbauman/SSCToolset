@@ -5,12 +5,11 @@
 import { useState, useEffect } from "react";
 import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
-import { Button } from "@/components/ui/button";
 import { supabaseBrowser } from "@/lib/supabase";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string; // 🔑 allow undefined
+  openedId?: string; // allow undefined
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -51,11 +50,12 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex items-center gap-3 mb-4">
+        {/* Version dropdown */}
         <select
           value={currentId}
           onChange={handleVersionChange}
-          className="border rounded px-2 py-1"
+          className="border rounded px-2 py-1 text-sm"
         >
           {versions.map((v) => (
             <option key={v.id} value={v.id}>
@@ -63,6 +63,8 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
             </option>
           ))}
         </select>
+
+        {/* Status badge */}
         <span
           className={`px-2 py-1 rounded text-xs ${
             versions.find((v) => v.id === currentId)?.status === "published"
@@ -72,22 +74,25 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         >
           {versions.find((v) => v.id === currentId)?.status}
         </span>
-        <span className="text-gray-500 text-sm">
+
+        {/* Version ID */}
+        <span className="text-gray-500 text-xs">
           Version ID: {currentId || "—"}
         </span>
-        {/* 🔧 Framework versioning buttons */}
-        <Button variant="outline" size="sm">
+
+        {/* Framework versioning buttons */}
+        <button className="ml-2 border rounded px-2 py-1 text-sm hover:bg-gray-100">
           New
-        </Button>
-        <Button variant="outline" size="sm">
+        </button>
+        <button className="border rounded px-2 py-1 text-sm hover:bg-gray-100">
           Edit
-        </Button>
-        <Button variant="outline" size="sm">
+        </button>
+        <button className="border rounded px-2 py-1 text-sm hover:bg-gray-100">
           Clone
-        </Button>
-        <Button variant="destructive" size="sm">
+        </button>
+        <button className="border rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50">
           Delete
-        </Button>
+        </button>
       </div>
 
       {loading ? (
