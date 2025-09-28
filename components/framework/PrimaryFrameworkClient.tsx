@@ -19,25 +19,23 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const theme = groupThemes["ssc-config"];
   const selectedVersion = versions.find((v) => v.id === openedId);
 
-  useEffect(() => {
-    if (!openedId) {
-      setTree(null);
-      return;
+  const loadTree = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getVersionTree(id);
+      setTree(data);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? "Failed to load framework");
+    } finally {
+      setLoading(false);
     }
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getVersionTree(openedId);
-        setTree(data);
-      } catch (e: any) {
-        console.error(e);
-        setError(e?.message ?? "Failed to load framework");
-      } finally {
-        setLoading(false);
-      }
-    };
-    run();
+  };
+
+  useEffect(() => {
+    if (openedId) loadTree(openedId);
+    else setTree(null);
   }, [openedId]);
 
   return (
@@ -85,50 +83,4 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
               >
                 {selectedVersion.status === "draft" ? "Draft" : "Published"}
               </span>
-              <span>{selectedVersion.created_at?.slice(0, 10)}</span>
-            </div>
-          )}
-
-          {/* Action buttons (placeholders, to be wired later) */}
-          {selectedVersion && (
-            <div className="flex items-center gap-2">
-              <button className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">
-                Open Version
-              </button>
-              <button className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">
-                Clone
-              </button>
-              <button
-                className={`px-3 py-1 text-sm rounded ${
-                  selectedVersion.status === "published"
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
-                disabled={selectedVersion.status === "published"}
-              >
-                Publish
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Framework section */}
-      {!openedId && (
-        <div className="text-sm text-gray-600">Select a version to view its framework.</div>
-      )}
-
-      {openedId && loading && (
-        <div className="text-sm text-gray-600">Loading framework tree…</div>
-      )}
-
-      {openedId && error && (
-        <div className="text-sm text-red-600">{error}</div>
-      )}
-
-      {openedId && tree && (
-        <FrameworkEditor tree={tree} versionId={openedId} />
-      )}
-    </div>
-  );
-}
+              <
