@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { NormalizedFramework } from "@/lib/types/framework";
+import type { NormalizedFramework, Theme, Subtheme } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Edit, Trash, Plus } from "lucide-react";
 
 type Props = {
@@ -16,22 +16,23 @@ export default function FrameworkEditor({ tree }: Props) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const renderRows = (
-    items: NormalizedFramework[],
+    items: (NormalizedFramework | Theme | Subtheme)[],
     level: number = 0,
     parentRef: string = ""
   ): JSX.Element[] => {
-    return items.flatMap((item, index) => {
+    return items.flatMap((item: any, index) => {
       const refCode =
         level === 0
           ? `P${index + 1}`
-          : level === 1
-          ? `${parentRef}.${index + 1}`
           : `${parentRef}.${index + 1}`;
 
-      // Only check subthemes if item actually has them
-      const hasChildren =
-        (level === 0 && item.themes && item.themes.length > 0) ||
-        (level === 1 && "subthemes" in item && item.subthemes.length > 0);
+      let hasChildren = false;
+      if (level === 0 && item.themes && item.themes.length > 0) {
+        hasChildren = true;
+      }
+      if (level === 1 && item.subthemes && item.subthemes.length > 0) {
+        hasChildren = true;
+      }
 
       const isExpanded = expanded[item.id];
       const indent = level * 12; // subtle indent per level
@@ -109,7 +110,7 @@ export default function FrameworkEditor({ tree }: Props) {
         if (level === 0 && item.themes) {
           children.push(...renderRows(item.themes, 1, refCode));
         }
-        if (level === 1 && "subthemes" in item && item.subthemes) {
+        if (level === 1 && item.subthemes) {
           children.push(...renderRows(item.subthemes, 2, refCode));
         }
       }
