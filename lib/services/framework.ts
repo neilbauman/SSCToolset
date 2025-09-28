@@ -40,6 +40,16 @@ export async function getVersionTree(
 
 /** ---------------- Version Services ---------------- */
 
+export async function listVersions(): Promise<FrameworkVersion[]> {
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .select("id, name, status, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as FrameworkVersion[];
+}
+
 export async function createVersion(name: string): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
@@ -194,7 +204,7 @@ export async function deleteSubtheme(id: string) {
 export async function listPillarCatalogue(): Promise<PillarCatalogueRow[]> {
   const { data, error } = await supabaseServer
     .from("pillar_catalogue")
-    .select("id, name, description, can_have_indicators") // ✅ fixed, no sort_order
+    .select("id, name, description, can_have_indicators") // ✅ fixed
     .order("name", { ascending: true });
   if (error) throw error;
   return (data ?? []) as PillarCatalogueRow[];
