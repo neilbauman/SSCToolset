@@ -77,7 +77,6 @@ export async function getVersionItems(versionId: string): Promise<FrameworkItem[
   }
 }
 
-/** convert raw supabase rows -> FrameworkItem[] with single objects (not arrays) */
 function normalizeRows(rows: any[]): FrameworkItem[] {
   return rows.map((row: any) => ({
     id: row.id,
@@ -156,20 +155,89 @@ export async function getVersionTree(versionId: string): Promise<NormalizedFrame
   return normalizeFramework(items);
 }
 
-/** ---------------- Create Pillar ---------------- */
+/** ---------------- Catalogue helpers ---------------- */
+
+export type PillarCatalogueRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  can_have_indicators: boolean | null;
+};
+
+export async function listPillarCatalogue(): Promise<PillarCatalogueRow[]> {
+  const { data, error } = await supabaseServer
+    .from("pillar_catalogue")
+    .select("id, name, description, can_have_indicators")
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as PillarCatalogueRow[];
+}
+
+export async function listThemesByPillar(pillarId: string) {
+  const { data, error } = await supabaseServer
+    .from("theme_catalogue")
+    .select("id, name, description, can_have_indicators, sort_order")
+    .eq("pillar_id", pillarId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function listSubthemesByTheme(themeId: string) {
+  const { data, error } = await supabaseServer
+    .from("subtheme_catalogue")
+    .select("id, name, description, can_have_indicators, sort_order")
+    .eq("theme_id", themeId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Utility: compute composite sort key as p*1e6 + t*1e3 + s (1-based indices). */
+function sortKey(pIdx: number, tIdx?: number, sIdx?: number) {
+  const a = pIdx * 1_000_000;
+  const b = tIdx ? tIdx * 1_000 : 0;
+  const c = sIdx ? sIdx : 0;
+  return a + b + c;
+}
+
+/** Count distinct pillars already in a version to determine next pillar index. */
+async function nextPillarIndex(versionId: string): Promise<number> {
+  const { data, error } = await supabaseServer
+    .from("framework_version_items")
+    .select("pillar_id", { count: "exact", head: false })
+    .neq("pillar_id", null);
+  if (error) throw error;
+
+  const distinct = new Set<string>();
+  (data ?? []).forEach((row: any) => {
+    if (row.pillar_id) distinct.add(row.pillar_id);
+  });
+  return distinct.size + 1;
+}
+
+/** ---------------- Create Pillar (+ optional children) ---------------- */
 export async function createPillar(
   versionId: string,
-  data: { name?: string; description?: string; existingId?: string }
+  data: {
+    name?: string;
+    description?: string;
+    existingId?: string;
+    includeChildren?: boolean;
+  }
 ) {
-  let pillarId = data.existingId;
+  // 1) Resolve/insert pillar in catalogue
+  let pillarId = data.existingId as string | undefined;
 
-  // If creating new → insert into pillar_catalogue
   if (!pillarId) {
     const { data: newPillar, error } = await supabaseServer
       .from("pillar_catalogue")
       .insert({
         name: data.name,
-        description: data.description,
+        description: data.description ?? null,
         can_have_indicators: false,
       })
       .select("id")
@@ -179,20 +247,77 @@ export async function createPillar(
     pillarId = newPillar.id;
   }
 
-  // Insert into framework_version_items
-  const { data: item, error: itemError } = await supabaseServer
+  // 2) Determine pillar position in this version
+  const pIndex = await nextPillarIndex(versionId);
+
+  // 3) Insert pillar item
+  const pillarItem = {
+    version_id: versionId,
+    pillar_id: pillarId,
+    theme_id: null,
+    subtheme_id: null,
+    sort_order: sortKey(pIndex, 1, 1), // place pillar before its children segment
+    ref_code: `P${pIndex}`,
+  };
+
+  const { data: insertedPillar, error: insPillarErr } = await supabaseServer
     .from("framework_version_items")
-    .insert({
-      version_id: versionId,
-      pillar_id: pillarId,
-      theme_id: null,
-      subtheme_id: null,
-      sort_order: Date.now(), // placeholder: will render as relative index
-      ref_code: "temp", // ref code derived in UI
-    })
+    .insert(pillarItem)
     .select("*")
     .single();
+  if (insPillarErr) throw insPillarErr;
 
-  if (itemError) throw itemError;
-  return item;
+  // 4) Optionally include children from catalogue
+  if (data.includeChildren) {
+    const themes = await listThemesByPillar(pillarId!);
+
+    const themeRows: any[] = [];
+    const subRows: any[] = [];
+
+    themes.forEach((t: any, tIdx: number) => {
+      const themeIndex = tIdx + 1;
+      themeRows.push({
+        version_id: versionId,
+        pillar_id: pillarId,
+        theme_id: t.id,
+        subtheme_id: null,
+        sort_order: sortKey(pIndex, themeIndex, 1),
+        ref_code: `P${pIndex}.T${themeIndex}`,
+      });
+    });
+
+    // Bulk fetch subthemes per theme
+    for (let tIdx = 0; tIdx < themes.length; tIdx++) {
+      const t = themes[tIdx];
+      const themeIndex = tIdx + 1;
+      const subthemes = await listSubthemesByTheme(t.id);
+      subthemes.forEach((s: any, sIdx: number) => {
+        const subIndex = sIdx + 1;
+        subRows.push({
+          version_id: versionId,
+          pillar_id: pillarId,
+          theme_id: t.id,
+          subtheme_id: s.id,
+          sort_order: sortKey(pIndex, themeIndex, subIndex),
+          ref_code: `P${pIndex}.T${themeIndex}.S${subIndex}`,
+        });
+      });
+    }
+
+    // Insert themes then subthemes
+    if (themeRows.length) {
+      const { error: themeErr } = await supabaseServer
+        .from("framework_version_items")
+        .insert(themeRows);
+      if (themeErr) throw themeErr;
+    }
+    if (subRows.length) {
+      const { error: subErr } = await supabaseServer
+        .from("framework_version_items")
+        .insert(subRows);
+      if (subErr) throw subErr;
+    }
+  }
+
+  return insertedPillar;
 }
