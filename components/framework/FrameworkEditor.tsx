@@ -15,7 +15,8 @@ import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   tree: NormalizedFramework[];
-  versionId?: string; // passed in by PrimaryFrameworkClient
+  versionId?: string;
+  onChanged?: () => void; // new: tells parent to refetch after mutation
 };
 
 type CataloguePillar = {
@@ -26,7 +27,7 @@ type CataloguePillar = {
   alreadyIn: boolean;
 };
 
-export default function FrameworkEditor({ tree, versionId }: Props) {
+export default function FrameworkEditor({ tree, versionId, onChanged }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [editMode, setEditMode] = useState(false);
 
@@ -111,16 +112,16 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
         if (json.error) throw new Error(json.error);
         addToast("New pillar created", "success");
       }
-      // Soft reset modal
+
+      // Reset modal fields
       setShowAddModal(false);
       setSelectedId(null);
       setName("");
       setDescription("");
       setIncludeChildren(true);
 
-      // NOTE: We rely on page-level reload or a refetch in PrimaryFrameworkClient
-      // to refresh the tree. Keeping UI drift to a minimum per your guardrails.
-      window.location.reload();
+      // ✅ Keep edit mode ON, and trigger refetch
+      if (onChanged) onChanged();
     } catch (e: any) {
       console.error("Failed to add pillar", e);
       addToast(e?.message ?? "Error adding pillar", "error");
@@ -129,12 +130,11 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
 
   const renderRows = (
     items: any[],
-    level: number = 0,
-    parentRef: string = ""
+    level: number = 0
   ): JSX.Element[] => {
-    return items.flatMap((item, index) => {
-      const refCode =
-        level === 0 ? `P${index + 1}` : `${parentRef}.${index + 1}`;
+    return items.flatMap((item) => {
+      const refCode = item.ref_code ?? "";
+
       const isExpanded = expanded[item.id];
 
       const hasChildren =
@@ -187,9 +187,9 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
             </div>
           </td>
 
-          {/* Sort Order (UI-relative index) */}
+          {/* Sort Order (use DB ref_code for clarity) */}
           <td className="px-2 py-2 text-sm text-center w-[10%]">
-            {index + 1}
+            {item.ref_code}
           </td>
 
           {/* Actions */}
@@ -219,10 +219,10 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
       const children: JSX.Element[] = [];
       if (isExpanded && hasChildren) {
         if (level === 0 && item.themes) {
-          children.push(...renderRows(item.themes, 1, refCode));
+          children.push(...renderRows(item.themes, 1));
         }
         if (level === 1 && item.subthemes) {
-          children.push(...renderRows(item.subthemes, 2, refCode));
+          children.push(...renderRows(item.subthemes, 2));
         }
       }
 
@@ -280,7 +280,7 @@ export default function FrameworkEditor({ tree, versionId }: Props) {
           <tr className="bg-gray-50 text-left text-sm font-medium text-gray-700">
             <th className="px-2 py-2 w-[20%]">Type / Ref Code</th>
             <th className="px-4 py-2 w-[55%]">Name / Description</th>
-            <th className="px-2 py-2 text-center w-[10%]">Sort Order</th>
+            <th className="px-2 py-2 text-center w-[10%]">Ref Code</th>
             <th className="px-2 py-2 text-right w-[15%]">Actions</th>
           </tr>
         </thead>
