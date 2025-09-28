@@ -2,198 +2,106 @@
 
 import { useState } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import { ChevronRight, ChevronDown, Edit, Trash2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 type Props = {
   tree: NormalizedFramework[];
-  editMode: boolean;
-  setEditMode: (value: boolean) => void;
+  versionName?: string;
+  versionStatus?: "draft" | "published";
+  createdAt?: string;
 };
 
-export default function FrameworkEditor({ tree, editMode, setEditMode }: Props) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+export default function FrameworkEditor({
+  tree,
+  versionName,
+  versionStatus,
+  createdAt,
+}: Props) {
+  const [editMode, setEditMode] = useState(false);
 
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const renderRows = (
-    items: any[],
-    level: number = 0,
-    parentRef: string = ""
-  ): JSX.Element[] => {
-    return items.flatMap((item, index) => {
-      const isExpanded = expanded[item.id];
-      const hasChildren =
-        (level === 0 && item.themes?.length > 0) ||
-        (level === 1 && item.subthemes?.length > 0);
-
-      // Generate ref codes
-      const refCode =
-        level === 0
-          ? `P${index + 1}`
-          : level === 1
-          ? `T${parentRef}.${index + 1}`
-          : `ST${parentRef}.${index + 1}`;
-
-      // Badge style per type
-      const badgeClass =
-        level === 0
-          ? "bg-blue-100 text-blue-800"
-          : level === 1
-          ? "bg-green-100 text-green-800"
-          : "bg-purple-100 text-purple-800";
-
-      const children =
-        (level === 0 && item.themes) || (level === 1 && item.subthemes) || [];
-
-      const row = (
-        <tr key={item.id} className="border-b">
-          {/* Type / Ref Code */}
-          <td
-            className="px-2 py-2 whitespace-nowrap text-sm text-gray-700"
-            style={{ width: "20%" }}
-          >
-            <div className="flex items-center" style={{ marginLeft: `${level * 12}px` }}>
-              {hasChildren && (
-                <button
-                  onClick={() => toggleExpand(item.id)}
-                  className="mr-1 text-gray-500 hover:text-gray-700"
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </button>
-              )}
-              <span
-                className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}`}
-              >
-                {level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme"}
-              </span>
-              <span className="ml-2 font-mono">{refCode}</span>
-            </div>
-          </td>
-
-          {/* Name / Description */}
-          <td
-            className="px-2 py-2 text-sm"
-            style={{ width: "50%" }}
-          >
-            <div className="font-medium text-gray-900">{item.name}</div>
-            {item.description && (
-              <div className="text-gray-500 text-xs">{item.description}</div>
-            )}
-          </td>
-
-          {/* Sort Order */}
-          <td
-            className="px-2 py-2 text-sm text-gray-700 text-center"
-            style={{ width: "15%" }}
-          >
-            {item.sort_order ?? "-"}
-          </td>
-
-          {/* Actions */}
-          <td
-            className="px-2 py-2 text-sm text-gray-700 text-right"
-            style={{ width: "15%" }}
-          >
-            {editMode ? (
-              <div className="flex justify-end gap-2">
-                <button className="text-gray-500 hover:text-gray-700">
-                  <Edit className="h-4 w-4" />
-                </button>
-                <button className="text-gray-500 hover:text-red-600">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-                {level < 2 && (
-                  <button className="text-gray-500 hover:text-gray-700">
-                    <Plus className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ) : (
-              <span className="text-gray-300">—</span>
-            )}
-          </td>
-        </tr>
-      );
-
-      return [
-        row,
-        ...(isExpanded
-          ? renderRows(children, level + 1, refCode.replace(/^P|^T|^ST/, ""))
-          : []),
-      ];
-    });
-  };
+  const statusBadge =
+    versionStatus === "published" ? (
+      <span className="ml-2 rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+        Published
+      </span>
+    ) : (
+      <span className="ml-2 rounded bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+        Draft
+      </span>
+    );
 
   return (
-    <div className="overflow-x-auto">
-      <div className="flex justify-between items-center mb-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() =>
-              setExpanded(
-                tree.reduce((acc, item) => ({ ...acc, [item.id]: true }), {})
-              )
-            }
-            className="text-sm text-gray-600 hover:underline"
-          >
-            Expand All
-          </button>
-          <button
-            onClick={() => setExpanded({})}
-            className="text-sm text-gray-600 hover:underline"
-          >
-            Collapse All
-          </button>
+    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      {/* Version info header */}
+      <div className="flex flex-wrap items-center justify-between border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <span className="font-medium">{versionName ?? "Framework Version"}</span>
+          {statusBadge}
+          {createdAt && (
+            <span className="ml-2 text-xs text-gray-500">Created: {createdAt}</span>
+          )}
         </div>
-        <div>
-          <button
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline">
+            Open Version
+          </Button>
+          <Button size="sm" variant="outline">
+            Clone
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            disabled={versionStatus === "published"}
+          >
+            Publish
+          </Button>
+          <Button
+            size="sm"
+            variant={editMode ? "destructive" : "secondary"}
             onClick={() => setEditMode(!editMode)}
-            className="text-sm text-blue-600 hover:underline"
           >
             {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <table className="min-w-full border rounded-lg">
-        <thead className="bg-gray-50">
-          <tr>
-            <th
-              className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              style={{ width: "20%" }}
-            >
-              Type / Ref Code
-            </th>
-            <th
-              className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              style={{ width: "50%" }}
-            >
-              Name / Description
-            </th>
-            <th
-              className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
-              style={{ width: "15%" }}
-            >
-              Sort Order
-            </th>
-            <th
-              className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
-              style={{ width: "15%" }}
-            >
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {renderRows(tree)}
-        </tbody>
-      </table>
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-600">
+              <th className="px-4 py-2 w-[25%]">Type / Ref Code</th>
+              <th className="px-4 py-2 w-[45%]">Name / Description</th>
+              <th className="px-4 py-2 w-[10%] text-center">Sort Order</th>
+              <th className="px-4 py-2 w-[20%] text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tree.map((pillar, pIdx) => (
+              <tr key={pillar.id} className="border-b">
+                <td className="px-4 py-2">
+                  <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                    Pillar
+                  </span>{" "}
+                  P{pIdx + 1}
+                </td>
+                <td className="px-4 py-2">
+                  <div className="font-medium">{pillar.name}</div>
+                  <div className="text-xs text-gray-500">{pillar.description}</div>
+                </td>
+                <td className="px-4 py-2 text-center">{pillar.sort_order ?? "-"}</td>
+                <td className="px-4 py-2 text-right">
+                  {editMode && (
+                    <Button size="sm" variant="ghost">
+                      Edit
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
