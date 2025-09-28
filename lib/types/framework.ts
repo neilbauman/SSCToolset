@@ -25,7 +25,6 @@ export type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  ref_code?: string; // added for UI
   pillar: FrameworkEntity | null;
   theme: FrameworkEntity | null;
   subtheme: FrameworkEntity | null;
@@ -33,14 +32,13 @@ export type FrameworkItem = {
 
 export type NormalizedFramework = {
   id: string;
-  type: "pillar" | "theme" | "subtheme"; // ✅ NEW
+  type: "pillar" | "theme" | "subtheme";
   name: string;
   description: string;
   color: string | null;
   icon: string | null;
   can_have_indicators?: boolean;
   sort_order?: number;
-  ref_code?: string; // keep ref code for UI display
-  themes?: NormalizedFramework[]; // child themes
-  subthemes?: NormalizedFramework[]; // child subthemes
+  themes?: NormalizedFramework[];
+  subthemes?: NormalizedFramework[];
 };
