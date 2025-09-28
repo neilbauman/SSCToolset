@@ -24,23 +24,24 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
       setTree(null);
       return;
     }
-
-    setLoading(true);
-    setError(null);
-
-    getVersionTree(openedId)
-      .then((res) => {
-        setTree(res);
-      })
-      .catch((e) => {
-        console.error("Failed to load framework tree", e);
-        setError("Failed to load framework tree.");
-      })
-      .finally(() => setLoading(false));
+    const run = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getVersionTree(openedId);
+        setTree(data);
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message ?? "Failed to load framework");
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
   }, [openedId]);
 
   return (
-    <div className={`rounded-lg bg-white shadow-sm p-6 ${theme.border}`}>
+    <div className={`rounded-lg bg-white ${theme.border} p-4 md:p-6`}>
       {/* Version controls */}
       <div className="mb-6 border-b pb-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -88,7 +89,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons (placeholders, to be wired later) */}
           {selectedVersion && (
             <div className="flex items-center gap-2">
               <button className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">
@@ -125,7 +126,9 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         <div className="text-sm text-red-600">{error}</div>
       )}
 
-      {openedId && tree && <FrameworkEditor tree={tree} />}
+      {openedId && tree && (
+        <FrameworkEditor tree={tree} versionId={openedId} />
+      )}
     </div>
   );
 }
