@@ -157,6 +157,24 @@ export async function getVersionTree(versionId: string): Promise<NormalizedFrame
 
 /** ---------------- Catalogue helpers ---------------- */
 
+export type PillarCatalogueRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  can_have_indicators: boolean | null;
+  sort_order?: number | null;
+};
+
+export async function listPillarCatalogue(): Promise<PillarCatalogueRow[]> {
+  const { data, error } = await supabaseServer
+    .from("pillar_catalogue")
+    .select("id, name, description, can_have_indicators, sort_order")
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as PillarCatalogueRow[];
+}
+
 export async function listThemesByPillar(pillarId: string) {
   const { data, error } = await supabaseServer
     .from("theme_catalogue")
