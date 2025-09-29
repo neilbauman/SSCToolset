@@ -21,6 +21,7 @@ type Props = {
   versionId: string;
   parentPillarId: string; // attach theme under this pillar
   existingThemeIds: string[];
+  existingSubthemeIds: string[];
   onClose: () => void;
   onSubmit: (
     payload:
@@ -33,6 +34,7 @@ export default function AddThemeModal({
   versionId,
   parentPillarId,
   existingThemeIds,
+  existingSubthemeIds,
   onClose,
   onSubmit,
 }: Props) {
@@ -77,7 +79,7 @@ export default function AddThemeModal({
 
   function renderSubthemes(subthemes: CatalogueSubtheme[]) {
     return (subthemes ?? []).map((s) => {
-      const disabled = existingThemeIds.includes(s.id);
+      const disabled = existingSubthemeIds.includes(s.id);
       return (
         <label
           key={s.id}
@@ -187,15 +189,20 @@ export default function AddThemeModal({
               const chosen = catalogue
                 .map((t) => {
                   if (
-                    !selectedIds.has(t.id) &&
-                    !(t.subthemes ?? []).some((s) => selectedIds.has(s.id))
+                    existingThemeIds.includes(t.id) ||
+                    (!selectedIds.has(t.id) &&
+                      !(t.subthemes ?? []).some((s) =>
+                        selectedIds.has(s.id)
+                      ))
                   ) {
                     return null;
                   }
                   return {
                     ...t,
-                    subthemes: (t.subthemes ?? []).filter((s) =>
-                      selectedIds.has(s.id)
+                    subthemes: (t.subthemes ?? []).filter(
+                      (s) =>
+                        !existingSubthemeIds.includes(s.id) &&
+                        selectedIds.has(s.id)
                     ),
                   };
                 })
