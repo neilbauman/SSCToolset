@@ -13,7 +13,7 @@ export default function CloneVersionModal({ initialName, onClose, onSubmit }: Pr
   const [name, setName] = useState(initialName);
 
   return (
-    <Modal onClose={onClose}>
+    <Modal open={true} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Clone Framework Version</h2>
       <div className="space-y-4">
         <input
