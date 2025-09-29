@@ -1,8 +1,8 @@
 import { supabaseBrowser } from "@/lib/supabase";
-import { FrameworkVersion } from "@/lib/types/framework";
+import { FrameworkEntity, FrameworkItem, FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 
 // ─────────────────────────────────────────────
-// List all versions
+//  VERSION SERVICES
 // ─────────────────────────────────────────────
 export async function listVersions(): Promise<FrameworkVersion[]> {
   const { data, error } = await supabaseBrowser
@@ -17,9 +17,6 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
   return data as FrameworkVersion[];
 }
 
-// ─────────────────────────────────────────────
-// Create a new version (empty draft)
-// ─────────────────────────────────────────────
 export async function createVersion(name: string): Promise<FrameworkVersion | null> {
   const { data, error } = await supabaseBrowser
     .from("framework_versions")
@@ -34,9 +31,6 @@ export async function createVersion(name: string): Promise<FrameworkVersion | nu
   return data as FrameworkVersion;
 }
 
-// ─────────────────────────────────────────────
-// Edit (rename) a version
-// ─────────────────────────────────────────────
 export async function updateVersion(id: string, patch: Partial<FrameworkVersion>): Promise<boolean> {
   const { error } = await supabaseBrowser
     .from("framework_versions")
@@ -50,9 +44,6 @@ export async function updateVersion(id: string, patch: Partial<FrameworkVersion>
   return true;
 }
 
-// ─────────────────────────────────────────────
-// Delete a version (only if safe to do so)
-// ─────────────────────────────────────────────
 export async function deleteVersion(id: string): Promise<boolean> {
   const { error } = await supabaseBrowser
     .from("framework_versions")
@@ -67,37 +58,47 @@ export async function deleteVersion(id: string): Promise<boolean> {
 }
 
 // ─────────────────────────────────────────────
-// Publish a version (set status → published)
+//  PILLAR CATALOGUE SERVICES
 // ─────────────────────────────────────────────
-export async function publishVersion(id: string): Promise<boolean> {
-  const { error } = await supabaseBrowser
-    .from("framework_versions")
-    .update({ status: "published" })
-    .eq("id", id);
-
-  if (error) {
-    console.error("Error publishing version:", error.message);
-    return false;
-  }
-  return true;
-}
-
-// ─────────────────────────────────────────────
-// Clone a version
-//   ⚠ Needs DB function (recommended: RPC that
-//   copies framework_version_items & returns new id)
-// ─────────────────────────────────────────────
-export async function cloneVersion(id: string, newName: string): Promise<FrameworkVersion | null> {
-  // If you already have a Supabase RPC (e.g. clone_framework_version)
-  const { data, error } = await supabaseBrowser.rpc("clone_framework_version", {
-    from_version_id: id,
-    new_name: newName,
+export async function listPillarCatalogue(versionId: string): Promise<(FrameworkEntity & { already_in: boolean })[]> {
+  const { data, error } = await supabaseBrowser.rpc("list_pillar_catalogue", {
+    version_id: versionId,
   });
 
   if (error) {
-    console.error("Error cloning version:", error.message);
-    return null;
+    console.error("Error listing pillar catalogue:", error.message);
+    return [];
   }
 
-  return data as FrameworkVersion;
+  return data as (FrameworkEntity & { already_in: boolean })[];
+}
+
+export async function createPillar(name: string, description: string): Promise<FrameworkEntity | null> {
+  const { data, error } = await supabaseBrowser
+    .from("pillar_catalogue")
+    .insert([{ name, description }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating pillar:", error.message);
+    return null;
+  }
+  return data as FrameworkEntity;
+}
+
+// ─────────────────────────────────────────────
+//  TREE SERVICES
+// ─────────────────────────────────────────────
+export async function getVersionTree(versionId: string): Promise<NormalizedFramework[]> {
+  const { data, error } = await supabaseBrowser.rpc("get_framework_tree", {
+    version_id: versionId,
+  });
+
+  if (error) {
+    console.error("Error fetching version tree:", error.message);
+    return [];
+  }
+
+  return data as NormalizedFramework[];
 }
