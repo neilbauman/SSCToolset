@@ -15,7 +15,7 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 type Props = {
   tree: NormalizedFramework[];
   versionId: string;
-  editMode: boolean; // 🔑 unified edit mode
+  editMode?: boolean; // ✅ optional now
   onChanged?: () => Promise<void>;
 };
 
@@ -60,7 +60,7 @@ function uniqueById<T extends { id: string }>(arr: T[]) {
 export default function FrameworkEditor({
   tree,
   versionId,
-  editMode,
+  editMode = true, // ✅ default if not provided
   onChanged,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
