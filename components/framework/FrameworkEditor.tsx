@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
+import AddThemeModal from "./AddThemeModal";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -43,7 +44,7 @@ function uniqueById<T extends { id: string }>(arr: T[]) {
   });
 }
 
-// Build a display tree with correct sort order + ref codes
+// Build display tree with sort order + ref codes
 function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[] {
   return pillars
     .slice()
@@ -97,6 +98,7 @@ export default function FrameworkEditor({
   const [dirty, setDirty] = useState(false);
   const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
   const [showAddPillar, setShowAddPillar] = useState(false);
+  const [showAddThemeFor, setShowAddThemeFor] = useState<string | null>(null);
 
   React.useEffect(() => {
     setLocalTree(tree);
@@ -138,34 +140,16 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  function handleAddPillarsFromCatalogue(items: any[]) {
-    const newOnes: NormalizedFramework[] = items.map((p: any) => ({
-      id: p.id,
-      type: "pillar",
-      name: p.name,
-      description: p.description ?? "",
-      color: p.color ?? null,
-      icon: p.icon ?? null,
-      themes: p.themes ?? [],
-      subthemes: p.subthemes ?? [],
-    }));
-
-    setLocalTree([...localTree, ...newOnes]);
-    setDirty(true);
-  }
-
-  function handleCreateNewPillar(name: string, description?: string) {
-    const newPillar: NormalizedFramework = {
-      id: `temp-${Date.now()}`,
-      type: "pillar",
-      name,
-      description: description ?? "",
-      color: null,
-      icon: null,
-      themes: [],
-      subthemes: [],
-    };
-    setLocalTree([...localTree, newPillar]);
+  // Called when adding themes from modal
+  function handleAddThemesToPillar(pillarId: string, themes: any[]) {
+    const updated = localTree.map((p) => {
+      if (p.id !== pillarId) return p;
+      return {
+        ...p,
+        themes: [...(p.themes ?? []), ...themes],
+      };
+    });
+    setLocalTree(updated);
     setDirty(true);
   }
 
@@ -230,6 +214,11 @@ export default function FrameworkEditor({
                     <button
                       className="text-gray-500 hover:text-green-600"
                       title="Add child"
+                      onClick={() => {
+                        if (node.type === "pillar") {
+                          setShowAddThemeFor(node.id);
+                        }
+                      }}
                     >
                       <Plus size={14} />
                     </button>
@@ -318,11 +307,53 @@ export default function FrameworkEditor({
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
-              handleAddPillarsFromCatalogue(payload.items);
+              setLocalTree([...localTree, ...payload.items]);
             } else {
-              handleCreateNewPillar(payload.name, payload.description);
+              setLocalTree([
+                ...localTree,
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "pillar",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                  themes: [],
+                  subthemes: [],
+                },
+              ]);
             }
+            setDirty(true);
             setShowAddPillar(false);
+          }}
+        />
+      )}
+
+      {showAddThemeFor && (
+        <AddThemeModal
+          versionId={versionId}
+          parentPillarId={showAddThemeFor}
+          existingThemeIds={localTree
+            .find((p) => p.id === showAddThemeFor)
+            ?.themes?.map((t) => t.id) ?? []}
+          onClose={() => setShowAddThemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddThemesToPillar(showAddThemeFor, payload.items);
+            } else {
+              handleAddThemesToPillar(showAddThemeFor, [
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "theme",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                  subthemes: [],
+                },
+              ]);
+            }
+            setShowAddThemeFor(null);
           }}
         />
       )}
