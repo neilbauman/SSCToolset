@@ -1,17 +1,15 @@
 // app/api/framework/versions/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { publishVersion, deleteVersion } from "@/lib/services/framework";
+import { publishVersion } from "@/lib/services/framework";
 
-/**
- * PUT /api/framework/versions/:id
- * Publishes a draft version
- */
+// PUT /api/framework/versions/:id → publish version
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const { id } = params;
   try {
-    const version = await publishVersion(params.id);
+    const version = await publishVersion(id);
     return NextResponse.json(version);
   } catch (err: any) {
     console.error("PUT /framework/versions/:id error:", err.message);
@@ -19,16 +17,25 @@ export async function PUT(
   }
 }
 
-/**
- * DELETE /api/framework/versions/:id
- * Deletes a framework version
- */
+// DELETE /api/framework/versions/:id → delete version
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const { id } = params;
   try {
-    await deleteVersion(params.id);
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/framework_versions?id=eq.${id}`,
+      {
+        method: "DELETE",
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+        },
+      }
+    );
+
+    if (!res.ok) throw new Error("Failed to delete version");
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("DELETE /framework/versions/:id error:", err.message);
