@@ -1,40 +1,50 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import AddPillarModal from "./AddPillarModal";
 
 type Props = {
   tree: any[];
   versionId: string;
   editMode: boolean;
-  onChanged: () => void; // still used for reloads
+  onChanged: () => void;
 };
 
 export default function FrameworkEditor({ tree, versionId, editMode, onChanged }: Props) {
   const [localTree, setLocalTree] = useState<any[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [showAddPillar, setShowAddPillar] = useState(false);
 
-  // load tree into local state whenever versionId or tree changes
   useEffect(() => {
     setLocalTree(tree);
     setDirty(false);
   }, [tree, versionId]);
 
-  // placeholder mutation actions — for now just modify local state
-  function handleMockEdit() {
-    if (!editMode) return;
-    const newTree = [...localTree, { id: Date.now().toString(), name: "Mock Item" }];
-    setLocalTree(newTree);
+  function handleAddPillarsFromCatalogue(ids: string[]) {
+    const newPillars = ids.map((id) => ({
+      id,
+      name: `Pillar ${id}`, // placeholder until Supabase join data is wired
+    }));
+    setLocalTree([...localTree, ...newPillars]);
     setDirty(true);
   }
 
-  // save changes (not wired yet)
-  async function handleSave() {
-    console.log("Saving changes (not wired to Supabase yet):", localTree);
-    setDirty(false);
-    // Later: call mutations, then onChanged()
+  function handleCreateNewPillar(name: string, description?: string) {
+    const newPillar = {
+      id: `temp-${Date.now()}`,
+      name,
+      description,
+    };
+    setLocalTree([...localTree, newPillar]);
+    setDirty(true);
   }
 
-  // discard changes → reset from prop tree
+  async function handleSave() {
+    console.log("Saving changes (not wired yet):", localTree);
+    setDirty(false);
+    // Later: call Supabase inserts, then onChanged()
+  }
+
   function handleDiscard() {
     setLocalTree(tree);
     setDirty(false);
@@ -60,6 +70,18 @@ export default function FrameworkEditor({ tree, versionId, editMode, onChanged }
         </div>
       )}
 
+      {/* Add Pillar */}
+      {editMode && (
+        <div className="mb-4">
+          <button
+            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+            onClick={() => setShowAddPillar(true)}
+          >
+            + Add Pillar
+          </button>
+        </div>
+      )}
+
       {/* Framework Tree */}
       <div className="space-y-2">
         {localTree.length === 0 ? (
@@ -71,18 +93,27 @@ export default function FrameworkEditor({ tree, versionId, editMode, onChanged }
               className="p-2 border rounded-md flex justify-between items-center bg-gray-50"
             >
               <span>{item.name}</span>
-              {editMode && (
-                <button
-                  className="text-xs text-blue-600 hover:underline"
-                  onClick={handleMockEdit}
-                >
-                  + Mock Edit
-                </button>
-              )}
             </div>
           ))
         )}
       </div>
+
+      {/* Add Pillar Modal */}
+      {showAddPillar && (
+        <AddPillarModal
+          versionId={versionId}
+          existingPillarIds={localTree.map((p: any) => p.id)}
+          onClose={() => setShowAddPillar(false)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddPillarsFromCatalogue(payload.pillarIds);
+            } else {
+              handleCreateNewPillar(payload.name, payload.description);
+            }
+            setShowAddPillar(false);
+          }}
+        />
+      )}
     </div>
   );
 }
