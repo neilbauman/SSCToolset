@@ -141,3 +141,38 @@ export async function listSubthemeCatalogue(
   if (error) throw new Error(error.message);
   return (data ?? []) as CatalogueSubtheme[];
 }
+
+// ─────────────────────────────────────────────
+// Catalogue: CRUD for Pillars
+// ─────────────────────────────────────────────
+export async function createPillar(name: string, description?: string) {
+  const { data, error } = await supabaseServer
+    .from("pillar_catalogue")
+    .insert({ name, description })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updatePillar(
+  id: string,
+  patch: { name?: string; description?: string }
+) {
+  const { data, error } = await supabaseServer
+    .from("pillar_catalogue")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function deletePillar(id: string) {
+  const { error } = await supabaseServer
+    .from("pillar_catalogue")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
