@@ -13,6 +13,12 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
+import {
+  createPillar,
+  createTheme,
+  createSubtheme,
+  replaceFrameworkVersionItems,
+} from "@/lib/services/framework";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -90,6 +96,10 @@ function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[]
     });
 }
 
+function isTemp(id: string) {
+  return id.startsWith("temp-");
+}
+
 // ─────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────
@@ -138,10 +148,121 @@ export default function FrameworkEditor({
     setExpanded({});
   }, []);
 
+  // ─────────────────────────────────────────────
+  // SAVE: persist staged tree → catalogue (for new) + version items
+  // ─────────────────────────────────────────────
   async function handleSave() {
-    console.log("Saving changes (not wired yet):", localTree);
-    setDirty(false);
-    if (onChanged) await onChanged();
+    try {
+      // 1) Resolve any temp-* nodes by creating catalogue entities
+      const resolvedPillars = [];
+      for (let pIndex = 0; pIndex < localTree.length; pIndex++) {
+        const p = localTree[pIndex];
+        let pillarId = p.id;
+        if (isTemp(pillarId)) {
+          const created = await createPillar(p.name, p.description ?? "");
+          pillarId = created.id;
+        }
+        // Ensure themes array exists
+        const themes = p.themes ?? [];
+        const resolvedThemes = [];
+        for (let tIndex = 0; tIndex < themes.length; tIndex++) {
+          const t = themes[tIndex];
+          let themeId = t.id;
+          if (isTemp(themeId)) {
+            const created = await createTheme(pillarId, t.name, t.description ?? "");
+            themeId = created.id;
+          }
+          const subthemes = t.subthemes ?? [];
+          const resolvedSubs = [];
+          for (let sIndex = 0; sIndex < subthemes.length; sIndex++) {
+            const s = subthemes[sIndex];
+            let subId = s.id;
+            if (isTemp(subId)) {
+              const created = await createSubtheme(themeId, s.name, s.description ?? "");
+              subId = created.id;
+            }
+            resolvedSubs.push({
+              ...s,
+              id: subId,
+            });
+          }
+          resolvedThemes.push({
+            ...t,
+            id: themeId,
+            subthemes: resolvedSubs,
+          });
+        }
+        resolvedPillars.push({
+          ...p,
+          id: pillarId,
+          themes: resolvedThemes,
+        });
+      }
+
+      // 2) Build version_items payload (delete all → insert rebuilt)
+      const items: {
+        version_id: string;
+        pillar_id: string | null;
+        theme_id: string | null;
+        subtheme_id: string | null;
+        sort_order: number;
+        ref_code: string;
+      }[] = [];
+
+      // Pillars
+      resolvedPillars.forEach((p, pIdx) => {
+        const pOrder = pIdx + 1;
+        const pRef = `P${pOrder}`;
+
+        // row for pillar
+        items.push({
+          version_id: versionId,
+          pillar_id: p.id,
+          theme_id: null,
+          subtheme_id: null,
+          sort_order: pOrder,
+          ref_code: pRef,
+        });
+
+        // Themes
+        (p.themes ?? []).forEach((t, tIdx) => {
+          const tOrder = tIdx + 1;
+          const tRef = `P${pOrder}.T${tOrder}`;
+
+          items.push({
+            version_id: versionId,
+            pillar_id: p.id,
+            theme_id: t.id,
+            subtheme_id: null,
+            sort_order: tOrder,
+            ref_code: tRef,
+          });
+
+          // Subthemes
+          (t.subthemes ?? []).forEach((s, sIdx) => {
+            const sOrder = sIdx + 1;
+            const sRef = `P${pOrder}.T${tOrder}.S${sOrder}`;
+
+            items.push({
+              version_id: versionId,
+              pillar_id: p.id,
+              theme_id: t.id,
+              subtheme_id: s.id,
+              sort_order: sOrder,
+              ref_code: sRef,
+            });
+          });
+        });
+      });
+
+      await replaceFrameworkVersionItems(versionId, items);
+
+      setDirty(false);
+      if (onChanged) await onChanged();
+    } catch (err: any) {
+      console.error("Save failed:", err.message);
+      alert(`Save failed: ${err.message}`);
+    }
   }
 
   function handleDiscard() {
@@ -276,7 +397,7 @@ export default function FrameworkEditor({
             className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
             onClick={handleSave}
           >
-            Save (not wired yet)
+            Save
           </button>
           <button
             className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
