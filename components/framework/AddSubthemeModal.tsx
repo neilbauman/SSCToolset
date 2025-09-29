@@ -2,13 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Modal from "../ui/Modal";
-import { listSubthemeCatalogue } from "@/lib/services/framework";
-
-type CatalogueSubtheme = {
-  id: string;
-  name: string;
-  description?: string;
-};
+import {
+  listSubthemeCatalogue,
+  CatalogueSubtheme,
+} from "@/lib/services/framework";
 
 type Props = {
   versionId: string;
@@ -49,7 +46,6 @@ export default function AddSubthemeModal({
           console.error("Error loading subtheme catalogue:", err.message);
         }
       } else {
-        // Use passed subthemes directly (unsaved catalogue theme)
         setCatalogue(catalogueSubthemes);
       }
     }
@@ -58,10 +54,10 @@ export default function AddSubthemeModal({
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   }
 
@@ -113,9 +109,7 @@ export default function AddSubthemeModal({
                 <div>
                   <div>{s.name}</div>
                   {s.description && (
-                    <div className="text-xs text-gray-500">
-                      {s.description}
-                    </div>
+                    <div className="text-xs text-gray-500">{s.description}</div>
                   )}
                 </div>
               </label>
