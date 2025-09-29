@@ -1,8 +1,8 @@
 // app/api/framework/versions/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { publishVersion } from "@/lib/services/framework";
+import { publishVersion, deleteVersion } from "@/lib/services/framework";
 
-// PUT /api/framework/versions/:id → publish version
+// PUT /api/framework/versions/:id → publish or unpublish version
 export async function PUT(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -11,7 +11,16 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Missing version id" }, { status: 400 });
     }
 
-    const version = await publishVersion(id);
+    // Expect request body: { publish: true | false }
+    const { publish } = await req.json();
+    if (typeof publish !== "boolean") {
+      return NextResponse.json(
+        { error: "Missing or invalid 'publish' flag" },
+        { status: 400 }
+      );
+    }
+
+    const version = await publishVersion(id, publish);
     return NextResponse.json(version);
   } catch (err: any) {
     console.error("PUT /framework/versions/:id error:", err.message);
@@ -28,19 +37,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Missing version id" }, { status: 400 });
     }
 
-    // replace with proper deleteVersion service when available
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/framework_versions?id=eq.${id}`,
-      {
-        method: "DELETE",
-        headers: {
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
-        },
-      }
-    );
-
-    if (!res.ok) throw new Error("Failed to delete version");
+    await deleteVersion(id);
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("DELETE /framework/versions/:id error:", err.message);
