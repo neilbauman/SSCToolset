@@ -140,3 +140,18 @@ export async function listThemeCatalogue(
   if (error) throw new Error(error.message);
   return data;
 }
+
+// ─────────────────────────────────────────────
+// Catalogue: Subthemes
+// ─────────────────────────────────────────────
+export async function listSubthemeCatalogue(
+  versionId: string,
+  themeId: string
+) {
+  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
+    v_version_id: versionId,
+    v_theme_id: themeId,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
