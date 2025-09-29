@@ -1,4 +1,3 @@
-// components/framework/VersionManager.tsx
 "use client";
 
 import { useState } from "react";
@@ -12,17 +11,20 @@ import {
   Upload,
   FilePlus,
 } from "lucide-react";
+import NewVersionModal from "./NewVersionModal";
+import EditVersionModal from "./EditVersionModal";
+import CloneVersionModal from "./CloneVersionModal";
 
 type Props = {
   versions: FrameworkVersion[];
   selectedId: string;
   editMode: boolean;
   onSelect: (id: string) => void;
-  onNew: () => Promise<void>;
-  onEdit: (id: string, name: string) => Promise<void>;
-  onClone: (id: string, name: string) => Promise<void>;
+  onNew: (name: string) => Promise<void>;
+  onEdit: (id: string, patch: { name?: string }) => Promise<void>;
+  onClone: (id: string, newName: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onPublish: (id: string) => Promise<void>;
+  onPublish: (id: string, publish: boolean) => Promise<void>;
 };
 
 export default function VersionManager({
@@ -37,6 +39,9 @@ export default function VersionManager({
   onPublish,
 }: Props) {
   const [panelOpen, setPanelOpen] = useState(true);
+  const [showNew, setShowNew] = useState(false);
+  const [editTarget, setEditTarget] = useState<FrameworkVersion | null>(null);
+  const [cloneTarget, setCloneTarget] = useState<FrameworkVersion | null>(null);
 
   return (
     <div className="mb-4">
@@ -46,7 +51,7 @@ export default function VersionManager({
         <div className="flex items-center space-x-2">
           {editMode && (
             <button
-              onClick={onNew}
+              onClick={() => setShowNew(true)}
               className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
               <FilePlus size={16} className="mr-1" />
@@ -75,15 +80,9 @@ export default function VersionManager({
               <tr>
                 <th className="px-3 py-2 text-left font-medium w-1/3">Name</th>
                 <th className="px-3 py-2 text-left font-medium w-1/6">Status</th>
-                <th className="px-3 py-2 text-left font-medium w-1/6">
-                  Created
-                </th>
-                <th className="px-3 py-2 text-left font-medium w-1/6">
-                  Updated
-                </th>
-                <th className="px-3 py-2 text-right font-medium w-1/6">
-                  Actions
-                </th>
+                <th className="px-3 py-2 text-left font-medium w-1/6">Created</th>
+                <th className="px-3 py-2 text-left font-medium w-1/6">Updated</th>
+                <th className="px-3 py-2 text-right font-medium w-1/6">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -95,9 +94,7 @@ export default function VersionManager({
                   }`}
                   onClick={() => onSelect(v.id)}
                 >
-                  <td className="px-3 py-2 font-medium text-gray-900">
-                    {v.name}
-                  </td>
+                  <td className="px-3 py-2 font-medium text-gray-900">{v.name}</td>
                   <td className="px-3 py-2">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -123,7 +120,7 @@ export default function VersionManager({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onEdit(v.id, v.name);
+                            setEditTarget(v);
                           }}
                           className="text-gray-500 hover:text-gray-700"
                           title="Edit"
@@ -133,7 +130,7 @@ export default function VersionManager({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onClone(v.id, v.name);
+                            setCloneTarget(v);
                           }}
                           className="text-gray-500 hover:text-gray-700"
                           title="Clone"
@@ -153,7 +150,7 @@ export default function VersionManager({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onPublish(v.id);
+                            onPublish(v.id, v.status !== "published");
                           }}
                           className="text-gray-500 hover:text-blue-600"
                           title="Toggle Publish"
@@ -168,6 +165,39 @@ export default function VersionManager({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Modals */}
+      {showNew && (
+        <NewVersionModal
+          onClose={() => setShowNew(false)}
+          onSubmit={async (name) => {
+            await onNew(name);
+            setShowNew(false);
+          }}
+        />
+      )}
+
+      {editTarget && (
+        <EditVersionModal
+          initialName={editTarget.name}
+          onClose={() => setEditTarget(null)}
+          onSubmit={async (name) => {
+            await onEdit(editTarget.id, { name });
+            setEditTarget(null);
+          }}
+        />
+      )}
+
+      {cloneTarget && (
+        <CloneVersionModal
+          initialName={`${cloneTarget.name} Copy`}
+          onClose={() => setCloneTarget(null)}
+          onSubmit={async (name) => {
+            await onClone(cloneTarget.id, name);
+            setCloneTarget(null);
+          }}
+        />
       )}
     </div>
   );
