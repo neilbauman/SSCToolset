@@ -17,30 +17,26 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
   return data as FrameworkVersion[];
 }
 
-export async function createVersion(name: string): Promise<FrameworkVersion> {
+export async function createVersion(
+  name: string,
+  description: string = ""
+): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .insert({ name, status: "draft" })
+    .insert({ name, description, status: "draft" })
     .select()
     .single();
   if (error) throw new Error(error.message);
   return data as FrameworkVersion;
 }
 
-/**
- * Clone an existing framework version.
- * @returns UUID (string) of the new cloned version
- */
-export async function cloneVersion(
-  fromVersionId: string,
-  newName: string
-): Promise<string> {
+export async function cloneVersion(fromVersionId: string, newName: string) {
   const { data, error } = await supabaseServer.rpc("clone_framework_version", {
     v_from_version_id: fromVersionId,
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data as string; // RPC returns a single UUID
+  return data;
 }
 
 export async function publishVersion(versionId: string) {
