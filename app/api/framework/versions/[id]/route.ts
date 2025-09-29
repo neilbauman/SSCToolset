@@ -5,9 +5,9 @@ import { publishVersion } from "@/lib/services/framework";
 // PUT /api/framework/versions/:id → publish version
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
-  const { id } = params;
+  const id = context.params.id;
   try {
     const version = await publishVersion(id);
     return NextResponse.json(version);
@@ -20,10 +20,11 @@ export async function PUT(
 // DELETE /api/framework/versions/:id → delete version
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
-  const { id } = params;
+  const id = context.params.id;
   try {
+    // replace with proper deleteVersion service when available
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/framework_versions?id=eq.${id}`,
       {
