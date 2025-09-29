@@ -12,7 +12,8 @@ export default function NewVersionModal({ onClose, onSubmit }: Props) {
   const [name, setName] = useState("");
 
   return (
-    <Modal title="New Framework Version" onClose={onClose}>
+    <Modal onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">New Framework Version</h2>
       <div className="space-y-4">
         <input
           type="text"
