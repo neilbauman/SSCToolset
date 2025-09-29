@@ -162,7 +162,7 @@ export default function FrameworkEditor({
   }
 
   const renderNode = useCallback(
-    (node: NormalizedFramework) => {
+    (node: NormalizedFramework): React.ReactNode => {
       const isExpanded = expanded[node.id] ?? false;
       const hasChildren =
         (node.themes && node.themes.length > 0) ||
@@ -245,7 +245,6 @@ export default function FrameworkEditor({
 
   return (
     <div className="border rounded-md p-4">
-      {/* Save / Discard controls */}
       {editMode && dirty && (
         <div className="flex space-x-2 mb-4">
           <button
@@ -263,7 +262,6 @@ export default function FrameworkEditor({
         </div>
       )}
 
-      {/* Toolbar */}
       {editMode && (
         <div className="flex space-x-2 mb-2">
           <button
@@ -287,7 +285,6 @@ export default function FrameworkEditor({
         </div>
       )}
 
-      {/* Table */}
       <table className="w-full text-sm border border-gray-200 rounded-md">
         <thead className="bg-gray-50 text-gray-700">
           <tr>
@@ -306,7 +303,6 @@ export default function FrameworkEditor({
         <tbody>{pillars.map((p) => renderNode(p))}</tbody>
       </table>
 
-      {/* Add Pillar Modal */}
       {showAddPillar && (
         <AddPillarModal
           versionId={versionId}
