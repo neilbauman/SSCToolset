@@ -5,7 +5,7 @@ export type FrameworkVersion = {
   name: string;
   status: "draft" | "published";
   created_at: string;
-  updated_at?: string;
+  updated_at?: string; // ✅ added and now matches DB
   created_by?: string;
 };
 
@@ -25,7 +25,7 @@ export type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  ref_code?: string; // added for UI
+  ref_code?: string; // for UI
   pillar: FrameworkEntity | null;
   theme: FrameworkEntity | null;
   subtheme: FrameworkEntity | null;
@@ -40,7 +40,7 @@ export type NormalizedFramework = {
   icon: string | null;
   can_have_indicators?: boolean;
   sort_order?: number;
-  ref_code?: string; // ✅ ensure this exists for UI rendering
+  ref_code?: string;
   themes?: NormalizedFramework[];
   subthemes?: NormalizedFramework[];
 };
