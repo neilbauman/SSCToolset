@@ -7,20 +7,20 @@ import { listPillarCatalogue } from "@/lib/services/framework";
 type CatalogueSubtheme = {
   id: string;
   name: string;
-  description?: string;
+  description: string;
 };
 
 type CatalogueTheme = {
   id: string;
   name: string;
-  description?: string;
+  description: string;
   subthemes: CatalogueSubtheme[];
 };
 
 type CataloguePillar = {
   id: string;
   name: string;
-  description?: string;
+  description: string;
   themes: CatalogueTheme[];
 };
 
@@ -51,7 +51,20 @@ export default function AddPillarModal({
     async function load() {
       try {
         const data = await listPillarCatalogue(versionId);
-        setCatalogue(data ?? []);
+        setCatalogue(
+          (data ?? []).map((p: any) => ({
+            ...p,
+            description: p.description ?? "",
+            themes: (p.themes ?? []).map((t: any) => ({
+              ...t,
+              description: t.description ?? "",
+              subthemes: (t.subthemes ?? []).map((s: any) => ({
+                ...s,
+                description: s.description ?? "",
+              })),
+            })),
+          }))
+        );
       } catch (err: any) {
         console.error("Error loading catalogue:", err.message);
       }
@@ -134,7 +147,6 @@ export default function AddPillarModal({
     <Modal open={true} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Add Pillar</h2>
 
-      {/* Tabs */}
       <div className="flex space-x-4 border-b mb-4">
         <button
           className={`pb-2 ${
@@ -180,7 +192,6 @@ export default function AddPillarModal({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex justify-end space-x-2 mt-4">
         <button
           className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
