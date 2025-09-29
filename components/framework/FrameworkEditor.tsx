@@ -87,39 +87,6 @@ function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[]
     });
 }
 
-/** Map a NormalizedFramework subtheme → modal's CatalogueSubtheme shape */
-function toCatalogueSubtheme(n: NormalizedFramework | undefined) {
-  if (!n) return undefined;
-  return { id: n.id, name: n.name, description: n.description ?? "" };
-}
-
-/** Map a NormalizedFramework theme → modal's CatalogueTheme shape */
-function toCatalogueTheme(n: NormalizedFramework | undefined) {
-  if (!n) return undefined;
-  const subs = (n.subthemes ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    description: s.description ?? "",
-  }));
-  return { id: n.id, name: n.name, description: n.description ?? "", subthemes: subs };
-}
-
-/** Map a NormalizedFramework pillar → modal's CataloguePillar shape */
-function toCataloguePillar(n: NormalizedFramework | undefined) {
-  if (!n) return undefined;
-  const themes = (n.themes ?? []).map((t) => ({
-    id: t.id,
-    name: t.name,
-    description: t.description ?? "",
-    subthemes: (t.subthemes ?? []).map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description ?? "",
-    })),
-  }));
-  return { id: n.id, name: n.name, description: n.description ?? "", themes };
-}
-
 export default function FrameworkEditor({
   tree,
   versionId,
@@ -355,15 +322,7 @@ export default function FrameworkEditor({
         <AddPillarModal
           versionId={versionId}
           existingPillarIds={localTree.map((n) => n.id)}
-          isPersisted={!!localTree.find((p) => p.id)?.sort_order}
-          cataloguePillars={
-            localTree.map(toCataloguePillar).filter(Boolean) as {
-              id: string;
-              name: string;
-              description?: string;
-              themes: { id: string; name: string; description?: string; subthemes: { id: string; name: string; description?: string }[] }[];
-            }[]
-          }
+          isPersisted={true}
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
@@ -426,19 +385,7 @@ export default function FrameworkEditor({
               .find((p) => p.id === showAddThemeFor)
               ?.themes?.flatMap((t) => t.subthemes?.map((s) => s.id) ?? []) ?? []
           }
-          isPersisted={
-            !!localTree.find((p) => p.id === showAddThemeFor)?.sort_order
-          }
-          catalogueThemes={
-            (localTree.find((p) => p.id === showAddThemeFor)?.themes ?? [])
-              .map(toCatalogueTheme)
-              .filter(Boolean) as {
-              id: string;
-              name: string;
-              description?: string;
-              subthemes: { id: string; name: string; description?: string }[];
-            }[]
-          }
+          isPersisted={true}
           onClose={() => setShowAddThemeFor(null)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
@@ -451,62 +398,4 @@ export default function FrameworkEditor({
                   name: payload.name,
                   description: payload.description,
                   color: null,
-                  icon: null,
-                  subthemes: [],
-                },
-              ]);
-            }
-            setShowAddThemeFor(null);
-          }}
-        />
-      )}
-
-      {showAddSubthemeFor && (
-        <AddSubthemeModal
-          versionId={versionId}
-          parentThemeId={showAddSubthemeFor}
-          existingSubthemeIds={
-            localTree
-              .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)
-              ?.subthemes?.map((s) => s.id) ?? []
-          }
-          isPersisted={
-            !!localTree
-              .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)?.sort_order
-          }
-          catalogueSubthemes={
-            (localTree
-              .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)?.subthemes ?? [])
-              .map(toCatalogueSubtheme)
-              .filter(Boolean) as {
-              id: string;
-              name: string;
-              description?: string;
-            }[]
-          }
-          onClose={() => setShowAddSubthemeFor(null)}
-          onSubmit={(payload) => {
-            if (payload.mode === "catalogue") {
-              handleAddSubthemesToTheme(showAddSubthemeFor, payload.items);
-            } else {
-              handleAddSubthemesToTheme(showAddSubthemeFor, [
-                {
-                  id: `temp-${Date.now()}`,
-                  type: "subtheme",
-                  name: payload.name,
-                  description: payload.description,
-                  color: null,
-                  icon: null,
-                },
-              ]);
-            }
-            setShowAddSubthemeFor(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
+                 
