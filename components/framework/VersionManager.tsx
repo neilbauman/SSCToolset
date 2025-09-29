@@ -1,14 +1,15 @@
 "use client";
 
 import { FrameworkVersion } from "@/lib/types/framework";
-import { Pencil, Copy, Check, Trash2 } from "lucide-react";
+import { Pencil, Copy, Check, Trash2, Plus } from "lucide-react";
+import { useState } from "react";
 
 type Props = {
   versions: FrameworkVersion[];
   selectedId: string;
   editMode: boolean;
   onSelect: (id: string) => void;
-  onNew: () => void;
+  onNew: (name: string) => void;
   onEdit: (id: string) => void;
   onClone: (id: string) => void;
   onDelete: (id: string) => void;
@@ -26,16 +27,28 @@ export default function VersionManager({
   onDelete,
   onPublish,
 }: Props) {
+  const [showModal, setShowModal] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const handleSubmit = () => {
+    if (newName.trim()) {
+      onNew(newName.trim());
+      setNewName("");
+      setShowModal(false);
+    }
+  };
+
   return (
-    <div className="border border-gray-200 rounded-md">
+    <div className="border border-gray-200 rounded-md mb-4">
       <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
         <span className="font-medium text-sm">Framework Versions</span>
         {editMode && (
           <button
-            onClick={onNew}
+            onClick={() => setShowModal(true)}
             className="ml-2 inline-flex items-center rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
           >
-            + New Version
+            <Plus size={14} className="mr-1" />
+            New Version
           </button>
         )}
       </div>
@@ -46,6 +59,7 @@ export default function VersionManager({
             <th className="px-3 py-2 text-left w-2/6">Name</th>
             <th className="px-3 py-2 text-left w-1/6">Status</th>
             <th className="px-3 py-2 text-left w-1/6">Created</th>
+            <th className="px-3 py-2 text-left w-1/6">Updated</th>
             <th className="px-3 py-2 text-right w-1/6">Actions</th>
           </tr>
         </thead>
@@ -74,6 +88,11 @@ export default function VersionManager({
                 <td className="px-3 py-2">{badge}</td>
                 <td className="px-3 py-2">
                   {new Date(v.created_at).toISOString().slice(0, 10)}
+                </td>
+                <td className="px-3 py-2">
+                  {v.updated_at
+                    ? new Date(v.updated_at).toISOString().slice(0, 10)
+                    : "-"}
                 </td>
                 <td className="px-3 py-2 text-right">
                   {editMode ? (
@@ -128,6 +147,36 @@ export default function VersionManager({
           })}
         </tbody>
       </table>
+
+      {/* Modal for new version */}
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-md p-6 w-96 shadow-lg">
+            <h2 className="text-lg font-medium mb-4">Create New Version</h2>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Version name"
+              className="w-full border rounded-md px-3 py-2 mb-4"
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-3 py-1 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
