@@ -421,7 +421,32 @@ export default function FrameworkEditor({
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
-              setLocalTree([...localTree, ...payload.items]);
+              const normalized = payload.items.map((p) => ({
+                id: p.id,
+                type: "pillar" as const,
+                name: p.name,
+                description: p.description ?? "",
+                color: null,
+                icon: null,
+                themes: (p.themes ?? []).map((t) => ({
+                  id: t.id,
+                  type: "theme" as const,
+                  name: t.name,
+                  description: t.description ?? "",
+                  color: null,
+                  icon: null,
+                  subthemes: (t.subthemes ?? []).map((s) => ({
+                    id: s.id,
+                    type: "subtheme" as const,
+                    name: s.name,
+                    description: s.description ?? "",
+                    color: null,
+                    icon: null,
+                  })),
+                })),
+                subthemes: [],
+              }));
+              setLocalTree([...localTree, ...normalized]);
             } else {
               setLocalTree([
                 ...localTree,
