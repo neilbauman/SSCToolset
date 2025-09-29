@@ -358,9 +358,14 @@ export default function FrameworkEditor({
         <AddThemeModal
           versionId={versionId}
           parentPillarId={showAddThemeFor}
-          existingThemeIds={localTree
-            .find((p) => p.id === showAddThemeFor)
-            ?.themes?.map((t) => t.id) ?? []}
+          existingThemeIds={
+            localTree.find((p) => p.id === showAddThemeFor)?.themes?.map((t) => t.id) ?? []
+          }
+          existingSubthemeIds={
+            localTree
+              .find((p) => p.id === showAddThemeFor)
+              ?.themes?.flatMap((t) => t.subthemes?.map((s) => s.id) ?? []) ?? []
+          }
           onClose={() => setShowAddThemeFor(null)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
