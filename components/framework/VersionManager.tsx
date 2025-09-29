@@ -19,6 +19,7 @@ type Props = {
   versions: FrameworkVersion[];
   selectedId: string;
   editMode: boolean;
+  onToggleEdit: () => void;
   onSelect: (id: string) => void;
   onNew: (name: string) => Promise<void>;
   onEdit: (id: string, patch: { name?: string }) => Promise<void>;
@@ -31,6 +32,7 @@ export default function VersionManager({
   versions,
   selectedId,
   editMode,
+  onToggleEdit,
   onSelect,
   onNew,
   onEdit,
@@ -49,6 +51,21 @@ export default function VersionManager({
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-semibold text-gray-800">Framework Versions</h2>
         <div className="flex items-center space-x-2">
+          {editMode ? (
+            <button
+              onClick={onToggleEdit}
+              className="text-sm text-gray-600 hover:text-gray-800"
+            >
+              Exit edit mode
+            </button>
+          ) : (
+            <button
+              onClick={onToggleEdit}
+              className="text-sm text-gray-600 hover:text-gray-800"
+            >
+              Enter edit mode
+            </button>
+          )}
           {editMode && (
             <button
               onClick={() => setShowNew(true)}
