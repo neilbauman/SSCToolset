@@ -1,47 +1,46 @@
+// components/framework/CloneVersionModal.tsx
 "use client";
 
 import { useState } from "react";
 
 type Props = {
-  fromId: string;
   onClose: () => void;
-  onClone: (name: string) => void;
+  onConfirm: (newName: string) => Promise<void>; // ✅ add this
 };
 
-export default function CloneVersionModal({ fromId, onClose, onClone }: Props) {
+export default function CloneVersionModal({ onClose, onConfirm }: Props) {
   const [name, setName] = useState("");
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
-      <div className="bg-white rounded-lg shadow-lg w-96 p-6">
-        <h2 className="text-lg font-semibold mb-4">Clone Framework Version</h2>
-        <p className="text-sm text-gray-600 mb-2">
-          You are cloning version <span className="font-medium">{fromId}</span>
-        </p>
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+      <div className="bg-white rounded-md shadow-md p-6 w-96">
+        <h2 className="text-lg font-semibold mb-4">Clone Version</h2>
+
         <input
           type="text"
-          placeholder="Enter new version name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 mb-4 text-sm"
+          placeholder="Enter new version name"
+          className="w-full border rounded px-2 py-1 mb-4 text-sm"
         />
+
         <div className="flex justify-end space-x-2">
           <button
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
             onClick={onClose}
+            className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
           >
             Cancel
           </button>
           <button
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             onClick={() => {
               if (name.trim()) {
-                onClone(name.trim());
+                onConfirm(name.trim()); // ✅ pass name back
                 onClose();
               }
             }}
+            className="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
           >
-            Clone
+            Confirm
           </button>
         </div>
       </div>
