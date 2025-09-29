@@ -401,6 +401,33 @@ export default function FrameworkEditor({
         </div>
       )}
 
+      {editMode && (
+        <div className="flex justify-between items-center mb-2">
+          <div className="flex space-x-2">
+            <button
+              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              onClick={() => setShowAddPillar(true)}
+            >
+              + Add Pillar
+            </button>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+              onClick={expandAll}
+            >
+              Expand All
+            </button>
+            <button
+              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+              onClick={collapseAll}
+            >
+              Collapse All
+            </button>
+          </div>
+        </div>
+      )}
+
       <table className="w-full text-sm border border-gray-200 rounded-md">
         <thead className="bg-gray-50 text-gray-700">
           <tr>
@@ -510,30 +537,4 @@ export default function FrameworkEditor({
           existingSubthemeIds={
             localTree
               .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)
-              ?.subthemes?.map((s) => s.id) ?? []
-          }
-          isPersisted
-          onClose={() => setShowAddSubthemeFor(null)}
-          onSubmit={(payload) => {
-            if (payload.mode === "catalogue") {
-              handleAddSubthemesToTheme(showAddSubthemeFor, payload.items);
-            } else {
-              handleAddSubthemesToTheme(showAddSubthemeFor, [
-                {
-                  id: `temp-${Date.now()}`,
-                  type: "subtheme",
-                  name: payload.name,
-                  description: payload.description,
-                  color: null,
-                  icon: null,
-                },
-              ]);
-            }
-            setShowAddSubthemeFor(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
+              .find((t) => t.id === show
