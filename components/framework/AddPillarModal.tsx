@@ -2,21 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Modal from "../ui/Modal";
-import { listPillarCatalogue } from "@/lib/services/framework";
-
-type CatalogueTheme = {
-  id: string;
-  name: string;
-  description?: string;
-  subthemes: { id: string; name: string; description?: string }[];
-};
-
-type CataloguePillar = {
-  id: string;
-  name: string;
-  description?: string;
-  themes: CatalogueTheme[];
-};
+import { listPillarCatalogue, CataloguePillar } from "@/lib/services/framework";
 
 type Props = {
   versionId: string;
@@ -50,11 +36,7 @@ export default function AddPillarModal({
       if (isPersisted) {
         try {
           const data = await listPillarCatalogue(versionId);
-          const normalized = (data ?? []).map((p: any) => ({
-            ...p,
-            themes: p.themes ?? [],
-          }));
-          setCatalogue(normalized);
+          setCatalogue(data ?? []);
         } catch (err: any) {
           console.error("Error loading pillar catalogue:", err.message);
         }
@@ -67,10 +49,10 @@ export default function AddPillarModal({
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   }
 
