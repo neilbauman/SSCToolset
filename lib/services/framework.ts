@@ -1,6 +1,9 @@
 // lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
-import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
+import type {
+  FrameworkVersion,
+  NormalizedFramework,
+} from "@/lib/types/framework";
 
 // ─────────────────────────────────────────────
 // Framework Versions
@@ -30,7 +33,7 @@ export async function updateVersion(
 ): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update(patch)
     .eq("id", id)
     .select()
     .single();
@@ -38,7 +41,10 @@ export async function updateVersion(
   return data as FrameworkVersion;
 }
 
-export async function cloneVersion(fromVersionId: string, newName: string) {
+export async function cloneVersion(
+  fromVersionId: string,
+  newName: string
+): Promise<string> {
   const { data, error } = await supabaseServer.rpc("clone_framework_version", {
     v_from_version_id: fromVersionId,
     v_new_name: newName,
@@ -48,14 +54,16 @@ export async function cloneVersion(fromVersionId: string, newName: string) {
 }
 
 export async function publishVersion(versionId: string) {
-  const { data, error } = await supabaseServer
+  return updateVersion(versionId, { status: "published" });
+}
+
+export async function deleteVersion(id: string) {
+  const { error } = await supabaseServer
     .from("framework_versions")
-    .update({ status: "published", updated_at: new Date().toISOString() })
-    .eq("id", versionId)
-    .select()
-    .single();
+    .delete()
+    .eq("id", id);
   if (error) throw new Error(error.message);
-  return data as FrameworkVersion;
+  return { success: true };
 }
 
 // ─────────────────────────────────────────────
