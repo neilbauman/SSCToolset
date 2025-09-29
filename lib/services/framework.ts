@@ -106,7 +106,7 @@ export type CataloguePillar = {
 };
 
 // ─────────────────────────────────────────────
-// Catalogue Queries
+// Catalogue List Queries (respecting existing framework)
 // ─────────────────────────────────────────────
 export async function listPillarCatalogue(
   versionId: string
@@ -253,4 +253,35 @@ export async function deleteSubtheme(id: string) {
     .delete()
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────────────────────────
+// Version Items: Replace all with staged structure
+// ─────────────────────────────────────────────
+export type VersionItemInsert = {
+  version_id: string;
+  pillar_id: string | null;
+  theme_id: string | null;
+  subtheme_id: string | null;
+  sort_order: number;
+  ref_code: string;
+};
+
+export async function replaceFrameworkVersionItems(
+  versionId: string,
+  items: VersionItemInsert[]
+) {
+  // destructive replace – matches "stage then commit" UX
+  const { error: delError } = await supabaseServer
+    .from("framework_version_items")
+    .delete()
+    .eq("version_id", versionId);
+  if (delError) throw new Error(delError.message);
+
+  if (items.length === 0) return;
+
+  const { error: insError } = await supabaseServer
+    .from("framework_version_items")
+    .insert(items);
+  if (insError) throw new Error(insError.message);
 }
