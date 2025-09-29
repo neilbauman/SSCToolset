@@ -5,9 +5,18 @@ import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
 import { supabaseBrowser } from "@/lib/supabase";
-import { createVersion, listVersions, cloneVersion } from "@/lib/services/framework";
+import {
+  createVersion,
+  listVersions,
+  cloneVersion,
+} from "@/lib/services/framework";
 import NewVersionModal from "./NewVersionModal";
 import CloneVersionModal from "./CloneVersionModal";
+
+// simple inline toast helper
+function toast(msg: string) {
+  alert(msg); // replace with nicer UI later
+}
 
 type Props = {
   versions: FrameworkVersion[];
@@ -26,7 +35,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   // modal state
   const [showNewModal, setShowNewModal] = useState(false);
-  const [showCloneModal, setShowCloneModal] = useState<null | string>(null); // id of version to clone
+  const [showCloneModal, setShowCloneModal] = useState<null | string>(null);
 
   // Sync when parent provides openedId
   useEffect(() => {
@@ -67,26 +76,30 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }, [currentId]);
 
-  // ─────────────────────────────────────
+  // ───────────────────────────
   // Handlers
-  // ─────────────────────────────────────
+  // ───────────────────────────
   const handleNew = async (name: string) => {
     try {
       const v = await createVersion(name);
       await refreshVersions();
       setCurrentId(v.id);
+      toast(`Created new version: ${v.name}`);
     } catch (err: any) {
       console.error("Error creating version:", err.message);
+      toast("Failed to create version");
     }
   };
 
   const handleClone = async (fromId: string, newName: string) => {
     try {
-      const v = await cloneVersion(fromId, newName);
+      const newId = await cloneVersion(fromId, newName); // RPC returns UUID
       await refreshVersions();
-      setCurrentId(v[0]); // RPC returns new version id
+      setCurrentId(newId as string);
+      toast(`Cloned version → ${newName}`);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
+      toast("Failed to clone version");
     }
   };
 
