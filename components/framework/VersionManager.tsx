@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import type { FrameworkVersion } from "@/lib/types/framework";
-import { Pencil, Trash2, Copy, CheckCircle2, Plus } from "lucide-react";
+import { FrameworkVersion } from "@/lib/types/framework";
 
 type Props = {
   versions: FrameworkVersion[];
@@ -10,10 +8,10 @@ type Props = {
   editMode: boolean;
   onSelect: (id: string) => void;
   onNew: (name: string) => Promise<void>;
-  onEdit: (id: string, name: string) => Promise<void>;
-  onClone: (id: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
-  onPublish: (id: string) => Promise<void>;
+  onEdit: (id: string) => void;
+  onClone: (id: string) => void;
+  onDelete: (id: string) => void;
+  onPublish: (id: string) => void;
 };
 
 export default function VersionManager({
@@ -27,29 +25,18 @@ export default function VersionManager({
   onDelete,
   onPublish,
 }: Props) {
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState<null | string>(null);
-  const [draftName, setDraftName] = useState("");
-
-  const selected = versions.find((v) => v.id === selectedId);
-
   return (
-    <div className="mb-4 border rounded-md p-3 bg-white shadow-sm">
-      <h2 className="text-sm font-semibold text-gray-700 mb-2">
-        Framework Versions
-      </h2>
-
-      {/* Versions Table */}
-      <div className="overflow-x-auto">
+    <div className="w-full">
+      <div className="overflow-x-auto rounded-md border border-gray-200">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-700">
+          <thead className="bg-gray-50 text-left text-gray-700">
             <tr>
-              <th className="px-2 py-1 text-left font-medium">Name</th>
-              <th className="px-2 py-1 text-left font-medium">Status</th>
-              <th className="px-2 py-1 text-left font-medium">Created</th>
-              <th className="px-2 py-1 text-left font-medium">Updated</th>
+              <th className="py-2 px-3 font-medium">Name</th>
+              <th className="py-2 px-3 font-medium">Status</th>
+              <th className="py-2 px-3 font-medium">Created</th>
+              <th className="py-2 px-3 font-medium">Updated</th>
               {editMode && (
-                <th className="px-2 py-1 text-right font-medium">Actions</th>
+                <th className="py-2 px-3 font-medium text-right">Actions</th>
               )}
             </tr>
           </thead>
@@ -57,57 +44,62 @@ export default function VersionManager({
             {versions.map((v) => (
               <tr
                 key={v.id}
-                className={`border-t ${
-                  v.id === selectedId ? "bg-blue-50" : ""
+                className={`border-b last:border-b-0 cursor-pointer ${
+                  v.id === selectedId ? "bg-blue-50" : "hover:bg-gray-50"
                 }`}
+                onClick={() => onSelect(v.id)}
               >
-                <td
-                  className="px-2 py-1 cursor-pointer hover:underline"
-                  onClick={() => onSelect(v.id)}
-                >
-                  {v.name}
+                <td className="py-2 px-3">{v.name}</td>
+                <td className="py-2 px-3">
+                  <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">
+                    {v.status}
+                  </span>
                 </td>
-                <td className="px-2 py-1">{v.status}</td>
-                <td className="px-2 py-1">
-                  {new Date(v.created_at).toLocaleDateString()}
+                <td className="py-2 px-3">
+                  {new Date(v.created_at).toISOString().split("T")[0]}
                 </td>
-                <td className="px-2 py-1">
+                <td className="py-2 px-3">
                   {v.updated_at
-                    ? new Date(v.updated_at).toLocaleDateString()
-                    : "—"}
+                    ? new Date(v.updated_at).toISOString().split("T")[0]
+                    : "-"}
                 </td>
                 {editMode && (
-                  <td className="px-2 py-1 text-right space-x-2">
+                  <td className="py-2 px-3 text-right space-x-2">
                     <button
-                      className="text-gray-500 hover:text-blue-600"
-                      title="Edit"
-                      onClick={() => {
-                        setDraftName(v.name);
-                        setShowEditModal(v.id);
+                      className="text-gray-500 hover:text-gray-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(v.id);
                       }}
                     >
-                      <Pencil size={16} />
+                      Edit
                     </button>
                     <button
-                      className="text-gray-500 hover:text-purple-600"
-                      title="Clone"
-                      onClick={() => onClone(v.id)}
+                      className="text-gray-500 hover:text-gray-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClone(v.id);
+                      }}
                     >
-                      <Copy size={16} />
+                      Clone
                     </button>
                     <button
-                      className="text-gray-500 hover:text-green-600"
-                      title="Publish"
-                      onClick={() => onPublish(v.id)}
+                      className="text-gray-500 hover:text-green-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPublish(v.id);
+                      }}
                     >
-                      <CheckCircle2 size={16} />
+                      Publish
                     </button>
                     <button
-                      className="text-gray-500 hover:text-red-600"
-                      title="Delete"
-                      onClick={() => onDelete(v.id)}
+                      className="text-gray-500 hover:text-red-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(v.id);
+                      }}
                     >
-                      <Trash2 size={16} />
+                      Delete
                     </button>
                   </td>
                 )}
@@ -116,88 +108,6 @@ export default function VersionManager({
           </tbody>
         </table>
       </div>
-
-      {/* New Version button (edit mode only) */}
-      {editMode && (
-        <div className="mt-3">
-          <button
-            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            onClick={() => {
-              setDraftName("");
-              setShowNewModal(true);
-            }}
-          >
-            <Plus size={16} className="mr-1" />
-            New Version
-          </button>
-        </div>
-      )}
-
-      {/* New Version Modal */}
-      {showNewModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-md p-4 w-96 shadow-lg">
-            <h3 className="text-sm font-semibold mb-2">Create New Version</h3>
-            <input
-              type="text"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              placeholder="Enter version name"
-              className="w-full border rounded px-2 py-1 text-sm mb-3"
-            />
-            <div className="flex justify-end space-x-2">
-              <button
-                className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
-                onClick={() => setShowNewModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                onClick={async () => {
-                  await onNew(draftName || "Untitled Version");
-                  setShowNewModal(false);
-                }}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Version Modal */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-md p-4 w-96 shadow-lg">
-            <h3 className="text-sm font-semibold mb-2">Edit Version</h3>
-            <input
-              type="text"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              placeholder="Enter new name"
-              className="w-full border rounded px-2 py-1 text-sm mb-3"
-            />
-            <div className="flex justify-end space-x-2">
-              <button
-                className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
-                onClick={() => setShowEditModal(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                onClick={async () => {
-                  await onEdit(showEditModal, draftName || "Untitled Version");
-                  setShowEditModal(null);
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
