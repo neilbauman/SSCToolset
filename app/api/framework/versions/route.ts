@@ -1,8 +1,14 @@
 // app/api/framework/versions/route.ts
 import { NextResponse } from "next/server";
-import { listVersions, createVersion } from "@/lib/services/framework";
+import {
+  listVersions,
+  createVersion,
+} from "@/lib/services/framework";
 
-// GET all versions
+/**
+ * GET /api/framework/versions
+ * Returns list of framework versions.
+ */
 export async function GET() {
   try {
     const versions = await listVersions();
@@ -13,16 +19,22 @@ export async function GET() {
   }
 }
 
-// POST create new version from scratch
+/**
+ * POST /api/framework/versions
+ * Body: { name: string }
+ */
 export async function POST(req: Request) {
   try {
-    const { name, description } = await req.json();
+    const { name } = await req.json();
 
     if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required field: name" },
+        { status: 400 }
+      );
     }
 
-    const version = await createVersion(name, description ?? "");
+    const version = await createVersion(name);
     return NextResponse.json(version);
   } catch (err: any) {
     console.error("POST /framework/versions error:", err.message);
