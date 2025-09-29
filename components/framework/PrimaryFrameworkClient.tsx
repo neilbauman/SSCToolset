@@ -4,23 +4,10 @@ import { useState, useEffect } from "react";
 import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
-import { supabaseBrowser } from "@/lib/supabase";
-import {
-  createVersion,
-  listVersions,
-  cloneVersion,
-} from "@/lib/services/framework";
-import NewVersionModal from "./NewVersionModal";
-import CloneVersionModal from "./CloneVersionModal";
-
-// simple inline toast helper
-function toast(msg: string) {
-  alert(msg); // replace with nicer UI later
-}
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string;
+  openedId?: string; // optional initial version
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -29,93 +16,129 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   );
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [allVersions, setAllVersions] = useState<FrameworkVersion[]>(versions);
-
-  const [editMode, setEditMode] = useState<boolean>(true);
-
-  // modal state
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [showCloneModal, setShowCloneModal] = useState<null | string>(null);
 
   // Sync when parent provides openedId
   useEffect(() => {
-    if (openedId) {
-      setCurrentId(openedId);
-    }
+    if (openedId) setCurrentId(openedId);
   }, [openedId]);
+
+  // ─────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────
+  const refreshVersions = async () => {
+    try {
+      const res = await fetch("/api/framework/versions");
+      if (!res.ok) throw new Error("Failed to fetch versions");
+      const data = await res.json();
+      setAllVersions(data);
+    } catch (err) {
+      console.error("refreshVersions error:", err);
+    }
+  };
 
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
-    const { data, error } = await supabaseBrowser.rpc("get_framework_tree", {
-      v_version_id: versionId,
-    });
-    if (error) {
-      console.error("Error loading framework tree:", error.message);
-    } else {
+    try {
+      const res = await fetch(`/api/framework/versions/${versionId}/tree`);
+      if (!res.ok) throw new Error("Failed to fetch tree");
+      const data = await res.json();
       setTree(data ?? []);
+    } catch (err) {
+      console.error("Error loading framework tree:", err);
     }
     setLoading(false);
   };
 
-  const refreshVersions = async () => {
-    try {
-      const data = await listVersions();
-      setAllVersions(data);
-      if (!data.find((v) => v.id === currentId) && data.length > 0) {
-        setCurrentId(data[0].id);
-      }
-    } catch (err) {
-      console.error("Error refreshing versions:", err);
-    }
-  };
-
   useEffect(() => {
-    if (currentId) {
-      loadTree(currentId);
-    }
+    if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // ───────────────────────────
-  // Handlers
-  // ───────────────────────────
-  const handleNew = async (name: string) => {
+  // ─────────────────────────────────────────────
+  // Version action handlers
+  // ─────────────────────────────────────────────
+  const handleNew = async () => {
+    const name = prompt("Enter name for new version:");
+    if (!name) return;
     try {
-      const v = await createVersion(name);
+      const res = await fetch("/api/framework/versions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Failed to create version");
       await refreshVersions();
-      setCurrentId(v.id);
-      toast(`Created new version: ${v.name}`);
-    } catch (err: any) {
-      console.error("Error creating version:", err.message);
-      toast("Failed to create version");
+    } catch (err) {
+      console.error("Error creating version:", err);
     }
   };
 
-  const handleClone = async (fromId: string, newName: string) => {
+  const handleEdit = async (id: string) => {
+    alert(`TODO: implement edit modal for version ${id}`);
+  };
+
+  const handleClone = async (id: string) => {
+    const newName = prompt("Enter name for cloned version:");
+    if (!newName) return;
     try {
-      const newId = await cloneVersion(fromId, newName); // RPC returns UUID
+      const res = await fetch(`/api/framework/versions/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromId: id, newName }),
+      });
+      if (!res.ok) throw new Error("Failed to clone version");
+      const newId = await res.json();
       await refreshVersions();
-      setCurrentId(newId as string);
-      toast(`Cloned version → ${newName}`);
-    } catch (err: any) {
-      console.error("Error cloning version:", err.message);
-      toast("Failed to clone version");
+      setCurrentId(newId);
+    } catch (err) {
+      console.error("Error cloning version:", err);
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this version?")) return;
+    try {
+      const res = await fetch(`/api/framework/versions/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete version");
+      await refreshVersions();
+      setCurrentId(allVersions[0]?.id ?? "");
+    } catch (err) {
+      console.error("Error deleting version:", err);
+    }
+  };
+
+  const handlePublish = async (id: string) => {
+    try {
+      const res = await fetch(`/api/framework/versions/${id}`, {
+        method: "PUT",
+      });
+      if (!res.ok) throw new Error("Failed to publish version");
+      await refreshVersions();
+    } catch (err) {
+      console.error("Error publishing version:", err);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
     <div>
       <VersionManager
         versions={allVersions}
         selectedId={currentId}
         editMode={editMode}
-        onToggleEdit={() => setEditMode(!editMode)}
         onSelect={(id) => setCurrentId(id)}
-        onNew={() => setShowNewModal(true)}
-        onEdit={() => {}}
-        onClone={(id) => setShowCloneModal(id)}
-        onDelete={() => {}}
-        onPublish={() => {}}
+        onNew={handleNew}
+        onEdit={handleEdit}
+        onClone={handleClone}
+        onDelete={handleDelete}
+        onPublish={handlePublish}
+        onToggleEdit={() => setEditMode((v) => !v)}
       />
 
       {loading ? (
@@ -126,23 +149,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
           versionId={currentId}
           editMode={editMode}
           onChanged={() => loadTree(currentId)}
-        />
-      )}
-
-      {/* New Version Modal */}
-      {showNewModal && (
-        <NewVersionModal
-          onClose={() => setShowNewModal(false)}
-          onCreate={handleNew}
-        />
-      )}
-
-      {/* Clone Version Modal */}
-      {showCloneModal && (
-        <CloneVersionModal
-          fromId={showCloneModal}
-          onClose={() => setShowCloneModal(null)}
-          onClone={(newName) => handleClone(showCloneModal, newName)}
         />
       )}
     </div>
