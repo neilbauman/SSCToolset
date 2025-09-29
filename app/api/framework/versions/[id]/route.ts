@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishVersion } from "@/lib/services/framework";
 
 // PUT /api/framework/versions/:id → publish version
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }) {
   const { id } = params;
   try {
-    const version = await publishVersion(id);
+    const version = await publishVersion(id as string);
     return NextResponse.json(version);
   } catch (err: any) {
     console.error("PUT /framework/versions/:id error:", err.message);
@@ -15,7 +15,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // DELETE /api/framework/versions/:id → delete version
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }) {
   const { id } = params;
   try {
     // replace with proper deleteVersion service when available
