@@ -8,7 +8,6 @@ import {
   Pencil,
   Trash2,
   Plus,
-  Ban,
 } from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
@@ -16,7 +15,7 @@ import AddPillarModal from "./AddPillarModal";
 type Props = {
   tree: NormalizedFramework[];
   versionId: string;
-  editMode?: boolean; // ✅ optional now
+  editMode?: boolean;
   onChanged?: () => Promise<void>;
 };
 
@@ -68,13 +67,11 @@ export default function FrameworkEditor({
   const [dirty, setDirty] = useState(false);
   const [showAddPillar, setShowAddPillar] = useState(false);
 
-  // Reset local tree when props change
   React.useEffect(() => {
     setLocalTree(tree);
     setDirty(false);
   }, [tree, versionId]);
 
-  // Save / Discard (not wired yet)
   async function handleSave() {
     console.log("Saving changes (not wired yet):", localTree);
     setDirty(false);
@@ -86,7 +83,6 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  // Adding pillars (placeholder — just updates local state for now)
   function handleAddPillarsFromCatalogue(items: NormalizedFramework[]) {
     setLocalTree([...localTree, ...items]);
     setDirty(true);
@@ -97,14 +93,13 @@ export default function FrameworkEditor({
       id: `temp-${Date.now()}`,
       type: "pillar",
       name,
-      description,
+      description: description ?? "",
       children: [],
     };
     setLocalTree([...localTree, newPillar]);
     setDirty(true);
   }
 
-  // UI: Tree rendering
   const renderNode = useCallback(
     (node: NormalizedFramework, depth = 0) => {
       const [open, setOpen] = useState(true);
@@ -150,8 +145,7 @@ export default function FrameworkEditor({
               </div>
             )}
           </div>
-          {open &&
-            children.map((child) => renderNode(child, depth + 1))}
+          {open && children.map((child) => renderNode(child, depth + 1))}
         </div>
       );
     },
@@ -160,7 +154,6 @@ export default function FrameworkEditor({
 
   return (
     <div className="border rounded-md p-4">
-      {/* Save / Discard controls */}
       {editMode && dirty && (
         <div className="flex space-x-2 mb-4">
           <button
@@ -178,7 +171,6 @@ export default function FrameworkEditor({
         </div>
       )}
 
-      {/* Add Pillar */}
       {editMode && (
         <div className="mb-4">
           <button
@@ -190,10 +182,8 @@ export default function FrameworkEditor({
         </div>
       )}
 
-      {/* Tree */}
       <div>{sortByOrder(uniqueById(localTree)).map((n) => renderNode(n))}</div>
 
-      {/* Modal */}
       {showAddPillar && (
         <AddPillarModal
           versionId={versionId}
@@ -201,9 +191,7 @@ export default function FrameworkEditor({
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
-              // later: expand to include children themes/subthemes from Supabase
-              const newItems = payload.items; // NormalizedFramework[]
-              handleAddPillarsFromCatalogue(newItems);
+              handleAddPillarsFromCatalogue(payload.items);
             } else {
               handleCreateNewPillar(payload.name, payload.description);
             }
