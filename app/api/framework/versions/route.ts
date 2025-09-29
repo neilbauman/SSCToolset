@@ -4,9 +4,9 @@ import { listVersions, createVersion } from "@/lib/services/framework";
 
 /**
  * GET /api/framework/versions
- * Returns list of all framework versions.
+ * Returns all framework versions
  */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const versions = await listVersions();
     return NextResponse.json(versions);
@@ -19,12 +19,10 @@ export async function GET(_req: NextRequest) {
 /**
  * POST /api/framework/versions
  * Body: { name: string }
- * Creates a new draft version.
  */
 export async function POST(req: NextRequest) {
   try {
     const { name } = await req.json();
-
     if (!name) {
       return NextResponse.json(
         { error: "Missing required field: name" },
