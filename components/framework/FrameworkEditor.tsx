@@ -83,8 +83,34 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  function handleAddPillarsFromCatalogue(items: NormalizedFramework[]) {
-    setLocalTree([...localTree, ...items]);
+  // 🔧 Adapter to convert catalogue → NormalizedFramework
+  function handleAddPillarsFromCatalogue(items: any[]) {
+    const normalized: NormalizedFramework[] = items.map((p: any) => ({
+      id: p.id,
+      type: "pillar",
+      name: p.name,
+      description: p.description ?? "",
+      color: p.color ?? null,
+      icon: p.icon ?? null,
+      children: (p.themes ?? []).map((t: any) => ({
+        id: t.id,
+        type: "theme",
+        name: t.name,
+        description: t.description ?? "",
+        color: t.color ?? null,
+        icon: t.icon ?? null,
+        children: (t.subthemes ?? []).map((s: any) => ({
+          id: s.id,
+          type: "subtheme",
+          name: s.name,
+          description: s.description ?? "",
+          color: s.color ?? null,
+          icon: s.icon ?? null,
+        })),
+      })),
+    }));
+
+    setLocalTree([...localTree, ...normalized]);
     setDirty(true);
   }
 
