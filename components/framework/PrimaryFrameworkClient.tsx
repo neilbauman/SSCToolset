@@ -1,116 +1,121 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { FrameworkVersion } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
+import React, { useEffect, useState } from "react";
+import {
+  listVersions,
+  createVersion,
+  cloneVersion,
+  publishVersion,
+  deletePillar,
+  updateVersion,
+} from "@/lib/services/framework";
+import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 import VersionManager from "./VersionManager";
-import { supabaseBrowser } from "@/lib/supabase";
+import FrameworkEditor from "./FrameworkEditor";
+import { getVersionTree } from "@/lib/services/framework";
 
-type Props = {
-  versions: FrameworkVersion[];
-  openedId?: string;
-};
-
-export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
-  const [currentId, setCurrentId] = useState<string>(
-    openedId ?? versions[0]?.id ?? ""
-  );
-  const [tree, setTree] = useState<any[]>([]);
+export default function PrimaryFrameworkClient() {
+  const [versions, setVersions] = useState<FrameworkVersion[]>([]);
+  const [currentId, setCurrentId] = useState<string>("");
+  const [tree, setTree] = useState<NormalizedFramework[]>([]);
   const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState<boolean>(false);
-  const [showVersions, setShowVersions] = useState<boolean>(true);
+  const [editMode, setEditMode] = useState(false);
 
-  // keep synced with parent
+  // load versions
+  const refreshVersions = async () => {
+    const data = await listVersions();
+    setVersions(data);
+    if (!currentId && data.length > 0) {
+      setCurrentId(data[0].id);
+    }
+  };
+
   useEffect(() => {
-    if (openedId) setCurrentId(openedId);
-  }, [openedId]);
+    refreshVersions();
+  }, []);
 
-  // load framework tree
+  // load tree for selected version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
-    const { data, error } = await supabaseBrowser.rpc("get_framework_tree", {
-      v_version_id: versionId,
-    });
-    if (error) console.error("Error loading framework tree:", error.message);
-    else setTree(data ?? []);
-    setLoading(false);
+    try {
+      const data = await getVersionTree(versionId);
+      setTree(data);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // placeholder handlers
+  // ─────────────────────────────
+  // Handlers
+  // ─────────────────────────────
   const handleNew = async (name: string) => {
-    console.log("New version:", name);
+    const v = await createVersion(name || "Untitled Framework");
+    await refreshVersions();
+    setCurrentId(v.id);
   };
-  const handleEdit = (id: string) => console.log("Edit version", id);
-  const handleClone = (id: string) => console.log("Clone version", id);
-  const handleDelete = (id: string) => console.log("Delete version", id);
-  const handlePublish = (id: string) => console.log("Publish version", id);
+
+  const handleEdit = (id: string) => {
+    console.log("Edit version", id);
+  };
+
+  const handleClone = async (id: string) => {
+    const newName = prompt("Enter name for cloned version") || "Cloned Version";
+    await cloneVersion(id, newName);
+    await refreshVersions();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (confirm("Delete this version?")) {
+      await deletePillar(id); // ⚠️ temporary until deleteVersion exists
+      await refreshVersions();
+    }
+  };
+
+  const handlePublish = async (id: string) => {
+    await publishVersion(id);
+    await refreshVersions();
+  };
 
   return (
-    <div className="w-full space-y-4">
-      {/* Version manager with toggle */}
-      <div className="bg-white border border-gray-200 rounded-md p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-700">
-            Framework Versions
-          </h2>
-          <button
-            onClick={() => setShowVersions((v) => !v)}
-            className="text-xs text-gray-600 hover:text-gray-800"
-          >
-            {showVersions ? "Hide Versions" : "Show Versions"}
-          </button>
-        </div>
+    <div className="space-y-4">
+      <VersionManager
+        versions={versions}
+        selectedId={currentId}
+        editMode={editMode}
+        onSelect={(id) => setCurrentId(id)}
+        onNew={handleNew}
+        onEdit={handleEdit}
+        onClone={handleClone}
+        onDelete={handleDelete}
+        onPublish={handlePublish}
+      />
 
-        {showVersions && (
-          <VersionManager
-            versions={versions}
-            selectedId={currentId}
-            editMode={editMode}
-            onSelect={(id) => setCurrentId(id)}
-            onNew={handleNew}
-            onEdit={handleEdit}
-            onClone={handleClone}
-            onDelete={handleDelete}
-            onPublish={handlePublish}
-          />
-        )}
-      </div>
-
-      {/* Edit mode toggle */}
-      <div className="text-sm text-gray-500 flex justify-end">
-        {editMode ? (
-          <button
-            className="hover:text-gray-700"
-            onClick={() => setEditMode(false)}
-          >
-            Exit edit mode
-          </button>
-        ) : (
-          <button
-            className="hover:text-gray-700"
-            onClick={() => setEditMode(true)}
-          >
-            Enter edit mode
-          </button>
-        )}
-      </div>
-
-      {/* Framework table */}
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
       ) : (
-        <FrameworkEditor
-          tree={tree}
-          versionId={currentId}
-          editMode={editMode} // ✅ always passed
-          onChanged={() => loadTree(currentId)}
-        />
+        currentId && (
+          <FrameworkEditor
+            tree={tree}
+            versionId={currentId}
+            editMode={editMode}
+            onChanged={() => loadTree(currentId)}
+          />
+        )
       )}
+
+      <div className="pt-4">
+        <button
+          className="text-sm text-blue-600 underline"
+          onClick={() => setEditMode(!editMode)}
+        >
+          {editMode ? "Exit edit mode" : "Enter edit mode"}
+        </button>
+      </div>
     </div>
   );
 }
