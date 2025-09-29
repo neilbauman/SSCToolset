@@ -12,6 +12,7 @@ import {
 import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
+import AddSubthemeModal from "./AddSubthemeModal";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -99,6 +100,9 @@ export default function FrameworkEditor({
   const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [showAddThemeFor, setShowAddThemeFor] = useState<string | null>(null);
+  const [showAddSubthemeFor, setShowAddSubthemeFor] = useState<string | null>(
+    null
+  );
 
   React.useEffect(() => {
     setLocalTree(tree);
@@ -140,7 +144,6 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  // Called when adding themes from modal
   function handleAddThemesToPillar(pillarId: string, themes: any[]) {
     const updated = localTree.map((p) => {
       if (p.id !== pillarId) return p;
@@ -149,6 +152,21 @@ export default function FrameworkEditor({
         themes: [...(p.themes ?? []), ...themes],
       };
     });
+    setLocalTree(updated);
+    setDirty(true);
+  }
+
+  function handleAddSubthemesToTheme(themeId: string, subthemes: any[]) {
+    const updated = localTree.map((p) => ({
+      ...p,
+      themes: (p.themes ?? []).map((t) => {
+        if (t.id !== themeId) return t;
+        return {
+          ...t,
+          subthemes: [...(t.subthemes ?? []), ...subthemes],
+        };
+      }),
+    }));
     setLocalTree(updated);
     setDirty(true);
   }
@@ -217,6 +235,8 @@ export default function FrameworkEditor({
                       onClick={() => {
                         if (node.type === "pillar") {
                           setShowAddThemeFor(node.id);
+                        } else if (node.type === "theme") {
+                          setShowAddSubthemeFor(node.id);
                         }
                       }}
                     >
@@ -384,6 +404,37 @@ export default function FrameworkEditor({
               ]);
             }
             setShowAddThemeFor(null);
+          }}
+        />
+      )}
+
+      {showAddSubthemeFor && (
+        <AddSubthemeModal
+          versionId={versionId}
+          parentThemeId={showAddSubthemeFor}
+          existingSubthemeIds={
+            localTree
+              .flatMap((p) => p.themes ?? [])
+              .find((t) => t.id === showAddSubthemeFor)
+              ?.subthemes?.map((s) => s.id) ?? []
+          }
+          onClose={() => setShowAddSubthemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddSubthemesToTheme(showAddSubthemeFor, payload.items);
+            } else {
+              handleAddSubthemesToTheme(showAddSubthemeFor, [
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "subtheme",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                },
+              ]);
+            }
+            setShowAddSubthemeFor(null);
           }}
         />
       )}
