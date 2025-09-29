@@ -5,10 +5,17 @@ import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
 import { supabaseBrowser } from "@/lib/supabase";
+import {
+  listVersions,
+  createVersion,
+  cloneVersion,
+  publishVersion,
+  updateVersion,
+} from "@/lib/services/framework";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string; // optional initial version
+  openedId?: string;
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -18,18 +25,24 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(true);
+  const [versionList, setVersionList] = useState<FrameworkVersion[]>(versions);
 
-  // keep versions list in state so UI updates immediately
-  const [localVersions, setLocalVersions] = useState<FrameworkVersion[]>(versions);
-
-  // sync when parent provides openedId
+  // Sync external openedId
   useEffect(() => {
-    if (openedId) {
-      setCurrentId(openedId);
-    }
+    if (openedId) setCurrentId(openedId);
   }, [openedId]);
 
-  // load tree for a version
+  // Refresh versions list from DB
+  const refreshVersions = async () => {
+    try {
+      const fresh = await listVersions();
+      setVersionList(fresh);
+    } catch (err: any) {
+      console.error("Error refreshing versions:", err.message);
+    }
+  };
+
+  // Load tree for version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
@@ -45,56 +58,36 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   };
 
   useEffect(() => {
-    if (currentId) {
-      loadTree(currentId);
-    }
+    if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // refresh versions from DB
-  const refreshVersions = async () => {
-    const { data, error } = await supabaseBrowser
-      .from("framework_versions")
-      .select("id, name, status, created_at, updated_at")
-      .order("created_at", { ascending: true });
-    if (error) {
-      console.error("Error refreshing versions:", error.message);
-    } else {
-      setLocalVersions(data ?? []);
-    }
-  };
-
-  // ────────────────────────────────
-  // Handlers for version actions
-  // ────────────────────────────────
-  const handleNew = async (name: string) => {
+  // ───────────────────────────────────────────────
+  // Handlers
+  // ───────────────────────────────────────────────
+  const handleNew = async () => {
     try {
-      const { data, error } = await supabaseBrowser
-        .from("framework_versions")
-        .insert({ name, status: "draft" })
-        .select()
-        .single();
-      if (error) throw error;
+      const v = await createVersion("Untitled Framework");
       await refreshVersions();
-      if (data?.id) setCurrentId(data.id);
+      setCurrentId(v.id);
     } catch (err: any) {
-      console.error("Error creating new version:", err.message);
+      console.error("Error creating version:", err.message);
     }
   };
 
-  const handleEdit = (id: string) => {
-    console.log("Edit version", id);
-    // TODO: modal → update name/metadata
+  const handleEdit = async (id: string, newName: string) => {
+    try {
+      await updateVersion(id, { name: newName });
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error updating version:", err.message);
+    }
   };
 
   const handleClone = async (id: string) => {
     try {
-      const { data, error } = await supabaseBrowser.rpc("clone_framework_version", {
-        v_from_version_id: id,
-        v_new_name: `Clone of ${id}`,
-      });
-      if (error) throw error;
+      const newId = await cloneVersion(id, "Cloned Framework");
       await refreshVersions();
-      if (data) setCurrentId(data);
+      setCurrentId(newId);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
     }
@@ -102,15 +95,13 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   const handleDelete = async (id: string) => {
     try {
-      const { error } = await supabaseBrowser
-        .from("framework_versions")
-        .delete()
-        .eq("id", id);
-      if (error) throw error;
+      const res = await fetch(`/api/framework/versions/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete version");
       await refreshVersions();
-      // if deleted current, reset to first
-      if (id === currentId && localVersions.length > 0) {
-        setCurrentId(localVersions[0].id);
+      if (id === currentId) {
+        setCurrentId(versionList[0]?.id ?? "");
       }
     } catch (err: any) {
       console.error("Error deleting version:", err.message);
@@ -119,23 +110,18 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   const handlePublish = async (id: string) => {
     try {
-      const { error } = await supabaseBrowser
-        .from("framework_versions")
-        .update({ status: "published" })
-        .eq("id", id);
-      if (error) throw error;
+      await publishVersion(id);
       await refreshVersions();
     } catch (err: any) {
       console.error("Error publishing version:", err.message);
     }
   };
 
-  // ────────────────────────────────
-
+  // ───────────────────────────────────────────────
   return (
     <div>
       <VersionManager
-        versions={localVersions}
+        versions={versionList}
         selectedId={currentId}
         editMode={editMode}
         onSelect={(id) => setCurrentId(id)}
@@ -145,24 +131,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         onDelete={handleDelete}
         onPublish={handlePublish}
       />
-
-      <div className="flex justify-end mb-2 text-sm text-gray-500">
-        {editMode ? (
-          <button
-            onClick={() => setEditMode(false)}
-            className="hover:text-gray-700"
-          >
-            Exit edit mode
-          </button>
-        ) : (
-          <button
-            onClick={() => setEditMode(true)}
-            className="hover:text-gray-700"
-          >
-            Enter edit mode
-          </button>
-        )}
-      </div>
 
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
