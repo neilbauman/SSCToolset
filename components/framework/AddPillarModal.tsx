@@ -4,17 +4,11 @@ import { useState, useEffect } from "react";
 import Modal from "../ui/Modal";
 import { listPillarCatalogue } from "@/lib/services/framework";
 
-type CatalogueSubtheme = {
-  id: string;
-  name: string;
-  description?: string;
-};
-
 type CatalogueTheme = {
   id: string;
   name: string;
   description?: string;
-  subthemes: CatalogueSubtheme[];
+  subthemes: { id: string; name: string; description?: string }[];
 };
 
 type CataloguePillar = {
@@ -27,6 +21,8 @@ type CataloguePillar = {
 type Props = {
   versionId: string;
   existingPillarIds: string[];
+  isPersisted: boolean;
+  cataloguePillars?: CataloguePillar[];
   onClose: () => void;
   onSubmit: (
     payload:
@@ -38,6 +34,8 @@ type Props = {
 export default function AddPillarModal({
   versionId,
   existingPillarIds,
+  isPersisted,
+  cataloguePillars = [],
   onClose,
   onSubmit,
 }: Props) {
@@ -49,112 +47,30 @@ export default function AddPillarModal({
 
   useEffect(() => {
     async function load() {
-      try {
-        const data = await listPillarCatalogue(versionId);
-
-        // ✅ Normalize to ensure themes/subthemes are always arrays
-        const normalized = (data ?? []).map((p: any) => ({
-          ...p,
-          themes: (p.themes ?? []).map((t: any) => ({
-            ...t,
-            subthemes: t.subthemes ?? [],
-          })),
-        }));
-
-        setCatalogue(normalized);
-      } catch (err: any) {
-        console.error("Error loading catalogue:", err.message);
+      if (isPersisted) {
+        try {
+          const data = await listPillarCatalogue(versionId);
+          const normalized = (data ?? []).map((p: any) => ({
+            ...p,
+            themes: p.themes ?? [],
+          }));
+          setCatalogue(normalized);
+        } catch (err: any) {
+          console.error("Error loading pillar catalogue:", err.message);
+        }
+      } else {
+        setCatalogue(cataloguePillars);
       }
     }
     load();
-  }, [versionId]);
+  }, [isPersisted, versionId, cataloguePillars]);
 
-  function toggleSelect(id: string, children: string[] = []) {
+  function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-        children.forEach((c) => newSet.delete(c));
-      } else {
-        newSet.add(id);
-        children.forEach((c) => newSet.add(c));
-      }
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
       return newSet;
-    });
-  }
-
-  function renderSubthemes(subthemes: CatalogueSubtheme[]) {
-    return (subthemes ?? []).map((s) => {
-      const disabled = existingPillarIds.includes(s.id);
-      return (
-        <label
-          key={s.id}
-          className={`flex items-center space-x-2 pl-8 py-1 ${
-            disabled ? "text-gray-400" : ""
-          }`}
-        >
-          <input
-            type="checkbox"
-            disabled={disabled}
-            checked={selectedIds.has(s.id)}
-            onChange={() => toggleSelect(s.id)}
-          />
-          <span>{s.name}</span>
-        </label>
-      );
-    });
-  }
-
-  function renderThemes(themes: CatalogueTheme[]) {
-    return (themes ?? []).map((t) => {
-      const disabled = existingPillarIds.includes(t.id);
-      const childIds = (t.subthemes ?? []).map((s) => s.id);
-      return (
-        <div key={t.id}>
-          <label
-            className={`flex items-center space-x-2 pl-4 py-1 ${
-              disabled ? "text-gray-400" : ""
-            }`}
-          >
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={selectedIds.has(t.id)}
-              onChange={() => toggleSelect(t.id, childIds)}
-            />
-            <span>{t.name}</span>
-          </label>
-          {renderSubthemes(t.subthemes)}
-        </div>
-      );
-    });
-  }
-
-  function renderPillars(pillars: CataloguePillar[]) {
-    return (pillars ?? []).map((p) => {
-      const disabled = existingPillarIds.includes(p.id);
-      const childIds = [
-        ...(p.themes ?? []).map((t) => t.id),
-        ...(p.themes ?? []).flatMap((t) => (t.subthemes ?? []).map((s) => s.id)),
-      ];
-      return (
-        <div key={p.id} className="mb-2">
-          <label
-            className={`flex items-center space-x-2 py-1 ${
-              disabled ? "text-gray-400" : ""
-            }`}
-          >
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={selectedIds.has(p.id)}
-              onChange={() => toggleSelect(p.id, childIds)}
-            />
-            <span className="font-medium">{p.name}</span>
-          </label>
-          {renderThemes(p.themes)}
-        </div>
-      );
     });
   }
 
@@ -187,7 +103,32 @@ export default function AddPillarModal({
       </div>
 
       {activeTab === "catalogue" && (
-        <div className="max-h-60 overflow-y-auto">{renderPillars(catalogue)}</div>
+        <div className="max-h-60 overflow-y-auto">
+          {catalogue.map((p) => {
+            const disabled = existingPillarIds.includes(p.id);
+            return (
+              <label
+                key={p.id}
+                className={`flex items-center space-x-2 py-1 ${
+                  disabled ? "text-gray-400" : ""
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={disabled}
+                  checked={selectedIds.has(p.id)}
+                  onChange={() => toggleSelect(p.id)}
+                />
+                <div>
+                  <div>{p.name}</div>
+                  {p.description && (
+                    <div className="text-xs text-gray-500">{p.description}</div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
+        </div>
       )}
 
       {activeTab === "new" && (
@@ -208,7 +149,6 @@ export default function AddPillarModal({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex justify-end space-x-2 mt-4">
         <button
           className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
@@ -220,42 +160,10 @@ export default function AddPillarModal({
           className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
           onClick={() => {
             if (activeTab === "catalogue") {
-              const chosen = catalogue
-                .map((p) => {
-                  if (
-                    !selectedIds.has(p.id) &&
-                    !(p.themes ?? []).some(
-                      (t) =>
-                        selectedIds.has(t.id) ||
-                        (t.subthemes ?? []).some((s) => selectedIds.has(s.id))
-                    )
-                  ) {
-                    return null;
-                  }
-                  return {
-                    ...p,
-                    themes: (p.themes ?? [])
-                      .map((t) => {
-                        if (
-                          !selectedIds.has(t.id) &&
-                          !(t.subthemes ?? []).some((s) =>
-                            selectedIds.has(s.id)
-                          )
-                        ) {
-                          return null;
-                        }
-                        return {
-                          ...t,
-                          subthemes: (t.subthemes ?? []).filter((s) =>
-                            selectedIds.has(s.id)
-                          ),
-                        };
-                      })
-                      .filter(Boolean) as CatalogueTheme[],
-                  };
-                })
-                .filter(Boolean) as CataloguePillar[];
-
+              const chosen = catalogue.filter(
+                (p) =>
+                  !existingPillarIds.includes(p.id) && selectedIds.has(p.id)
+              );
               if (chosen.length > 0) {
                 onSubmit({ mode: "catalogue", items: chosen });
               }
