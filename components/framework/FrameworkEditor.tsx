@@ -87,6 +87,23 @@ function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[]
     });
 }
 
+/** Map a NormalizedFramework subtheme → modal's CatalogueSubtheme shape */
+function toCatalogueSubtheme(n: NormalizedFramework | undefined) {
+  if (!n) return undefined;
+  return { id: n.id, name: n.name, description: n.description ?? "" };
+}
+
+/** Map a NormalizedFramework theme → modal's CatalogueTheme shape */
+function toCatalogueTheme(n: NormalizedFramework | undefined) {
+  if (!n) return undefined;
+  const subs = (n.subthemes ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description ?? "",
+  }));
+  return { id: n.id, name: n.name, description: n.description ?? "", subthemes: subs };
+}
+
 export default function FrameworkEditor({
   tree,
   versionId,
@@ -132,6 +149,7 @@ export default function FrameworkEditor({
   }, []);
 
   async function handleSave() {
+    // TODO: diff localTree vs. server tree and persist
     console.log("Saving changes (not wired yet):", localTree);
     setDirty(false);
     if (onChanged) await onChanged();
@@ -388,7 +406,11 @@ export default function FrameworkEditor({
             !!localTree.find((p) => p.id === showAddThemeFor)?.sort_order
           }
           catalogueThemes={
-            localTree.find((p) => p.id === showAddThemeFor)?.themes ?? []
+            (
+              localTree.find((p) => p.id === showAddThemeFor)?.themes ?? []
+            )
+              .map(toCatalogueTheme)
+              .filter(Boolean) as { id: string; name: string; description?: string; subthemes: { id: string; name: string; description?: string }[] }[]
           }
           onClose={() => setShowAddThemeFor(null)}
           onSubmit={(payload) => {
@@ -428,9 +450,13 @@ export default function FrameworkEditor({
               .find((t) => t.id === showAddSubthemeFor)?.sort_order
           }
           catalogueSubthemes={
-            localTree
-              .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)?.subthemes ?? []
+            (
+              localTree
+                .flatMap((p) => p.themes ?? [])
+                .find((t) => t.id === showAddSubthemeFor)?.subthemes ?? []
+            )
+              .map(toCatalogueSubtheme)
+              .filter(Boolean) as { id: string; name: string; description?: string }[]
           }
           onClose={() => setShowAddSubthemeFor(null)}
           onSubmit={(payload) => {
