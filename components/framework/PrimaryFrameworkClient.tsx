@@ -1,146 +1,146 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   listVersions,
   createVersion,
   cloneVersion,
-  publishVersion,
   updateVersion,
   deleteVersion,
+  publishVersion,
   getVersionTree,
 } from "@/lib/services/framework";
-import { FrameworkVersion } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
+import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 import VersionManager from "./VersionManager";
+import FrameworkEditor from "./FrameworkEditor";
 import CloneVersionModal from "./CloneVersionModal";
 
-type Props = {
-  versions: FrameworkVersion[];
-  openedId?: string; // optional initial version
-};
-
-export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
-  const [currentId, setCurrentId] = useState<string>(
-    openedId ?? versions[0]?.id ?? ""
-  );
-  const [tree, setTree] = useState<any[]>([]);
+export default function PrimaryFrameworkClient() {
+  const [versions, setVersions] = useState<FrameworkVersion[]>([]);
+  const [currentId, setCurrentId] = useState<string>("");
+  const [tree, setTree] = useState<NormalizedFramework[]>([]);
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [allVersions, setAllVersions] = useState<FrameworkVersion[]>(versions);
   const [cloneModalOpen, setCloneModalOpen] = useState(false);
-  const [cloneSourceId, setCloneSourceId] = useState<string | null>(null);
+  const [cloneFromId, setCloneFromId] = useState<string | null>(null);
 
-  // keep in sync when parent provides openedId
-  useEffect(() => {
-    if (openedId) {
-      setCurrentId(openedId);
+  // ─────────────────────────────────────────────
+  // Load versions
+  // ─────────────────────────────────────────────
+  async function refreshVersions() {
+    const data = await listVersions();
+    setVersions(data);
+    if (!currentId && data.length > 0) {
+      setCurrentId(data[data.length - 1].id); // select newest by default
     }
-  }, [openedId]);
+  }
 
-  const loadTree = async (versionId: string) => {
+  // ─────────────────────────────────────────────
+  // Load framework tree
+  // ─────────────────────────────────────────────
+  async function loadTree(versionId: string) {
     if (!versionId) return;
     setLoading(true);
     try {
       const data = await getVersionTree(versionId);
-      setTree(data ?? []);
+      setTree(data);
     } catch (err: any) {
       console.error("Error loading framework tree:", err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const refreshVersions = async () => {
-    try {
-      const v = await listVersions();
-      setAllVersions(v);
-    } catch (err: any) {
-      console.error("Error refreshing versions:", err.message);
-    }
-  };
+  }
 
   useEffect(() => {
-    if (currentId) {
-      loadTree(currentId);
-    }
+    refreshVersions();
+  }, []);
+
+  useEffect(() => {
+    if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // ──────────────── Actions ────────────────
-  const handleNew = async (name: string) => {
+  // ─────────────────────────────────────────────
+  // Version actions
+  // ─────────────────────────────────────────────
+  async function handleNew() {
     try {
-      const v = await createVersion(name);
+      const newName = `New Version ${new Date().toLocaleString()}`;
+      const v = await createVersion(newName);
       await refreshVersions();
       setCurrentId(v.id);
     } catch (err: any) {
       console.error("Error creating version:", err.message);
     }
-  };
+  }
 
-  const handleEdit = async (id: string, name: string) => {
+  async function handleEdit(id: string, name: string) {
     try {
-      await updateVersion(id, { name });
+      await updateVersion(id, name);
       await refreshVersions();
     } catch (err: any) {
       console.error("Error editing version:", err.message);
     }
-  };
+  }
 
-  const handleClone = (id: string) => {
-    setCloneSourceId(id);
+  async function handleClone(id: string) {
+    setCloneFromId(id);
     setCloneModalOpen(true);
-  };
+  }
 
-  const confirmClone = async (newName: string) => {
-    if (!cloneSourceId) return;
+  async function confirmClone(newName: string) {
+    if (!cloneFromId) return;
     try {
-      const vId = await cloneVersion(cloneSourceId, newName);
+      const newId = await cloneVersion(cloneFromId, newName);
       await refreshVersions();
-      setCurrentId(vId);
+      setCurrentId(newId);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
     } finally {
       setCloneModalOpen(false);
-      setCloneSourceId(null);
+      setCloneFromId(null);
     }
-  };
+  }
 
-  const handleDelete = async (id: string) => {
+  async function handleDelete(id: string) {
     try {
       await deleteVersion(id);
       await refreshVersions();
-      if (currentId === id && allVersions.length > 0) {
-        setCurrentId(allVersions[0].id);
+      if (currentId === id && versions.length > 0) {
+        setCurrentId(versions[0].id);
       }
     } catch (err: any) {
       console.error("Error deleting version:", err.message);
     }
-  };
+  }
 
-  const handlePublish = async (id: string) => {
+  async function handlePublish(id: string, makeDraft = false) {
     try {
-      await publishVersion(id);
+      await publishVersion(id, makeDraft);
       await refreshVersions();
     } catch (err: any) {
-      console.error("Error publishing version:", err.message);
+      console.error("Error publishing/unpublishing version:", err.message);
     }
-  };
+  }
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
-    <div className="space-y-4">
-      {/* Top controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Framework Versions</h2>
+    <div className="w-full">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Primary Framework</h2>
         <button
-          className="text-sm text-gray-600 hover:text-gray-800"
           onClick={() => setEditMode(!editMode)}
+          className="rounded-md bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200"
         >
-          {editMode ? "Exit edit mode" : "Enter edit mode"}
+          {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
         </button>
       </div>
 
-      {/* Version list */}
+      {/* Versions table */}
       <VersionManager
-        versions={allVersions}
+        versions={versions}
         selectedId={currentId}
         editMode={editMode}
         onSelect={(id) => setCurrentId(id)}
@@ -152,16 +152,18 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
       />
 
       {/* Framework editor */}
-      {loading ? (
-        <div className="text-gray-500 text-sm">Loading...</div>
-      ) : (
-        <FrameworkEditor
-          tree={tree}
-          versionId={currentId}
-          editMode={editMode}
-          onChanged={() => loadTree(currentId)}
-        />
-      )}
+      <div className="mt-6">
+        {loading ? (
+          <div className="text-gray-500 text-sm">Loading...</div>
+        ) : (
+          <FrameworkEditor
+            tree={tree}
+            versionId={currentId}
+            editMode={editMode}
+            onChanged={() => loadTree(currentId)}
+          />
+        )}
+      </div>
 
       {/* Clone modal */}
       {cloneModalOpen && (
