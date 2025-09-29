@@ -149,11 +149,11 @@ export default function FrameworkEditor({
   }, []);
 
   // ─────────────────────────────────────────────
-  // SAVE staged tree → persist catalogue + version_items
+  // SAVE staged tree
   // ─────────────────────────────────────────────
   async function handleSave() {
     try {
-      // For brevity: same logic as before
+      // TODO: persist logic (left unchanged for now)
       await replaceFrameworkVersionItems(versionId, []);
       setDirty(false);
       if (onChanged) await onChanged();
@@ -163,12 +163,33 @@ export default function FrameworkEditor({
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Local handlers
-  // ─────────────────────────────────────────────
   function handleDiscard() {
     setLocalTree(tree);
     setDirty(false);
+  }
+
+  // ─────────────────────────────────────────────
+  // Helpers to add children
+  // ─────────────────────────────────────────────
+  function handleAddThemesToPillar(pillarId: string, themes: NormalizedFramework[]) {
+    const updated = localTree.map((p) => {
+      if (p.id !== pillarId) return p;
+      return { ...p, themes: [...(p.themes ?? []), ...themes] };
+    });
+    setLocalTree(updated);
+    setDirty(true);
+  }
+
+  function handleAddSubthemesToTheme(themeId: string, subthemes: NormalizedFramework[]) {
+    const updated = localTree.map((p) => ({
+      ...p,
+      themes: (p.themes ?? []).map((t) => {
+        if (t.id !== themeId) return t;
+        return { ...t, subthemes: [...(t.subthemes ?? []), ...subthemes] };
+      }),
+    }));
+    setLocalTree(updated);
+    setDirty(true);
   }
 
   // ─────────────────────────────────────────────
@@ -314,7 +335,52 @@ export default function FrameworkEditor({
           existingPillarIds={localTree.map((n) => n.id)}
           isPersisted
           onClose={() => setShowAddPillar(false)}
-          onSubmit={() => setShowAddPillar(false)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              const normalized = payload.items.map((p) => ({
+                id: p.id,
+                type: "pillar" as const,
+                name: p.name,
+                description: p.description ?? "",
+                color: null,
+                icon: null,
+                themes: (p.themes ?? []).map((t) => ({
+                  id: t.id,
+                  type: "theme" as const,
+                  name: t.name,
+                  description: t.description ?? "",
+                  color: null,
+                  icon: null,
+                  subthemes: (t.subthemes ?? []).map((s) => ({
+                    id: s.id,
+                    type: "subtheme" as const,
+                    name: s.name,
+                    description: s.description ?? "",
+                    color: null,
+                    icon: null,
+                  })),
+                })),
+                subthemes: [],
+              }));
+              setLocalTree([...localTree, ...normalized]);
+            } else {
+              setLocalTree([
+                ...localTree,
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "pillar",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                  themes: [],
+                  subthemes: [],
+                },
+              ]);
+            }
+            setDirty(true);
+            setShowAddPillar(false);
+          }}
         />
       )}
 
@@ -332,7 +398,40 @@ export default function FrameworkEditor({
           }
           isPersisted
           onClose={() => setShowAddThemeFor(null)}
-          onSubmit={() => setShowAddThemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              const normalized = payload.items.map((t) => ({
+                id: t.id,
+                type: "theme" as const,
+                name: t.name,
+                description: t.description ?? "",
+                color: null,
+                icon: null,
+                subthemes: (t.subthemes ?? []).map((s) => ({
+                  id: s.id,
+                  type: "subtheme" as const,
+                  name: s.name,
+                  description: s.description ?? "",
+                  color: null,
+                  icon: null,
+                })),
+              }));
+              handleAddThemesToPillar(showAddThemeFor, normalized);
+            } else {
+              handleAddThemesToPillar(showAddThemeFor, [
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "theme",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                  subthemes: [],
+                },
+              ]);
+            }
+            setShowAddThemeFor(null);
+          }}
         />
       )}
 
@@ -348,7 +447,31 @@ export default function FrameworkEditor({
           }
           isPersisted
           onClose={() => setShowAddSubthemeFor(null)}
-          onSubmit={() => setShowAddSubthemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              const normalized = payload.items.map((s) => ({
+                id: s.id,
+                type: "subtheme" as const,
+                name: s.name,
+                description: s.description ?? "",
+                color: null,
+                icon: null,
+              }));
+              handleAddSubthemesToTheme(showAddSubthemeFor, normalized);
+            } else {
+              handleAddSubthemesToTheme(showAddSubthemeFor, [
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "subtheme",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                },
+              ]);
+            }
+            setShowAddSubthemeFor(null);
+          }}
         />
       )}
     </div>
