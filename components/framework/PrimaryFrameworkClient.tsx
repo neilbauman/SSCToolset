@@ -1,18 +1,18 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   listVersions,
   createVersion,
   cloneVersion,
   publishVersion,
-  deletePillar,
+  deleteVersion,
   updateVersion,
+  getVersionTree,
 } from "@/lib/services/framework";
 import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 import VersionManager from "./VersionManager";
 import FrameworkEditor from "./FrameworkEditor";
-import { getVersionTree } from "@/lib/services/framework";
 
 export default function PrimaryFrameworkClient() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
@@ -21,22 +21,16 @@ export default function PrimaryFrameworkClient() {
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
-  // load versions
+  // ───────────────────────────────
+  // Helpers
+  // ───────────────────────────────
   const refreshVersions = async () => {
-    const data = await listVersions();
-    setVersions(data);
-    if (!currentId && data.length > 0) {
-      setCurrentId(data[0].id);
-    }
+    const v = await listVersions();
+    setVersions(v);
+    if (!currentId && v.length > 0) setCurrentId(v[0].id);
   };
 
-  useEffect(() => {
-    refreshVersions();
-  }, []);
-
-  // load tree for selected version
   const loadTree = async (versionId: string) => {
-    if (!versionId) return;
     setLoading(true);
     try {
       const data = await getVersionTree(versionId);
@@ -46,34 +40,27 @@ export default function PrimaryFrameworkClient() {
     }
   };
 
-  useEffect(() => {
-    if (currentId) loadTree(currentId);
-  }, [currentId]);
-
-  // ─────────────────────────────
+  // ───────────────────────────────
   // Handlers
-  // ─────────────────────────────
+  // ───────────────────────────────
   const handleNew = async (name: string) => {
-    const v = await createVersion(name || "Untitled Framework");
+    await createVersion(name);
     await refreshVersions();
-    setCurrentId(v.id);
   };
 
-  const handleEdit = (id: string) => {
-    console.log("Edit version", id);
+  const handleEdit = async (id: string, name: string) => {
+    await updateVersion(id, { name });
+    await refreshVersions();
   };
 
-  const handleClone = async (id: string) => {
-    const newName = prompt("Enter name for cloned version") || "Cloned Version";
-    await cloneVersion(id, newName);
+  const handleClone = async (id: string, name: string) => {
+    await cloneVersion(id, name);
     await refreshVersions();
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Delete this version?")) {
-      await deletePillar(id); // ⚠️ temporary until deleteVersion exists
-      await refreshVersions();
-    }
+    await deleteVersion(id);
+    await refreshVersions();
   };
 
   const handlePublish = async (id: string) => {
@@ -81,8 +68,32 @@ export default function PrimaryFrameworkClient() {
     await refreshVersions();
   };
 
+  // ───────────────────────────────
+  // Effects
+  // ───────────────────────────────
+  useEffect(() => {
+    refreshVersions();
+  }, []);
+
+  useEffect(() => {
+    if (currentId) loadTree(currentId);
+  }, [currentId]);
+
+  // ───────────────────────────────
+  // Render
+  // ───────────────────────────────
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Primary Framework Editor</h2>
+        <button
+          onClick={() => setEditMode((m) => !m)}
+          className="text-sm text-gray-600 hover:text-gray-800"
+        >
+          {editMode ? "Exit edit mode" : "Enter edit mode"}
+        </button>
+      </div>
+
       <VersionManager
         versions={versions}
         selectedId={currentId}
@@ -107,15 +118,6 @@ export default function PrimaryFrameworkClient() {
           />
         )
       )}
-
-      <div className="pt-4">
-        <button
-          className="text-sm text-blue-600 underline"
-          onClick={() => setEditMode(!editMode)}
-        >
-          {editMode ? "Exit edit mode" : "Enter edit mode"}
-        </button>
-      </div>
     </div>
   );
 }
