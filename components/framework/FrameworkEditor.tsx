@@ -100,6 +100,10 @@ function isTemp(id: string) {
   return id.startsWith("temp-");
 }
 
+function isUUID(id: string) {
+  return /^[0-9a-fA-F-]{36}$/.test(id);
+}
+
 // ─────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────
@@ -149,57 +153,67 @@ export default function FrameworkEditor({
   }, []);
 
   // ─────────────────────────────────────────────
-  // SAVE: persist staged tree → catalogue (for new) + version items
+  // SAVE staged tree → persist catalogue (if needed) + version_items
   // ─────────────────────────────────────────────
   async function handleSave() {
     try {
-      // 1) Resolve any temp-* nodes by creating catalogue entities
-      const resolvedPillars = [];
-      for (let pIndex = 0; pIndex < localTree.length; pIndex++) {
-        const p = localTree[pIndex];
-        let pillarId = p.id;
+      const resolvedPillars: NormalizedFramework[] = [];
+
+      // 1) Walk pillars
+      for (let pIdx = 0; pIdx < localTree.length; pIdx++) {
+        let pillar = localTree[pIdx];
+        let pillarId = pillar.id;
+
+        // If temp pillar, create in catalogue
         if (isTemp(pillarId)) {
-          const created = await createPillar(p.name, p.description ?? "");
+          const created = await createPillar(pillar.name, pillar.description ?? "");
           pillarId = created.id;
         }
-        // Ensure themes array exists
-        const themes = p.themes ?? [];
-        const resolvedThemes = [];
-        for (let tIndex = 0; tIndex < themes.length; tIndex++) {
-          const t = themes[tIndex];
-          let themeId = t.id;
+
+        // Rebuild themes
+        const resolvedThemes: NormalizedFramework[] = [];
+        for (let tIdx = 0; tIdx < (pillar.themes ?? []).length; tIdx++) {
+          let theme = pillar.themes![tIdx];
+          let themeId = theme.id;
+
+          // If temp theme, create in catalogue
           if (isTemp(themeId)) {
-            const created = await createTheme(pillarId, t.name, t.description ?? "");
+            const created = await createTheme(pillarId, theme.name, theme.description ?? "");
             themeId = created.id;
           }
-          const subthemes = t.subthemes ?? [];
-          const resolvedSubs = [];
-          for (let sIndex = 0; sIndex < subthemes.length; sIndex++) {
-            const s = subthemes[sIndex];
-            let subId = s.id;
+
+          // Rebuild subthemes
+          const resolvedSubs: NormalizedFramework[] = [];
+          for (let sIdx = 0; sIdx < (theme.subthemes ?? []).length; sIdx++) {
+            let sub = theme.subthemes![sIdx];
+            let subId = sub.id;
+
             if (isTemp(subId)) {
-              const created = await createSubtheme(themeId, s.name, s.description ?? "");
+              const created = await createSubtheme(themeId, sub.name, sub.description ?? "");
               subId = created.id;
             }
+
             resolvedSubs.push({
-              ...s,
+              ...sub,
               id: subId,
             });
           }
+
           resolvedThemes.push({
-            ...t,
+            ...theme,
             id: themeId,
             subthemes: resolvedSubs,
           });
         }
+
         resolvedPillars.push({
-          ...p,
+          ...pillar,
           id: pillarId,
           themes: resolvedThemes,
         });
       }
 
-      // 2) Build version_items payload (delete all → insert rebuilt)
+      // 2) Build version_items
       const items: {
         version_id: string;
         pillar_id: string | null;
@@ -209,12 +223,10 @@ export default function FrameworkEditor({
         ref_code: string;
       }[] = [];
 
-      // Pillars
       resolvedPillars.forEach((p, pIdx) => {
         const pOrder = pIdx + 1;
         const pRef = `P${pOrder}`;
 
-        // row for pillar
         items.push({
           version_id: versionId,
           pillar_id: p.id,
@@ -224,7 +236,6 @@ export default function FrameworkEditor({
           ref_code: pRef,
         });
 
-        // Themes
         (p.themes ?? []).forEach((t, tIdx) => {
           const tOrder = tIdx + 1;
           const tRef = `P${pOrder}.T${tOrder}`;
@@ -238,7 +249,6 @@ export default function FrameworkEditor({
             ref_code: tRef,
           });
 
-          // Subthemes
           (t.subthemes ?? []).forEach((s, sIdx) => {
             const sOrder = sIdx + 1;
             const sRef = `P${pOrder}.T${tOrder}.S${sOrder}`;
@@ -255,6 +265,7 @@ export default function FrameworkEditor({
         });
       });
 
+      // 3) Replace items in DB
       await replaceFrameworkVersionItems(versionId, items);
 
       setDirty(false);
@@ -265,6 +276,9 @@ export default function FrameworkEditor({
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Local handlers
+  // ─────────────────────────────────────────────
   function handleDiscard() {
     setLocalTree(tree);
     setDirty(false);
@@ -273,10 +287,7 @@ export default function FrameworkEditor({
   function handleAddThemesToPillar(pillarId: string, themes: any[]) {
     const updated = localTree.map((p) => {
       if (p.id !== pillarId) return p;
-      return {
-        ...p,
-        themes: [...(p.themes ?? []), ...themes],
-      };
+      return { ...p, themes: [...(p.themes ?? []), ...themes] };
     });
     setLocalTree(updated);
     setDirty(true);
@@ -287,23 +298,22 @@ export default function FrameworkEditor({
       ...p,
       themes: (p.themes ?? []).map((t) => {
         if (t.id !== themeId) return t;
-        return {
-          ...t,
-          subthemes: [...(t.subthemes ?? []), ...subthemes],
-        };
+        return { ...t, subthemes: [...(t.subthemes ?? []), ...subthemes] };
       }),
     }));
     setLocalTree(updated);
     setDirty(true);
   }
 
+  // ─────────────────────────────────────────────
+  // Render Node
+  // ─────────────────────────────────────────────
   const renderNode = useCallback(
     (node: NormalizedFramework): React.ReactNode => {
       const isExpanded = expanded[node.id] ?? false;
       const hasChildren =
         (node.themes && node.themes.length > 0) ||
-        (node.subthemes && node.subthemes.length > 0) ||
-        (node.children && node.children.length > 0);
+        (node.subthemes && node.subthemes.length > 0);
 
       return (
         <>
@@ -313,18 +323,11 @@ export default function FrameworkEditor({
                 {hasChildren && (
                   <button
                     onClick={() =>
-                      setExpanded((prev) => ({
-                        ...prev,
-                        [node.id]: !isExpanded,
-                      }))
+                      setExpanded((prev) => ({ ...prev, [node.id]: !isExpanded }))
                     }
                     className="text-gray-500"
                   >
-                    {isExpanded ? (
-                      <ChevronDown size={16} />
-                    ) : (
-                      <ChevronRight size={16} />
-                    )}
+                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </button>
                 )}
                 <GripVertical size={14} className="text-gray-400" />
@@ -342,16 +345,10 @@ export default function FrameworkEditor({
             <td className="px-2 py-1 w-1/6 text-right">
               {editMode && (
                 <div className="flex justify-end space-x-2">
-                  <button
-                    className="text-gray-500 hover:text-blue-600"
-                    title="Edit"
-                  >
+                  <button className="text-gray-500 hover:text-blue-600" title="Edit">
                     <Pencil size={14} />
                   </button>
-                  <button
-                    className="text-gray-500 hover:text-red-600"
-                    title="Delete"
-                  >
+                  <button className="text-gray-500 hover:text-red-600" title="Delete">
                     <Trash2 size={14} />
                   </button>
                   {node.type !== "subtheme" && (
@@ -359,11 +356,8 @@ export default function FrameworkEditor({
                       className="text-gray-500 hover:text-green-600"
                       title="Add child"
                       onClick={() => {
-                        if (node.type === "pillar") {
-                          setShowAddThemeFor(node.id);
-                        } else if (node.type === "theme") {
-                          setShowAddSubthemeFor(node.id);
-                        }
+                        if (node.type === "pillar") setShowAddThemeFor(node.id);
+                        if (node.type === "theme") setShowAddSubthemeFor(node.id);
                       }}
                     >
                       <Plus size={14} />
@@ -377,7 +371,6 @@ export default function FrameworkEditor({
             <>
               {node.themes?.map((t) => renderNode(t))}
               {node.subthemes?.map((s) => renderNode(s))}
-              {node.children?.map((c) => renderNode(c))}
             </>
           )}
         </>
@@ -408,42 +401,13 @@ export default function FrameworkEditor({
         </div>
       )}
 
-      {editMode && (
-        <div className="flex space-x-2 mb-2">
-          <button
-            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-            onClick={() => setShowAddPillar(true)}
-          >
-            + Add Pillar
-          </button>
-          <button
-            className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm"
-            onClick={expandAll}
-          >
-            Expand all
-          </button>
-          <button
-            className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm"
-            onClick={collapseAll}
-          >
-            Collapse all
-          </button>
-        </div>
-      )}
-
       <table className="w-full text-sm border border-gray-200 rounded-md">
         <thead className="bg-gray-50 text-gray-700">
           <tr>
-            <th className="px-2 py-1 text-left font-medium w-1/6">
-              Type / Ref Code
-            </th>
-            <th className="px-2 py-1 text-left font-medium w-1/2">
-              Name / Description
-            </th>
-            <th className="px-2 py-1 text-left font-medium w-1/6">
-              Sort Order
-            </th>
-            <th className="px-2 py-1 text-right font-medium w-1/6">Actions</th>
+            <th className="px-2 py-1 text-left w-1/6">Type / Ref Code</th>
+            <th className="px-2 py-1 text-left w-1/2">Name / Description</th>
+            <th className="px-2 py-1 text-left w-1/6">Sort Order</th>
+            <th className="px-2 py-1 text-right w-1/6">Actions</th>
           </tr>
         </thead>
         <tbody>{displayTree.map((p) => renderNode(p))}</tbody>
@@ -453,36 +417,11 @@ export default function FrameworkEditor({
         <AddPillarModal
           versionId={versionId}
           existingPillarIds={localTree.map((n) => n.id)}
-          isPersisted={true}
+          isPersisted
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
-              const normalized = payload.items.map((p) => ({
-                id: p.id,
-                type: "pillar" as const,
-                name: p.name,
-                description: p.description ?? "",
-                color: null,
-                icon: null,
-                themes: (p.themes ?? []).map((t) => ({
-                  id: t.id,
-                  type: "theme" as const,
-                  name: t.name,
-                  description: t.description ?? "",
-                  color: null,
-                  icon: null,
-                  subthemes: (t.subthemes ?? []).map((s) => ({
-                    id: s.id,
-                    type: "subtheme" as const,
-                    name: s.name,
-                    description: s.description ?? "",
-                    color: null,
-                    icon: null,
-                  })),
-                })),
-                subthemes: [],
-              }));
-              setLocalTree([...localTree, ...normalized]);
+              setLocalTree([...localTree, ...payload.items]);
             } else {
               setLocalTree([
                 ...localTree,
@@ -516,7 +455,7 @@ export default function FrameworkEditor({
               .find((p) => p.id === showAddThemeFor)
               ?.themes?.flatMap((t) => t.subthemes?.map((s) => s.id) ?? []) ?? []
           }
-          isPersisted={true}
+          isPersisted
           onClose={() => setShowAddThemeFor(null)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
@@ -549,7 +488,7 @@ export default function FrameworkEditor({
               .find((t) => t.id === showAddSubthemeFor)
               ?.subthemes?.map((s) => s.id) ?? []
           }
-          isPersisted={true}
+          isPersisted
           onClose={() => setShowAddSubthemeFor(null)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
