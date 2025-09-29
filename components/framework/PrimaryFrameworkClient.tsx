@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string; // optional initial version
+  openedId?: string;
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -17,70 +17,60 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   );
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false); // 🔑 unified edit mode
 
-  // Sync when parent provides openedId
   useEffect(() => {
-    if (openedId) {
-      setCurrentId(openedId);
-    }
+    if (openedId) setCurrentId(openedId);
   }, [openedId]);
 
-  // Load tree for a version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
     const { data, error } = await supabaseBrowser.rpc("get_framework_tree", {
       v_version_id: versionId,
     });
-    if (error) {
-      console.error("Error loading framework tree:", error.message);
-    } else {
-      setTree(data ?? []);
-    }
+    if (error) console.error("Error loading framework tree:", error.message);
+    else setTree(data ?? []);
     setLoading(false);
   };
 
   useEffect(() => {
-    if (currentId) {
-      loadTree(currentId);
-    }
+    if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // ─────────────────────────────────────────────────────────────
-  // Handlers for version actions (to be wired to services later)
-  // ─────────────────────────────────────────────────────────────
-  const handleNew = () => {
-    console.log("New framework version");
-    // TODO: open modal → insert new draft version
-  };
-
-  const handleEdit = (id: string) => {
-    console.log("Edit version", id);
-    // TODO: open modal → update name/metadata
-  };
-
-  const handleClone = (id: string) => {
-    console.log("Clone version", id);
-    // TODO: call cloneVersion RPC
-  };
-
-  const handleDelete = (id: string) => {
-    console.log("Delete version", id);
-    // TODO: confirm → deleteVersion RPC
-  };
-
-  const handlePublish = (id: string) => {
-    console.log("Publish version", id);
-    // TODO: call publishVersion RPC
-  };
-
-  // ─────────────────────────────────────────────────────────────
+  // Stubbed actions for now
+  const handleNew = () => console.log("New framework version (scratch)");
+  const handleEdit = (id: string) => console.log("Edit version", id);
+  const handleClone = (id: string) => console.log("Clone version", id);
+  const handleDelete = (id: string) => console.log("Delete version", id);
+  const handlePublish = (id: string) => console.log("Publish version", id);
 
   return (
     <div>
+      {/* Edit mode toggle (applies to versions + framework editor) */}
+      <div className="flex justify-end mb-3">
+        {editMode ? (
+          <button
+            className="text-sm text-gray-600 hover:text-gray-800"
+            onClick={() => setEditMode(false)}
+          >
+            Exit edit mode
+          </button>
+        ) : (
+          <button
+            className="text-sm text-gray-600 hover:text-gray-800"
+            onClick={() => setEditMode(true)}
+          >
+            Enter edit mode
+          </button>
+        )}
+      </div>
+
+      {/* Versions panel */}
       <VersionManager
         versions={versions}
         selectedId={currentId}
+        editMode={editMode} // 🔑 pass down
         onSelect={(id) => setCurrentId(id)}
         onNew={handleNew}
         onEdit={handleEdit}
@@ -89,12 +79,14 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         onPublish={handlePublish}
       />
 
+      {/* Framework tree editor */}
       {loading ? (
-        <div className="text-gray-500 text-sm">Loading...</div>
+        <div className="text-gray-500 text-sm mt-3">Loading...</div>
       ) : (
         <FrameworkEditor
           tree={tree}
           versionId={currentId}
+          editMode={editMode} // 🔑 pass down
           onChanged={() => loadTree(currentId)}
         />
       )}
