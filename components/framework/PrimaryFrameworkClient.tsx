@@ -1,139 +1,157 @@
-// components/framework/PrimaryFrameworkClient.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { FrameworkVersion } from "@/lib/types/framework";
+import FrameworkEditor from "./FrameworkEditor";
+import VersionManager from "./VersionManager";
 import {
   listVersions,
   createVersion,
-  updateVersion,
   cloneVersion,
-  deleteVersion,
+  updateVersion,
   publishVersion,
+  deleteVersion,
   getVersionTree,
 } from "@/lib/services/framework";
-import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
-import VersionManager from "./VersionManager";
-import CloneVersionModal from "./CloneVersionModal";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string;
+  openedId?: string; // optional initial version
 };
 
-export default function PrimaryFrameworkClient({ versions: initialVersions, openedId }: Props) {
-  const [versions, setVersions] = useState<FrameworkVersion[]>(initialVersions || []);
-  const [currentId, setCurrentId] = useState<string | undefined>(openedId);
-  const [tree, setTree] = useState<NormalizedFramework[]>([]);
+export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
+  const [currentId, setCurrentId] = useState<string>(
+    openedId ?? versions[0]?.id ?? ""
+  );
+  const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [cloneModalOpen, setCloneModalOpen] = useState(false);
-  const [cloneFromId, setCloneFromId] = useState<string | null>(null);
 
-  // Load tree when version changes
-  useEffect(() => {
-    if (currentId) loadTree(currentId);
-  }, [currentId]);
-
+  // Refresh list of versions
   async function refreshVersions() {
-    const list = await listVersions();
-    setVersions(list);
-    if (!currentId && list.length > 0) {
-      setCurrentId(list[list.length - 1].id);
-    }
+    return await listVersions();
   }
 
-  async function loadTree(versionId: string) {
+  // Sync when parent provides openedId
+  useEffect(() => {
+    if (openedId) {
+      setCurrentId(openedId);
+    }
+  }, [openedId]);
+
+  // Load tree for a version
+  const loadTree = async (versionId: string) => {
+    if (!versionId) return;
     setLoading(true);
     try {
       const data = await getVersionTree(versionId);
-      setTree(data);
+      setTree(data ?? []);
+    } catch (err: any) {
+      console.error("Error loading framework tree:", err.message);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
+  useEffect(() => {
+    if (currentId) {
+      loadTree(currentId);
+    }
+  }, [currentId]);
+
+  // ─────────────────────────────────────────────
+  // Handlers for version actions
+  // ─────────────────────────────────────────────
   async function handleNew(name: string) {
-    const v = await createVersion(name);
-    await refreshVersions();
-    setCurrentId(v.id);
+    try {
+      const v = await createVersion(name);
+      setCurrentId(v.id);
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error creating new version:", err.message);
+    }
   }
 
-  async function handleEdit(id: string, name: string) {
-    await updateVersion(id, { name }); // ✅ fix
-    await refreshVersions();
+  async function handleEdit(id: string, patch: { name?: string }) {
+    try {
+      await updateVersion(id, patch);
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error editing version:", err.message);
+    }
   }
 
-  async function handleClone(id: string, name: string) {
-    const newId = await cloneVersion(id, name);
-    await refreshVersions();
-    setCurrentId(newId);
+  async function handleClone(id: string, newName: string) {
+    try {
+      const newId = await cloneVersion(id, newName);
+      setCurrentId(newId);
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error cloning version:", err.message);
+    }
   }
 
   async function handleDelete(id: string) {
-    await deleteVersion(id);
-    await refreshVersions();
-    if (currentId === id) {
-      setCurrentId(undefined);
-      setTree([]);
+    try {
+      await deleteVersion(id);
+      const vs = await refreshVersions();
+      setCurrentId(vs[0]?.id ?? "");
+    } catch (err: any) {
+      console.error("Error deleting version:", err.message);
     }
   }
 
   async function handlePublish(id: string, publish: boolean) {
-    await publishVersion(id, publish);
-    await refreshVersions();
+    try {
+      await publishVersion(id, publish);
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error publishing version:", err.message);
+    }
   }
 
+  // ─────────────────────────────────────────────
+
   return (
-    <div className="space-y-4">
-      {/* Versioning table */}
+    <div>
       <VersionManager
         versions={versions}
-        selectedId={currentId}
+        selectedId={currentId ?? ""}   // ✅ ensure always a string
         editMode={editMode}
         onSelect={(id) => setCurrentId(id)}
         onNew={handleNew}
         onEdit={handleEdit}
-        onClone={(id) => {
-          setCloneFromId(id);
-          setCloneModalOpen(true);
-        }}
+        onClone={handleClone}
         onDelete={handleDelete}
         onPublish={handlePublish}
       />
 
-      {/* Toggle edit mode */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => setEditMode((e) => !e)}
-          className="px-3 py-1.5 text-sm rounded-md border bg-gray-50 hover:bg-gray-100"
-        >
-          {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-        </button>
+      <div className="flex justify-end mb-2">
+        {editMode ? (
+          <button
+            className="text-sm text-gray-600 hover:text-gray-800"
+            onClick={() => setEditMode(false)}
+          >
+            Exit edit mode
+          </button>
+        ) : (
+          <button
+            className="text-sm text-gray-600 hover:text-gray-800"
+            onClick={() => setEditMode(true)}
+          >
+            Enter edit mode
+          </button>
+        )}
       </div>
 
-      {/* Framework editor */}
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
-      ) : currentId ? (
+      ) : (
         <FrameworkEditor
           tree={tree}
           versionId={currentId}
           editMode={editMode}
           onChanged={() => loadTree(currentId)}
-        />
-      ) : (
-        <div className="text-gray-500 text-sm">No version selected</div>
-      )}
-
-      {/* Clone modal */}
-      {cloneModalOpen && cloneFromId && (
-        <CloneVersionModal
-          onClose={() => setCloneModalOpen(false)}
-          onConfirm={async (name: string) => {
-            await handleClone(cloneFromId, name);
-            setCloneModalOpen(false);
-          }}
         />
       )}
     </div>
