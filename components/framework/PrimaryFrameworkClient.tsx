@@ -4,11 +4,17 @@ import { useState, useEffect } from "react";
 import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
-import { supabaseBrowser } from "@/lib/supabase";
+import {
+  supabaseBrowser
+} from "@/lib/supabase";
+import {
+  listVersions,
+  createVersion,
+} from "@/lib/services/framework";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string;
+  openedId?: string; // optional initial version
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -17,76 +23,104 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   );
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState(false); // 🔑 unified edit mode
+  const [allVersions, setAllVersions] = useState<FrameworkVersion[]>(versions);
+  const [editMode, setEditMode] = useState(false);
 
+  // Sync when parent provides openedId
   useEffect(() => {
-    if (openedId) setCurrentId(openedId);
+    if (openedId) {
+      setCurrentId(openedId);
+    }
   }, [openedId]);
 
+  // Load tree for a version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
     const { data, error } = await supabaseBrowser.rpc("get_framework_tree", {
       v_version_id: versionId,
     });
-    if (error) console.error("Error loading framework tree:", error.message);
-    else setTree(data ?? []);
+    if (error) {
+      console.error("Error loading framework tree:", error.message);
+    } else {
+      setTree(data ?? []);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-    if (currentId) loadTree(currentId);
+    if (currentId) {
+      loadTree(currentId);
+    }
   }, [currentId]);
 
-  // Stubbed actions for now
-  const handleNew = () => console.log("New framework version (scratch)");
-  const handleEdit = (id: string) => console.log("Edit version", id);
-  const handleClone = (id: string) => console.log("Clone version", id);
-  const handleDelete = (id: string) => console.log("Delete version", id);
-  const handlePublish = (id: string) => console.log("Publish version", id);
+  // Reload versions from DB
+  const refreshVersions = async () => {
+    try {
+      const refreshed = await listVersions();
+      setAllVersions(refreshed);
+    } catch (err) {
+      console.error("Failed to refresh versions:", err);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // Handlers for version actions
+  // ─────────────────────────────────────────────────────────────
+  const handleNew = async () => {
+    try {
+      const newVersion = await createVersion("Untitled Framework");
+      setCurrentId(newVersion.id);
+      await refreshVersions();
+    } catch (err) {
+      console.error("Failed to create new version:", err);
+    }
+  };
+
+  const handleEdit = (id: string) => {
+    console.log("Edit version", id);
+    // TODO: modal → update metadata
+  };
+
+  const handleClone = (id: string) => {
+    console.log("Clone version", id);
+    // TODO: call cloneVersion RPC
+  };
+
+  const handleDelete = (id: string) => {
+    console.log("Delete version", id);
+    // TODO: confirm → deleteVersion RPC
+  };
+
+  const handlePublish = (id: string) => {
+    console.log("Publish version", id);
+    // TODO: call publishVersion RPC
+  };
+
+  // ─────────────────────────────────────────────────────────────
 
   return (
     <div>
-      {/* Edit mode toggle (applies to versions + framework editor) */}
-      <div className="flex justify-end mb-3">
-        {editMode ? (
-          <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={() => setEditMode(false)}
-          >
-            Exit edit mode
-          </button>
-        ) : (
-          <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={() => setEditMode(true)}
-          >
-            Enter edit mode
-          </button>
-        )}
-      </div>
-
-      {/* Versions panel */}
       <VersionManager
-        versions={versions}
+        versions={allVersions}
         selectedId={currentId}
-        editMode={editMode} // 🔑 pass down
+        editMode={editMode}
         onSelect={(id) => setCurrentId(id)}
         onNew={handleNew}
         onEdit={handleEdit}
         onClone={handleClone}
         onDelete={handleDelete}
         onPublish={handlePublish}
+        onToggleEdit={() => setEditMode((e) => !e)}
       />
 
-      {/* Framework tree editor */}
       {loading ? (
-        <div className="text-gray-500 text-sm mt-3">Loading...</div>
+        <div className="text-gray-500 text-sm">Loading...</div>
       ) : (
         <FrameworkEditor
           tree={tree}
           versionId={currentId}
-          editMode={editMode} // 🔑 pass down
+          editMode={editMode}
           onChanged={() => loadTree(currentId)}
         />
       )}
