@@ -1,13 +1,10 @@
 // lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
-import type {
-  FrameworkVersion,
-  NormalizedFramework,
-} from "@/lib/types/framework";
+import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 
-// ─────────────────────────────────────────────
+// ────────────────────────────────
 // Framework Versions
-// ─────────────────────────────────────────────
+// ────────────────────────────────
 export async function listVersions(): Promise<FrameworkVersion[]> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
@@ -29,7 +26,7 @@ export async function createVersion(name: string): Promise<FrameworkVersion> {
 
 export async function updateVersion(
   id: string,
-  patch: { name?: string; status?: string }
+  patch: { name?: string }
 ): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
@@ -50,11 +47,18 @@ export async function cloneVersion(
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data; // returns new version id
+  return data; // RPC returns new version id
 }
 
 export async function publishVersion(versionId: string) {
-  return updateVersion(versionId, { status: "published" });
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .update({ status: "published" })
+    .eq("id", versionId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function deleteVersion(id: string) {
@@ -66,9 +70,9 @@ export async function deleteVersion(id: string) {
   return { success: true };
 }
 
-// ─────────────────────────────────────────────
-// Framework Items (Tree Loader via RPC)
-// ─────────────────────────────────────────────
+// ────────────────────────────────
+// Framework Items
+// ────────────────────────────────
 export async function getVersionTree(versionId: string) {
   const { data, error } = await supabaseServer.rpc("get_framework_tree", {
     v_version_id: versionId,
@@ -77,9 +81,9 @@ export async function getVersionTree(versionId: string) {
   return data as NormalizedFramework[];
 }
 
-// ─────────────────────────────────────────────
+// ────────────────────────────────
 // Catalogue: Pillars
-// ─────────────────────────────────────────────
+// ────────────────────────────────
 export async function listPillarCatalogue(versionId: string) {
   const { data, error } = await supabaseServer.rpc("list_pillar_catalogue", {
     v_version_id: versionId,
@@ -118,4 +122,5 @@ export async function deletePillar(id: string) {
     .delete()
     .eq("id", id);
   if (error) throw new Error(error.message);
+  return { success: true };
 }
