@@ -16,7 +16,7 @@ import {
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string; // optional initial version
+  openedId?: string;
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -27,19 +27,14 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
-  // Refresh list of versions
-  async function refreshVersions() {
+  async function refreshVersions(): Promise<FrameworkVersion[]> {
     return await listVersions();
   }
 
-  // Sync when parent provides openedId
   useEffect(() => {
-    if (openedId) {
-      setCurrentId(openedId);
-    }
+    if (openedId) setCurrentId(openedId);
   }, [openedId]);
 
-  // Load tree for a version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
@@ -54,15 +49,11 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   };
 
   useEffect(() => {
-    if (currentId) {
-      loadTree(currentId);
-    }
+    if (currentId) loadTree(currentId);
   }, [currentId]);
 
-  // ─────────────────────────────────────────────
-  // Handlers for version actions
-  // ─────────────────────────────────────────────
-  async function handleNew(name: string) {
+  // Handlers
+  async function handleNew(name: string): Promise<void> {
     try {
       const v = await createVersion(name);
       setCurrentId(v.id);
@@ -72,7 +63,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }
 
-  async function handleEdit(id: string, patch: { name?: string }) {
+  async function handleEdit(id: string, patch: { name?: string }): Promise<void> {
     try {
       await updateVersion(id, patch);
       await refreshVersions();
@@ -81,7 +72,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }
 
-  async function handleClone(id: string, newName: string) {
+  async function handleClone(id: string, newName: string): Promise<void> {
     try {
       const newId = await cloneVersion(id, newName);
       setCurrentId(newId);
@@ -91,7 +82,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string): Promise<void> {
     try {
       await deleteVersion(id);
       const vs = await refreshVersions();
@@ -101,7 +92,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }
 
-  async function handlePublish(id: string, publish: boolean) {
+  async function handlePublish(id: string, publish: boolean): Promise<void> {
     try {
       await publishVersion(id, publish);
       await refreshVersions();
@@ -110,13 +101,11 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }
 
-  // ─────────────────────────────────────────────
-
   return (
     <div>
       <VersionManager
         versions={versions}
-        selectedId={currentId ?? ""}   // ✅ ensure always a string
+        selectedId={currentId}
         editMode={editMode}
         onSelect={(id) => setCurrentId(id)}
         onNew={handleNew}
