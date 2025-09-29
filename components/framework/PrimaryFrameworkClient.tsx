@@ -23,12 +23,15 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [currentId, setCurrentId] = useState<string>(
     openedId ?? versions[0]?.id ?? ""
   );
+  const [versionList, setVersionList] = useState<FrameworkVersion[]>(versions);
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
   async function refreshVersions(): Promise<FrameworkVersion[]> {
-    return await listVersions();
+    const vs = await listVersions();
+    setVersionList(vs);
+    return vs;
   }
 
   useEffect(() => {
@@ -104,9 +107,10 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   return (
     <div>
       <VersionManager
-        versions={versions}
+        versions={versionList}
         selectedId={currentId}
         editMode={editMode}
+        onToggleEdit={() => setEditMode(!editMode)}
         onSelect={(id) => setCurrentId(id)}
         onNew={handleNew}
         onEdit={handleEdit}
@@ -114,24 +118,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         onDelete={handleDelete}
         onPublish={handlePublish}
       />
-
-      <div className="flex justify-end mb-2">
-        {editMode ? (
-          <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={() => setEditMode(false)}
-          >
-            Exit edit mode
-          </button>
-        ) : (
-          <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={() => setEditMode(true)}
-          >
-            Enter edit mode
-          </button>
-        )}
-      </div>
 
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
