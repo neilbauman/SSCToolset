@@ -1,103 +1,136 @@
+// components/framework/VersionManager.tsx
 "use client";
 
-import React from "react";
+import { useState } from "react";
 import { FrameworkVersion } from "@/lib/types/framework";
+import {
+  createVersion,
+  cloneVersion,
+  publishVersion,
+} from "@/lib/services/framework";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 type Props = {
   versions: FrameworkVersion[];
-  selectedId?: string;
+  selectedId: string;
   onSelect: (id: string) => void;
-
-  // Actions
-  onNew: () => void;
-  onClone: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  onPublish: (id: string) => void;
+  onRefresh?: () => Promise<void>; // 🔑 parent can reload versions after mutations
 };
 
 export default function VersionManager({
   versions,
   selectedId,
   onSelect,
-  onNew,
-  onClone,
-  onEdit,
-  onDelete,
-  onPublish,
+  onRefresh,
 }: Props) {
+  const [loading, setLoading] = useState(false);
+
   const current = versions.find((v) => v.id === selectedId);
 
+  // ─────────────────────────────────────────────
+  // Handlers
+  // ─────────────────────────────────────────────
+  const handleNew = async () => {
+    try {
+      setLoading(true);
+      const newV = await createVersion("New Framework");
+      if (onRefresh) await onRefresh();
+      onSelect(newV.id);
+    } catch (err: any) {
+      console.error("Error creating version:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClone = async () => {
+    if (!current) return;
+    try {
+      setLoading(true);
+      const newId = await cloneVersion(
+        current.id,
+        `${current.name} (Copy)`
+      );
+      if (onRefresh) await onRefresh();
+      onSelect(newId);
+    } catch (err: any) {
+      console.error("Error cloning version:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!current) return;
+    try {
+      setLoading(true);
+      await publishVersion(current.id);
+      if (onRefresh) await onRefresh();
+    } catch (err: any) {
+      console.error("Error publishing version:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+
   return (
-    <div className="flex items-center gap-3 mb-4">
-      {/* Version selector */}
-      <select
-        value={selectedId ?? ""}
-        onChange={(e) => onSelect(e.target.value)}
-        className="border rounded px-2 py-1 text-sm"
-      >
-        {versions.map((v) => (
-          <option key={v.id} value={v.id}>
-            {v.name} ({v.status})
-          </option>
-        ))}
-      </select>
-
-      {/* Status badge */}
-      {current && (
-        <span
-          className={`px-2 py-1 rounded text-xs ${
-            current.status === "published"
-              ? "bg-green-100 text-green-700"
-              : "bg-yellow-100 text-yellow-700"
-          }`}
+    <div className="flex items-center justify-between mb-4">
+      {/* Dropdown */}
+      <div className="flex items-center space-x-3">
+        <Select
+          value={selectedId}
+          onValueChange={(val) => onSelect(val)}
         >
-          {current.status}
-        </span>
-      )}
-
-      {/* Version controls */}
-      <div className="flex items-center gap-2 ml-auto">
-        <button
-          className="border rounded px-2 py-1 text-sm hover:bg-gray-100"
-          onClick={onNew}
-        >
-          New
-        </button>
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Select a version" />
+          </SelectTrigger>
+          <SelectContent>
+            {versions.map((v) => (
+              <SelectItem key={v.id} value={v.id}>
+                {v.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {current && (
-          <>
-            <button
-              className="border rounded px-2 py-1 text-sm hover:bg-gray-100"
-              onClick={() => onEdit(current.id)}
-            >
-              Edit
-            </button>
-
-            <button
-              className="border rounded px-2 py-1 text-sm hover:bg-gray-100"
-              onClick={() => onClone(current.id)}
-            >
-              Clone
-            </button>
-
-            <button
-              className="border rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
-              onClick={() => onDelete(current.id)}
-            >
-              Delete
-            </button>
-
-            {current.status !== "published" && (
-              <button
-                className="border rounded px-2 py-1 text-sm bg-green-600 text-white hover:bg-green-700"
-                onClick={() => onPublish(current.id)}
-              >
-                Publish
-              </button>
-            )}
-          </>
+          <Badge
+            variant={current.status === "published" ? "success" : "secondary"}
+          >
+            {current.status}
+          </Badge>
         )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center space-x-2">
+        <Button
+          size="sm"
+          onClick={handleNew}
+          disabled={loading}
+        >
+          New (Scratch)
+        </Button>
+
+        <Button
+          size="sm"
+          onClick={handleClone}
+          disabled={loading || !current}
+        >
+          Clone
+        </Button>
+
+        <Button
+          size="sm"
+          onClick={handlePublish}
+          disabled={loading || !current || current.status === "published"}
+        >
+          Publish
+        </Button>
       </div>
     </div>
   );
