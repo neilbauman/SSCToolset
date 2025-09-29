@@ -1,9 +1,6 @@
 // lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
-import type {
-  FrameworkVersion,
-  NormalizedFramework,
-} from "@/lib/types/framework";
+import type { FrameworkVersion, NormalizedFramework } from "@/lib/types/framework";
 
 // ─────────────────────────────────────────────
 // Framework Versions
@@ -27,32 +24,38 @@ export async function createVersion(name: string): Promise<FrameworkVersion> {
   return data as FrameworkVersion;
 }
 
-export async function cloneVersion(fromVersionId: string, newName: string) {
-  const { data, error } = await supabaseServer.rpc("clone_framework_version", {
-    v_from_version_id: fromVersionId,
-    v_new_name: newName,
-  });
-  if (error) throw new Error(error.message);
-  return data as string; // RPC returns new version id
-}
-
-export async function publishVersion(versionId: string) {
+export async function updateVersion(
+  id: string,
+  patch: { name?: string; status?: string }
+): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .update({ status: "published" })
-    .eq("id", versionId)
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
   return data as FrameworkVersion;
 }
 
-export async function deleteVersion(versionId: string): Promise<void> {
-  const { error } = await supabaseServer
-    .from("framework_versions")
-    .delete()
-    .eq("id", versionId);
+export async function cloneVersion(fromVersionId: string, newName: string) {
+  const { data, error } = await supabaseServer.rpc("clone_framework_version", {
+    v_from_version_id: fromVersionId,
+    v_new_name: newName,
+  });
   if (error) throw new Error(error.message);
+  return data; // returns new version id
+}
+
+export async function publishVersion(versionId: string) {
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .update({ status: "published", updated_at: new Date().toISOString() })
+    .eq("id", versionId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as FrameworkVersion;
 }
 
 // ─────────────────────────────────────────────
