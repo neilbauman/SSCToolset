@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishVersion } from "@/lib/services/framework";
 
 // PUT /api/framework/versions/:id → publish version
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { id } = params;
+export async function PUT(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop(); // extract :id from path
+    if (!id) {
+      return NextResponse.json({ error: "Missing version id" }, { status: 400 });
+    }
+
     const version = await publishVersion(id);
     return NextResponse.json(version);
   } catch (err: any) {
@@ -18,12 +20,14 @@ export async function PUT(
 }
 
 // DELETE /api/framework/versions/:id → delete version
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { id } = params;
+export async function DELETE(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop(); // extract :id from path
+    if (!id) {
+      return NextResponse.json({ error: "Missing version id" }, { status: 400 });
+    }
+
     // replace with proper deleteVersion service when available
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/framework_versions?id=eq.${id}`,
