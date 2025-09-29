@@ -1,49 +1,44 @@
-// components/framework/CloneVersionModal.tsx
 "use client";
 
 import { useState } from "react";
+import Modal from "../ui/Modal";
 
 type Props = {
+  initialName: string;
   onClose: () => void;
-  onConfirm: (newName: string) => Promise<void>; // ✅ add this
+  onSubmit: (name: string) => Promise<void>;
 };
 
-export default function CloneVersionModal({ onClose, onConfirm }: Props) {
-  const [name, setName] = useState("");
+export default function CloneVersionModal({ initialName, onClose, onSubmit }: Props) {
+  const [name, setName] = useState(initialName);
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-      <div className="bg-white rounded-md shadow-md p-6 w-96">
-        <h2 className="text-lg font-semibold mb-4">Clone Version</h2>
-
+    <Modal title="Clone Framework Version" onClose={onClose}>
+      <div className="space-y-4">
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Enter new version name"
-          className="w-full border rounded px-2 py-1 mb-4 text-sm"
+          className="w-full rounded-md border px-3 py-2 text-sm"
         />
-
         <div className="flex justify-end space-x-2">
           <button
+            className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
             onClick={onClose}
-            className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
           >
             Cancel
           </button>
           <button
-            onClick={() => {
-              if (name.trim()) {
-                onConfirm(name.trim()); // ✅ pass name back
-                onClose();
-              }
+            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
+            onClick={async () => {
+              if (!name.trim()) return;
+              await onSubmit(name.trim());
             }}
-            className="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
           >
-            Confirm
+            Clone
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
