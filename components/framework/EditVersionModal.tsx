@@ -13,7 +13,8 @@ export default function EditVersionModal({ initialName, onClose, onSubmit }: Pro
   const [name, setName] = useState(initialName);
 
   return (
-    <Modal title="Edit Framework Version" onClose={onClose}>
+    <Modal onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Edit Framework Version</h2>
       <div className="space-y-4">
         <input
           type="text"
