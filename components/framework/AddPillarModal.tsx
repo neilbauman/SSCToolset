@@ -7,20 +7,20 @@ import { listPillarCatalogue } from "@/lib/services/framework";
 type CatalogueSubtheme = {
   id: string;
   name: string;
-  description: string;
+  description?: string;
 };
 
 type CatalogueTheme = {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   subthemes: CatalogueSubtheme[];
 };
 
 type CataloguePillar = {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   themes: CatalogueTheme[];
 };
 
@@ -51,20 +51,7 @@ export default function AddPillarModal({
     async function load() {
       try {
         const data = await listPillarCatalogue(versionId);
-        setCatalogue(
-          (data ?? []).map((p: any) => ({
-            ...p,
-            description: p.description ?? "",
-            themes: (p.themes ?? []).map((t: any) => ({
-              ...t,
-              description: t.description ?? "",
-              subthemes: (t.subthemes ?? []).map((s: any) => ({
-                ...s,
-                description: s.description ?? "",
-              })),
-            })),
-          }))
-        );
+        setCatalogue(data ?? []);
       } catch (err: any) {
         console.error("Error loading catalogue:", err.message);
       }
@@ -72,22 +59,27 @@ export default function AddPillarModal({
     load();
   }, [versionId]);
 
-  function toggleSelect(id: string) {
+  function toggleSelect(id: string, children: string[] = []) {
     setSelectedIds((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+        children.forEach((c) => newSet.delete(c));
+      } else {
+        newSet.add(id);
+        children.forEach((c) => newSet.add(c));
+      }
       return newSet;
     });
   }
 
-  function renderSubthemes(subthemes: CatalogueSubtheme[], depth = 2) {
+  function renderSubthemes(subthemes: CatalogueSubtheme[], parentId: string) {
     return subthemes.map((s) => {
       const disabled = existingPillarIds.includes(s.id);
       return (
         <label
           key={s.id}
-          className={`flex items-center space-x-2 pl-${depth * 2} py-1 ${
+          className={`flex items-center space-x-2 pl-8 py-1 ${
             disabled ? "text-gray-400" : ""
           }`}
         >
@@ -103,25 +95,38 @@ export default function AddPillarModal({
     });
   }
 
-  function renderThemes(themes: CatalogueTheme[], depth = 1) {
-    return themes.map((t) => (
-      <div key={t.id}>
-        <label className={`flex items-center space-x-2 pl-${depth * 2} py-1`}>
-          <input
-            type="checkbox"
-            checked={selectedIds.has(t.id)}
-            onChange={() => toggleSelect(t.id)}
-          />
-          <span>{t.name}</span>
-        </label>
-        {renderSubthemes(t.subthemes, depth + 1)}
-      </div>
-    ));
+  function renderThemes(themes: CatalogueTheme[], parentId: string) {
+    return themes.map((t) => {
+      const disabled = existingPillarIds.includes(t.id);
+      const childIds = t.subthemes.map((s) => s.id);
+      return (
+        <div key={t.id}>
+          <label
+            className={`flex items-center space-x-2 pl-4 py-1 ${
+              disabled ? "text-gray-400" : ""
+            }`}
+          >
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={selectedIds.has(t.id)}
+              onChange={() => toggleSelect(t.id, childIds)}
+            />
+            <span>{t.name}</span>
+          </label>
+          {renderSubthemes(t.subthemes, t.id)}
+        </div>
+      );
+    });
   }
 
   function renderPillars(pillars: CataloguePillar[]) {
     return pillars.map((p) => {
       const disabled = existingPillarIds.includes(p.id);
+      const childIds = [
+        ...p.themes.map((t) => t.id),
+        ...p.themes.flatMap((t) => t.subthemes.map((s) => s.id)),
+      ];
       return (
         <div key={p.id} className="mb-2">
           <label
@@ -133,11 +138,11 @@ export default function AddPillarModal({
               type="checkbox"
               disabled={disabled}
               checked={selectedIds.has(p.id)}
-              onChange={() => toggleSelect(p.id)}
+              onChange={() => toggleSelect(p.id, childIds)}
             />
             <span className="font-medium">{p.name}</span>
           </label>
-          {renderThemes(p.themes)}
+          {renderThemes(p.themes, p.id)}
         </div>
       );
     });
@@ -147,6 +152,7 @@ export default function AddPillarModal({
     <Modal open={true} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Add Pillar</h2>
 
+      {/* Tabs */}
       <div className="flex space-x-4 border-b mb-4">
         <button
           className={`pb-2 ${
@@ -171,7 +177,9 @@ export default function AddPillarModal({
       </div>
 
       {activeTab === "catalogue" && (
-        <div className="max-h-60 overflow-y-auto">{renderPillars(catalogue)}</div>
+        <div className="max-h-60 overflow-y-auto">
+          {renderPillars(catalogue)}
+        </div>
       )}
 
       {activeTab === "new" && (
@@ -192,6 +200,7 @@ export default function AddPillarModal({
         </div>
       )}
 
+      {/* Actions */}
       <div className="flex justify-end space-x-2 mt-4">
         <button
           className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
@@ -203,17 +212,44 @@ export default function AddPillarModal({
           className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
           onClick={() => {
             if (activeTab === "catalogue") {
-              const chosen = catalogue.filter(
-                (p) =>
-                  selectedIds.has(p.id) ||
-                  p.themes.some(
-                    (t) =>
-                      selectedIds.has(t.id) ||
-                      t.subthemes.some((s) => selectedIds.has(s.id))
-                  )
-              );
-              if (chosen.length === 0) return;
-              onSubmit({ mode: "catalogue", items: chosen });
+              // Pick only checked items
+              const chosen = catalogue
+                .map((p) => {
+                  if (
+                    !selectedIds.has(p.id) &&
+                    !p.themes.some(
+                      (t) =>
+                        selectedIds.has(t.id) ||
+                        t.subthemes.some((s) => selectedIds.has(s.id))
+                    )
+                  ) {
+                    return null;
+                  }
+                  return {
+                    ...p,
+                    themes: p.themes
+                      .map((t) => {
+                        if (
+                          !selectedIds.has(t.id) &&
+                          !t.subthemes.some((s) => selectedIds.has(s.id))
+                        ) {
+                          return null;
+                        }
+                        return {
+                          ...t,
+                          subthemes: t.subthemes.filter((s) =>
+                            selectedIds.has(s.id)
+                          ),
+                        };
+                      })
+                      .filter(Boolean) as CatalogueTheme[],
+                  };
+                })
+                .filter(Boolean) as CataloguePillar[];
+
+              if (chosen.length > 0) {
+                onSubmit({ mode: "catalogue", items: chosen });
+              }
             } else {
               if (!newName.trim()) return;
               onSubmit({
