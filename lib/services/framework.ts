@@ -176,3 +176,81 @@ export async function deletePillar(id: string) {
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
+
+// ─────────────────────────────────────────────
+// Catalogue: CRUD for Themes
+// ─────────────────────────────────────────────
+export async function createTheme(
+  pillarId: string,
+  name: string,
+  description?: string
+) {
+  const { data, error } = await supabaseServer
+    .from("theme_catalogue")
+    .insert({ pillar_id: pillarId, name, description })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateTheme(
+  id: string,
+  patch: { name?: string; description?: string }
+) {
+  const { data, error } = await supabaseServer
+    .from("theme_catalogue")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function deleteTheme(id: string) {
+  const { error } = await supabaseServer
+    .from("theme_catalogue")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────────────────────────
+// Catalogue: CRUD for Subthemes
+// ─────────────────────────────────────────────
+export async function createSubtheme(
+  themeId: string,
+  name: string,
+  description?: string
+) {
+  const { data, error } = await supabaseServer
+    .from("subtheme_catalogue")
+    .insert({ theme_id: themeId, name, description })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateSubtheme(
+  id: string,
+  patch: { name?: string; description?: string }
+) {
+  const { data, error } = await supabaseServer
+    .from("subtheme_catalogue")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function deleteSubtheme(id: string) {
+  const { error } = await supabaseServer
+    .from("subtheme_catalogue")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
