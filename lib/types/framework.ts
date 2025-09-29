@@ -1,5 +1,3 @@
-// lib/types/framework.ts
-
 export type FrameworkVersion = {
   id: string;
   name: string;
@@ -41,6 +39,11 @@ export type NormalizedFramework = {
   can_have_indicators?: boolean;
   sort_order?: number;
   ref_code?: string;
+
+  // Existing style
   themes?: NormalizedFramework[];
   subthemes?: NormalizedFramework[];
+
+  // ✅ Added alias to support FrameworkEditor tree rendering
+  children?: NormalizedFramework[];
 };
