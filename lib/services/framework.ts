@@ -11,46 +11,64 @@ import type {
 export async function listVersions(): Promise<FrameworkVersion[]> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .select("id, name, status, created_at")
+    .select("id, name, status, created_at, updated_at")
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return data as FrameworkVersion[];
 }
 
-export async function createVersion(name: string): Promise<FrameworkVersion> {
+export async function createVersion(
+  name: string,
+  description?: string
+): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .insert({ name, status: "draft" })
+    .insert({ name, description, status: "draft" })
     .select()
     .single();
   if (error) throw new Error(error.message);
   return data as FrameworkVersion;
 }
 
-export async function cloneVersion(fromVersionId: string, newName: string) {
+export async function cloneVersion(
+  fromVersionId: string,
+  newName: string
+): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer.rpc("clone_framework_version", {
     v_from_version_id: fromVersionId,
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return data as FrameworkVersion;
 }
 
-export async function publishVersion(versionId: string) {
+export async function publishVersion(
+  versionId: string
+): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .update({ status: "published" })
+    .update({ status: "published", updated_at: new Date().toISOString() })
     .eq("id", versionId)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data;
+  return data as FrameworkVersion;
+}
+
+export async function deleteVersion(versionId: string): Promise<void> {
+  const { error } = await supabaseServer
+    .from("framework_versions")
+    .delete()
+    .eq("id", versionId);
+  if (error) throw new Error(error.message);
 }
 
 // ─────────────────────────────────────────────
 // Framework Items (Tree Loader via RPC)
 // ─────────────────────────────────────────────
-export async function getVersionTree(versionId: string) {
+export async function getVersionTree(
+  versionId: string
+): Promise<NormalizedFramework[]> {
   const { data, error } = await supabaseServer.rpc("get_framework_tree", {
     v_version_id: versionId,
   });
