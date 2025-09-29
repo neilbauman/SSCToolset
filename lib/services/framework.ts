@@ -1,8 +1,7 @@
 // lib/services/framework.ts
-import { supabaseServer, supabaseBrowser } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabase";
 import type {
   FrameworkVersion,
-  FrameworkItem,
   NormalizedFramework,
 } from "@/lib/types/framework";
 
@@ -16,6 +15,36 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return data as FrameworkVersion[];
+}
+
+export async function createVersion(name: string): Promise<FrameworkVersion> {
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .insert({ name, status: "draft" })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as FrameworkVersion;
+}
+
+export async function cloneVersion(fromVersionId: string, newName: string) {
+  const { data, error } = await supabaseServer.rpc("clone_framework_version", {
+    v_from_version_id: fromVersionId,
+    v_new_name: newName,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function publishVersion(versionId: string) {
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .update({ status: "published" })
+    .eq("id", versionId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 // ─────────────────────────────────────────────
@@ -50,17 +79,6 @@ export async function createPillar(name: string, description?: string) {
   return data;
 }
 
-// ─────────────────────────────────────────────
-// Example mutations (to be expanded in Phase 2)
-// ─────────────────────────────────────────────
-export async function deletePillar(id: string) {
-  const { error } = await supabaseServer
-    .from("pillar_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
 export async function updatePillar(
   id: string,
   patch: { name?: string; description?: string }
@@ -73,4 +91,12 @@ export async function updatePillar(
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function deletePillar(id: string) {
+  const { error } = await supabaseServer
+    .from("pillar_catalogue")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
