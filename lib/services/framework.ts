@@ -1,4 +1,3 @@
-// lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
 import type {
   FrameworkVersion,
@@ -84,74 +83,61 @@ export async function getVersionTree(versionId: string) {
 }
 
 // ─────────────────────────────────────────────
-// Catalogue: Pillars
+// Catalogue Types
 // ─────────────────────────────────────────────
-export async function listPillarCatalogue(versionId: string) {
+export type CatalogueSubtheme = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+export type CatalogueTheme = {
+  id: string;
+  name: string;
+  description?: string;
+  subthemes: CatalogueSubtheme[];
+};
+
+export type CataloguePillar = {
+  id: string;
+  name: string;
+  description?: string;
+  themes: CatalogueTheme[];
+};
+
+// ─────────────────────────────────────────────
+// Catalogue Queries
+// ─────────────────────────────────────────────
+export async function listPillarCatalogue(
+  versionId: string
+): Promise<CataloguePillar[]> {
   const { data, error } = await supabaseServer.rpc("list_pillar_catalogue", {
     v_version_id: versionId,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return (data ?? []) as CataloguePillar[];
 }
 
-export async function createPillar(name: string, description?: string) {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .insert({ name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function updatePillar(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deletePillar(id: string) {
-  const { error } = await supabaseServer
-    .from("pillar_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Themes
-// ─────────────────────────────────────────────
 export async function listThemeCatalogue(
   versionId: string,
   pillarId: string
-) {
+): Promise<CatalogueTheme[]> {
   const { data, error } = await supabaseServer.rpc("list_theme_catalogue", {
     v_version_id: versionId,
     v_pillar_id: pillarId,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return (data ?? []) as CatalogueTheme[];
 }
 
-// ─────────────────────────────────────────────
-// Catalogue: Subthemes
-// ─────────────────────────────────────────────
 export async function listSubthemeCatalogue(
   versionId: string,
   themeId: string
-) {
+): Promise<CatalogueSubtheme[]> {
   const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
     v_version_id: versionId,
     v_theme_id: themeId,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return (data ?? []) as CatalogueSubtheme[];
 }
