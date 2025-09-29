@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   Plus,
+  Ban,
 } from "lucide-react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
@@ -60,18 +61,45 @@ function uniqueById<T extends { id: string }>(arr: T[]) {
 export default function FrameworkEditor({
   tree,
   versionId,
-  editMode = false,
+  editMode = true,
   onChanged,
 }: Props) {
-  const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState(false);
+  const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
   const [showAddPillar, setShowAddPillar] = useState(false);
 
+  // reset local tree when version changes
   React.useEffect(() => {
     setLocalTree(tree);
     setDirty(false);
+    setExpanded({});
   }, [tree, versionId]);
 
+  const pillars = useMemo(
+    () => uniqueById(sortByOrder(localTree ?? [])),
+    [localTree]
+  );
+
+  const expandAll = useCallback(() => {
+    const all: Record<string, boolean> = {};
+    const walk = (items: NormalizedFramework[]) => {
+      for (const p of items) {
+        all[p.id] = true;
+        if (p.themes) walk(p.themes);
+        if (p.subthemes) walk(p.subthemes);
+        if (p.children) walk(p.children);
+      }
+    };
+    walk(localTree);
+    setExpanded(all);
+  }, [localTree]);
+
+  const collapseAll = useCallback(() => {
+    setExpanded({});
+  }, []);
+
+  // 🔧 Save/discard handlers
   async function handleSave() {
     console.log("Saving changes (not wired yet):", localTree);
     setDirty(false);
@@ -83,7 +111,7 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  // 🔧 Adapter to convert catalogue → NormalizedFramework
+  // 🔧 Adapter for catalogue → NormalizedFramework
   function handleAddPillarsFromCatalogue(items: any[]) {
     const normalized: NormalizedFramework[] = items.map((p: any) => ({
       id: p.id,
@@ -92,14 +120,14 @@ export default function FrameworkEditor({
       description: p.description ?? "",
       color: p.color ?? null,
       icon: p.icon ?? null,
-      children: (p.themes ?? []).map((t: any) => ({
+      themes: (p.themes ?? []).map((t: any) => ({
         id: t.id,
         type: "theme",
         name: t.name,
         description: t.description ?? "",
         color: t.color ?? null,
         icon: t.icon ?? null,
-        children: (t.subthemes ?? []).map((s: any) => ({
+        subthemes: (t.subthemes ?? []).map((s: any) => ({
           id: s.id,
           type: "subtheme",
           name: s.name,
@@ -122,23 +150,37 @@ export default function FrameworkEditor({
       description: description ?? "",
       color: null,
       icon: null,
+      themes: [],
+      subthemes: [],
       children: [],
     };
     setLocalTree([...localTree, newPillar]);
     setDirty(true);
   }
 
+  // 🔧 Render node (pillars → themes → subthemes)
   const renderNode = useCallback(
-    (node: NormalizedFramework, depth = 0) => {
-      const [open, setOpen] = useState(true);
-      const children = node.children ?? [];
+    (node: NormalizedFramework) => {
+      const isExpanded = expanded[node.id] ?? false;
+      const hasChildren =
+        (node.themes && node.themes.length > 0) ||
+        (node.subthemes && node.subthemes.length > 0) ||
+        (node.children && node.children.length > 0);
 
       return (
-        <div key={node.id} style={{ marginLeft: depth * 16 }}>
+        <div key={node.id} className="ml-4">
           <div className="flex items-center space-x-2 p-1 rounded hover:bg-gray-50">
-            {children.length > 0 && (
-              <button onClick={() => setOpen(!open)} className="text-gray-500">
-                {open ? (
+            {hasChildren && (
+              <button
+                onClick={() =>
+                  setExpanded((prev) => ({
+                    ...prev,
+                    [node.id]: !isExpanded,
+                  }))
+                }
+                className="text-gray-500"
+              >
+                {isExpanded ? (
                   <ChevronDown size={16} />
                 ) : (
                   <ChevronRight size={16} />
@@ -173,15 +215,23 @@ export default function FrameworkEditor({
               </div>
             )}
           </div>
-          {open && children.map((child) => renderNode(child, depth + 1))}
+
+          {isExpanded && (
+            <div className="ml-4">
+              {node.themes?.map((t) => renderNode(t))}
+              {node.subthemes?.map((s) => renderNode(s))}
+              {node.children?.map((c) => renderNode(c))}
+            </div>
+          )}
         </div>
       );
     },
-    [editMode]
+    [expanded, editMode]
   );
 
   return (
     <div className="border rounded-md p-4">
+      {/* Save / Discard controls */}
       {editMode && dirty && (
         <div className="flex space-x-2 mb-4">
           <button
@@ -199,19 +249,34 @@ export default function FrameworkEditor({
         </div>
       )}
 
+      {/* Toolbar */}
       {editMode && (
-        <div className="mb-4">
+        <div className="flex space-x-2 mb-4">
           <button
             className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
             onClick={() => setShowAddPillar(true)}
           >
             + Add Pillar
           </button>
+          <button
+            className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm"
+            onClick={expandAll}
+          >
+            Expand all
+          </button>
+          <button
+            className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm"
+            onClick={collapseAll}
+          >
+            Collapse all
+          </button>
         </div>
       )}
 
-      <div>{sortByOrder(uniqueById(localTree)).map((n) => renderNode(n))}</div>
+      {/* Render pillars */}
+      <div>{pillars.map((p) => renderNode(p))}</div>
 
+      {/* Add Pillar Modal */}
       {showAddPillar && (
         <AddPillarModal
           versionId={versionId}
