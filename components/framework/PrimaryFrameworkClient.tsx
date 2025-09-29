@@ -4,13 +4,9 @@ import { useState, useEffect } from "react";
 import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
-import {
-  supabaseBrowser
-} from "@/lib/supabase";
-import {
-  listVersions,
-  createVersion,
-} from "@/lib/services/framework";
+import { supabaseBrowser } from "@/lib/supabase";
+import { createVersion, listVersions } from "@/lib/services/framework";
+import NewVersionModal from "./NewVersionModal";
 
 type Props = {
   versions: FrameworkVersion[];
@@ -24,7 +20,11 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [allVersions, setAllVersions] = useState<FrameworkVersion[]>(versions);
-  const [editMode, setEditMode] = useState(false);
+
+  const [editMode, setEditMode] = useState<boolean>(true);
+
+  // modal state
+  const [showNewModal, setShowNewModal] = useState(false);
 
   // Sync when parent provides openedId
   useEffect(() => {
@@ -48,53 +48,56 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     setLoading(false);
   };
 
+  // Refresh version list
+  const refreshVersions = async () => {
+    try {
+      const data = await listVersions();
+      setAllVersions(data);
+      if (!data.find((v) => v.id === currentId) && data.length > 0) {
+        setCurrentId(data[0].id);
+      }
+    } catch (err) {
+      console.error("Error refreshing versions:", err);
+    }
+  };
+
   useEffect(() => {
     if (currentId) {
       loadTree(currentId);
     }
   }, [currentId]);
 
-  // Reload versions from DB
-  const refreshVersions = async () => {
-    try {
-      const refreshed = await listVersions();
-      setAllVersions(refreshed);
-    } catch (err) {
-      console.error("Failed to refresh versions:", err);
-    }
-  };
-
   // ─────────────────────────────────────────────────────────────
   // Handlers for version actions
   // ─────────────────────────────────────────────────────────────
-  const handleNew = async () => {
+  const handleNew = async (name: string) => {
     try {
-      const newVersion = await createVersion("Untitled Framework");
-      setCurrentId(newVersion.id);
+      const v = await createVersion(name);
       await refreshVersions();
-    } catch (err) {
-      console.error("Failed to create new version:", err);
+      setCurrentId(v.id);
+    } catch (err: any) {
+      console.error("Error creating version:", err.message);
     }
   };
 
   const handleEdit = (id: string) => {
     console.log("Edit version", id);
-    // TODO: modal → update metadata
+    // TODO: open modal → update name/metadata
   };
 
   const handleClone = (id: string) => {
     console.log("Clone version", id);
-    // TODO: call cloneVersion RPC
+    // TODO
   };
 
   const handleDelete = (id: string) => {
     console.log("Delete version", id);
-    // TODO: confirm → deleteVersion RPC
+    // TODO
   };
 
   const handlePublish = (id: string) => {
     console.log("Publish version", id);
-    // TODO: call publishVersion RPC
+    // TODO
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -105,13 +108,13 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         versions={allVersions}
         selectedId={currentId}
         editMode={editMode}
+        onToggleEdit={() => setEditMode(!editMode)}
         onSelect={(id) => setCurrentId(id)}
-        onNew={handleNew}
+        onNew={() => setShowNewModal(true)}
         onEdit={handleEdit}
         onClone={handleClone}
         onDelete={handleDelete}
         onPublish={handlePublish}
-        onToggleEdit={() => setEditMode((e) => !e)}
       />
 
       {loading ? (
@@ -122,6 +125,14 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
           versionId={currentId}
           editMode={editMode}
           onChanged={() => loadTree(currentId)}
+        />
+      )}
+
+      {/* New Version Modal */}
+      {showNewModal && (
+        <NewVersionModal
+          onClose={() => setShowNewModal(false)}
+          onCreate={handleNew}
         />
       )}
     </div>
