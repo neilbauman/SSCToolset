@@ -1,318 +1,87 @@
 "use client";
 
-import React, { useMemo, useState, useCallback } from "react";
-import {
-  ChevronRight,
-  ChevronDown,
-  GripVertical,
-  Pencil,
-  Trash2,
-  Plus,
-  Ban,
-} from "lucide-react";
-import type { NormalizedFramework } from "@/lib/types/framework";
+import { useState, useEffect } from "react";
 
 type Props = {
-  tree: NormalizedFramework[];
+  tree: any[];
   versionId: string;
-  editMode?: boolean; // ✅ optional now
-  onChanged?: () => Promise<void>;
+  editMode: boolean;
+  onChanged: () => void; // still used for reloads
 };
 
-function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
-  const styles: Record<typeof type, string> = {
-    pillar:
-      "bg-blue-50 text-blue-700 border border-blue-200 text-[12px] px-2 py-[2px] rounded-full",
-    theme:
-      "bg-green-50 text-green-700 border border-green-200 text-[12px] px-2 py-[2px] rounded-full",
-    subtheme:
-      "bg-purple-50 text-purple-700 border border-purple-200 text-[12px] px-2 py-[2px] rounded-full",
-  };
-  const label =
-    type === "pillar" ? "Pillar" : type === "theme" ? "Theme" : "Subtheme";
-  return <span className={styles[type]}>{label}</span>;
-}
+export default function FrameworkEditor({ tree, versionId, editMode, onChanged }: Props) {
+  const [localTree, setLocalTree] = useState<any[]>([]);
+  const [dirty, setDirty] = useState(false);
 
-// Sort utility
-function sortByOrder<T extends { sort_order?: number; name?: string }>(
-  arr: T[]
-) {
-  return [...arr].sort((a, b) => {
-    const A =
-      typeof a.sort_order === "number" ? a.sort_order : Number.MAX_SAFE_INTEGER;
-    const B =
-      typeof b.sort_order === "number" ? b.sort_order : Number.MAX_SAFE_INTEGER;
-    if (A !== B) return A - B;
-    return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-  });
-}
+  // load tree into local state whenever versionId or tree changes
+  useEffect(() => {
+    setLocalTree(tree);
+    setDirty(false);
+  }, [tree, versionId]);
 
-// Deduper
-function uniqueById<T extends { id: string }>(arr: T[]) {
-  const seen = new Set<string>();
-  return arr.filter((it) => {
-    if (seen.has(it.id)) return false;
-    seen.add(it.id);
-    return true;
-  });
-}
+  // placeholder mutation actions — for now just modify local state
+  function handleMockEdit() {
+    if (!editMode) return;
+    const newTree = [...localTree, { id: Date.now().toString(), name: "Mock Item" }];
+    setLocalTree(newTree);
+    setDirty(true);
+  }
 
-export default function FrameworkEditor({
-  tree,
-  versionId,
-  editMode = true, // ✅ default if not provided
-  onChanged,
-}: Props) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // save changes (not wired yet)
+  async function handleSave() {
+    console.log("Saving changes (not wired to Supabase yet):", localTree);
+    setDirty(false);
+    // Later: call mutations, then onChanged()
+  }
 
-  const pillars = useMemo(
-    () => uniqueById(sortByOrder(tree ?? [])),
-    [tree]
-  );
-
-  const expandAll = useCallback(() => {
-    const all: Record<string, boolean> = {};
-    const walk = (items: NormalizedFramework[]) => {
-      for (const p of items) {
-        all[p.id] = true;
-        if (p.themes) {
-          for (const t of p.themes) {
-            all[t.id] = true;
-            if (t.subthemes) {
-              for (const s of t.subthemes) {
-                all[s.id] = true;
-              }
-            }
-          }
-        }
-      }
-    };
-    walk(pillars);
-    setExpanded(all);
-  }, [pillars]);
-
-  const collapseAll = useCallback(() => setExpanded({}), []);
-
-  const toggle = (id: string) =>
-    setExpanded((e) => ({ ...e, [id]: !e[id] }));
-
-  const refCode = (
-    level: 0 | 1 | 2,
-    pIndex: number,
-    tIndex?: number,
-    sIndex?: number
-  ) => {
-    if (level === 0) return `P${pIndex}`;
-    if (level === 1) return `T${pIndex}.${tIndex ?? 1}`;
-    return `ST${pIndex}.${tIndex ?? 1}.${sIndex ?? 1}`;
-  };
-
-  const indexLabel = (
-    level: 0 | 1 | 2,
-    pI: number,
-    tI?: number,
-    sI?: number
-  ) => {
-    if (level === 0) return String(pI);
-    if (level === 1) return String(tI ?? 1);
-    return String(sI ?? 1);
-  };
-
-  const Row = ({
-    item,
-    level,
-    pIndex,
-    tIndex,
-    sIndex,
-  }: {
-    item: NormalizedFramework;
-    level: 0 | 1 | 2;
-    pIndex: number;
-    tIndex?: number;
-    sIndex?: number;
-  }) => {
-    const type: "pillar" | "theme" | "subtheme" =
-      level === 0 ? "pillar" : level === 1 ? "theme" : "subtheme";
-
-    const padding = 16 + level * 22;
-    const hasChildren =
-      (type === "pillar" && item.themes?.length) ||
-      (type === "theme" && item.subthemes?.length);
-
-    const isOpen = !!expanded[item.id];
-    const code = refCode(level, pIndex, tIndex, sIndex);
-    const order = indexLabel(level, pIndex, tIndex, sIndex);
-
-    return (
-      <tr className="border-b last:border-b-0">
-        <td className="py-2 pr-2 align-top" style={{ width: "28%" }}>
-          <div className="flex items-start">
-            <button
-              aria-label={isOpen ? "Collapse" : "Expand"}
-              className="mt-[2px] mr-2 text-gray-500"
-              onClick={() => (hasChildren ? toggle(item.id) : null)}
-            >
-              {hasChildren ? (
-                isOpen ? (
-                  <ChevronDown size={16} />
-                ) : (
-                  <ChevronRight size={16} />
-                )
-              ) : (
-                <span className="inline-block w-4" />
-              )}
-            </button>
-            <span className="mr-2 text-gray-300 cursor-not-allowed">
-              <GripVertical size={16} />
-            </span>
-            <div className="flex items-center space-x-2">
-              <TypeBadge type={type} />
-              <span className="text-xs text-gray-500">{code}</span>
-            </div>
-          </div>
-        </td>
-
-        <td className="py-2 align-top" style={{ width: "52%" }}>
-          <div style={{ paddingLeft: padding }}>
-            <div className="font-medium text-gray-900">{item.name}</div>
-            {item.description && (
-              <div className="text-sm text-gray-500">{item.description}</div>
-            )}
-          </div>
-        </td>
-
-        <td className="py-2 align-top text-center text-gray-700" style={{ width: "8%" }}>
-          {order}
-        </td>
-
-        <td className="py-2 align-top" style={{ width: "12%" }}>
-          <div className="flex items-center justify-end space-x-3 pr-1">
-            {editMode ? (
-              <>
-                <button className="text-gray-500 hover:text-gray-700">
-                  <Pencil size={16} />
-                </button>
-                <button className="text-gray-500 hover:text-red-600">
-                  <Trash2 size={16} />
-                </button>
-                {type !== "subtheme" && (
-                  <button className="text-gray-500 hover:text-gray-700">
-                    <Plus size={16} />
-                  </button>
-                )}
-              </>
-            ) : (
-              <span className="text-gray-300">
-                <Ban size={16} />
-              </span>
-            )}
-          </div>
-        </td>
-      </tr>
-    );
-  };
-
-  const Rows = () => {
-    const pSorted = sortByOrder(pillars);
-    return (
-      <>
-        {pSorted.map((p, pIdx) => {
-          const pillarIndex = pIdx + 1;
-          const pRow = <Row key={p.id} item={p} level={0} pIndex={pillarIndex} />;
-          const tOpen = expanded[p.id];
-          const themes = sortByOrder(p.themes ?? []);
-          const tRows =
-            tOpen &&
-            themes.map((t, tIdx) => {
-              const themeIndex = tIdx + 1;
-              const tRow = (
-                <Row
-                  key={t.id}
-                  item={t}
-                  level={1}
-                  pIndex={pillarIndex}
-                  tIndex={themeIndex}
-                />
-              );
-              const sOpen = expanded[t.id];
-              const subs = sortByOrder(t.subthemes ?? []);
-              const sRows =
-                sOpen &&
-                subs.map((s, sIdx) => (
-                  <Row
-                    key={s.id}
-                    item={s}
-                    level={2}
-                    pIndex={pillarIndex}
-                    tIndex={themeIndex}
-                    sIndex={sIdx + 1}
-                  />
-                ));
-              return (
-                <React.Fragment key={`${t.id}-frag`}>
-                  {tRow}
-                  {sRows}
-                </React.Fragment>
-              );
-            });
-          return (
-            <React.Fragment key={`${p.id}-group`}>
-              {pRow}
-              {tRows}
-            </React.Fragment>
-          );
-        })}
-      </>
-    );
-  };
+  // discard changes → reset from prop tree
+  function handleDiscard() {
+    setLocalTree(tree);
+    setDirty(false);
+  }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center space-x-4">
+    <div className="border rounded-md p-4">
+      {/* Save / Discard controls */}
+      {editMode && dirty && (
+        <div className="flex space-x-2 mb-4">
           <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={collapseAll}
+            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            onClick={handleSave}
           >
-            Collapse all
+            Save (not wired yet)
           </button>
           <button
-            className="text-sm text-gray-600 hover:text-gray-800"
-            onClick={expandAll}
+            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+            onClick={handleDiscard}
           >
-            Expand all
+            Discard
           </button>
-          {editMode && (
-            <button className="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-              <Plus size={16} className="mr-1" />
-              Add Pillar
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
-      <div className="overflow-x-auto rounded-md border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-700">
-            <tr>
-              <th className="py-2 px-3 font-medium" style={{ width: "28%" }}>
-                Type / Ref Code
-              </th>
-              <th className="py-2 px-3 font-medium" style={{ width: "52%" }}>
-                Name / Description
-              </th>
-              <th className="py-2 px-3 font-medium text-center" style={{ width: "8%" }}>
-                Sort Order
-              </th>
-              <th className="py-2 px-3 font-medium text-right" style={{ width: "12%" }}>
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <Rows />
-          </tbody>
-        </table>
+      {/* Framework Tree */}
+      <div className="space-y-2">
+        {localTree.length === 0 ? (
+          <div className="text-gray-500 text-sm">No items in this framework.</div>
+        ) : (
+          localTree.map((item: any) => (
+            <div
+              key={item.id}
+              className="p-2 border rounded-md flex justify-between items-center bg-gray-50"
+            >
+              <span>{item.name}</span>
+              {editMode && (
+                <button
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={handleMockEdit}
+                >
+                  + Mock Edit
+                </button>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
