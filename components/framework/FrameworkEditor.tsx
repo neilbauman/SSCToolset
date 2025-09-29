@@ -33,25 +33,48 @@ function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
   return <span className={styles[type]}>{label}</span>;
 }
 
+// Sort utility
 function sortByOrder<T extends { sort_order?: number; name?: string }>(
   arr: T[]
 ) {
   return [...arr].sort((a, b) => {
-    const A =
-      typeof a.sort_order === "number" ? a.sort_order : Number.MAX_SAFE_INTEGER;
-    const B =
-      typeof b.sort_order === "number" ? b.sort_order : Number.MAX_SAFE_INTEGER;
+    const A = typeof a.sort_order === "number" ? a.sort_order : Number.MAX_SAFE_INTEGER;
+    const B = typeof b.sort_order === "number" ? b.sort_order : Number.MAX_SAFE_INTEGER;
     if (A !== B) return A - B;
     return String(a.name ?? "").localeCompare(String(b.name ?? ""));
   });
 }
 
+// Deduper
 function uniqueById<T extends { id: string }>(arr: T[]) {
   const seen = new Set<string>();
   return arr.filter((it) => {
     if (seen.has(it.id)) return false;
     seen.add(it.id);
     return true;
+  });
+}
+
+// Generate hierarchical Ref Codes like P1, T1.1, ST1.2.1
+function generateRefCodes(pillars: NormalizedFramework[]): NormalizedFramework[] {
+  return pillars.map((pillar, pIndex) => {
+    const pillarRef = `P${pIndex + 1}`;
+    const updatedPillar: NormalizedFramework = {
+      ...pillar,
+      ref_code: pillarRef,
+      themes: sortByOrder(pillar.themes ?? []).map((theme, tIndex) => {
+        const themeRef = `${pillarRef}.T${tIndex + 1}`;
+        return {
+          ...theme,
+          ref_code: themeRef,
+          subthemes: sortByOrder(theme.subthemes ?? []).map((sub, sIndex) => ({
+            ...sub,
+            ref_code: `${themeRef}.ST${sIndex + 1}`,
+          })),
+        };
+      }),
+    };
+    return updatedPillar;
   });
 }
 
@@ -72,10 +95,12 @@ export default function FrameworkEditor({
     setExpanded({});
   }, [tree, versionId]);
 
-  const pillars = useMemo(
-    () => uniqueById(sortByOrder(localTree ?? [])),
-    [localTree]
-  );
+  // Generate ref codes & sorted tree for display
+  const pillars = useMemo(() => {
+    const deduped = uniqueById(localTree ?? []);
+    const sorted = sortByOrder(deduped);
+    return generateRefCodes(sorted);
+  }, [localTree]);
 
   const expandAll = useCallback(() => {
     const all: Record<string, boolean> = {};
@@ -106,7 +131,6 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  // 🔧 Adapter for catalogue → NormalizedFramework
   function handleAddPillarsFromCatalogue(items: any[]) {
     const normalized: NormalizedFramework[] = items.map((p: any) => ({
       id: p.id,
@@ -116,7 +140,6 @@ export default function FrameworkEditor({
       color: p.color ?? null,
       icon: p.icon ?? null,
       sort_order: p.sort_order ?? undefined,
-      ref_code: p.ref_code ?? undefined,
       themes: (p.themes ?? []).map((t: any) => ({
         id: t.id,
         type: "theme",
@@ -125,7 +148,6 @@ export default function FrameworkEditor({
         color: t.color ?? null,
         icon: t.icon ?? null,
         sort_order: t.sort_order ?? undefined,
-        ref_code: t.ref_code ?? undefined,
         subthemes: (t.subthemes ?? []).map((s: any) => ({
           id: s.id,
           type: "subtheme",
@@ -134,7 +156,6 @@ export default function FrameworkEditor({
           color: s.color ?? null,
           icon: s.icon ?? null,
           sort_order: s.sort_order ?? undefined,
-          ref_code: s.ref_code ?? undefined,
         })),
       })),
     }));
@@ -152,10 +173,8 @@ export default function FrameworkEditor({
       color: null,
       icon: null,
       sort_order: localTree.length + 1,
-      ref_code: `P${localTree.length + 1}`,
       themes: [],
       subthemes: [],
-      children: [],
     };
     setLocalTree([...localTree, newPillar]);
     setDirty(true);
