@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -94,6 +94,8 @@ export default function FrameworkEditor({
       type: "pillar",
       name,
       description: description ?? "",
+      color: null,
+      icon: null,
       children: [],
     };
     setLocalTree([...localTree, newPillar]);
