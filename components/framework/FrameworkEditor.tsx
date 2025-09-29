@@ -153,7 +153,7 @@ export default function FrameworkEditor({
   // ─────────────────────────────────────────────
   async function handleSave() {
     try {
-      // TODO: persist logic (left unchanged for now)
+      // TODO: persist logic
       await replaceFrameworkVersionItems(versionId, []);
       setDirty(false);
       if (onChanged) await onChanged();
@@ -189,6 +189,33 @@ export default function FrameworkEditor({
       }),
     }));
     setLocalTree(updated);
+    setDirty(true);
+  }
+
+  // ─────────────────────────────────────────────
+  // Delete handler
+  // ─────────────────────────────────────────────
+  function handleDelete(node: NormalizedFramework) {
+    if (node.type === "pillar") {
+      setLocalTree(localTree.filter((p) => p.id !== node.id));
+    } else if (node.type === "theme") {
+      setLocalTree(
+        localTree.map((p) => ({
+          ...p,
+          themes: (p.themes ?? []).filter((t) => t.id !== node.id),
+        }))
+      );
+    } else if (node.type === "subtheme") {
+      setLocalTree(
+        localTree.map((p) => ({
+          ...p,
+          themes: (p.themes ?? []).map((t) => ({
+            ...t,
+            subthemes: (t.subthemes ?? []).filter((s) => s.id !== node.id),
+          })),
+        }))
+      );
+    }
     setDirty(true);
   }
 
@@ -235,7 +262,11 @@ export default function FrameworkEditor({
                   <button className="text-gray-500 hover:text-blue-600" title="Edit">
                     <Pencil size={14} />
                   </button>
-                  <button className="text-gray-500 hover:text-red-600" title="Delete">
+                  <button
+                    className="text-gray-500 hover:text-red-600"
+                    title="Delete"
+                    onClick={() => handleDelete(node)}
+                  >
                     <Trash2 size={14} />
                   </button>
                   {node.type !== "subtheme" && (
