@@ -175,10 +175,11 @@ export async function deleteTheme(id: string) {
 // ─────────────────────────────────────────────
 // Catalogue: Subthemes
 // ─────────────────────────────────────────────
-export async function listSubthemeCatalogue(versionId: string) {
-  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
-    v_version_id: versionId,
-  });
+export async function listSubthemeCatalogue(versionId: string, themeId?: string) {
+  const params: Record<string, any> = { v_version_id: versionId };
+  if (themeId) params.v_theme_id = themeId;
+
+  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", params);
   if (error) throw new Error(error.message);
   return data;
 }
