@@ -1,15 +1,12 @@
 // app/api/framework/versions/route.ts
-import { NextResponse } from "next/server";
-import {
-  listVersions,
-  createVersion,
-} from "@/lib/services/framework";
+import { NextRequest, NextResponse } from "next/server";
+import { listVersions, createVersion } from "@/lib/services/framework";
 
 /**
  * GET /api/framework/versions
- * Returns list of framework versions.
+ * Returns list of all framework versions.
  */
-export async function GET() {
+export async function GET(_req: NextRequest) {
   try {
     const versions = await listVersions();
     return NextResponse.json(versions);
@@ -22,8 +19,9 @@ export async function GET() {
 /**
  * POST /api/framework/versions
  * Body: { name: string }
+ * Creates a new draft version.
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const { name } = await req.json();
 
