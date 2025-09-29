@@ -19,9 +19,11 @@ type CatalogueTheme = {
 
 type Props = {
   versionId: string;
-  parentPillarId: string; // attach theme under this pillar
+  parentPillarId: string;
   existingThemeIds: string[];
   existingSubthemeIds: string[];
+  isPersisted: boolean;
+  catalogueThemes?: CatalogueTheme[];
   onClose: () => void;
   onSubmit: (
     payload:
@@ -35,6 +37,8 @@ export default function AddThemeModal({
   parentPillarId,
   existingThemeIds,
   existingSubthemeIds,
+  isPersisted,
+  catalogueThemes = [],
   onClose,
   onSubmit,
 }: Props) {
@@ -46,22 +50,23 @@ export default function AddThemeModal({
 
   useEffect(() => {
     async function load() {
-      try {
-        const data = await listThemeCatalogue(versionId, parentPillarId);
-
-        // ✅ Normalize to ensure subthemes always exist
-        const normalized = (data ?? []).map((t: any) => ({
-          ...t,
-          subthemes: t.subthemes ?? [],
-        }));
-
-        setCatalogue(normalized);
-      } catch (err: any) {
-        console.error("Error loading theme catalogue:", err.message);
+      if (isPersisted) {
+        try {
+          const data = await listThemeCatalogue(versionId, parentPillarId);
+          const normalized = (data ?? []).map((t: any) => ({
+            ...t,
+            subthemes: t.subthemes ?? [],
+          }));
+          setCatalogue(normalized);
+        } catch (err: any) {
+          console.error("Error loading theme catalogue:", err.message);
+        }
+      } else {
+        setCatalogue(catalogueThemes);
       }
     }
     load();
-  }, [versionId, parentPillarId]);
+  }, [isPersisted, versionId, parentPillarId, catalogueThemes]);
 
   function toggleSelect(id: string, children: string[] = []) {
     setSelectedIds((prev) => {
@@ -93,7 +98,12 @@ export default function AddThemeModal({
             checked={selectedIds.has(s.id)}
             onChange={() => toggleSelect(s.id)}
           />
-          <span>{s.name}</span>
+          <div>
+            <div>{s.name}</div>
+            {s.description && (
+              <div className="text-xs text-gray-500">{s.description}</div>
+            )}
+          </div>
         </label>
       );
     });
