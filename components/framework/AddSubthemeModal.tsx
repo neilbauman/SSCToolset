@@ -14,6 +14,8 @@ type Props = {
   versionId: string;
   parentThemeId: string;
   existingSubthemeIds: string[];
+  isPersisted: boolean;
+  catalogueSubthemes?: CatalogueSubtheme[];
   onClose: () => void;
   onSubmit: (
     payload:
@@ -26,6 +28,8 @@ export default function AddSubthemeModal({
   versionId,
   parentThemeId,
   existingSubthemeIds,
+  isPersisted,
+  catalogueSubthemes = [],
   onClose,
   onSubmit,
 }: Props) {
@@ -37,15 +41,20 @@ export default function AddSubthemeModal({
 
   useEffect(() => {
     async function load() {
-      try {
-        const data = await listSubthemeCatalogue(versionId, parentThemeId);
-        setCatalogue(data ?? []);
-      } catch (err: any) {
-        console.error("Error loading subtheme catalogue:", err.message);
+      if (isPersisted) {
+        try {
+          const data = await listSubthemeCatalogue(versionId, parentThemeId);
+          setCatalogue(data ?? []);
+        } catch (err: any) {
+          console.error("Error loading subtheme catalogue:", err.message);
+        }
+      } else {
+        // Use passed subthemes directly (unsaved catalogue theme)
+        setCatalogue(catalogueSubthemes);
       }
     }
     load();
-  }, [versionId, parentThemeId]);
+  }, [isPersisted, versionId, parentThemeId, catalogueSubthemes]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -60,6 +69,7 @@ export default function AddSubthemeModal({
     <Modal open={true} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Add Subtheme</h2>
 
+      {/* Tabs */}
       <div className="flex space-x-4 border-b mb-4">
         <button
           className={`pb-2 ${
@@ -100,7 +110,14 @@ export default function AddSubthemeModal({
                   checked={selectedIds.has(s.id)}
                   onChange={() => toggleSelect(s.id)}
                 />
-                <span>{s.name}</span>
+                <div>
+                  <div>{s.name}</div>
+                  {s.description && (
+                    <div className="text-xs text-gray-500">
+                      {s.description}
+                    </div>
+                  )}
+                </div>
               </label>
             );
           })}
