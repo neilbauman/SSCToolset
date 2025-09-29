@@ -2,20 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Modal from "../ui/Modal";
-import { listThemeCatalogue } from "@/lib/services/framework";
-
-type CatalogueSubtheme = {
-  id: string;
-  name: string;
-  description?: string;
-};
-
-type CatalogueTheme = {
-  id: string;
-  name: string;
-  description?: string;
-  subthemes: CatalogueSubtheme[];
-};
+import { listThemeCatalogue, CatalogueTheme } from "@/lib/services/framework";
 
 type Props = {
   versionId: string;
@@ -36,7 +23,6 @@ export default function AddThemeModal({
   versionId,
   parentPillarId,
   existingThemeIds,
-  existingSubthemeIds,
   isPersisted,
   catalogueThemes = [],
   onClose,
@@ -53,11 +39,7 @@ export default function AddThemeModal({
       if (isPersisted) {
         try {
           const data = await listThemeCatalogue(versionId, parentPillarId);
-          const normalized = (data ?? []).map((t: any) => ({
-            ...t,
-            subthemes: t.subthemes ?? [],
-          }));
-          setCatalogue(normalized);
+          setCatalogue(data ?? []);
         } catch (err: any) {
           console.error("Error loading theme catalogue:", err.message);
         }
@@ -68,69 +50,12 @@ export default function AddThemeModal({
     load();
   }, [isPersisted, versionId, parentPillarId, catalogueThemes]);
 
-  function toggleSelect(id: string, children: string[] = []) {
+  function toggleSelect(id: string) {
     setSelectedIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-        children.forEach((c) => newSet.delete(c));
-      } else {
-        newSet.add(id);
-        children.forEach((c) => newSet.add(c));
-      }
-      return newSet;
-    });
-  }
-
-  function renderSubthemes(subthemes: CatalogueSubtheme[]) {
-    return (subthemes ?? []).map((s) => {
-      const disabled = existingSubthemeIds.includes(s.id);
-      return (
-        <label
-          key={s.id}
-          className={`flex items-center space-x-2 pl-8 py-1 ${
-            disabled ? "text-gray-400" : ""
-          }`}
-        >
-          <input
-            type="checkbox"
-            disabled={disabled}
-            checked={selectedIds.has(s.id)}
-            onChange={() => toggleSelect(s.id)}
-          />
-          <div>
-            <div>{s.name}</div>
-            {s.description && (
-              <div className="text-xs text-gray-500">{s.description}</div>
-            )}
-          </div>
-        </label>
-      );
-    });
-  }
-
-  function renderThemes(themes: CatalogueTheme[]) {
-    return (themes ?? []).map((t) => {
-      const disabled = existingThemeIds.includes(t.id);
-      const childIds = (t.subthemes ?? []).map((s) => s.id);
-      return (
-        <div key={t.id}>
-          <label
-            className={`flex items-center space-x-2 pl-4 py-1 ${
-              disabled ? "text-gray-400" : ""
-            }`}
-          >
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={selectedIds.has(t.id)}
-              onChange={() => toggleSelect(t.id, childIds)}
-            />
-            <span className="font-medium">{t.name}</span>
-          </label>
-          {renderSubthemes(t.subthemes)}
-        </div>
-      );
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   }
 
@@ -163,7 +88,32 @@ export default function AddThemeModal({
       </div>
 
       {activeTab === "catalogue" && (
-        <div className="max-h-60 overflow-y-auto">{renderThemes(catalogue)}</div>
+        <div className="max-h-60 overflow-y-auto">
+          {catalogue.map((t) => {
+            const disabled = existingThemeIds.includes(t.id);
+            return (
+              <label
+                key={t.id}
+                className={`flex items-center space-x-2 py-1 ${
+                  disabled ? "text-gray-400" : ""
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={disabled}
+                  checked={selectedIds.has(t.id)}
+                  onChange={() => toggleSelect(t.id)}
+                />
+                <div>
+                  <div>{t.name}</div>
+                  {t.description && (
+                    <div className="text-xs text-gray-500">{t.description}</div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
+        </div>
       )}
 
       {activeTab === "new" && (
@@ -184,7 +134,6 @@ export default function AddThemeModal({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex justify-end space-x-2 mt-4">
         <button
           className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
@@ -196,28 +145,9 @@ export default function AddThemeModal({
           className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
           onClick={() => {
             if (activeTab === "catalogue") {
-              const chosen = catalogue
-                .map((t) => {
-                  if (
-                    existingThemeIds.includes(t.id) ||
-                    (!selectedIds.has(t.id) &&
-                      !(t.subthemes ?? []).some((s) =>
-                        selectedIds.has(s.id)
-                      ))
-                  ) {
-                    return null;
-                  }
-                  return {
-                    ...t,
-                    subthemes: (t.subthemes ?? []).filter(
-                      (s) =>
-                        !existingSubthemeIds.includes(s.id) &&
-                        selectedIds.has(s.id)
-                    ),
-                  };
-                })
-                .filter(Boolean) as CatalogueTheme[];
-
+              const chosen = catalogue.filter(
+                (t) => !existingThemeIds.includes(t.id) && selectedIds.has(t.id)
+              );
               if (chosen.length > 0) {
                 onSubmit({ mode: "catalogue", items: chosen });
               }
