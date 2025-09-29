@@ -33,28 +33,26 @@ export async function cloneVersion(fromVersionId: string, newName: string) {
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return data as string; // RPC returns new version id
 }
 
 export async function publishVersion(versionId: string) {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .update({ status: "published", updated_at: new Date().toISOString() })
+    .update({ status: "published" })
     .eq("id", versionId)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data;
+  return data as FrameworkVersion;
 }
 
-export async function deleteVersion(versionId: string) {
+export async function deleteVersion(versionId: string): Promise<void> {
   const { error } = await supabaseServer
     .from("framework_versions")
     .delete()
     .eq("id", versionId);
-
   if (error) throw new Error(error.message);
-  return { success: true };
 }
 
 // ─────────────────────────────────────────────
