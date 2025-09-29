@@ -1,4 +1,3 @@
-// components/framework/PrimaryFrameworkClient.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -47,13 +46,47 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }, [currentId]);
 
+  // ─────────────────────────────────────────────────────────────
+  // Handlers for version actions (to be wired to services later)
+  // ─────────────────────────────────────────────────────────────
+  const handleNew = () => {
+    console.log("New framework version");
+    // TODO: open modal → insert new draft version
+  };
+
+  const handleEdit = (id: string) => {
+    console.log("Edit version", id);
+    // TODO: open modal → update name/metadata
+  };
+
+  const handleClone = (id: string) => {
+    console.log("Clone version", id);
+    // TODO: call cloneVersion RPC
+  };
+
+  const handleDelete = (id: string) => {
+    console.log("Delete version", id);
+    // TODO: confirm → deleteVersion RPC
+  };
+
+  const handlePublish = (id: string) => {
+    console.log("Publish version", id);
+    // TODO: call publishVersion RPC
+  };
+
+  // ─────────────────────────────────────────────────────────────
+
   return (
     <div>
       <VersionManager
         versions={versions}
         selectedId={currentId}
         onSelect={(id) => setCurrentId(id)}
-        onRefresh={async () => loadTree(currentId)} // 🔑 keep dropdown + table synced
+        onNew={handleNew}
+        onEdit={handleEdit}
+        onClone={handleClone}
+        onDelete={handleDelete}
+        onPublish={handlePublish}
       />
 
       {loading ? (
