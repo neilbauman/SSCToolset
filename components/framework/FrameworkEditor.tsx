@@ -21,6 +21,9 @@ type Props = {
   onChanged?: () => Promise<void>;
 };
 
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
 function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
   const styles: Record<typeof type, string> = {
     pillar:
@@ -87,6 +90,9 @@ function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[]
     });
 }
 
+// ─────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────
 export default function FrameworkEditor({
   tree,
   versionId,
@@ -96,6 +102,7 @@ export default function FrameworkEditor({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState(false);
   const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
+
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [showAddThemeFor, setShowAddThemeFor] = useState<string | null>(null);
   const [showAddSubthemeFor, setShowAddSubthemeFor] = useState<string | null>(
@@ -258,6 +265,9 @@ export default function FrameworkEditor({
     [expanded, editMode]
   );
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
     <div className="border rounded-md p-4">
       {editMode && dirty && (
@@ -398,4 +408,47 @@ export default function FrameworkEditor({
                   name: payload.name,
                   description: payload.description,
                   color: null,
-                 
+                  icon: null,
+                  subthemes: [],
+                },
+              ]);
+            }
+            setShowAddThemeFor(null);
+          }}
+        />
+      )}
+
+      {showAddSubthemeFor && (
+        <AddSubthemeModal
+          versionId={versionId}
+          parentThemeId={showAddSubthemeFor}
+          existingSubthemeIds={
+            localTree
+              .flatMap((p) => p.themes ?? [])
+              .find((t) => t.id === showAddSubthemeFor)
+              ?.subthemes?.map((s) => s.id) ?? []
+          }
+          isPersisted={true}
+          onClose={() => setShowAddSubthemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddSubthemesToTheme(showAddSubthemeFor, payload.items);
+            } else {
+              handleAddSubthemesToTheme(showAddSubthemeFor, [
+                {
+                  id: `temp-${Date.now()}`,
+                  type: "subtheme",
+                  name: payload.name,
+                  description: payload.description,
+                  color: null,
+                  icon: null,
+                },
+              ]);
+            }
+            setShowAddSubthemeFor(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
