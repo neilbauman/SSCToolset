@@ -60,7 +60,7 @@ export default function PrimaryFrameworkClient({ versions: initialVersions, open
   }
 
   async function handleEdit(id: string, name: string) {
-    await updateVersion(id, name);
+    await updateVersion(id, { name }); // ✅ fix
     await refreshVersions();
   }
 
