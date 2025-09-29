@@ -17,13 +17,10 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
   return data as FrameworkVersion[];
 }
 
-export async function createVersion(
-  name: string,
-  description: string = ""
-): Promise<FrameworkVersion> {
+export async function createVersion(name: string): Promise<FrameworkVersion> {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .insert({ name, description, status: "draft" })
+    .insert({ name, status: "draft" })
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -36,18 +33,27 @@ export async function cloneVersion(fromVersionId: string, newName: string) {
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data;
+  return data as string; // returns new version id
 }
 
 export async function publishVersion(versionId: string) {
   const { data, error } = await supabaseServer
     .from("framework_versions")
-    .update({ status: "published" })
+    .update({ status: "published", updated_at: new Date().toISOString() })
     .eq("id", versionId)
     .select()
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function deleteVersion(versionId: string) {
+  const { error } = await supabaseServer
+    .from("framework_versions")
+    .delete()
+    .eq("id", versionId);
+  if (error) throw new Error(error.message);
+  return { success: true };
 }
 
 // ─────────────────────────────────────────────
