@@ -384,6 +384,12 @@ export default function FrameworkEditor({
               .find((p) => p.id === showAddThemeFor)
               ?.themes?.flatMap((t) => t.subthemes?.map((s) => s.id) ?? []) ?? []
           }
+          isPersisted={
+            !!localTree.find((p) => p.id === showAddThemeFor)?.sort_order
+          }
+          catalogueThemes={
+            localTree.find((p) => p.id === showAddThemeFor)?.themes ?? []
+          }
           onClose={() => setShowAddThemeFor(null)}
           onSubmit={(payload) => {
             if (payload.mode === "catalogue") {
