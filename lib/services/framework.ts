@@ -33,7 +33,7 @@ export async function cloneVersion(fromVersionId: string, newName: string) {
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data as string; // returns new version id
+  return data;
 }
 
 export async function publishVersion(versionId: string) {
@@ -52,6 +52,7 @@ export async function deleteVersion(versionId: string) {
     .from("framework_versions")
     .delete()
     .eq("id", versionId);
+
   if (error) throw new Error(error.message);
   return { success: true };
 }
