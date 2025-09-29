@@ -1,4 +1,3 @@
-// lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
 import type {
   FrameworkVersion,
@@ -14,7 +13,7 @@ export async function listVersions(): Promise<FrameworkVersion[]> {
     .select("id, name, status, created_at, updated_at")
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []) as FrameworkVersion[];
+  return data as FrameworkVersion[];
 }
 
 export async function createVersion(name: string): Promise<FrameworkVersion> {
@@ -27,37 +26,13 @@ export async function createVersion(name: string): Promise<FrameworkVersion> {
   return data as FrameworkVersion;
 }
 
-export async function updateVersion(
-  id: string,
-  patch: { name?: string; status?: string }
-): Promise<FrameworkVersion> {
-  const { data, error } = await supabaseServer
-    .from("framework_versions")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
+export async function cloneVersion(fromVersionId: string, newName: string) {
+  const { data, error } = await supabaseServer.rpc("clone_framework_version", {
+    v_from_version_id: fromVersionId,
+    v_new_name: newName,
+  });
   if (error) throw new Error(error.message);
-  return data as FrameworkVersion;
-}
-
-export async function cloneVersion(
-  fromVersionId: string,
-  newName: string
-): Promise<string> {
-  // Uses DB RPC to clone a version; returns new version id
-  const { data, error } = await supabaseServer.rpc(
-    "clone_framework_version",
-    {
-      v_from_version_id: fromVersionId,
-      v_new_name: newName,
-    }
-  );
-  if (error) throw new Error(error.message);
-  // data can be the new id or payload; normalize to string
-  if (typeof data === "string") return data;
-  if (data?.id) return data.id as string;
-  throw new Error("Unexpected clone RPC return");
+  return data;
 }
 
 export async function publishVersion(
@@ -74,7 +49,21 @@ export async function publishVersion(
   return data as FrameworkVersion;
 }
 
-export async function deleteVersion(id: string): Promise<void> {
+export async function updateVersion(
+  id: string,
+  patch: { name?: string; status?: string }
+) {
+  const { data, error } = await supabaseServer
+    .from("framework_versions")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function deleteVersion(id: string) {
   const { error } = await supabaseServer
     .from("framework_versions")
     .delete()
@@ -83,16 +72,14 @@ export async function deleteVersion(id: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────
-// Framework Tree (via RPC)
+// Framework Items (Tree Loader via RPC)
 // ─────────────────────────────────────────────
-export async function getVersionTree(
-  versionId: string
-): Promise<NormalizedFramework[]> {
+export async function getVersionTree(versionId: string) {
   const { data, error } = await supabaseServer.rpc("get_framework_tree", {
     v_version_id: versionId,
   });
   if (error) throw new Error(error.message);
-  return (data ?? []) as NormalizedFramework[];
+  return data as NormalizedFramework[];
 }
 
 // ─────────────────────────────────────────────
@@ -103,110 +90,64 @@ export async function listPillarCatalogue(versionId: string) {
     v_version_id: versionId,
   });
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return data;
 }
 
-export async function listThemeCatalogue(params: {
-  versionId: string;
-  pillarId: string;
-}) {
-  const { data, error } = await supabaseServer.rpc("list_theme_catalogue", {
-    v_version_id: params.versionId,
-    v_pillar_id: params.pillarId,
-  });
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function listSubthemeCatalogue(params: {
-  versionId: string;
-  themeId: string;
-}) {
-  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
-    v_version_id: params.versionId,
-    v_theme_id: params.themeId,
-  });
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function createPillar(
-  name: string,
-  description?: string | null
-): Promise<{ id: string }> {
+export async function createPillar(name: string, description?: string) {
   const { data, error } = await supabaseServer
     .from("pillar_catalogue")
-    .insert({ name, description: description ?? null })
-    .select("id")
+    .insert({ name, description })
+    .select()
     .single();
   if (error) throw new Error(error.message);
-  return { id: data.id as string };
+  return data;
 }
 
 export async function createTheme(
   pillarId: string,
   name: string,
-  description?: string | null
-): Promise<{ id: string }> {
+  description?: string
+) {
   const { data, error } = await supabaseServer
     .from("theme_catalogue")
-    .insert({
-      pillar_id: pillarId,
-      name,
-      description: description ?? null,
-    })
-    .select("id")
+    .insert({ pillar_id: pillarId, name, description })
+    .select()
     .single();
   if (error) throw new Error(error.message);
-  return { id: data.id as string };
+  return data;
 }
 
 export async function createSubtheme(
   themeId: string,
   name: string,
-  description?: string | null
-): Promise<{ id: string }> {
+  description?: string
+) {
   const { data, error } = await supabaseServer
     .from("subtheme_catalogue")
-    .insert({
-      theme_id: themeId,
-      name,
-      description: description ?? null,
-    })
-    .select("id")
+    .insert({ theme_id: themeId, name, description })
+    .select()
     .single();
   if (error) throw new Error(error.message);
-  return { id: data.id as string };
+  return data;
 }
 
 // ─────────────────────────────────────────────
-// Version Items Replace (delete then insert)
+// Replace version items (wipe + insert new)
 // ─────────────────────────────────────────────
-export type VersionItemInsert = {
-  version_id: string;
-  pillar_id: string | null;
-  theme_id: string | null;
-  subtheme_id: string | null;
-  sort_order: number;
-  ref_code: string;
-};
-
 export async function replaceFrameworkVersionItems(
   versionId: string,
-  items: VersionItemInsert[]
-): Promise<void> {
-  // 1) Remove existing rows for version
-  const { error: delErr } = await supabaseServer
-    .from("framework_version_items")
-    .delete()
-    .eq("version_id", versionId);
-  if (delErr) throw new Error(delErr.message);
-
-  // 2) Insert new ones (if any)
-  if (items.length > 0) {
-    const { error: insErr } = await supabaseServer
-      .from("framework_version_items")
-      .insert(items);
-    if (insErr) throw new Error(insErr.message);
-  }
+  items: {
+    version_id: string;
+    pillar_id: string | null;
+    theme_id: string | null;
+    subtheme_id: string | null;
+    sort_order: number;
+    ref_code: string;
+  }[]
+) {
+  const { error } = await supabaseServer.rpc("replace_framework_version_items", {
+    v_version_id: versionId,
+    v_items: items,
+  });
+  if (error) throw new Error(error.message);
 }
