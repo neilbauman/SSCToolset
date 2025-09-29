@@ -5,12 +5,13 @@ import { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
 import VersionManager from "./VersionManager";
 import { supabaseBrowser } from "@/lib/supabase";
-import { createVersion, listVersions } from "@/lib/services/framework";
+import { createVersion, listVersions, cloneVersion } from "@/lib/services/framework";
 import NewVersionModal from "./NewVersionModal";
+import CloneVersionModal from "./CloneVersionModal";
 
 type Props = {
   versions: FrameworkVersion[];
-  openedId?: string; // optional initial version
+  openedId?: string;
 };
 
 export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
@@ -25,6 +26,7 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
 
   // modal state
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showCloneModal, setShowCloneModal] = useState<null | string>(null); // id of version to clone
 
   // Sync when parent provides openedId
   useEffect(() => {
@@ -33,7 +35,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }, [openedId]);
 
-  // Load tree for a version
   const loadTree = async (versionId: string) => {
     if (!versionId) return;
     setLoading(true);
@@ -48,7 +49,6 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     setLoading(false);
   };
 
-  // Refresh version list
   const refreshVersions = async () => {
     try {
       const data = await listVersions();
@@ -67,9 +67,9 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   }, [currentId]);
 
-  // ─────────────────────────────────────────────────────────────
-  // Handlers for version actions
-  // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────
+  // Handlers
+  // ─────────────────────────────────────
   const handleNew = async (name: string) => {
     try {
       const v = await createVersion(name);
@@ -80,27 +80,15 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
     }
   };
 
-  const handleEdit = (id: string) => {
-    console.log("Edit version", id);
-    // TODO: open modal → update name/metadata
+  const handleClone = async (fromId: string, newName: string) => {
+    try {
+      const v = await cloneVersion(fromId, newName);
+      await refreshVersions();
+      setCurrentId(v[0]); // RPC returns new version id
+    } catch (err: any) {
+      console.error("Error cloning version:", err.message);
+    }
   };
-
-  const handleClone = (id: string) => {
-    console.log("Clone version", id);
-    // TODO
-  };
-
-  const handleDelete = (id: string) => {
-    console.log("Delete version", id);
-    // TODO
-  };
-
-  const handlePublish = (id: string) => {
-    console.log("Publish version", id);
-    // TODO
-  };
-
-  // ─────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -111,10 +99,10 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         onToggleEdit={() => setEditMode(!editMode)}
         onSelect={(id) => setCurrentId(id)}
         onNew={() => setShowNewModal(true)}
-        onEdit={handleEdit}
-        onClone={handleClone}
-        onDelete={handleDelete}
-        onPublish={handlePublish}
+        onEdit={() => {}}
+        onClone={(id) => setShowCloneModal(id)}
+        onDelete={() => {}}
+        onPublish={() => {}}
       />
 
       {loading ? (
@@ -133,6 +121,15 @@ export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
         <NewVersionModal
           onClose={() => setShowNewModal(false)}
           onCreate={handleNew}
+        />
+      )}
+
+      {/* Clone Version Modal */}
+      {showCloneModal && (
+        <CloneVersionModal
+          fromId={showCloneModal}
+          onClose={() => setShowCloneModal(null)}
+          onClone={(newName) => handleClone(showCloneModal, newName)}
         />
       )}
     </div>
