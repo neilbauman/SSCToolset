@@ -35,7 +35,6 @@ function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
   return <span className={styles[type]}>{label}</span>;
 }
 
-// Deduper
 function uniqueById<T extends { id: string }>(arr: T[]) {
   const seen = new Set<string>();
   return arr.filter((it) => {
@@ -45,7 +44,6 @@ function uniqueById<T extends { id: string }>(arr: T[]) {
   });
 }
 
-// Build display tree with sort order + ref codes
 function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[] {
   return pillars
     .slice()
@@ -417,6 +415,16 @@ export default function FrameworkEditor({
               .flatMap((p) => p.themes ?? [])
               .find((t) => t.id === showAddSubthemeFor)
               ?.subthemes?.map((s) => s.id) ?? []
+          }
+          isPersisted={
+            !!localTree
+              .flatMap((p) => p.themes ?? [])
+              .find((t) => t.id === showAddSubthemeFor)?.sort_order
+          }
+          catalogueSubthemes={
+            localTree
+              .flatMap((p) => p.themes ?? [])
+              .find((t) => t.id === showAddSubthemeFor)?.subthemes ?? []
           }
           onClose={() => setShowAddSubthemeFor(null)}
           onSubmit={(payload) => {
