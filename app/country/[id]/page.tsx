@@ -1,16 +1,16 @@
 "use client";
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import PageHeader from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { useState } from "react";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 
 export default async function CountryDetailPage({ params }: any) {
-  // If params is a promise, await it; otherwise use directly
+  // Handle both object or promise (Next.js 15 typing quirk)
   const resolved = params?.then ? await params : params;
   const id = resolved?.id ?? "unknown";
 
+  // Mock country data (replace with Supabase query later)
   const country = {
     id,
     name: "Philippines",
@@ -28,18 +28,19 @@ export default async function CountryDetailPage({ params }: any) {
   };
 
   return (
-    <SidebarLayout>
-      <PageHeader
-        title={country.name}
-        group="Country Configuration"
-        description="Baseline datasets and metadata for this country."
-        breadcrumbs={[
+    <SidebarLayout
+      headerProps={{
+        title: country.name,
+        group: "Country Configuration",
+        description: "Baseline datasets and metadata for this country.",
+        breadcrumbs: [
           { name: "Dashboard", href: "/" },
           { name: "Country Configuration", href: "/country" },
           { name: country.name, href: `/country/${country.id}` },
-        ]}
-      />
-
+        ],
+      }}
+    >
+      {/* Metadata Section */}
       <div className="border rounded-lg p-4 mb-6 shadow-sm">
         <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
         <p>ADM1 = {country.admLabels.adm1}</p>
@@ -56,6 +57,7 @@ export default async function CountryDetailPage({ params }: any) {
         </Button>
       </div>
 
+      {/* Edit Metadata Modal */}
       <EditMetadataModal
         open={openMeta}
         onClose={() => setOpenMeta(false)}
