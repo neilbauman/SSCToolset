@@ -1,27 +1,14 @@
 // components/framework/FrameworkEditor.tsx
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState } from "react";
 import {
   ChevronRight,
   ChevronDown,
-  GripVertical,
   Pencil,
   Trash2,
   Plus,
 } from "lucide-react";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
 
 import type { NormalizedFramework } from "@/lib/types/framework";
 import {
@@ -44,8 +31,6 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
   );
   const [dirty, setDirty] = useState(false);
 
-  const sensors = useSensors(useSensor(PointerSensor));
-
   // ─────────────────────────────────────────────
   // Expand / Collapse
   // ─────────────────────────────────────────────
@@ -62,9 +47,6 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
     setExpanded(new Set(flattenTree(tree).map((n) => n.id)));
   const collapseAll = () => setExpanded(new Set());
 
-  // ─────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────
   const flattenTree = (nodes: NormalizedFramework[]): NormalizedFramework[] => {
     let result: NormalizedFramework[] = [];
     for (const node of nodes) {
@@ -112,7 +94,6 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
     parentId: string,
     type: "pillar" | "theme" | "subtheme"
   ) => {
-    // open the correct modal
     if (type === "pillar") {
       setShowPillarModal(true);
     }
@@ -124,26 +105,6 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
       setSubthemeParent(parentId);
       setShowSubthemeModal(true);
     }
-  };
-
-  // ─────────────────────────────────────────────
-  // Drag & Drop
-  // ─────────────────────────────────────────────
-  const handleDragEnd = (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    setTree((prev) => {
-      const idxA = prev.findIndex((n) => n.id === active.id);
-      const idxB = prev.findIndex((n) => n.id === over.id);
-      if (idxA === -1 || idxB === -1) return prev;
-      const newOrder = arrayMove(prev, idxA, idxB).map((n, i) => ({
-        ...n,
-        sort_order: i + 1,
-      }));
-      markDirty();
-      return newOrder;
-    });
   };
 
   // ─────────────────────────────────────────────
@@ -201,39 +162,28 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
       </div>
 
       {/* Tree Table */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={tree.map((n) => n.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="text-left text-sm text-gray-600">
-                <th className="w-[15%] px-2 py-1">Type / Ref</th>
-                <th className="w-[55%] px-2 py-1">Name / Description</th>
-                <th className="w-[10%] px-2 py-1">Sort</th>
-                <th className="w-[20%] px-2 py-1">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tree.map((node) => (
-                <FrameworkRow
-                  key={node.id}
-                  node={node}
-                  expanded={expanded}
-                  toggleExpand={toggleExpand}
-                  onDelete={handleDelete}
-                  onAddChild={handleAddChild}
-                />
-              ))}
-            </tbody>
-          </table>
-        </SortableContext>
-      </DndContext>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="text-left text-sm text-gray-600">
+            <th className="w-[15%] px-2 py-1">Type / Ref</th>
+            <th className="w-[55%] px-2 py-1">Name / Description</th>
+            <th className="w-[10%] px-2 py-1">Sort</th>
+            <th className="w-[20%] px-2 py-1">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tree.map((node) => (
+            <FrameworkRow
+              key={node.id}
+              node={node}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
+              onDelete={handleDelete}
+              onAddChild={handleAddChild}
+            />
+          ))}
+        </tbody>
+      </table>
 
       {/* Modals */}
       {showPillarModal && (
