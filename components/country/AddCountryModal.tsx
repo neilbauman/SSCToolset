@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/core/ui/Button";
+import { Button } from "@/components/ui/Button";
 
 interface AddCountryModalProps {
   open: boolean;
