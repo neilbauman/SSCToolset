@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import Modal from "../ui/Modal";
 import { listPillarCatalogue, createPillar } from "@/lib/services/framework";
-import type { NormalizedFramework, CataloguePillar } from "@/lib/types/framework";
+import type { NormalizedFramework } from "@/lib/types/framework";
 
 type Props = {
   versionId: string;
@@ -11,116 +12,148 @@ type Props = {
   onAdd: (pillar: NormalizedFramework) => void;
 };
 
-export default function AddPillarModal({ versionId, existing, onClose, onAdd }: Props) {
-  const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
-  const [catalogue, setCatalogue] = useState<CataloguePillar[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+export default function AddPillarModal({
+  versionId,
+  existing,
+  onClose,
+  onAdd,
+}: Props) {
+  const [catalogue, setCatalogue] = useState<any[]>([]);
+  const [mode, setMode] = useState<"catalogue" | "new">("catalogue");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   useEffect(() => {
-    listPillarCatalogue(versionId).then(setCatalogue).catch(console.error);
+    async function load() {
+      const data = await listPillarCatalogue(versionId);
+      setCatalogue(data || []);
+    }
+    load();
   }, [versionId]);
 
-  const handleSubmit = async () => {
-    if (tab === "catalogue") {
-      for (const id of selected) {
-        const cat = catalogue.find((c) => c.id === id);
-        if (cat) {
-          onAdd({
-            id: cat.id,
-            type: "pillar",
-            name: cat.name,
-            description: cat.description ?? "",
-            color: null,
-            icon: null,
-            sort_order: (existing?.length ?? 0) + 1,
-            ref_code: `P${(existing?.length ?? 0) + 1}`,
-            themes: [],
-          });
-        }
+  async function handleSubmit() {
+    if (mode === "catalogue") {
+      const selected = catalogue.filter((c) => selectedIds.includes(c.id));
+      for (const c of selected) {
+        const sort = (existing.length || 0) + 1;
+        const pillar: NormalizedFramework = {
+          id: c.id,
+          type: "pillar",
+          name: c.name,
+          description: c.description,
+          sort_order: sort,
+          ref_code: `P${sort}`,
+          color: null,
+          icon: null,
+          themes: [],
+        };
+        onAdd(pillar);
       }
+      onClose();
     } else {
-      const created = await createPillar(name, description);
-      onAdd({
+      if (!name.trim()) return;
+      const created = await createPillar(name.trim(), description);
+      const sort = (existing.length || 0) + 1;
+      const newPillar: NormalizedFramework = {
         id: created.id,
         type: "pillar",
         name: created.name,
-        description: created.description ?? "",
+        description: created.description,
+        sort_order: sort,
+        ref_code: `P${sort}`,
         color: null,
         icon: null,
-        sort_order: (existing?.length ?? 0) + 1,
-        ref_code: `P${(existing?.length ?? 0) + 1}`,
         themes: [],
-      });
+      };
+      onAdd(newPillar);
+      onClose();
     }
-    onClose();
-  };
+  }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-      <div className="bg-white p-4 rounded shadow w-96 space-y-4">
-        <h3 className="font-semibold text-lg">Add Pillar</h3>
-        <div className="flex gap-2">
-          <button
-            className={`flex-1 px-2 py-1 rounded ${tab === "catalogue" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-            onClick={() => setTab("catalogue")}
-          >
-            From Catalogue
-          </button>
-          <button
-            className={`flex-1 px-2 py-1 rounded ${tab === "new" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-            onClick={() => setTab("new")}
-          >
-            New Pillar
-          </button>
-        </div>
+    <Modal open={true} onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Add Pillar</h2>
 
-        {tab === "catalogue" ? (
-          <div className="max-h-64 overflow-y-auto border p-2">
-            {catalogue.map((c) => {
-              const already = existing?.some((p) => p.id === c.id);
-              return (
-                <label key={c.id} className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}>
-                  <input
-                    type="checkbox"
-                    disabled={already}
-                    checked={selected.has(c.id)}
-                    onChange={(e) => {
-                      const copy = new Set(selected);
-                      if (e.target.checked) copy.add(c.id);
-                      else copy.delete(c.id);
-                      setSelected(copy);
-                    }}
-                  />
-                  <span>{c.name}</span>
-                </label>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Name"
-              className="border rounded px-2 py-1 w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <textarea
-              placeholder="Description"
-              className="border rounded px-2 py-1 w-full"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Add</button>
-        </div>
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-3 py-1 rounded ${
+            mode === "catalogue" ? "bg-blue-600 text-white" : "bg-gray-200"
+          }`}
+          onClick={() => setMode("catalogue")}
+        >
+          From Catalogue
+        </button>
+        <button
+          className={`px-3 py-1 rounded ${
+            mode === "new" ? "bg-blue-600 text-white" : "bg-gray-200"
+          }`}
+          onClick={() => setMode("new")}
+        >
+          New
+        </button>
       </div>
-    </div>
+
+      {mode === "catalogue" ? (
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {catalogue.map((c) => {
+            const already = existing.some((e) => e.id === c.id);
+            return (
+              <label
+                key={c.id}
+                className={`flex items-center gap-2 p-2 rounded ${
+                  already ? "opacity-50" : ""
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={already}
+                  checked={selectedIds.includes(c.id)}
+                  onChange={(e) =>
+                    setSelectedIds((prev) =>
+                      e.target.checked
+                        ? [...prev, c.id]
+                        : prev.filter((id) => id !== c.id)
+                    )
+                  }
+                />
+                <div>
+                  <div className="font-medium">{c.name}</div>
+                  <div className="text-xs text-gray-500">{c.description}</div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Pillar name"
+            className="w-full rounded border px-3 py-2 text-sm"
+          />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Pillar description"
+            className="w-full rounded border px-3 py-2 text-sm"
+          />
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 mt-4">
+        <button className="px-4 py-2 bg-gray-200 rounded" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="px-4 py-2 bg-blue-600 text-white rounded"
+          onClick={handleSubmit}
+        >
+          Add
+        </button>
+      </div>
+    </Modal>
   );
 }
