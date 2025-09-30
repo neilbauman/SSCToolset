@@ -274,3 +274,8 @@ export async function deleteSubtheme(id: string) {
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
+
+// ─────────────────────────────────────────────
+// Backwards compatibility alias
+// ─────────────────────────────────────────────
+export { getFrameworkTree as getVersionTree };
