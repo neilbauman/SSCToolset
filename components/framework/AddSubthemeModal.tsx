@@ -8,7 +8,9 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 type Props = {
   versionId: string;
   themeId: string;
-  existing: NormalizedFramework[];
+  existing: NormalizedFramework[]; // existing subthemes under this theme
+  pillarSortOrder?: number;
+  themeSortOrder?: number;
   onClose: () => void;
   onAdd: (subtheme: NormalizedFramework) => void;
 };
@@ -17,6 +19,8 @@ export default function AddSubthemeModal({
   versionId,
   themeId,
   existing,
+  pillarSortOrder = 1,
+  themeSortOrder = 1,
   onClose,
   onAdd,
 }: Props) {
@@ -37,30 +41,32 @@ export default function AddSubthemeModal({
   async function handleSubmit() {
     if (mode === "catalogue") {
       const selected = catalogue.filter((c) => selectedIds.includes(c.id));
-      for (const c of selected) {
+      selected.forEach((c, idx) => {
+        const sort = existing.length + idx + 1;
         const sub: NormalizedFramework = {
           id: c.id,
           type: "subtheme",
           name: c.name,
           description: c.description,
-          sort_order: (existing.length || 0) + 1,
-          ref_code: c.ref_code ?? `ST${themeId}.${existing.length + 1}`,
+          sort_order: sort,
+          ref_code: `ST${pillarSortOrder}.${themeSortOrder}.${sort}`,
           color: null,
           icon: null,
         };
         onAdd(sub);
-      }
+      });
       onClose();
     } else {
       if (!name.trim()) return;
       const created = await createSubtheme(themeId, name.trim(), description);
+      const sort = (existing.length || 0) + 1;
       const newSub: NormalizedFramework = {
         id: created.id,
         type: "subtheme",
         name: created.name,
         description: created.description,
-        sort_order: (existing.length || 0) + 1,
-        ref_code: created.ref_code ?? `ST${themeId}.${existing.length + 1}`,
+        sort_order: sort,
+        ref_code: `ST${pillarSortOrder}.${themeSortOrder}.${sort}`,
         color: null,
         icon: null,
       };
