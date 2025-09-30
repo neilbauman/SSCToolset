@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  listVersions,
   createVersion,
   cloneVersion,
   deleteVersion,
@@ -10,261 +9,222 @@ import {
   updateVersion,
 } from "@/lib/services/framework";
 import type { FrameworkVersion } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
-import {
-  Edit3,
-  Copy,
-  Trash2,
-  Upload,
-  Plus,
-  EyeOff,
-  Eye,
-} from "lucide-react";
-
+import { Plus, Pencil, Copy, Trash2, Upload } from "lucide-react";
 import NewVersionModal from "./NewVersionModal";
-import CloneVersionModal from "./CloneVersionModal";
 import EditVersionModal from "./EditVersionModal";
+import CloneVersionModal from "./CloneVersionModal";
 
-export default function VersionManager() {
-  const [versions, setVersions] = useState<FrameworkVersion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [current, setCurrent] = useState<FrameworkVersion | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [showPanel, setShowPanel] = useState(true);
+type Props = {
+  versions: FrameworkVersion[];
+  openedId?: string;
+  onSelect: (id: string | null) => void;
+  onRefresh: () => Promise<void>;
+  editMode: boolean;
+  onToggleEdit: () => void;
+};
 
-  // Modal state
-  const [showNew, setShowNew] = useState(false);
-  const [showClone, setShowClone] = useState<FrameworkVersion | null>(null);
-  const [showEdit, setShowEdit] = useState<FrameworkVersion | null>(null);
+export default function VersionManager({
+  versions,
+  openedId,
+  onSelect,
+  onRefresh,
+  editMode,
+  onToggleEdit,
+}: Props) {
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [editingVersion, setEditingVersion] = useState<FrameworkVersion | null>(
+    null
+  );
+  const [cloningVersion, setCloningVersion] = useState<FrameworkVersion | null>(
+    null
+  );
 
-  useEffect(() => {
-    refreshVersions();
-  }, []);
+  const handleDelete = async (id: string, name: string) => {
+    const confirmed = confirm(
+      `Are you sure you want to delete version "${name}"?\n\nThis will permanently remove the version and all its framework items.`
+    );
+    if (!confirmed) return;
 
-  const refreshVersions = async () => {
-    setLoading(true);
-    try {
-      const data = await listVersions();
-      setVersions(data);
-    } catch (err) {
-      console.error("Error fetching versions:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ─────────────────────────────
-  // Handlers
-  // ─────────────────────────────
-  const handleCreate = async (name: string) => {
-    try {
-      const newVersion = await createVersion(name);
-      await refreshVersions();
-      setCurrent(newVersion);
-      setEditMode(true);
-    } catch (err: any) {
-      console.error("Error creating version:", err.message);
-    }
-  };
-
-  const handleClone = async (base: FrameworkVersion, name: string) => {
-    try {
-      const newVersion = await cloneVersion(base.id, name);
-      await refreshVersions();
-      setCurrent(newVersion);
-      setEditMode(true);
-    } catch (err: any) {
-      console.error("Error cloning version:", err.message);
-    }
-  };
-
-  const handleEdit = async (v: FrameworkVersion, name: string) => {
-    try {
-      await updateVersion(v.id, { name });
-      await refreshVersions();
-    } catch (err: any) {
-      console.error("Error updating version:", err.message);
-    }
-  };
-
-  const handleDelete = async (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
     try {
       await deleteVersion(id);
-      await refreshVersions();
-      if (current?.id === id) setCurrent(null);
+      if (onRefresh) await onRefresh();
+      if (openedId === id) onSelect(null);
     } catch (err: any) {
       console.error("Error deleting version:", err.message);
+      alert("Delete failed: " + err.message);
     }
   };
 
-  const handlePublish = async (id: string, publish: boolean, e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  const handlePublish = async (id: string, publish: boolean) => {
     try {
       await publishVersion(id, publish);
-      await refreshVersions();
+      await onRefresh();
     } catch (err: any) {
       console.error("Error publishing version:", err.message);
     }
   };
 
-  if (loading) return <div>Loading framework versions…</div>;
-
   return (
-    <div className="space-y-6">
-      {/* Header controls */}
-      <div className="flex justify-between items-center">
-        <div className="flex gap-2 items-center">
-          <h2 className="text-lg font-semibold">Primary Framework Versions</h2>
+    <div>
+      {/* Header */}
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-lg font-semibold">Primary Framework Versions</h2>
+        <div className="flex gap-2">
           <button
-            onClick={() => setShowPanel((prev) => !prev)}
-            className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
+            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex items-center gap-1"
+            onClick={onToggleEdit}
           >
-            {showPanel ? <EyeOff size={16} /> : <Eye size={16} />}
-            {showPanel ? "Hide Versioning" : "Show Versioning"}
+            <Pencil size={14} />
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
           </button>
           {editMode && (
             <button
-              onClick={() => setShowNew(true)}
-              className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700"
+              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
+              onClick={() => setShowNewModal(true)}
             >
-              <Plus size={16} />
-              Add
+              <Plus size={14} /> Add
             </button>
           )}
-        </div>
-        <div>
-          <button
-            onClick={() => setEditMode((prev) => !prev)}
-            className={`flex items-center gap-1 px-2 py-1 text-sm rounded ${
-              editMode ? "bg-blue-600 text-white" : "bg-gray-200 hover:bg-gray-300"
-            }`}
-          >
-            <Edit3 size={16} />
-            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
-          </button>
         </div>
       </div>
 
       {/* Versions Table */}
-      {showPanel && (
-        <table className="w-full border text-sm table-fixed">
-          <thead className="bg-gray-100">
+      <div className="border rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-left">
             <tr>
-              <th className="text-left px-2 py-1 w-[35%]">Name</th>
-              <th className="text-left px-2 py-1 w-[15%]">Status</th>
-              <th className="text-left px-2 py-1 w-[20%]">Created</th>
-              <th className="text-left px-2 py-1 w-[20%]">Last Revised</th>
-              <th className="text-right px-2 py-1 w-[10%]">Actions</th>
+              <th className="px-3 py-2 w-[30%]">Name</th>
+              <th className="px-3 py-2 w-[15%]">Status</th>
+              <th className="px-3 py-2 w-[20%]">Created</th>
+              <th className="px-3 py-2 w-[20%]">Last Revised</th>
+              <th className="px-3 py-2 w-[15%] text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {versions.map((v) => (
               <tr
                 key={v.id}
-                className={`cursor-pointer ${current?.id === v.id ? "bg-blue-50" : ""}`}
-                onClick={() => setCurrent(v)}
+                className={`cursor-pointer ${
+                  openedId === v.id ? "bg-blue-50" : ""
+                }`}
+                onClick={() => onSelect(v.id)}
               >
-                <td className="px-2 py-1 font-medium">{v.name}</td>
-                <td className="px-2 py-1">
+                {/* Name */}
+                <td className="px-3 py-2">
+                  <div className="font-medium">{v.name}</div>
+                </td>
+
+                {/* Status */}
+                <td className="px-3 py-2">
                   <span
-                    className={`px-2 py-0.5 rounded text-xs ${
+                    className={`px-2 py-0.5 rounded text-xs font-medium ${
                       v.status === "published"
-                        ? "bg-green-100 text-green-800"
-                        : "bg-yellow-100 text-yellow-800"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-yellow-100 text-yellow-700"
                     }`}
                   >
                     {v.status}
                   </span>
                 </td>
-                <td className="px-2 py-1">
-                  {new Date(v.created_at).toLocaleDateString()}
+
+                {/* Created */}
+                <td className="px-3 py-2">
+                  {new Date(v.created_at).toISOString().slice(0, 10)}
                 </td>
-                <td className="px-2 py-1">
-                  {v.updated_at ? new Date(v.updated_at).toLocaleDateString() : "-"}
+
+                {/* Last Revised */}
+                <td className="px-3 py-2">
+                  {v.updated_at
+                    ? new Date(v.updated_at).toISOString().slice(0, 10)
+                    : "-"}
                 </td>
-                <td className="px-2 py-1 text-right">
+
+                {/* Actions */}
+                <td
+                  className="px-3 py-2 flex justify-end gap-2"
+                  onClick={(e) => e.stopPropagation()} // prevent row select
+                >
                   {editMode && (
-                    <div className="flex gap-2 justify-end text-gray-600">
+                    <>
+                      {/* Edit */}
                       <button
+                        onClick={() => setEditingVersion(v)}
+                        className="text-gray-600 hover:text-blue-600"
                         title="Edit"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowEdit(v);
-                        }}
-                        className="hover:text-blue-600"
                       >
-                        <Edit3 size={16} />
+                        <Pencil size={16} />
                       </button>
+
+                      {/* Clone */}
                       <button
+                        onClick={() => setCloningVersion(v)}
+                        className="text-gray-600 hover:text-gray-800"
                         title="Clone"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowClone(v);
-                        }}
-                        className="hover:text-blue-600"
                       >
                         <Copy size={16} />
                       </button>
+
+                      {/* Delete */}
                       <button
+                        onClick={() => handleDelete(v.id, v.name)}
+                        className="text-gray-600 hover:text-red-600"
                         title="Delete"
-                        onClick={(e) => handleDelete(v.id, e)}
-                        className="hover:text-red-600"
                       >
                         <Trash2 size={16} />
                       </button>
+
+                      {/* Publish/Unpublish */}
                       <button
-                        title={v.status === "published" ? "Unpublish" : "Publish"}
-                        onClick={(e) => handlePublish(v.id, v.status !== "published", e)}
-                        className="hover:text-green-600"
+                        onClick={() =>
+                          handlePublish(v.id, v.status !== "published")
+                        }
+                        className="text-gray-600 hover:text-green-600"
+                        title={
+                          v.status === "published" ? "Unpublish" : "Publish"
+                        }
                       >
                         <Upload size={16} />
                       </button>
-                    </div>
+                    </>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      )}
-
-      {/* Framework Editor below */}
-      {current?.id && (
-        <div className="border-t pt-4 space-y-2">
-          <div>
-            <h3 className="font-medium">{current.name}</h3>
-            <p className="text-xs text-gray-500">
-              {current.status} • Created {new Date(current.created_at).toLocaleDateString()}
-              {current.updated_at &&
-                ` • Last revised ${new Date(current.updated_at).toLocaleDateString()}`}
-            </p>
-          </div>
-          <FrameworkEditor versionId={current.id} editable={editMode} />
-        </div>
-      )}
+      </div>
 
       {/* Modals */}
-      {showNew && (
+      {showNewModal && (
         <NewVersionModal
-          onClose={() => setShowNew(false)}
-          onSubmit={handleCreate}
+          onClose={() => setShowNewModal(false)}
+          onSubmit={async (name) => {
+            await createVersion(name);
+            await onRefresh();
+            setShowNewModal(false);
+          }}
         />
       )}
-
-      {showClone && (
-        <CloneVersionModal
-          initialName={`${showClone.name} (copy)`}
-          onClose={() => setShowClone(null)}
-          onSubmit={(name) => handleClone(showClone, name)}
-        />
-      )}
-
-      {showEdit && (
+      {editingVersion && (
         <EditVersionModal
-          initialName={showEdit.name}
-          onClose={() => setShowEdit(null)}
-          onSubmit={(name) => handleEdit(showEdit, name)}
+          initialName={editingVersion.name}
+          onClose={() => setEditingVersion(null)}
+          onSubmit={async (name) => {
+            await updateVersion(editingVersion.id, { name });
+            await onRefresh();
+            setEditingVersion(null);
+          }}
+        />
+      )}
+      {cloningVersion && (
+        <CloneVersionModal
+          initialName={`${cloningVersion.name} (copy)`}
+          onClose={() => setCloningVersion(null)}
+          onSubmit={async (name) => {
+            await cloneVersion(cloningVersion.id, name);
+            await onRefresh();
+            setCloningVersion(null);
+          }}
         />
       )}
     </div>
