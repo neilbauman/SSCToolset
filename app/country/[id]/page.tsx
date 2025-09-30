@@ -39,7 +39,7 @@ export default function CountryDetailPage({ params }: any) {
     ),
   };
 
-  // Mock admin units
+  // Mock admin units (will later come from Supabase)
   const adminUnits = [
     { id: "PH001", name: "Metro Manila", level: "ADM1", population: 13484462 },
     { id: "PH001001", name: "Quezon City", level: "ADM2", population: 2960048 },
@@ -133,7 +133,7 @@ export default function CountryDetailPage({ params }: any) {
       </div>
 
       {/* Upload + Preview Admin Units */}
-      <UploadAdminUnits />
+      <UploadAdminUnits countryIso={country.iso} />
     </SidebarLayout>
   );
 }
