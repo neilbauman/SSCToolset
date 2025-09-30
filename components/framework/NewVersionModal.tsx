@@ -34,6 +34,7 @@ export default function NewVersionModal({ onClose, onSubmit }: Props) {
             onClick={async () => {
               if (!name.trim()) return;
               await onSubmit(name.trim());
+              onClose(); // ✅ close modal after create
             }}
           >
             Create
