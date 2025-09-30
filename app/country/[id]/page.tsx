@@ -70,6 +70,43 @@ export default async function CountryDetailPage({ params }: any) {
         }}
         onSave={(updated) => console.log("Updated metadata:", updated)}
       />
+
+      {/* Admin Units Table */}
+      <div className="border rounded-lg p-4 shadow-sm">
+        <h2 className="text-lg font-semibold mb-3">Administrative Units</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100 text-left">
+              <tr>
+                <th className="px-4 py-2">Name</th>
+                <th className="px-4 py-2">PCode</th>
+                <th className="px-4 py-2">Level</th>
+                <th className="px-4 py-2">Population</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t">
+                <td className="px-4 py-2">Metro Manila</td>
+                <td className="px-4 py-2">PH001</td>
+                <td className="px-4 py-2">ADM1</td>
+                <td className="px-4 py-2">13,484,462</td>
+              </tr>
+              <tr className="border-t">
+                <td className="px-4 py-2">Quezon City</td>
+                <td className="px-4 py-2">PH001001</td>
+                <td className="px-4 py-2">ADM2</td>
+                <td className="px-4 py-2">2,960,048</td>
+              </tr>
+              <tr className="border-t">
+                <td className="px-4 py-2">Barangay Bagong Pag-asa</td>
+                <td className="px-4 py-2">PH001001001</td>
+                <td className="px-4 py-2">ADM3</td>
+                <td className="px-4 py-2 italic text-gray-400">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </SidebarLayout>
   );
 }
