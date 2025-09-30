@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Button } from "@/components/ui/Button";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -58,10 +59,14 @@ export default function CountryPage() {
           <tbody>
             {countries.map((c) => (
               <tr key={c.id} className="border-t hover:bg-gray-50">
-                <td className="px-4 py-2">{c.name}</td>
+                <td className="px-4 py-2 text-blue-700 hover:underline">
+                  <Link href={`/country/${c.id}`}>{c.name}</Link>
+                </td>
                 <td className="px-4 py-2">{c.iso}</td>
                 <td className="px-4 py-2">
-                  {c.population ? c.population.toLocaleString() : <span className="italic text-gray-400">—</span>}
+                  {c.population ? c.population.toLocaleString() : (
+                    <span className="italic text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-2">{c.lastUpdated}</td>
                 {editMode && (
