@@ -93,7 +93,6 @@ export async function getFrameworkTree(
 
 /**
  * Replace all items in framework_version_items for a version.
- * This deletes existing rows then reinserts in hierarchical order.
  */
 export async function replaceFrameworkVersionItems(
   versionId: string,
@@ -295,3 +294,8 @@ export async function deleteSubtheme(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
+
+// ─────────────────────────────────────────────
+// Backwards Compatibility Aliases
+// ─────────────────────────────────────────────
+export const getVersionTree = getFrameworkTree;
