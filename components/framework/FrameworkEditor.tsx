@@ -77,6 +77,39 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
     loadTree();
   }
 
+  async function handleDelete(node: NormalizedFramework) {
+    const confirmed = confirm(
+      `Are you sure you want to delete "${node.name}" (${node.type})? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      if (node.type === "pillar") {
+        await deletePillar(node.id);
+      } else if (node.type === "theme") {
+        await deleteTheme(node.id);
+      } else if (node.type === "subtheme") {
+        await deleteSubtheme(node.id);
+      }
+
+      // Update local tree
+      const deleteNode = (items: NormalizedFramework[]): NormalizedFramework[] =>
+        items
+          .filter((i) => i.id !== node.id)
+          .map((i) => ({
+            ...i,
+            themes: i.themes ? deleteNode(i.themes) : i.themes,
+            subthemes: i.subthemes ? deleteNode(i.subthemes) : i.subthemes,
+          }));
+
+      setTree(deleteNode(tree));
+      setDirty(true);
+    } catch (err: any) {
+      console.error("Error deleting entity:", err.message);
+      alert("Delete failed: " + err.message);
+    }
+  }
+
   // Recursive row renderer
   const renderRows = (items: NormalizedFramework[], level = 0, parentSort?: number) =>
     items.map((node) => {
@@ -142,31 +175,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
 
                   {/* Delete */}
                   <button
-                    onClick={async () => {
-                      try {
-                        if (node.type === "pillar") await deletePillar(node.id);
-                        else if (node.type === "theme") await deleteTheme(node.id);
-                        else if (node.type === "subtheme") await deleteSubtheme(node.id);
-
-                        const deleteNode = (
-                          items: NormalizedFramework[]
-                        ): NormalizedFramework[] =>
-                          items
-                            .filter((i) => i.id !== node.id)
-                            .map((i) => ({
-                              ...i,
-                              themes: i.themes ? deleteNode(i.themes) : i.themes,
-                              subthemes: i.subthemes
-                                ? deleteNode(i.subthemes)
-                                : i.subthemes,
-                            }));
-
-                        setTree(deleteNode(tree));
-                        setDirty(true);
-                      } catch (err: any) {
-                        console.error("Error deleting entity:", err.message);
-                      }
-                    }}
+                    onClick={() => handleDelete(node)}
                     className="text-gray-600 hover:text-red-600"
                     title="Delete"
                   >
