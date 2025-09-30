@@ -1,167 +1,143 @@
 // components/framework/AddThemeModal.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   listThemeCatalogue,
   createTheme,
 } from "@/lib/services/framework";
-import type {
-  CatalogueTheme,
-  NormalizedFramework,
-} from "@/lib/types/framework";
+import type { NormalizedFramework, CatalogueTheme } from "@/lib/types/framework";
 
 type Props = {
-  parentId: string; // pillar id
+  versionId: string;
+  parent: NormalizedFramework; // parent Pillar
   onClose: () => void;
-  onAdded: (themes: NormalizedFramework[]) => void;
-  existingIds?: string[];
+  onAdd: (theme: NormalizedFramework) => void;
 };
 
 export default function AddThemeModal({
-  parentId,
+  versionId,
+  parent,
   onClose,
-  onAdded,
-  existingIds = [],
+  onAdd,
 }: Props) {
   const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
   const [catalogue, setCatalogue] = useState<CatalogueTheme[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [includeChildren, setIncludeChildren] = useState(true);
-
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   useEffect(() => {
-    async function load() {
-      const themes = await listThemeCatalogue("", parentId);
-      setCatalogue(themes);
-    }
-    load();
-  }, [parentId]);
+    listThemeCatalogue(versionId, parent.id).then(setCatalogue).catch(console.error);
+  }, [versionId, parent.id]);
 
   const handleSubmit = async () => {
     if (tab === "catalogue") {
-      const themes = catalogue
-        .filter((t) => selected.has(t.id))
-        .map<NormalizedFramework>((t, idx) => ({
-          id: t.id,
-          type: "theme",
-          name: t.name,
-          description: t.description ?? "",
-          color: null,
-          icon: null,
-          sort_order: idx + 1,
-          ref_code: `T${idx + 1}`,
-          subthemes: includeChildren ? [] : [],
-        }));
-      onAdded(themes);
+      for (const id of selected) {
+        const cat = catalogue.find((c) => c.id === id);
+        if (cat) {
+          onAdd({
+            id: cat.id,
+            type: "theme",
+            name: cat.name,
+            description: cat.description ?? "",
+            color: null,
+            icon: null,
+            sort_order: (parent.themes?.length ?? 0) + 1,
+            ref_code: `${parent.ref_code}.T${(parent.themes?.length ?? 0) + 1}`,
+            subthemes: [],
+          });
+        }
+      }
     } else {
-      const created = await createTheme(parentId, name, description);
-      const newTheme: NormalizedFramework = {
+      const created = await createTheme(parent.id, name, description);
+      onAdd({
         id: created.id,
         type: "theme",
         name: created.name,
         description: created.description ?? "",
         color: null,
         icon: null,
-        sort_order: 999,
-        ref_code: "T?",
+        sort_order: (parent.themes?.length ?? 0) + 1,
+        ref_code: `${parent.ref_code}.T${(parent.themes?.length ?? 0) + 1}`,
         subthemes: [],
-      };
-      onAdded([newTheme]);
+      });
     }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
-      <div className="bg-white rounded-lg p-4 w-[500px]">
-        <h2 className="text-lg font-semibold mb-3">Add Theme</h2>
-        <div className="flex gap-2 mb-3">
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+      <div className="bg-white p-4 rounded shadow w-96 space-y-4">
+        <h3 className="font-semibold text-lg">Add Theme to {parent.name}</h3>
+        <div className="flex gap-2">
           <button
-            className={`px-3 py-1 rounded ${
-              tab === "catalogue" ? "bg-blue-600 text-white" : "border"
-            }`}
+            className={`flex-1 px-2 py-1 rounded ${tab === "catalogue" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
             onClick={() => setTab("catalogue")}
           >
             From Catalogue
           </button>
           <button
-            className={`px-3 py-1 rounded ${
-              tab === "new" ? "bg-blue-600 text-white" : "border"
-            }`}
+            className={`flex-1 px-2 py-1 rounded ${tab === "new" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
             onClick={() => setTab("new")}
           >
             New Theme
           </button>
         </div>
 
-        {tab === "catalogue" && (
-          <div className="max-h-64 overflow-y-auto border rounded p-2">
-            {catalogue.map((t) => {
-              const disabled = existingIds.includes(t.id);
+        {tab === "catalogue" ? (
+          <div className="max-h-64 overflow-y-auto border p-2">
+            {catalogue.map((c) => {
+              const already = parent.themes?.some((t) => t.id === c.id);
               return (
                 <label
-                  key={t.id}
-                  className={`flex items-center gap-2 p-1 ${
-                    disabled ? "opacity-50" : ""
-                  }`}
+                  key={c.id}
+                  className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}
                 >
                   <input
                     type="checkbox"
-                    disabled={disabled}
-                    checked={selected.has(t.id)}
+                    disabled={already}
+                    checked={selected.has(c.id)}
                     onChange={(e) => {
                       const copy = new Set(selected);
-                      if (e.target.checked) copy.add(t.id);
-                      else copy.delete(t.id);
+                      if (e.target.checked) copy.add(c.id);
+                      else copy.delete(c.id);
                       setSelected(copy);
                     }}
                   />
-                  <span>{t.name}</span>
+                  <span>{c.name}</span>
                 </label>
               );
             })}
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={includeChildren}
-                onChange={(e) => setIncludeChildren(e.target.checked)}
-              />
-              <span className="text-sm">Include Subthemes</span>
-            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Name"
+              className="border rounded px-2 py-1 w-full"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <textarea
+              placeholder="Description"
+              className="border rounded px-2 py-1 w-full"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </div>
         )}
 
-        {tab === "new" && (
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium">Name</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="border w-full px-2 py-1 rounded"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="border w-full px-2 py-1 rounded"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end mt-4 gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded bg-gray-200 text-sm"
+          >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className="px-3 py-1 bg-blue-600 text-white rounded"
+            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
           >
             Add
           </button>
