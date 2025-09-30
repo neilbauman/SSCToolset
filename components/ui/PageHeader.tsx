@@ -4,14 +4,12 @@ import React from "react";
 import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
-  /** Main page title */
+  /** Page title (e.g. "Primary Framework Editor") */
   title: string;
   /** Group key (used for theming: "dashboard", "about", "admin", "ssc-config", etc.) */
   group: GroupKey;
-  /** Short description text shown under the title */
+  /** Short description text shown under the page title */
   description?: string;
-  /** Optional tool name (e.g. "Primary Framework Editor") */
-  tool?: string;
   /** Breadcrumbs element */
   breadcrumbs?: React.ReactNode;
 };
@@ -20,44 +18,40 @@ export default function PageHeader({
   title,
   group,
   description,
-  tool,
   breadcrumbs,
 }: Props) {
   const theme = groupThemes[group];
 
   return (
     <div className="mb-6">
-      {/* Title */}
-      <h1 className="text-2xl font-bold" style={{ color: "#630710" }}>
-        {title}
+      {/* Global Toolset Title */}
+      <h1 className="text-3xl font-bold" style={{ color: "#630710" }}>
+        Shelter and Settlements Severity Classification Toolset
       </h1>
 
-      {/* Group + Tool */}
-      <div className="mt-1 flex items-center gap-2">
-        <span
-          className={`font-semibold ${theme.text}`}
-        >
+      {/* Group Title */}
+      <div className="mt-2">
+        <span className={`text-lg font-semibold ${theme.text}`}>
           {theme.label}
         </span>
-        {tool && (
-          <>
-            <span className="text-gray-400">/</span>
-            <span className="font-medium text-gray-700">{tool}</span>
-          </>
-        )}
       </div>
+
+      {/* Page Title */}
+      <h2 className="mt-1 text-xl font-semibold text-gray-900">{title}</h2>
 
       {/* Description */}
       {description && (
         <p className="mt-1 text-sm text-gray-600">{description}</p>
       )}
 
-      {/* Breadcrumbs framed with subtle spacing */}
-      {breadcrumbs && (
-        <div className="mt-4 mb-4 border-t border-b border-gray-200 py-2">
-          {breadcrumbs}
-        </div>
-      )}
+      {/* Divider */}
+      <div className="my-4 border-t border-gray-200" />
+
+      {/* Breadcrumbs */}
+      {breadcrumbs && <div className="mb-4">{breadcrumbs}</div>}
+
+      {/* Divider */}
+      <div className="border-t border-gray-200" />
     </div>
   );
 }
