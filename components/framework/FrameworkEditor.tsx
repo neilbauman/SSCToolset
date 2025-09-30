@@ -1,6 +1,7 @@
+// components/framework/FrameworkEditor.tsx
 "use client";
 
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -9,339 +10,371 @@ import {
   Trash2,
   Plus,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+
 import type { NormalizedFramework } from "@/lib/types/framework";
+import {
+  replaceFrameworkVersionItems,
+  getFrameworkTree,
+} from "@/lib/services/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
-import { replaceFrameworkVersionItems } from "@/lib/services/framework";
 
 type Props = {
-  tree: NormalizedFramework[];
   versionId: string;
-  editMode?: boolean;
-  onChanged?: () => Promise<void>;
+  initialTree: NormalizedFramework[];
 };
 
-// ───────────────────────────────
-// Helpers
-// ───────────────────────────────
-function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
-  const styles: Record<typeof type, string> = {
-    pillar:
-      "bg-blue-50 text-blue-700 border border-blue-200 text-[12px] px-2 py-[2px] rounded-full",
-    theme:
-      "bg-green-50 text-green-700 border border-green-200 text-[12px] px-2 py-[2px] rounded-full",
-    subtheme:
-      "bg-purple-50 text-purple-700 border border-purple-200 text-[12px] px-2 py-[2px] rounded-full",
-  };
-  const label =
-    type === "pillar" ? "Pillar" : type === "theme" ? "Theme" : "Subtheme";
-  return <span className={styles[type]}>{label}</span>;
-}
-
-function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[] {
-  return pillars
-    .slice()
-    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
-    .map((pillar, pIndex) => {
-      const pillarOrder = pIndex + 1;
-      const pillarRef = `P${pillarOrder}`;
-      return {
-        ...pillar,
-        sort_order: pillarOrder,
-        ref_code: pillarRef,
-        themes: (pillar.themes ?? [])
-          .slice()
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
-          .map((theme, tIndex) => {
-            const themeOrder = tIndex + 1;
-            const themeRef = `T${pillarOrder}.${themeOrder}`;
-            return {
-              ...theme,
-              sort_order: themeOrder,
-              ref_code: themeRef,
-              subthemes: (theme.subthemes ?? [])
-                .slice()
-                .sort(
-                  (a, b) =>
-                    (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
-                    a.name.localeCompare(b.name)
-                )
-                .map((sub, sIndex) => {
-                  const subOrder = sIndex + 1;
-                  const subRef = `ST${pillarOrder}.${themeOrder}.${subOrder}`;
-                  return {
-                    ...sub,
-                    sort_order: subOrder,
-                    ref_code: subRef,
-                  };
-                }),
-            };
-          }),
-      };
-    });
-}
-
-// ───────────────────────────────
-// Main Component
-// ───────────────────────────────
-export default function FrameworkEditor({
-  tree,
-  versionId,
-  editMode = true,
-  onChanged,
-}: Props) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+export default function FrameworkEditor({ versionId, initialTree }: Props) {
+  const [tree, setTree] = useState<NormalizedFramework[]>(initialTree);
+  const [expanded, setExpanded] = useState<Set<string>>(
+    new Set(tree.map((n) => n.id))
+  );
   const [dirty, setDirty] = useState(false);
-  const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
 
-  const [showAddPillar, setShowAddPillar] = useState(false);
-  const [showAddThemeFor, setShowAddThemeFor] = useState<string | null>(null);
-  const [showAddSubthemeFor, setShowAddSubthemeFor] = useState<string | null>(
-    null
-  );
+  const sensors = useSensors(useSensor(PointerSensor));
 
-  React.useEffect(() => {
-    setLocalTree(tree);
-    setDirty(false);
-    setExpanded({});
-  }, [tree, versionId]);
+  // ─────────────────────────────────────────────
+  // Expand / Collapse
+  // ─────────────────────────────────────────────
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => {
+      const copy = new Set(prev);
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
+      return copy;
+    });
+  };
 
-  const displayTree = useMemo(() => buildDisplayTree(localTree ?? []), [localTree]);
+  const expandAll = () =>
+    setExpanded(new Set(flattenTree(tree).map((n) => n.id)));
+  const collapseAll = () => setExpanded(new Set());
 
-  const expandAll = useCallback(() => {
-    const all: Record<string, boolean> = {};
-    const walk = (items: NormalizedFramework[]) => {
-      for (const p of items) {
-        all[p.id] = true;
-        if (p.themes) walk(p.themes);
-        if (p.subthemes) walk(p.subthemes);
-      }
-    };
-    walk(localTree);
-    setExpanded(all);
-  }, [localTree]);
-
-  const collapseAll = useCallback(() => {
-    setExpanded({});
-  }, []);
-
-  async function handleSave() {
-    try {
-      await replaceFrameworkVersionItems(versionId, []);
-      setDirty(false);
-      if (onChanged) await onChanged();
-    } catch (err: any) {
-      console.error("Save failed:", err.message);
-      alert(`Save failed: ${err.message}`);
+  // ─────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────
+  const flattenTree = (nodes: NormalizedFramework[]): NormalizedFramework[] => {
+    let result: NormalizedFramework[] = [];
+    for (const node of nodes) {
+      result.push(node);
+      if (node.themes) result = result.concat(flattenTree(node.themes));
+      if (node.subthemes)
+        result = result.concat(flattenTree(node.subthemes));
     }
-  }
+    return result;
+  };
 
-  function handleDiscard() {
-    setLocalTree(tree);
+  const markDirty = () => setDirty(true);
+
+  // ─────────────────────────────────────────────
+  // Actions
+  // ─────────────────────────────────────────────
+  const handleSave = async () => {
+    await replaceFrameworkVersionItems(versionId, tree);
+    const refreshed = await getFrameworkTree(versionId);
+    setTree(refreshed);
     setDirty(false);
-  }
+  };
 
-  function handleDelete(node: NormalizedFramework) {
-    if (node.type === "pillar") {
-      setLocalTree(localTree.filter((p) => p.id !== node.id));
-    } else if (node.type === "theme") {
-      setLocalTree(
-        localTree.map((p) => ({
-          ...p,
-          themes: (p.themes ?? []).filter((t) => t.id !== node.id),
-        }))
-      );
-    } else if (node.type === "subtheme") {
-      setLocalTree(
-        localTree.map((p) => ({
-          ...p,
-          themes: (p.themes ?? []).map((t) => ({
-            ...t,
-            subthemes: (t.subthemes ?? []).filter((s) => s.id !== node.id),
-          })),
-        }))
-      );
+  const handleDiscard = async () => {
+    const refreshed = await getFrameworkTree(versionId);
+    setTree(refreshed);
+    setDirty(false);
+  };
+
+  const handleDelete = (id: string, type: "pillar" | "theme" | "subtheme") => {
+    function remove(nodes: NormalizedFramework[]): NormalizedFramework[] {
+      return nodes
+        .filter((n) => n.id !== id)
+        .map((n) => ({
+          ...n,
+          themes: n.themes ? remove(n.themes) : undefined,
+          subthemes: n.subthemes ? remove(n.subthemes) : undefined,
+        }));
     }
-    setDirty(true);
-  }
+    setTree((prev) => remove(prev));
+    markDirty();
+  };
 
-  const renderNode = useCallback(
-    (node: NormalizedFramework): React.ReactNode => {
-      const isExpanded = expanded[node.id] ?? false;
-      const hasChildren =
-        (node.themes && node.themes.length > 0) ||
-        (node.subthemes && node.subthemes.length > 0);
+  const handleAddChild = (
+    parentId: string,
+    type: "pillar" | "theme" | "subtheme"
+  ) => {
+    // open the correct modal
+    if (type === "pillar") {
+      setShowPillarModal(true);
+    }
+    if (type === "theme") {
+      setThemeParent(parentId);
+      setShowThemeModal(true);
+    }
+    if (type === "subtheme") {
+      setSubthemeParent(parentId);
+      setShowSubthemeModal(true);
+    }
+  };
 
-      return (
-        <>
-          <tr key={node.id} className="border-t">
-            <td className="px-2 py-1 w-1/6">
-              <div className="flex items-center space-x-2">
-                {hasChildren && (
-                  <button
-                    onClick={() =>
-                      setExpanded((prev) => ({ ...prev, [node.id]: !isExpanded }))
-                    }
-                    className="text-gray-500"
-                  >
-                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  </button>
-                )}
-                <GripVertical size={14} className="text-gray-400" />
-                <TypeBadge type={node.type} />
-                <span className="text-xs text-gray-500">{node.ref_code}</span>
-              </div>
-            </td>
-            <td className="px-2 py-1 w-1/2">
-              <div className="font-medium">{node.name}</div>
-              {node.description && (
-                <div className="text-xs text-gray-500">{node.description}</div>
-              )}
-            </td>
-            <td className="px-2 py-1 w-1/6">{node.sort_order ?? "-"}</td>
-            <td className="px-2 py-1 w-1/6 text-right">
-              {editMode && (
-                <div className="flex justify-end space-x-2">
-                  <button className="text-gray-500 hover:text-blue-600" title="Edit">
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    className="text-gray-500 hover:text-red-600"
-                    title="Delete"
-                    onClick={() => handleDelete(node)}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                  {node.type !== "subtheme" && (
-                    <button
-                      className="text-gray-500 hover:text-green-600"
-                      title="Add child"
-                      onClick={() => {
-                        if (node.type === "pillar") setShowAddThemeFor(node.id);
-                        if (node.type === "theme") setShowAddSubthemeFor(node.id);
-                      }}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </td>
-          </tr>
-          {isExpanded && (
-            <>
-              {node.themes?.map((t) => renderNode(t))}
-              {node.subthemes?.map((s) => renderNode(s))}
-            </>
-          )}
-        </>
-      );
-    },
-    [expanded, editMode]
-  );
+  // ─────────────────────────────────────────────
+  // Drag & Drop
+  // ─────────────────────────────────────────────
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
+    setTree((prev) => {
+      const idxA = prev.findIndex((n) => n.id === active.id);
+      const idxB = prev.findIndex((n) => n.id === over.id);
+      if (idxA === -1 || idxB === -1) return prev;
+      const newOrder = arrayMove(prev, idxA, idxB).map((n, i) => ({
+        ...n,
+        sort_order: i + 1,
+      }));
+      markDirty();
+      return newOrder;
+    });
+  };
+
+  // ─────────────────────────────────────────────
+  // Modals
+  // ─────────────────────────────────────────────
+  const [showPillarModal, setShowPillarModal] = useState(false);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  const [showSubthemeModal, setShowSubthemeModal] = useState(false);
+  const [themeParent, setThemeParent] = useState<string | null>(null);
+  const [subthemeParent, setSubthemeParent] = useState<string | null>(null);
+
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
-    <div className="border rounded-md p-4">
+    <div>
       {/* Toolbar */}
-      <div className="flex justify-between mb-2">
-        <div className="space-x-2">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex gap-2">
           <button
-            className="px-2 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200"
+            onClick={() => setShowPillarModal(true)}
+            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
+          >
+            + Add Pillar
+          </button>
+          <button
             onClick={expandAll}
+            className="px-2 py-1 text-sm border rounded"
           >
             Expand All
           </button>
           <button
-            className="px-2 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200"
             onClick={collapseAll}
+            className="px-2 py-1 text-sm border rounded"
           >
             Collapse All
           </button>
         </div>
-        {editMode && (
-          <button
-            className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            onClick={() => setShowAddPillar(true)}
-          >
-            + Add Pillar
-          </button>
+        {dirty && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              className="px-3 py-1 rounded bg-green-600 text-white text-sm"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleDiscard}
+              className="px-3 py-1 rounded bg-gray-300 text-sm"
+            >
+              Discard
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Save/Discard bar */}
-      {editMode && dirty && (
-        <div className="flex space-x-2 mb-4">
-          <button
-            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-            onClick={handleSave}
-          >
-            Save
-          </button>
-          <button
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
-            onClick={handleDiscard}
-          >
-            Discard
-          </button>
-        </div>
-      )}
-
-      {/* Table */}
-      <table className="w-full text-sm border border-gray-200 rounded-md">
-        <thead className="bg-gray-50 text-gray-700">
-          <tr>
-            <th className="px-2 py-1 text-left w-1/6">Type / Ref Code</th>
-            <th className="px-2 py-1 text-left w-1/2">Name / Description</th>
-            <th className="px-2 py-1 text-left w-1/6">Sort Order</th>
-            <th className="px-2 py-1 text-right w-1/6">Actions</th>
-          </tr>
-        </thead>
-        <tbody>{displayTree.map((p) => renderNode(p))}</tbody>
-      </table>
+      {/* Tree Table */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={tree.map((n) => n.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="text-left text-sm text-gray-600">
+                <th className="w-[15%] px-2 py-1">Type / Ref</th>
+                <th className="w-[55%] px-2 py-1">Name / Description</th>
+                <th className="w-[10%] px-2 py-1">Sort</th>
+                <th className="w-[20%] px-2 py-1">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tree.map((node) => (
+                <FrameworkRow
+                  key={node.id}
+                  node={node}
+                  expanded={expanded}
+                  toggleExpand={toggleExpand}
+                  onDelete={handleDelete}
+                  onAddChild={handleAddChild}
+                />
+              ))}
+            </tbody>
+          </table>
+        </SortableContext>
+      </DndContext>
 
       {/* Modals */}
-      {showAddPillar && (
+      {showPillarModal && (
         <AddPillarModal
-          versionId={versionId}
-          existingPillarIds={localTree.map((n) => n.id)}
-          isPersisted
-          onClose={() => setShowAddPillar(false)}
-          onSubmit={() => {
-            setDirty(true);
-            setShowAddPillar(false);
+          onClose={() => setShowPillarModal(false)}
+          onAdded={(pillars) => {
+            setTree((prev) => [...prev, ...pillars]);
+            markDirty();
           }}
         />
       )}
-
-      {showAddThemeFor && (
+      {showThemeModal && themeParent && (
         <AddThemeModal
-          versionId={versionId}
-          parentPillarId={showAddThemeFor}
-          existingThemeIds={[]}
-          existingSubthemeIds={[]}
-          isPersisted
-          onClose={() => setShowAddThemeFor(null)}
-          onSubmit={() => {
-            setDirty(true);
-            setShowAddThemeFor(null);
+          parentId={themeParent}
+          onClose={() => setShowThemeModal(false)}
+          onAdded={(themes) => {
+            setTree((prev) =>
+              prev.map((p) =>
+                p.id === themeParent
+                  ? { ...p, themes: [...(p.themes ?? []), ...themes] }
+                  : p
+              )
+            );
+            markDirty();
           }}
         />
       )}
-
-      {showAddSubthemeFor && (
+      {showSubthemeModal && subthemeParent && (
         <AddSubthemeModal
-          versionId={versionId}
-          parentThemeId={showAddSubthemeFor}
-          existingSubthemeIds={[]}
-          isPersisted
-          onClose={() => setShowAddSubthemeFor(null)}
-          onSubmit={() => {
-            setDirty(true);
-            setShowAddSubthemeFor(null);
+          parentId={subthemeParent}
+          onClose={() => setShowSubthemeModal(false)}
+          onAdded={(subs) => {
+            setTree((prev) =>
+              prev.map((p) => ({
+                ...p,
+                themes: p.themes?.map((t) =>
+                  t.id === subthemeParent
+                    ? { ...t, subthemes: [...(t.subthemes ?? []), ...subs] }
+                    : t
+                ),
+              }))
+            );
+            markDirty();
           }}
         />
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Row Component
+// ─────────────────────────────────────────────
+function FrameworkRow({
+  node,
+  expanded,
+  toggleExpand,
+  onDelete,
+  onAddChild,
+}: {
+  node: NormalizedFramework;
+  expanded: Set<string>;
+  toggleExpand: (id: string) => void;
+  onDelete: (id: string, type: "pillar" | "theme" | "subtheme") => void;
+  onAddChild: (id: string, type: "pillar" | "theme" | "subtheme") => void;
+}) {
+  const hasChildren =
+    (node.type === "pillar" && node.themes && node.themes.length > 0) ||
+    (node.type === "theme" && node.subthemes && node.subthemes.length > 0);
+
+  return (
+    <>
+      <tr className="border-t">
+        <td className="px-2 py-1 text-sm">
+          <div className="flex items-center gap-1">
+            {hasChildren && (
+              <button onClick={() => toggleExpand(node.id)}>
+                {expanded.has(node.id) ? (
+                  <ChevronDown size={16} />
+                ) : (
+                  <ChevronRight size={16} />
+                )}
+              </button>
+            )}
+            <span className="font-mono text-xs">{node.ref_code}</span>
+          </div>
+        </td>
+        <td className="px-2 py-1">
+          <div className="text-sm font-medium">{node.name}</div>
+          {node.description && (
+            <div className="text-xs text-gray-500">{node.description}</div>
+          )}
+        </td>
+        <td className="px-2 py-1 text-sm">{node.sort_order}</td>
+        <td className="px-2 py-1 text-sm">
+          <div className="flex gap-2">
+            <button
+              className="text-blue-600 hover:underline"
+              onClick={() => onAddChild(node.id, node.type)}
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              className="text-gray-600 hover:underline"
+              onClick={() => alert("TODO: edit")}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              className="text-red-600 hover:underline"
+              onClick={() => onDelete(node.id, node.type)}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </td>
+      </tr>
+      {expanded.has(node.id) &&
+        node.type === "pillar" &&
+        node.themes?.map((theme) => (
+          <FrameworkRow
+            key={theme.id}
+            node={theme}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            onDelete={onDelete}
+            onAddChild={onAddChild}
+          />
+        ))}
+      {expanded.has(node.id) &&
+        node.type === "theme" &&
+        node.subthemes?.map((sub) => (
+          <FrameworkRow
+            key={sub.id}
+            node={sub}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            onDelete={onDelete}
+            onAddChild={onAddChild}
+          />
+        ))}
+    </>
   );
 }
