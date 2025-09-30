@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { useState } from "react";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
+import UploadAdminUnits from "@/components/country/UploadAdminUnits";
 import { Pencil, Trash2 } from "lucide-react";
 
 export default function CountryDetailPage({ params }: any) {
@@ -79,7 +80,7 @@ export default function CountryDetailPage({ params }: any) {
       />
 
       {/* Admin Units Table */}
-      <div className="border rounded-lg p-4 shadow-sm">
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold">Administrative Units</h2>
           <Button
@@ -130,6 +131,9 @@ export default function CountryDetailPage({ params }: any) {
           </table>
         </div>
       </div>
+
+      {/* Upload + Preview Admin Units */}
+      <UploadAdminUnits />
     </SidebarLayout>
   );
 }
