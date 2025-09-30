@@ -10,6 +10,7 @@ export default async function CountryDetailPage({ params }: any) {
   const resolved = params?.then ? await params : params;
   const id = resolved?.id ?? "unknown";
 
+  // Mock data (replace with Supabase later)
   const country = {
     id,
     name: "Philippines",
@@ -24,7 +25,7 @@ export default async function CountryDetailPage({ params }: any) {
 
   const headerProps = {
     title: country.name,
-    group: "country" as const,
+    group: "country-config" as const,
     description: "Baseline datasets and metadata for this country.",
     breadcrumbs: (
       <Breadcrumbs
@@ -56,6 +57,7 @@ export default async function CountryDetailPage({ params }: any) {
         </Button>
       </div>
 
+      {/* Edit Metadata Modal */}
       <EditMetadataModal
         open={openMeta}
         onClose={() => setOpenMeta(false)}
