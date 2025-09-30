@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const themes = await listThemeCatalogue(versionId, pillarId ?? undefined);
+    const themes = await listThemeCatalogue(versionId, pillarId || undefined);
     return NextResponse.json(themes);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
