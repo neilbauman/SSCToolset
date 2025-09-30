@@ -1,10 +1,10 @@
 import "./globals.css";
-import Sidebar from "@/components/ui/Sidebar";
 import type { Metadata } from "next";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 
 export const metadata: Metadata = {
   title: "SSC Toolset",
-  description: "Global Shelter Cluster – Shelter Severity Classification Toolset",
+  description: "Shelter and Settlements Severity Classification Toolset",
 };
 
 export default function RootLayout({
@@ -12,18 +12,17 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Default props for global header (can be overridden per page)
+  const defaultHeader = {
+    title: "Welcome",
+    group: "dashboard" as const,
+    description: "Shelter and Settlements Severity Classification Toolset",
+  };
+
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900">
-        <div className="flex min-h-screen">
-          {/* Sidebar */}
-          <Sidebar />
-
-          {/* Main Content */}
-          <main className="flex-1">
-            <div className="max-w-6xl mx-auto px-6 py-6">{children}</div>
-          </main>
-        </div>
+      <body className="antialiased">
+        <SidebarLayout headerProps={defaultHeader}>{children}</SidebarLayout>
       </body>
     </html>
   );
