@@ -1,237 +1,103 @@
 // lib/services/framework.ts
-import { supabaseServer } from "@/lib/supabase";
+import { supabase } from "../supabaseClient";
 import type {
+  FrameworkItem,
   FrameworkVersion,
   NormalizedFramework,
-  CataloguePillar,
-  CatalogueTheme,
-  CatalogueSubtheme,
-} from "@/lib/types/framework";
+} from "../types/framework";
 
-// ─────────────────────────────────────────────
-// Framework Versions
-// ─────────────────────────────────────────────
-export async function listVersions(): Promise<FrameworkVersion[]> {
-  const { data, error } = await supabaseServer
-    .from("framework_versions")
-    .select("id, name, status, created_at, updated_at")
-    .order("created_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  return data as FrameworkVersion[];
-}
-
-export async function createVersion(name: string): Promise<FrameworkVersion> {
-  const { data, error } = await supabaseServer
-    .from("framework_versions")
-    .insert({ name, status: "draft" })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as FrameworkVersion;
-}
-
-export async function cloneVersion(fromVersionId: string, newName: string) {
-  const { data, error } = await supabaseServer.rpc("clone_framework_version", {
-    v_from_version_id: fromVersionId,
-    v_new_name: newName,
-  });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function publishVersion(
-  versionId: string,
-  publish: boolean
-): Promise<FrameworkVersion> {
-  const { data, error } = await supabaseServer
-    .from("framework_versions")
-    .update({ status: publish ? "published" : "draft" })
-    .eq("id", versionId)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as FrameworkVersion;
-}
-
-export async function updateVersion(
-  id: string,
-  patch: { name?: string; status?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("framework_versions")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deleteVersion(id: string) {
-  const { error } = await supabaseServer
-    .from("framework_versions")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Framework Items (Tree Loader via RPC)
-// ─────────────────────────────────────────────
-export async function getVersionTree(versionId: string) {
-  const { data, error } = await supabaseServer.rpc("get_framework_tree", {
-    v_version_id: versionId,
-  });
-  if (error) throw new Error(error.message);
-  return data as NormalizedFramework[];
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Pillars
-// ─────────────────────────────────────────────
-export async function listPillarCatalogue(
+/**
+ * Load all items for a framework version
+ */
+export async function loadFrameworkVersionItems(
   versionId: string
-): Promise<CataloguePillar[]> {
-  const { data, error } = await supabaseServer.rpc("list_pillar_catalogue", {
-    v_version_id: versionId,
-  });
-  if (error) throw new Error(error.message);
-  return data as CataloguePillar[];
-}
-
-export async function createPillar(
-  name: string,
-  description?: string
-): Promise<CataloguePillar> {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .insert({ name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CataloguePillar;
-}
-
-export async function updatePillar(
-  id: string,
-  patch: { name?: string; description?: string }
-): Promise<CataloguePillar> {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CataloguePillar;
-}
-
-export async function deletePillar(id: string) {
-  const { error } = await supabaseServer
-    .from("pillar_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Themes
-// ─────────────────────────────────────────────
-export async function listThemeCatalogue(
-  pillarId: string
-): Promise<CatalogueTheme[]> {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .select("id, pillar_id, name, description, can_have_indicators, sort_order")
-    .eq("pillar_id", pillarId)
+): Promise<FrameworkItem[]> {
+  const { data, error } = await supabase
+    .from("framework_version_items")
+    .select(
+      `
+      id,
+      version_id,
+      sort_order,
+      ref_code,
+      pillar: pillar_id (
+        id, name, description, color, icon, can_have_indicators
+      ),
+      theme: theme_id (
+        id, name, description, color, icon, can_have_indicators
+      ),
+      subtheme: subtheme_id (
+        id, name, description, color, icon, can_have_indicators
+      )
+    `
+    )
+    .eq("version_id", versionId)
     .order("sort_order", { ascending: true });
+
   if (error) throw new Error(error.message);
-  return data as CatalogueTheme[];
+  return data as FrameworkItem[];
 }
 
-export async function createTheme(
-  pillarId: string,
-  name: string,
-  description?: string
-): Promise<CatalogueTheme> {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .insert({ pillar_id: pillarId, name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CatalogueTheme;
-}
+/**
+ * Replace all framework_version_items for a version
+ */
+export async function replaceFrameworkVersionItems(
+  versionId: string,
+  items: NormalizedFramework[]
+): Promise<void> {
+  // Flatten tree into rows for `framework_version_items`
+  const rows: any[] = [];
 
-export async function updateTheme(
-  id: string,
-  patch: { name?: string; description?: string }
-): Promise<CatalogueTheme> {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CatalogueTheme;
-}
+  let sortCounter = 1;
 
-export async function deleteTheme(id: string) {
-  const { error } = await supabaseServer
-    .from("theme_catalogue")
+  for (const pillar of items) {
+    rows.push({
+      version_id: versionId,
+      pillar_id: pillar.id,
+      theme_id: null,
+      subtheme_id: null,
+      ref_code: pillar.ref_code ?? `P${sortCounter}`,
+      sort_order: sortCounter++,
+    });
+
+    for (const theme of pillar.themes ?? []) {
+      rows.push({
+        version_id: versionId,
+        pillar_id: pillar.id,
+        theme_id: theme.id,
+        subtheme_id: null,
+        ref_code: theme.ref_code ?? `T${pillar.ref_code}.${theme.sort_order}`,
+        sort_order: sortCounter++,
+      });
+
+      for (const sub of theme.subthemes ?? []) {
+        rows.push({
+          version_id: versionId,
+          pillar_id: pillar.id,
+          theme_id: theme.id,
+          subtheme_id: sub.id,
+          ref_code:
+            sub.ref_code ?? `ST${pillar.ref_code}.${theme.sort_order}.${sub.sort_order}`,
+          sort_order: sortCounter++,
+        });
+      }
+    }
+  }
+
+  // Delete old items
+  const { error: delError } = await supabase
+    .from("framework_version_items")
     .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
+    .eq("version_id", versionId);
 
-// ─────────────────────────────────────────────
-// Catalogue: Subthemes
-// ─────────────────────────────────────────────
-export async function listSubthemeCatalogue(
-  themeId: string
-): Promise<CatalogueSubtheme[]> {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .select("id, theme_id, name, description, can_have_indicators, sort_order")
-    .eq("theme_id", themeId)
-    .order("sort_order", { ascending: true });
-  if (error) throw new Error(error.message);
-  return data as CatalogueSubtheme[];
-}
+  if (delError) throw new Error(delError.message);
 
-export async function createSubtheme(
-  themeId: string,
-  name: string,
-  description?: string
-): Promise<CatalogueSubtheme> {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .insert({ theme_id: themeId, name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CatalogueSubtheme;
-}
+  // Insert new
+  if (rows.length > 0) {
+    const { error: insError } = await supabase
+      .from("framework_version_items")
+      .insert(rows);
 
-export async function updateSubtheme(
-  id: string,
-  patch: { name?: string; description?: string }
-): Promise<CatalogueSubtheme> {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as CatalogueSubtheme;
-}
-
-export async function deleteSubtheme(id: string) {
-  const { error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
+    if (insError) throw new Error(insError.message);
+  }
 }
