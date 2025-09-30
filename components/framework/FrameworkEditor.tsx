@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import {
   getVersionTree,
   replaceFrameworkVersionItems,
-  deletePillar,
-  deleteTheme,
-  deleteSubtheme,
+  removePillarFromVersion,
+  removeThemeFromVersion,
+  removeSubthemeFromVersion,
 } from "@/lib/services/framework";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Plus, Pencil, Trash2 } from "lucide-react";
@@ -25,9 +25,13 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
 
-  const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(null);
+  const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(
+    null
+  );
   const [showAddPillar, setShowAddPillar] = useState(false);
-  const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(null);
+  const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(
+    null
+  );
   const [addSubthemeParent, setAddSubthemeParent] =
     useState<NormalizedFramework | null>(null);
 
@@ -79,17 +83,17 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
 
   async function handleDelete(node: NormalizedFramework) {
     const confirmed = confirm(
-      `Are you sure you want to delete "${node.name}" (${node.type})? This cannot be undone.`
+      `Are you sure you want to delete "${node.name}" (${node.type}) from this version?`
     );
     if (!confirmed) return;
 
     try {
       if (node.type === "pillar") {
-        await deletePillar(node.id);
+        await removePillarFromVersion(versionId, node.id);
       } else if (node.type === "theme") {
-        await deleteTheme(node.id);
+        await removeThemeFromVersion(versionId, node.id);
       } else if (node.type === "subtheme") {
-        await deleteSubtheme(node.id);
+        await removeSubthemeFromVersion(versionId, node.id);
       }
 
       // Update local tree
