@@ -1,39 +1,40 @@
 // components/framework/FrameworkEditor.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  ChevronRight,
-  ChevronDown,
-  Pencil,
-  Trash2,
-  Plus,
-} from "lucide-react";
-
-import type { NormalizedFramework } from "@/lib/types/framework";
-import {
-  replaceFrameworkVersionItems,
   getFrameworkTree,
+  replaceFrameworkVersionItems,
 } from "@/lib/services/framework";
+import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
 
 type Props = {
   versionId: string;
-  initialTree: NormalizedFramework[];
+  editable?: boolean;
 };
 
-export default function FrameworkEditor({ versionId, initialTree }: Props) {
-  const [tree, setTree] = useState<NormalizedFramework[]>(initialTree);
-  const [expanded, setExpanded] = useState<Set<string>>(
-    new Set(tree.map((n) => n.id))
-  );
+export default function FrameworkEditor({ versionId, editable = true }: Props) {
+  const [tree, setTree] = useState<NormalizedFramework[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
+  const [showAddPillar, setShowAddPillar] = useState(false);
+  const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(null);
+  const [addSubthemeParent, setAddSubthemeParent] = useState<NormalizedFramework | null>(null);
 
-  // ─────────────────────────────────────────────
-  // Expand / Collapse
-  // ─────────────────────────────────────────────
+  useEffect(() => {
+    loadTree();
+  }, [versionId]);
+
+  const loadTree = async () => {
+    const data = await getFrameworkTree(versionId);
+    setTree(data);
+    setExpanded(new Set(data.map((n) => n.id))); // default expanded
+    setDirty(false);
+  };
+
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
       const copy = new Set(prev);
@@ -43,288 +44,200 @@ export default function FrameworkEditor({ versionId, initialTree }: Props) {
     });
   };
 
-  const expandAll = () =>
-    setExpanded(new Set(flattenTree(tree).map((n) => n.id)));
-  const collapseAll = () => setExpanded(new Set());
-
-  const flattenTree = (nodes: NormalizedFramework[]): NormalizedFramework[] => {
-    let result: NormalizedFramework[] = [];
-    for (const node of nodes) {
-      result.push(node);
-      if (node.themes) result = result.concat(flattenTree(node.themes));
-      if (node.subthemes)
-        result = result.concat(flattenTree(node.subthemes));
-    }
-    return result;
+  const expandAll = () => {
+    const allIds: string[] = [];
+    const walk = (nodes: NormalizedFramework[]) => {
+      for (const n of nodes) {
+        allIds.push(n.id);
+        if (n.themes) walk(n.themes);
+        if (n.subthemes) walk(n.subthemes);
+      }
+    };
+    walk(tree);
+    setExpanded(new Set(allIds));
   };
 
-  const markDirty = () => setDirty(true);
+  const collapseAll = () => setExpanded(new Set());
 
-  // ─────────────────────────────────────────────
-  // Actions
-  // ─────────────────────────────────────────────
   const handleSave = async () => {
     await replaceFrameworkVersionItems(versionId, tree);
-    const refreshed = await getFrameworkTree(versionId);
-    setTree(refreshed);
-    setDirty(false);
+    await loadTree();
   };
 
   const handleDiscard = async () => {
-    const refreshed = await getFrameworkTree(versionId);
-    setTree(refreshed);
-    setDirty(false);
+    await loadTree();
   };
 
-  const handleDelete = (id: string, type: "pillar" | "theme" | "subtheme") => {
-    function remove(nodes: NormalizedFramework[]): NormalizedFramework[] {
-      return nodes
-        .filter((n) => n.id !== id)
-        .map((n) => ({
-          ...n,
-          themes: n.themes ? remove(n.themes) : undefined,
-          subthemes: n.subthemes ? remove(n.subthemes) : undefined,
-        }));
-    }
-    setTree((prev) => remove(prev));
-    markDirty();
+  const renderNode = (node: NormalizedFramework, depth: number) => {
+    const isExpanded = expanded.has(node.id);
+    const hasChildren =
+      (node.type === "pillar" && node.themes && node.themes.length > 0) ||
+      (node.type === "theme" && node.subthemes && node.subthemes.length > 0);
+
+    return (
+      <React.Fragment key={node.id}>
+        <tr>
+          <td className="px-2 py-1 w-[20%]">
+            <div className="flex items-center gap-2" style={{ marginLeft: depth * 16 }}>
+              {hasChildren && (
+                <button
+                  onClick={() => toggleExpand(node.id)}
+                  className="text-xs text-blue-600"
+                >
+                  {isExpanded ? "−" : "+"}
+                </button>
+              )}
+              <span className="font-semibold">{node.ref_code}</span>
+            </div>
+          </td>
+          <td className="px-2 py-1 w-[40%]">
+            <div>{node.name}</div>
+            {node.description && (
+              <div className="text-xs text-gray-500">{node.description}</div>
+            )}
+          </td>
+          <td className="px-2 py-1 w-[10%]">{node.sort_order}</td>
+          <td className="px-2 py-1 w-[30%]">
+            {editable && (
+              <div className="flex gap-2">
+                <button className="text-blue-600 text-sm">Edit</button>
+                <button className="text-red-600 text-sm">Delete</button>
+                {node.type === "pillar" && (
+                  <button
+                    className="text-green-600 text-sm"
+                    onClick={() => setAddThemeParent(node)}
+                  >
+                    Add Theme
+                  </button>
+                )}
+                {node.type === "theme" && (
+                  <button
+                    className="text-green-600 text-sm"
+                    onClick={() => setAddSubthemeParent(node)}
+                  >
+                    Add Subtheme
+                  </button>
+                )}
+              </div>
+            )}
+          </td>
+        </tr>
+
+        {isExpanded && node.themes &&
+          node.themes.map((t) => renderNode(t, depth + 1))}
+
+        {isExpanded && node.subthemes &&
+          node.subthemes.map((s) => renderNode(s, depth + 1))}
+      </React.Fragment>
+    );
   };
 
-  const handleAddChild = (
-    parentId: string,
-    type: "pillar" | "theme" | "subtheme"
-  ) => {
-    if (type === "pillar") {
-      setShowPillarModal(true);
-    }
-    if (type === "theme") {
-      setThemeParent(parentId);
-      setShowThemeModal(true);
-    }
-    if (type === "subtheme") {
-      setSubthemeParent(parentId);
-      setShowSubthemeModal(true);
-    }
-  };
-
-  // ─────────────────────────────────────────────
-  // Modals
-  // ─────────────────────────────────────────────
-  const [showPillarModal, setShowPillarModal] = useState(false);
-  const [showThemeModal, setShowThemeModal] = useState(false);
-  const [showSubthemeModal, setShowSubthemeModal] = useState(false);
-  const [themeParent, setThemeParent] = useState<string | null>(null);
-  const [subthemeParent, setSubthemeParent] = useState<string | null>(null);
-
-  // ─────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────
   return (
-    <div>
+    <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowPillarModal(true)}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
-          >
-            + Add Pillar
-          </button>
-          <button
-            onClick={expandAll}
-            className="px-2 py-1 text-sm border rounded"
-          >
-            Expand All
-          </button>
-          <button
-            onClick={collapseAll}
-            className="px-2 py-1 text-sm border rounded"
-          >
-            Collapse All
-          </button>
-        </div>
-        {dirty && (
+      {editable && (
+        <div className="flex justify-between items-center">
           <div className="flex gap-2">
             <button
-              onClick={handleSave}
-              className="px-3 py-1 rounded bg-green-600 text-white text-sm"
+              onClick={() => setShowAddPillar(true)}
+              className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
             >
-              Save
+              + Add Pillar
             </button>
             <button
-              onClick={handleDiscard}
-              className="px-3 py-1 rounded bg-gray-300 text-sm"
+              onClick={expandAll}
+              className="px-2 py-1 rounded bg-gray-200 text-sm"
             >
-              Discard
+              Expand All
+            </button>
+            <button
+              onClick={collapseAll}
+              className="px-2 py-1 rounded bg-gray-200 text-sm"
+            >
+              Collapse All
             </button>
           </div>
-        )}
-      </div>
+          {dirty && (
+            <div className="flex gap-2">
+              <button
+                onClick={handleSave}
+                className="px-3 py-1 rounded bg-green-600 text-white text-sm"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleDiscard}
+                className="px-3 py-1 rounded bg-red-600 text-white text-sm"
+              >
+                Discard
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Tree Table */}
-      <table className="w-full border-collapse">
+      {/* Table */}
+      <table className="w-full border-collapse border text-sm">
         <thead>
-          <tr className="text-left text-sm text-gray-600">
-            <th className="w-[15%] px-2 py-1">Type / Ref</th>
-            <th className="w-[55%] px-2 py-1">Name / Description</th>
-            <th className="w-[10%] px-2 py-1">Sort</th>
-            <th className="w-[20%] px-2 py-1">Actions</th>
+          <tr className="bg-gray-100">
+            <th className="px-2 py-1 text-left w-[20%]">Type / Ref Code</th>
+            <th className="px-2 py-1 text-left w-[40%]">Name / Description</th>
+            <th className="px-2 py-1 text-left w-[10%]">Sort Order</th>
+            <th className="px-2 py-1 text-left w-[30%]">Actions</th>
           </tr>
         </thead>
-        <tbody>
-          {tree.map((node) => (
-            <FrameworkRow
-              key={node.id}
-              node={node}
-              expanded={expanded}
-              toggleExpand={toggleExpand}
-              onDelete={handleDelete}
-              onAddChild={handleAddChild}
-            />
-          ))}
-        </tbody>
+        <tbody>{tree.map((p) => renderNode(p, 0))}</tbody>
       </table>
 
       {/* Modals */}
-      {showPillarModal && (
+      {showAddPillar && (
         <AddPillarModal
-          onClose={() => setShowPillarModal(false)}
-          onAdded={(pillars) => {
-            setTree((prev) => [...prev, ...pillars]);
-            markDirty();
+          versionId={versionId}
+          existing={tree}
+          onClose={() => setShowAddPillar(false)}
+          onAdd={(pillar) => {
+            setTree((prev) => [...prev, pillar]);
+            setDirty(true);
           }}
         />
       )}
-      {showThemeModal && themeParent && (
+      {addThemeParent && (
         <AddThemeModal
-          parentId={themeParent}
-          onClose={() => setShowThemeModal(false)}
-          onAdded={(themes) => {
+          versionId={versionId}
+          parent={addThemeParent}
+          onClose={() => setAddThemeParent(null)}
+          onAdd={(theme) => {
             setTree((prev) =>
               prev.map((p) =>
-                p.id === themeParent
-                  ? { ...p, themes: [...(p.themes ?? []), ...themes] }
+                p.id === addThemeParent.id
+                  ? { ...p, themes: [...(p.themes || []), theme] }
                   : p
               )
             );
-            markDirty();
+            setDirty(true);
           }}
         />
       )}
-      {showSubthemeModal && subthemeParent && (
+      {addSubthemeParent && (
         <AddSubthemeModal
-          parentId={subthemeParent}
-          onClose={() => setShowSubthemeModal(false)}
-          onAdded={(subs) => {
+          versionId={versionId}
+          parent={addSubthemeParent}
+          onClose={() => setAddSubthemeParent(null)}
+          onAdd={(sub) => {
             setTree((prev) =>
               prev.map((p) => ({
                 ...p,
                 themes: p.themes?.map((t) =>
-                  t.id === subthemeParent
-                    ? { ...t, subthemes: [...(t.subthemes ?? []), ...subs] }
+                  t.id === addSubthemeParent.id
+                    ? { ...t, subthemes: [...(t.subthemes || []), sub] }
                     : t
                 ),
               }))
             );
-            markDirty();
+            setDirty(true);
           }}
         />
       )}
     </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// Row Component
-// ─────────────────────────────────────────────
-function FrameworkRow({
-  node,
-  expanded,
-  toggleExpand,
-  onDelete,
-  onAddChild,
-}: {
-  node: NormalizedFramework;
-  expanded: Set<string>;
-  toggleExpand: (id: string) => void;
-  onDelete: (id: string, type: "pillar" | "theme" | "subtheme") => void;
-  onAddChild: (id: string, type: "pillar" | "theme" | "subtheme") => void;
-}) {
-  const hasChildren =
-    (node.type === "pillar" && node.themes && node.themes.length > 0) ||
-    (node.type === "theme" && node.subthemes && node.subthemes.length > 0);
-
-  return (
-    <>
-      <tr className="border-t">
-        <td className="px-2 py-1 text-sm">
-          <div className="flex items-center gap-1">
-            {hasChildren && (
-              <button onClick={() => toggleExpand(node.id)}>
-                {expanded.has(node.id) ? (
-                  <ChevronDown size={16} />
-                ) : (
-                  <ChevronRight size={16} />
-                )}
-              </button>
-            )}
-            <span className="font-mono text-xs">{node.ref_code}</span>
-          </div>
-        </td>
-        <td className="px-2 py-1">
-          <div className="text-sm font-medium">{node.name}</div>
-          {node.description && (
-            <div className="text-xs text-gray-500">{node.description}</div>
-          )}
-        </td>
-        <td className="px-2 py-1 text-sm">{node.sort_order}</td>
-        <td className="px-2 py-1 text-sm">
-          <div className="flex gap-2">
-            <button
-              className="text-blue-600 hover:underline"
-              onClick={() => onAddChild(node.id, node.type)}
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              className="text-gray-600 hover:underline"
-              onClick={() => alert("TODO: edit")}
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              className="text-red-600 hover:underline"
-              onClick={() => onDelete(node.id, node.type)}
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        </td>
-      </tr>
-      {expanded.has(node.id) &&
-        node.type === "pillar" &&
-        node.themes?.map((theme) => (
-          <FrameworkRow
-            key={theme.id}
-            node={theme}
-            expanded={expanded}
-            toggleExpand={toggleExpand}
-            onDelete={onDelete}
-            onAddChild={onAddChild}
-          />
-        ))}
-      {expanded.has(node.id) &&
-        node.type === "theme" &&
-        node.subthemes?.map((sub) => (
-          <FrameworkRow
-            key={sub.id}
-            node={sub}
-            expanded={expanded}
-            toggleExpand={toggleExpand}
-            onDelete={onDelete}
-            onAddChild={onAddChild}
-          />
-        ))}
-    </>
   );
 }
