@@ -1,121 +1,172 @@
+// components/framework/AddThemeModal.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import Modal from "../ui/Modal";
-import { listThemeCatalogue } from "@/lib/services/framework";
-import type { CatalogueTheme } from "@/lib/types/framework";
+import React, { useEffect, useState } from "react";
+import {
+  listThemeCatalogue,
+  createTheme,
+} from "@/lib/services/framework";
+import type {
+  CatalogueTheme,
+  NormalizedFramework,
+} from "@/lib/types/framework";
 
 type Props = {
-  versionId: string; // kept for parity with other modals (not used by listThemeCatalogue)
-  parentPillarId: string;
-  existingThemeIds: string[];
-  existingSubthemeIds: string[]; // reserved for future "include children" UX
-  isPersisted: boolean;
+  parentId: string; // pillar id
   onClose: () => void;
-  onSubmit: (
-    payload:
-      | { mode: "catalogue"; items: CatalogueTheme[] }
-      | { mode: "new"; name: string; description?: string }
-  ) => void;
+  onAdded: (themes: NormalizedFramework[]) => void;
+  existingIds?: string[];
 };
 
 export default function AddThemeModal({
-  parentPillarId,
-  existingThemeIds,
-  isPersisted,
+  parentId,
   onClose,
-  onSubmit,
+  onAdded,
+  existingIds = [],
 }: Props) {
-  const [themes, setThemes] = useState<CatalogueTheme[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
+  const [catalogue, setCatalogue] = useState<CatalogueTheme[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [includeChildren, setIncludeChildren] = useState(true);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   useEffect(() => {
     async function load() {
-      try {
-        // ✅ listThemeCatalogue now only takes pillarId
-        const data = await listThemeCatalogue(parentPillarId);
-        setThemes(data);
-      } catch (err) {
-        console.error("Error loading theme catalogue", err);
-      }
+      const themes = await listThemeCatalogue("", parentId);
+      setCatalogue(themes);
     }
-    if (isPersisted) load();
-  }, [parentPillarId, isPersisted]);
+    load();
+  }, [parentId]);
 
-  function toggle(id: string, checked: boolean) {
-    setSelected((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
-  }
-
-  function handleSubmit() {
-    if (selected.length > 0) {
-      const items = themes.filter((t) => selected.includes(t.id));
-      onSubmit({ mode: "catalogue", items });
+  const handleSubmit = async () => {
+    if (tab === "catalogue") {
+      const themes = catalogue
+        .filter((t) => selected.has(t.id))
+        .map<NormalizedFramework>((t, idx) => ({
+          id: t.id,
+          type: "theme",
+          name: t.name,
+          description: t.description ?? "",
+          color: null,
+          icon: null,
+          sort_order: idx + 1,
+          ref_code: `T${idx + 1}`,
+          subthemes: includeChildren ? [] : [],
+        }));
+      onAdded(themes);
     } else {
-      onSubmit({ mode: "new", name, description });
+      const created = await createTheme(parentId, name, description);
+      const newTheme: NormalizedFramework = {
+        id: created.id,
+        type: "theme",
+        name: created.name,
+        description: created.description ?? "",
+        color: null,
+        icon: null,
+        sort_order: 999,
+        ref_code: "T?",
+        subthemes: [],
+      };
+      onAdded([newTheme]);
     }
     onClose();
-  }
+  };
 
   return (
-    <Modal open onClose={onClose}>
-      <h2 className="text-lg font-semibold mb-4">Add Theme</h2>
-
-      {isPersisted ? (
-        <div className="space-y-2 max-h-80 overflow-auto pr-1">
-          {themes.map((t) => {
-            const disabled = existingThemeIds.includes(t.id);
-            return (
-              <label key={t.id} className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  value={t.id}
-                  disabled={disabled}
-                  onChange={(e) => toggle(t.id, e.target.checked)}
-                  className="mt-1"
-                />
-                <div>
-                  <div className={disabled ? "text-gray-400" : "text-gray-900"}>
-                    {t.name}
-                  </div>
-                  {t.description && (
-                    <div className="text-xs text-gray-500">{t.description}</div>
-                  )}
-                </div>
-              </label>
-            );
-          })}
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+      <div className="bg-white rounded-lg p-4 w-[500px]">
+        <h2 className="text-lg font-semibold mb-3">Add Theme</h2>
+        <div className="flex gap-2 mb-3">
+          <button
+            className={`px-3 py-1 rounded ${
+              tab === "catalogue" ? "bg-blue-600 text-white" : "border"
+            }`}
+            onClick={() => setTab("catalogue")}
+          >
+            From Catalogue
+          </button>
+          <button
+            className={`px-3 py-1 rounded ${
+              tab === "new" ? "bg-blue-600 text-white" : "border"
+            }`}
+            onClick={() => setTab("new")}
+          >
+            New Theme
+          </button>
         </div>
-      ) : (
-        <div className="space-y-3">
-          <input
-            type="text"
-            placeholder="Theme name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border rounded p-2"
-          />
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full border rounded p-2"
-          />
-        </div>
-      )}
 
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="px-3 py-1 text-sm bg-gray-200 rounded">
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          className="px-3 py-1 text-sm bg-blue-600 text-white rounded"
-        >
-          Add
-        </button>
+        {tab === "catalogue" && (
+          <div className="max-h-64 overflow-y-auto border rounded p-2">
+            {catalogue.map((t) => {
+              const disabled = existingIds.includes(t.id);
+              return (
+                <label
+                  key={t.id}
+                  className={`flex items-center gap-2 p-1 ${
+                    disabled ? "opacity-50" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={selected.has(t.id)}
+                    onChange={(e) => {
+                      const copy = new Set(selected);
+                      if (e.target.checked) copy.add(t.id);
+                      else copy.delete(t.id);
+                      setSelected(copy);
+                    }}
+                  />
+                  <span>{t.name}</span>
+                </label>
+              );
+            })}
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={includeChildren}
+                onChange={(e) => setIncludeChildren(e.target.checked)}
+              />
+              <span className="text-sm">Include Subthemes</span>
+            </div>
+          </div>
+        )}
+
+        {tab === "new" && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="border w-full px-2 py-1 rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="border w-full px-2 py-1 rounded"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end mt-4 gap-2">
+          <button onClick={onClose} className="px-3 py-1 border rounded">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-3 py-1 bg-blue-600 text-white rounded"
+          >
+            Add
+          </button>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
