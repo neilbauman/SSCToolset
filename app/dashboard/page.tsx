@@ -1,8 +1,8 @@
-import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import ToolCard from "@/components/ui/ToolCard";
 import { groupThemes } from "@/lib/theme";
 import { Info, Settings, Layers, Globe, BarChart } from "lucide-react";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -47,15 +47,15 @@ const groups = [
 ];
 
 export default function DashboardPage() {
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        group="dashboard"
-        description="Global Shelter Cluster – Shelter Severity Classification Toolset"
-        breadcrumbs={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
-      />
+  const headerProps = {
+    title: "Dashboard",
+    group: "dashboard" as const,
+    description: "Global Shelter Cluster – Shelter Severity Classification Toolset",
+    breadcrumbs: <Breadcrumbs items={[{ label: "Dashboard" }]} />,
+  };
 
+  return (
+    <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
         {groups.map((g) => {
           const theme = groupThemes[g.id as keyof typeof groupThemes];
@@ -73,6 +73,6 @@ export default function DashboardPage() {
           );
         })}
       </div>
-    </div>
+    </SidebarLayout>
   );
 }
