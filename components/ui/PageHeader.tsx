@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
   group: GroupKey;
   /** Short description text shown under the page title */
   description?: string;
-  /** Optional tool name (legacy support) */
+  /** Optional tool name (legacy support, deprecated) */
   tool?: string;
   /** Breadcrumbs element */
   breadcrumbs?: React.ReactNode;
@@ -20,10 +20,19 @@ export default function PageHeader({
   title,
   group,
   description,
-  tool, // keep in props so old pages don’t break
+  tool,
   breadcrumbs,
 }: Props) {
   const theme = groupThemes[group];
+
+  // Warn if legacy `tool` is used
+  useEffect(() => {
+    if (tool) {
+      console.warn(
+        `[PageHeader] The "tool" prop is deprecated. Use "title" instead. (Received: "${tool}")`
+      );
+    }
+  }, [tool]);
 
   return (
     <div className="mb-6">
@@ -41,7 +50,7 @@ export default function PageHeader({
 
       {/* Page Title */}
       <h2 className="mt-1 text-xl font-semibold text-gray-900">
-        {title || tool /* fallback if tool was used */}
+        {title || tool /* fallback if tool was passed */}
       </h2>
 
       {/* Description */}
