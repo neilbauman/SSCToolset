@@ -31,7 +31,6 @@ export type FrameworkItem = {
   subtheme: FrameworkEntity | null;
 };
 
-// Normalized in-memory tree format
 export type NormalizedFramework = {
   id: string;
   type: "pillar" | "theme" | "subtheme";
@@ -46,31 +45,33 @@ export type NormalizedFramework = {
   subthemes?: NormalizedFramework[];
 };
 
-// --- Catalogue-specific types ---
-// These map directly to the catalogue tables in Supabase.
-
+// ───────────────────────────────
+// Catalogue types
+// ───────────────────────────────
 export type CataloguePillar = {
   id: string;
   name: string;
-  description: string | null;
+  description?: string;
   can_have_indicators?: boolean;
-  sort_order?: number; // default order in catalogue
+  sort_order?: number;
+  themes?: CatalogueTheme[];
 };
 
 export type CatalogueTheme = {
   id: string;
-  pillar_id: string | null;
+  pillar_id?: string;
   name: string;
-  description: string | null;
+  description?: string;
   can_have_indicators?: boolean;
   sort_order?: number;
+  subthemes?: CatalogueSubtheme[];
 };
 
 export type CatalogueSubtheme = {
   id: string;
-  theme_id: string | null;
+  theme_id?: string;
   name: string;
-  description: string | null;
+  description?: string;
   can_have_indicators?: boolean;
   sort_order?: number;
 };
