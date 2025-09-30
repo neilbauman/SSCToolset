@@ -1,26 +1,17 @@
-// components/framework/AddSubthemeModal.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  listSubthemeCatalogue,
-  createSubtheme,
-} from "@/lib/services/framework";
+import { listSubthemeCatalogue, createSubtheme } from "@/lib/services/framework";
 import type { NormalizedFramework, CatalogueSubtheme } from "@/lib/types/framework";
 
 type Props = {
   versionId: string;
-  parent: NormalizedFramework; // parent Theme
+  parent: NormalizedFramework; // Theme
   onClose: () => void;
   onAdd: (subtheme: NormalizedFramework) => void;
 };
 
-export default function AddSubthemeModal({
-  versionId,
-  parent,
-  onClose,
-  onAdd,
-}: Props) {
+export default function AddSubthemeModal({ versionId, parent, onClose, onAdd }: Props) {
   const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
   const [catalogue, setCatalogue] = useState<CatalogueSubtheme[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -28,9 +19,7 @@ export default function AddSubthemeModal({
   const [description, setDescription] = useState("");
 
   useEffect(() => {
-    listSubthemeCatalogue(versionId, parent.id)
-      .then(setCatalogue)
-      .catch(console.error);
+    listSubthemeCatalogue(versionId, parent.id).then(setCatalogue).catch(console.error);
   }, [versionId, parent.id]);
 
   const handleSubmit = async () => {
@@ -90,10 +79,7 @@ export default function AddSubthemeModal({
             {catalogue.map((c) => {
               const already = parent.subthemes?.some((s) => s.id === c.id);
               return (
-                <label
-                  key={c.id}
-                  className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}
-                >
+                <label key={c.id} className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}>
                   <input
                     type="checkbox"
                     disabled={already}
@@ -129,18 +115,8 @@ export default function AddSubthemeModal({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-gray-200 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
-          >
-            Add
-          </button>
+          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Add</button>
         </div>
       </div>
     </div>
