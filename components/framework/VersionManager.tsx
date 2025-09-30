@@ -11,12 +11,22 @@ import {
 } from "@/lib/services/framework";
 import type { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
+import {
+  Edit3,
+  Copy,
+  Trash2,
+  Upload,
+  Plus,
+  EyeOff,
+  Eye,
+} from "lucide-react";
 
 export default function VersionManager() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [showPanel, setShowPanel] = useState(true);
 
   useEffect(() => {
     refreshVersions();
@@ -40,7 +50,7 @@ export default function VersionManager() {
       const newVersion = await createVersion("Untitled Framework");
       await refreshVersions();
       setCurrentId(newVersion.id);
-      setEditMode(false);
+      setEditMode(true);
     } catch (err: any) {
       console.error("Error creating version:", err.message);
     }
@@ -51,7 +61,7 @@ export default function VersionManager() {
       const newVersion = await cloneVersion(id, newName);
       await refreshVersions();
       setCurrentId(newVersion.id);
-      setEditMode(false);
+      setEditMode(true);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
     }
@@ -83,85 +93,136 @@ export default function VersionManager() {
 
   return (
     <div className="space-y-6">
-      {/* Top: Version list + actions */}
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Framework Versions</h2>
+      {/* Header controls */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold">Framework Versions</h2>
+        <div className="flex gap-2">
           <button
-            onClick={handleCreate}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
+            onClick={() => setShowPanel((prev) => !prev)}
+            className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
           >
-            + New Version
+            {showPanel ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showPanel ? "Hide Versioning" : "Show Versioning"}
           </button>
-        </div>
-
-        <ul className="border rounded divide-y">
-          {versions.map((v) => (
-            <li
-              key={v.id}
-              className={`p-2 flex justify-between items-center cursor-pointer ${
-                v.id === currentId ? "bg-blue-50" : ""
-              }`}
-              onClick={() => {
-                setCurrentId(v.id);
-                setEditMode(false);
-              }}
+          <button
+            onClick={() => setEditMode((prev) => !prev)}
+            className={`flex items-center gap-1 px-2 py-1 text-sm rounded ${
+              editMode ? "bg-blue-600 text-white" : "bg-gray-200 hover:bg-gray-300"
+            }`}
+          >
+            <Edit3 size={16} />
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+          </button>
+          {editMode && (
+            <button
+              onClick={handleCreate}
+              className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700"
             >
-              <div>
-                <div className="font-medium">{v.name}</div>
-                <div className="text-xs text-gray-500">
-                  {v.status} • {new Date(v.created_at).toLocaleString()}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  className="text-blue-600 text-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleClone(v.id, `${v.name} (copy)`);
-                  }}
-                >
-                  Clone
-                </button>
-                <button
-                  className="text-red-600 text-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(v.id);
-                  }}
-                >
-                  Delete
-                </button>
-                <button
-                  className="text-green-600 text-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePublish(v.id, v.status !== "published");
-                  }}
-                >
-                  {v.status === "published" ? "Unpublish" : "Publish"}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              <Plus size={16} />
+              Add
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Bottom: Framework Editor */}
+      {/* Versions Table */}
+      {showPanel && (
+        <table className="w-full border text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="text-left px-2 py-1">Name</th>
+              <th className="text-left px-2 py-1">Status</th>
+              <th className="text-left px-2 py-1">Created</th>
+              <th className="text-left px-2 py-1">Last Revised</th>
+              {editMode && <th className="text-left px-2 py-1">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {versions.map((v) => (
+              <tr
+                key={v.id}
+                className={`cursor-pointer ${
+                  v.id === currentId ? "bg-blue-50" : ""
+                }`}
+                onClick={() => {
+                  setCurrentId(v.id);
+                }}
+              >
+                <td className="px-2 py-1 font-medium">{v.name}</td>
+                <td className="px-2 py-1">
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs ${
+                      v.status === "published"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-yellow-100 text-yellow-800"
+                    }`}
+                  >
+                    {v.status}
+                  </span>
+                </td>
+                <td className="px-2 py-1">
+                  {new Date(v.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-2 py-1">
+                  {v.updated_at
+                    ? new Date(v.updated_at).toLocaleDateString()
+                    : "-"}
+                </td>
+                {editMode && (
+                  <td className="px-2 py-1">
+                    <div className="flex gap-2 text-gray-600">
+                      <button
+                        title="Edit"
+                        className="hover:text-blue-600"
+                        // TODO: Wire edit modal
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button
+                        title="Clone"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleClone(v.id, `${v.name} (copy)`);
+                        }}
+                        className="hover:text-blue-600"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(v.id);
+                        }}
+                        className="hover:text-red-600"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      <button
+                        title={
+                          v.status === "published" ? "Unpublish" : "Publish"
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePublish(v.id, v.status !== "published");
+                        }}
+                        className="hover:text-green-600"
+                      >
+                        <Upload size={16} />
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* Framework Editor below */}
       {currentId && (
         <div className="border-t pt-4">
-          {!editMode ? (
-            <div className="flex justify-center">
-              <button
-                onClick={() => setEditMode(true)}
-                className="px-4 py-2 rounded bg-blue-600 text-white text-sm"
-              >
-                Enter Edit Mode
-              </button>
-            </div>
-          ) : (
-            <FrameworkEditor versionId={currentId} editable={true} />
-          )}
+          <FrameworkEditor versionId={currentId} editable={editMode} />
         </div>
       )}
     </div>
