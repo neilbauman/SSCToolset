@@ -1,4 +1,3 @@
-// lib/services/framework.ts
 import { supabaseServer } from "@/lib/supabase";
 import type {
   FrameworkVersion,
@@ -91,7 +90,7 @@ export async function replaceFrameworkVersionItems(
   items: NormalizedFramework[]
 ): Promise<void> {
   const rows: any[] = [];
-  let pillarIndex = 1;
+  let sortCounter = 1;
 
   for (const pillar of items) {
     rows.push({
@@ -99,22 +98,20 @@ export async function replaceFrameworkVersionItems(
       pillar_id: pillar.id,
       theme_id: null,
       subtheme_id: null,
-      ref_code: pillar.ref_code ?? `P${pillarIndex}`,
-      sort_order: pillarIndex,
+      ref_code: pillar.ref_code ?? `P${sortCounter}`,
+      sort_order: sortCounter++,
     });
 
-    let themeIndex = 1;
     for (const theme of pillar.themes ?? []) {
       rows.push({
         version_id: versionId,
         pillar_id: pillar.id,
         theme_id: theme.id,
         subtheme_id: null,
-        ref_code: theme.ref_code ?? `T${pillarIndex}.${themeIndex}`,
-        sort_order: themeIndex,
+        ref_code: theme.ref_code ?? `T${pillar.ref_code}.${theme.sort_order}`,
+        sort_order: sortCounter++,
       });
 
-      let subIndex = 1;
       for (const sub of theme.subthemes ?? []) {
         rows.push({
           version_id: versionId,
@@ -122,14 +119,12 @@ export async function replaceFrameworkVersionItems(
           theme_id: theme.id,
           subtheme_id: sub.id,
           ref_code:
-            sub.ref_code ?? `ST${pillarIndex}.${themeIndex}.${subIndex}`,
-          sort_order: subIndex,
+            sub.ref_code ??
+            `ST${pillar.ref_code}.${theme.sort_order}.${sub.sort_order}`,
+          sort_order: sortCounter++,
         });
-        subIndex++;
       }
-      themeIndex++;
     }
-    pillarIndex++;
   }
 
   const { error: delError } = await supabaseServer
@@ -144,6 +139,45 @@ export async function replaceFrameworkVersionItems(
       .insert(rows);
     if (insError) throw new Error(insError.message);
   }
+}
+
+// ─────────────────────────────────────────────
+// Remove Items from Version (safe deletes)
+// ─────────────────────────────────────────────
+export async function removePillarFromVersion(
+  versionId: string,
+  pillarId: string
+) {
+  const { error } = await supabaseServer
+    .from("framework_version_items")
+    .delete()
+    .eq("version_id", versionId)
+    .eq("pillar_id", pillarId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function removeThemeFromVersion(versionId: string, themeId: string) {
+  const { error } = await supabaseServer
+    .from("framework_version_items")
+    .delete()
+    .eq("version_id", versionId)
+    .eq("theme_id", themeId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function removeSubthemeFromVersion(
+  versionId: string,
+  subthemeId: string
+) {
+  const { error } = await supabaseServer
+    .from("framework_version_items")
+    .delete()
+    .eq("version_id", versionId)
+    .eq("subtheme_id", subthemeId);
+
+  if (error) throw new Error(error.message);
 }
 
 // ─────────────────────────────────────────────
@@ -165,122 +199,4 @@ export async function createPillar(name: string, description?: string) {
     .single();
   if (error) throw new Error(error.message);
   return data;
-}
-
-export async function updatePillar(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("pillar_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deletePillar(id: string) {
-  const { error } = await supabaseServer
-    .from("pillar_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Themes
-// ─────────────────────────────────────────────
-export async function listThemeCatalogue(versionId: string, pillarId: string) {
-  const { data, error } = await supabaseServer.rpc("list_theme_catalogue", {
-    v_version_id: versionId,
-    v_pillar_id: pillarId,
-  });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function createTheme(
-  pillarId: string,
-  name: string,
-  description?: string
-) {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .insert({ pillar_id: pillarId, name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function updateTheme(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deleteTheme(id: string) {
-  const { error } = await supabaseServer
-    .from("theme_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Subthemes
-// ─────────────────────────────────────────────
-export async function listSubthemeCatalogue(versionId: string, themeId: string) {
-  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
-    v_version_id: versionId,
-    v_theme_id: themeId,
-  });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function createSubtheme(
-  themeId: string,
-  name: string,
-  description?: string
-) {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .insert({ theme_id: themeId, name, description })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function updateSubtheme(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deleteSubtheme(id: string) {
-  const { error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
 }
