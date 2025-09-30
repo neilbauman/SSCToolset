@@ -12,17 +12,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Default props for global header (can be overridden per page)
-  const defaultHeader = {
-    title: "Welcome",
-    group: "dashboard" as const,
-    description: "Shelter and Settlements Severity Classification Toolset",
-  };
-
   return (
     <html lang="en">
       <body className="antialiased">
-        <SidebarLayout headerProps={defaultHeader}>{children}</SidebarLayout>
+        {/* ✅ Do not force a default header here.
+            SidebarLayout will still render correctly,
+            but expects headerProps from the page itself. */}
+        {children}
       </body>
     </html>
   );
