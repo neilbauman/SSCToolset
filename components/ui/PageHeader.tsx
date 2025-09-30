@@ -10,6 +10,8 @@ type Props = {
   group: GroupKey;
   /** Short description text shown under the page title */
   description?: string;
+  /** Optional tool name (legacy support) */
+  tool?: string;
   /** Breadcrumbs element */
   breadcrumbs?: React.ReactNode;
 };
@@ -18,6 +20,7 @@ export default function PageHeader({
   title,
   group,
   description,
+  tool, // keep in props so old pages don’t break
   breadcrumbs,
 }: Props) {
   const theme = groupThemes[group];
@@ -37,7 +40,9 @@ export default function PageHeader({
       </div>
 
       {/* Page Title */}
-      <h2 className="mt-1 text-xl font-semibold text-gray-900">{title}</h2>
+      <h2 className="mt-1 text-xl font-semibold text-gray-900">
+        {title || tool /* fallback if tool was used */}
+      </h2>
 
       {/* Description */}
       {description && (
