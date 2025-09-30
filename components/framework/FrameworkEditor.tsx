@@ -28,9 +28,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(null);
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(null);
-  const [addSubthemeParent, setAddSubthemeParent] = useState<NormalizedFramework | null>(
-    null
-  );
+  const [addSubthemeParent, setAddSubthemeParent] =
+    useState<NormalizedFramework | null>(null);
 
   useEffect(() => {
     loadTree();
@@ -39,7 +38,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   async function loadTree() {
     const data = await getVersionTree(versionId);
     setTree(data || []);
-    setExpanded(new Set()); // reset expand state
+    setExpanded(new Set());
     setDirty(false);
   }
 
@@ -78,8 +77,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
     loadTree();
   }
 
-  // Recursive renderer
-  const renderRows = (items: NormalizedFramework[], level = 0) =>
+  // Recursive row renderer
+  const renderRows = (items: NormalizedFramework[], level = 0, parentSort?: number) =>
     items.map((node) => {
       const hasChildren =
         (node.type === "pillar" && node.themes && node.themes.length > 0) ||
@@ -199,8 +198,12 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
           </div>
 
           {/* Children */}
-          {isExpanded && node.themes && renderRows(node.themes, level + 1)}
-          {isExpanded && node.subthemes && renderRows(node.subthemes, level + 1)}
+          {isExpanded &&
+            node.themes &&
+            renderRows(node.themes, level + 1, node.sort_order)}
+          {isExpanded &&
+            node.subthemes &&
+            renderRows(node.subthemes, level + 1, parentSort)}
         </div>
       );
     });
@@ -301,7 +304,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
         <AddThemeModal
           versionId={versionId}
           pillarId={addThemeParent.id}
-          existing={tree}
+          existing={addThemeParent.themes || []}
+          pillarSortOrder={addThemeParent.sort_order}
           onClose={() => setAddThemeParent(null)}
           onAdd={(theme) => {
             const updated = tree.map((p) =>
@@ -321,7 +325,11 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
         <AddSubthemeModal
           versionId={versionId}
           themeId={addSubthemeParent.id}
-          existing={tree}
+          existing={addSubthemeParent.subthemes || []}
+          pillarSortOrder={tree.find((p) =>
+            p.themes?.some((t) => t.id === addSubthemeParent.id)
+          )?.sort_order}
+          themeSortOrder={addSubthemeParent.sort_order}
           onClose={() => setAddSubthemeParent(null)}
           onAdd={(sub) => {
             const update = (items: NormalizedFramework[]): NormalizedFramework[] =>
