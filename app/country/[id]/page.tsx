@@ -1,4 +1,5 @@
 // app/country/[id]/page.tsx
+"use client";
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import PageHeader from "@/components/ui/PageHeader";
