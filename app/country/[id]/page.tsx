@@ -2,16 +2,17 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Button } from "@/components/ui/Button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import UploadAdminUnits from "@/components/country/UploadAdminUnits";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Pencil, Trash2 } from "lucide-react";
 
 export default function CountryDetailPage({ params }: any) {
-  const id = params?.id ?? "unknown"; // loosened typing
+  const id = params?.id ?? "unknown"; // ISO code (PHL, NPL, etc.)
 
-  // Mock data (replace with Supabase later)
+  // Country metadata (mock for now — could also come from Supabase "countries" table)
   const country = {
     iso: id,
     name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
@@ -23,6 +24,29 @@ export default function CountryDetailPage({ params }: any) {
 
   const [openMeta, setOpenMeta] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [adminUnits, setAdminUnits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch admin units from Supabase
+  useEffect(() => {
+    const fetchUnits = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("admin_units")
+        .select("*")
+        .eq("country_iso", id)
+        .order("level", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching admin units:", error);
+      } else {
+        setAdminUnits(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchUnits();
+  }, [id]);
 
   const headerProps = {
     title: country.name,
@@ -38,13 +62,6 @@ export default function CountryDetailPage({ params }: any) {
       />
     ),
   };
-
-  // Mock admin units (will later come from Supabase)
-  const adminUnits = [
-    { id: "PH001", name: "Metro Manila", level: "ADM1", population: 13484462 },
-    { id: "PH001001", name: "Quezon City", level: "ADM2", population: 2960048 },
-    { id: "PH001001001", name: "Barangay Bagong Pag-asa", level: "ADM3", population: null },
-  ];
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -91,45 +108,51 @@ export default function CountryDetailPage({ params }: any) {
           </Button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-left">
-              <tr>
-                <th className="px-4 py-2">Name</th>
-                <th className="px-4 py-2">PCode</th>
-                <th className="px-4 py-2">Level</th>
-                <th className="px-4 py-2">Population</th>
-                {editMode && <th className="px-4 py-2">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {adminUnits.map((u) => (
-                <tr key={u.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{u.name}</td>
-                  <td className="px-4 py-2">{u.id}</td>
-                  <td className="px-4 py-2">{u.level}</td>
-                  <td className="px-4 py-2">
-                    {u.population ? (
-                      u.population.toLocaleString()
-                    ) : (
-                      <span className="italic text-gray-400">—</span>
-                    )}
-                  </td>
-                  {editMode && (
-                    <td className="px-4 py-2 flex gap-2">
-                      <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </td>
-                  )}
+        {loading ? (
+          <p>Loading admin units...</p>
+        ) : adminUnits.length === 0 ? (
+          <p className="text-gray-500 italic">No admin units uploaded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-100 text-left">
+                <tr>
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">PCode</th>
+                  <th className="px-4 py-2">Level</th>
+                  <th className="px-4 py-2">Population</th>
+                  {editMode && <th className="px-4 py-2">Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {adminUnits.map((u) => (
+                  <tr key={u.pcode} className="border-t hover:bg-gray-50">
+                    <td className="px-4 py-2">{u.name}</td>
+                    <td className="px-4 py-2">{u.pcode}</td>
+                    <td className="px-4 py-2">{u.level}</td>
+                    <td className="px-4 py-2">
+                      {u.population ? (
+                        u.population.toLocaleString()
+                      ) : (
+                        <span className="italic text-gray-400">—</span>
+                      )}
+                    </td>
+                    {editMode && (
+                      <td className="px-4 py-2 flex gap-2">
+                        <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Upload + Preview Admin Units */}
