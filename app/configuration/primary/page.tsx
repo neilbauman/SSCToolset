@@ -1,16 +1,10 @@
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { listVersions } from "@/lib/services/framework";
-import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClient";
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function PrimaryFrameworkPage(props: any) {
-  const searchParams = props?.searchParams as { version?: string } | undefined;
-  const openedId = searchParams?.version ?? undefined;
-
-  const versions = await listVersions();
-
+export default function PrimaryFrameworkPage() {
   const headerProps = {
     title: "Primary Framework Editor",
     group: "ssc-config" as const,
@@ -28,7 +22,7 @@ export default async function PrimaryFrameworkPage(props: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <PrimaryFrameworkClient versions={versions} openedId={openedId} />
+      <PrimaryFrameworkClient />
     </SidebarLayout>
   );
 }
