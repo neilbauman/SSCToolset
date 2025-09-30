@@ -1,288 +1,211 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import {
-  getVersionTree,
-  replaceFrameworkVersionItems,
-} from "@/lib/services/framework";
+import { useEffect, useState } from "react";
+import { getVersionTree, replaceFrameworkVersionItems } from "@/lib/services/framework";
 import type { NormalizedFramework } from "@/lib/types/framework";
-import {
-  Plus,
-  Edit3,
-  Trash2,
-  PlusCircle,
-  ChevronDown,
-  ChevronRight,
-} from "lucide-react";
-
-import AddPillarModal from "./AddPillarModal";
-import AddThemeModal from "./AddThemeModal";
-import AddSubthemeModal from "./AddSubthemeModal";
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2 } from "lucide-react";
+import EditEntityModal from "./EditEntityModal";
 
 type Props = {
   versionId: string;
-  editable: boolean;
+  editable?: boolean;
 };
 
-export default function FrameworkEditor({ versionId, editable }: Props) {
+export default function FrameworkEditor({ versionId, editable = false }: Props) {
   const [tree, setTree] = useState<NormalizedFramework[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [showAddPillar, setShowAddPillar] = useState(false);
-  const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(null);
-  const [addSubthemeParent, setAddSubthemeParent] = useState<NormalizedFramework | null>(null);
+  const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(null);
 
   useEffect(() => {
     loadTree();
   }, [versionId]);
 
-  const loadTree = async () => {
-    try {
-      const data = await getVersionTree(versionId);
-      setTree(Array.isArray(data) ? data : []);
-      setDirty(false);
-    } catch (err) {
-      console.error("Error loading framework tree:", err);
-      setTree([]);
-    }
-  };
+  async function loadTree() {
+    const data = await getVersionTree(versionId);
+    setTree(data || []);
+    setExpanded(new Set()); // reset expand state
+    setDirty(false);
+  }
 
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      await replaceFrameworkVersionItems(versionId, tree);
-      setDirty(false);
-      await loadTree();
-    } catch (err) {
-      console.error("Error saving framework:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
 
-  const toggleExpand = (id: string) => {
-    const copy = new Set(expanded);
-    if (copy.has(id)) copy.delete(id);
-    else copy.add(id);
-    setExpanded(copy);
-  };
-
-  const expandAll = () => {
-    const all = new Set<string>();
-    const walk = (nodes: NormalizedFramework[]) => {
-      for (const n of nodes) {
-        all.add(n.id);
-        if (n.themes?.length) walk(n.themes);
-        if (n.subthemes?.length) walk(n.subthemes);
+  function expandAll() {
+    const allIds = new Set<string>();
+    const collectIds = (items: NormalizedFramework[]) => {
+      for (const i of items) {
+        allIds.add(i.id);
+        if (i.themes) collectIds(i.themes);
+        if (i.subthemes) collectIds(i.subthemes);
       }
     };
-    walk(tree);
-    setExpanded(all);
-  };
+    collectIds(tree);
+    setExpanded(allIds);
+  }
 
-  const collapseAll = () => setExpanded(new Set());
+  function collapseAll() {
+    setExpanded(new Set());
+  }
 
-  // ---------- helpers to compute display values ----------
-  const typeBadge = (level: 0 | 1 | 2) => {
-    const label = level === 0 ? "Pillar" : level === 1 ? "Theme" : "Subtheme";
-    const color =
-      level === 0
-        ? "bg-blue-100 text-blue-800"
-        : level === 1
-        ? "bg-green-100 text-green-800"
-        : "bg-orange-100 text-orange-800";
-    return { label, color };
-  };
+  async function handleSave() {
+    await replaceFrameworkVersionItems(versionId, tree);
+    await loadTree();
+  }
 
-  const refFor = (level: 0 | 1 | 2, p: number, t?: number, s?: number) => {
-    if (level === 0) return `P${p}`;
-    if (level === 1) return `T${p}.${t ?? 1}`;
-    return `ST${p}.${t ?? 1}.${s ?? 1}`;
-  };
+  function handleDiscard() {
+    loadTree();
+  }
 
-  // ---------- row renderers (derive type, ref_code, sort per parent) ----------
-  const renderSub = (sub: NormalizedFramework, pIdx: number, tIdx: number, sIdx: number) => {
-    const lvl: 2 = 2;
-    const { label, color } = typeBadge(lvl);
-    const isExpanded = expanded.has(sub.id); // subthemes have no children, but keep consistent
-    const indent = (lvl * 16 + 8) + "px";
-    return (
-      <tr key={sub.id}>
-        {/* Type / Ref Code */}
-        <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-          <div className="flex items-center gap-1">
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>
-            <span className="text-xs text-gray-500">{refFor(lvl, pIdx + 1, tIdx + 1, sIdx + 1)}</span>
+  // Recursive renderer
+  const renderRows = (items: NormalizedFramework[], level = 0) => {
+    return items.map((node) => {
+      const hasChildren =
+        (node.type === "pillar" && node.themes && node.themes.length > 0) ||
+        (node.type === "theme" && node.subthemes && node.subthemes.length > 0);
+
+      const isExpanded = expanded.has(node.id);
+
+      return (
+        <div key={node.id}>
+          <div
+            className="grid grid-cols-12 items-center border-b text-sm"
+            style={{ paddingLeft: `${level * 16}px` }}
+          >
+            {/* Type / Ref Code */}
+            <div className="col-span-3 flex items-center gap-2 py-2">
+              {hasChildren && (
+                <button
+                  onClick={() => toggleExpand(node.id)}
+                  className="text-gray-500"
+                >
+                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
+              )}
+              <span
+                className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  node.type === "pillar"
+                    ? "bg-blue-100 text-blue-700"
+                    : node.type === "theme"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-orange-100 text-orange-700"
+                }`}
+              >
+                {node.type}
+              </span>
+              <span className="text-gray-500 text-xs">{node.ref_code}</span>
+            </div>
+
+            {/* Name / Description */}
+            <div className="col-span-5 py-2">
+              <div className="font-medium">{node.name}</div>
+              {node.description && (
+                <div className="text-xs text-gray-500">{node.description}</div>
+              )}
+            </div>
+
+            {/* Sort Order */}
+            <div className="col-span-2 py-2">{node.sort_order}</div>
+
+            {/* Actions */}
+            <div className="col-span-2 py-2 flex gap-2">
+              {editable && (
+                <>
+                  <button
+                    onClick={() => setEditingEntity(node)}
+                    className="text-gray-600 hover:text-blue-600"
+                    title="Edit"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      // delete node from tree
+                      const deleteNode = (items: NormalizedFramework[]): NormalizedFramework[] =>
+                        items
+                          .filter((i) => i.id !== node.id)
+                          .map((i) => ({
+                            ...i,
+                            themes: i.themes ? deleteNode(i.themes) : i.themes,
+                            subthemes: i.subthemes ? deleteNode(i.subthemes) : i.subthemes,
+                          }));
+                      setTree(deleteNode(tree));
+                      setDirty(true);
+                    }}
+                    className="text-gray-600 hover:text-red-600"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log("TODO: Add child for", node.type);
+                    }}
+                    className="text-gray-600 hover:text-green-600"
+                    title="Add Child"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </td>
-        {/* Name / Description */}
-        <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-          <div className="font-medium">{sub.name}</div>
-          {sub.description && <div className="text-xs text-gray-500">{sub.description}</div>}
-        </td>
-        {/* Sort Order (per theme) */}
-        <td className="px-2 py-1 align-top">{sIdx + 1}</td>
-        {/* Actions */}
-        <td className="px-2 py-1 align-top text-right">
-          {editable ? (
-            <div className="flex justify-end gap-2 text-gray-600">
-              <button className="hover:text-blue-600" title="Edit"><Edit3 size={16} /></button>
-              <button className="hover:text-red-600" title="Delete"><Trash2 size={16} /></button>
-            </div>
-          ) : ("-")}
-        </td>
-      </tr>
-    );
-  };
 
-  const renderTheme = (theme: NormalizedFramework, pIdx: number, tIdx: number) => {
-    const lvl: 1 = 1;
-    const { label, color } = typeBadge(lvl);
-    const isExpanded = expanded.has(theme.id);
-    const hasChildren = (theme.subthemes?.length ?? 0) > 0;
-    const indent = (lvl * 16 + 8) + "px";
-
-    return (
-      <React.Fragment key={theme.id}>
-        <tr>
-          {/* Type / Ref Code */}
-          <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-            <div className="flex items-center gap-1">
-              {hasChildren && (
-                <button onClick={() => toggleExpand(theme.id)} className="text-gray-600 hover:text-gray-900">
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-              )}
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>
-              <span className="text-xs text-gray-500">{refFor(lvl, pIdx + 1, tIdx + 1)}</span>
-            </div>
-          </td>
-          {/* Name / Description */}
-          <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-            <div className="font-medium">{theme.name}</div>
-            {theme.description && <div className="text-xs text-gray-500">{theme.description}</div>}
-          </td>
-          {/* Sort Order (per pillar) */}
-          <td className="px-2 py-1 align-top">{tIdx + 1}</td>
-          {/* Actions */}
-          <td className="px-2 py-1 align-top text-right">
-            {editable ? (
-              <div className="flex justify-end gap-2 text-gray-600">
-                <button className="hover:text-blue-600" title="Edit"><Edit3 size={16} /></button>
-                <button className="hover:text-red-600" title="Delete"><Trash2 size={16} /></button>
-                <button
-                  className="hover:text-green-600"
-                  title="Add Subtheme"
-                  onClick={() => setAddSubthemeParent(theme)}
-                >
-                  <PlusCircle size={16} />
-                </button>
-              </div>
-            ) : ("-")}
-          </td>
-        </tr>
-
-        {/* Subthemes */}
-        {isExpanded && (theme.subthemes ?? []).map((s, sIdx) => renderSub(s, pIdx, tIdx, sIdx))}
-      </React.Fragment>
-    );
-  };
-
-  const renderPillar = (pillar: NormalizedFramework, pIdx: number) => {
-    const lvl: 0 = 0;
-    const { label, color } = typeBadge(lvl);
-    const isExpanded = expanded.has(pillar.id);
-    const hasChildren = (pillar.themes?.length ?? 0) > 0;
-    const indent = (lvl * 16 + 8) + "px";
-
-    return (
-      <React.Fragment key={pillar.id}>
-        <tr>
-          {/* Type / Ref Code */}
-          <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-            <div className="flex items-center gap-1">
-              {hasChildren && (
-                <button onClick={() => toggleExpand(pillar.id)} className="text-gray-600 hover:text-gray-900">
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-              )}
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>
-              <span className="text-xs text-gray-500">{refFor(lvl, pIdx + 1)}</span>
-            </div>
-          </td>
-          {/* Name / Description */}
-          <td className="px-2 py-1 align-top" style={{ paddingLeft: indent }}>
-            <div className="font-medium">{pillar.name}</div>
-            {pillar.description && <div className="text-xs text-gray-500">{pillar.description}</div>}
-          </td>
-          {/* Sort Order (top level) */}
-          <td className="px-2 py-1 align-top">{pIdx + 1}</td>
-          {/* Actions */}
-          <td className="px-2 py-1 align-top text-right">
-            {editable ? (
-              <div className="flex justify-end gap-2 text-gray-600">
-                <button className="hover:text-blue-600" title="Edit"><Edit3 size={16} /></button>
-                <button className="hover:text-red-600" title="Delete"><Trash2 size={16} /></button>
-                <button
-                  className="hover:text-green-600"
-                  title="Add Theme"
-                  onClick={() => setAddThemeParent(pillar)}
-                >
-                  <PlusCircle size={16} />
-                </button>
-              </div>
-            ) : ("-")}
-          </td>
-        </tr>
-
-        {/* Themes */}
-        {isExpanded && (pillar.themes ?? []).map((t, tIdx) => renderTheme(t, pIdx, tIdx))}
-      </React.Fragment>
-    );
+          {/* Children */}
+          {isExpanded && node.themes && renderRows(node.themes, level + 1)}
+          {isExpanded && node.subthemes && renderRows(node.subthemes, level + 1)}
+        </div>
+      );
+    });
   };
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
+    <div>
+      <div className="flex justify-between mb-2">
         <div className="flex gap-2">
           <button
+            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
             onClick={expandAll}
-            className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
           >
             Expand All
           </button>
           <button
+            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
             onClick={collapseAll}
-            className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
           >
             Collapse All
           </button>
           {editable && (
             <button
-              onClick={() => setShowAddPillar(true)}
-              className="px-2 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1"
+              className="px-2 py-1 bg-blue-600 text-white rounded text-sm"
+              onClick={() => {
+                console.log("TODO: Add pillar");
+              }}
             >
-              <Plus size={16} /> Add Pillar
+              + Add Pillar
             </button>
           )}
         </div>
-
         {dirty && (
           <div className="flex gap-2">
             <button
+              className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
               onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
             >
-              {saving ? "Saving…" : "Save"}
+              Save
             </button>
             <button
-              onClick={loadTree}
-              disabled={saving}
-              className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-60"
+              className="px-3 py-1 bg-gray-200 rounded text-sm"
+              onClick={handleDiscard}
             >
               Discard
             </button>
@@ -290,74 +213,32 @@ export default function FrameworkEditor({ versionId, editable }: Props) {
         )}
       </div>
 
-      {/* Table */}
-      <table className="w-full border text-sm table-fixed">
-        <thead className="bg-gray-100 text-[13.5px]">
-          <tr>
-            <th className="text-left px-2 py-2 w-[25%]">Type / Ref Code</th>
-            <th className="text-left px-2 py-2 w-[45%]">Name / Description</th>
-            <th className="text-left px-2 py-2 w-[15%]">Sort Order</th>
-            <th className="text-right px-2 py-2 w-[15%]">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tree.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="px-2 py-4 text-gray-500">
-                No items in this framework version yet.
-              </td>
-            </tr>
-          ) : (
-            tree.map((p, pIdx) => renderPillar(p, pIdx))
-          )}
-        </tbody>
-      </table>
+      <div className="grid grid-cols-12 bg-gray-50 border-b font-medium text-sm">
+        <div className="col-span-3 py-2 px-2">Type / Ref Code</div>
+        <div className="col-span-5 py-2">Name / Description</div>
+        <div className="col-span-2 py-2">Sort Order</div>
+        <div className="col-span-2 py-2">Actions</div>
+      </div>
 
-      {/* Modals */}
-      {showAddPillar && (
-        <AddPillarModal
-          versionId={versionId}
-          existing={tree}
-          onClose={() => setShowAddPillar(false)}
-          onAdd={(pillar) => {
-            setTree([...tree, pillar]);
-            setDirty(true);
-          }}
-        />
-      )}
+      <div>{renderRows(tree)}</div>
 
-      {addThemeParent && (
-        <AddThemeModal
-          versionId={versionId}
-          parent={addThemeParent}
-          onClose={() => setAddThemeParent(null)}
-          onAdd={(theme) => {
-            const updated = tree.map((p) =>
-              p.id === addThemeParent.id
-                ? { ...p, themes: [...(p.themes ?? []), theme] }
-                : p
-            );
-            setTree(updated);
-            setDirty(true);
-          }}
-        />
-      )}
+      {editingEntity && (
+        <EditEntityModal
+          entity={editingEntity}
+          onClose={() => setEditingEntity(null)}
+          onSave={({ name, description }) => {
+            const updateTree = (items: NormalizedFramework[]): NormalizedFramework[] =>
+              items.map((i) =>
+                i.id === editingEntity.id
+                  ? { ...i, name, description }
+                  : {
+                      ...i,
+                      themes: i.themes ? updateTree(i.themes) : i.themes,
+                      subthemes: i.subthemes ? updateTree(i.subthemes) : i.subthemes,
+                    }
+              );
 
-      {addSubthemeParent && (
-        <AddSubthemeModal
-          versionId={versionId}
-          parent={addSubthemeParent}
-          onClose={() => setAddSubthemeParent(null)}
-          onAdd={(sub) => {
-            const updated = tree.map((p) => ({
-              ...p,
-              themes: (p.themes ?? []).map((t) =>
-                t.id === addSubthemeParent.id
-                  ? { ...t, subthemes: [...(t.subthemes ?? []), sub] }
-                  : t
-              ),
-            }));
-            setTree(updated);
+            setTree(updateTree(tree));
             setDirty(true);
           }}
         />
