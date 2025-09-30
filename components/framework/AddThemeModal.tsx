@@ -1,126 +1,91 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { listThemeCatalogue, createTheme } from "@/lib/services/framework";
-import type { NormalizedFramework, CatalogueTheme } from "@/lib/types/framework";
+import { useState, useEffect } from "react";
+import Modal from "../ui/Modal";
+import {
+  listThemeCatalogue,
+  createTheme,
+} from "@/lib/services/framework";
+import type { NormalizedFramework } from "@/lib/types/framework";
 
 type Props = {
   versionId: string;
-  parent: NormalizedFramework; // Pillar
+  pillarId: string;
+  existing: NormalizedFramework[];
   onClose: () => void;
   onAdd: (theme: NormalizedFramework) => void;
 };
 
-export default function AddThemeModal({ versionId, parent, onClose, onAdd }: Props) {
-  const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
-  const [catalogue, setCatalogue] = useState<CatalogueTheme[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+export default function AddThemeModal({
+  versionId,
+  pillarId,
+  existing,
+  onClose,
+  onAdd,
+}: Props) {
+  const [catalogue, setCatalogue] = useState<any[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   useEffect(() => {
-    listThemeCatalogue(versionId, parent.id).then(setCatalogue).catch(console.error);
-  }, [versionId, parent.id]);
-
-  const handleSubmit = async () => {
-    if (tab === "catalogue") {
-      for (const id of selected) {
-        const cat = catalogue.find((c) => c.id === id);
-        if (cat) {
-          onAdd({
-            id: cat.id,
-            type: "theme",
-            name: cat.name,
-            description: cat.description ?? "",
-            color: null,
-            icon: null,
-            sort_order: (parent.themes?.length ?? 0) + 1,
-            ref_code: `${parent.ref_code}.T${(parent.themes?.length ?? 0) + 1}`,
-            subthemes: [],
-          });
-        }
-      }
-    } else {
-      const created = await createTheme(parent.id, name, description);
-      onAdd({
-        id: created.id,
-        type: "theme",
-        name: created.name,
-        description: created.description ?? "",
-        color: null,
-        icon: null,
-        sort_order: (parent.themes?.length ?? 0) + 1,
-        ref_code: `${parent.ref_code}.T${(parent.themes?.length ?? 0) + 1}`,
-        subthemes: [],
-      });
+    async function load() {
+      const data = await listThemeCatalogue(versionId, pillarId);
+      setCatalogue(data || []);
     }
-    onClose();
-  };
+    load();
+  }, [versionId, pillarId]);
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-      <div className="bg-white p-4 rounded shadow w-96 space-y-4">
-        <h3 className="font-semibold text-lg">Add Theme to {parent.name}</h3>
-        <div className="flex gap-2">
-          <button
-            className={`flex-1 px-2 py-1 rounded ${tab === "catalogue" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-            onClick={() => setTab("catalogue")}
-          >
-            From Catalogue
-          </button>
-          <button
-            className={`flex-1 px-2 py-1 rounded ${tab === "new" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-            onClick={() => setTab("new")}
-          >
-            New Theme
-          </button>
-        </div>
+    <Modal open={true} onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Add Theme</h2>
 
-        {tab === "catalogue" ? (
-          <div className="max-h-64 overflow-y-auto border p-2">
-            {catalogue.map((c) => {
-              const already = parent.themes?.some((t) => t.id === c.id);
-              return (
-                <label key={c.id} className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}>
-                  <input
-                    type="checkbox"
-                    disabled={already}
-                    checked={selected.has(c.id)}
-                    onChange={(e) => {
-                      const copy = new Set(selected);
-                      if (e.target.checked) copy.add(c.id);
-                      else copy.delete(c.id);
-                      setSelected(copy);
-                    }}
-                  />
-                  <span>{c.name}</span>
-                </label>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Name"
-              className="border rounded px-2 py-1 w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <textarea
-              placeholder="Description"
-              className="border rounded px-2 py-1 w-full"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        )}
+      <div className="space-y-4">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Theme name"
+          className="w-full rounded border px-3 py-2 text-sm"
+        />
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Theme description"
+          className="w-full rounded border px-3 py-2 text-sm"
+        />
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Add</button>
+          <button
+            className="px-4 py-2 rounded bg-gray-200 text-sm"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-2 rounded bg-blue-600 text-white text-sm"
+            onClick={async () => {
+              if (!name.trim()) return;
+              const created = await createTheme(pillarId, name.trim(), description);
+              const newTheme: NormalizedFramework = {
+                id: created.id,
+                type: "theme",
+                name: created.name,
+                description: created.description,
+                sort_order: (existing.length || 0) + 1,
+                ref_code: created.ref_code ?? `T${pillarId}.${existing.length + 1}`,
+                color: null,
+                icon: null,
+                themes: [],
+                subthemes: [],
+              };
+              onAdd(newTheme);
+              onClose();
+            }}
+          >
+            Add
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
