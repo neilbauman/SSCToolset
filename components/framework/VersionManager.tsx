@@ -7,6 +7,7 @@ import {
   cloneVersion,
   deleteVersion,
   publishVersion,
+  updateVersion,
 } from "@/lib/services/framework";
 import type { FrameworkVersion } from "@/lib/types/framework";
 import FrameworkEditor from "./FrameworkEditor";
@@ -20,12 +21,21 @@ import {
   Eye,
 } from "lucide-react";
 
+import NewVersionModal from "./NewVersionModal";
+import CloneVersionModal from "./CloneVersionModal";
+import EditVersionModal from "./EditVersionModal";
+
 export default function VersionManager() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<FrameworkVersion | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
+
+  // Modal state
+  const [showNew, setShowNew] = useState(false);
+  const [showClone, setShowClone] = useState<FrameworkVersion | null>(null);
+  const [showEdit, setShowEdit] = useState<FrameworkVersion | null>(null);
 
   useEffect(() => {
     refreshVersions();
@@ -43,9 +53,12 @@ export default function VersionManager() {
     }
   };
 
-  const handleCreate = async () => {
+  // ─────────────────────────────
+  // Handlers
+  // ─────────────────────────────
+  const handleCreate = async (name: string) => {
     try {
-      const newVersion = await createVersion("Untitled Framework");
+      const newVersion = await createVersion(name);
       await refreshVersions();
       setCurrent(newVersion);
       setEditMode(true);
@@ -54,15 +67,23 @@ export default function VersionManager() {
     }
   };
 
-  const handleClone = async (id: string, newName: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  const handleClone = async (base: FrameworkVersion, name: string) => {
     try {
-      const newVersion = await cloneVersion(id, newName);
+      const newVersion = await cloneVersion(base.id, name);
       await refreshVersions();
       setCurrent(newVersion);
       setEditMode(true);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
+    }
+  };
+
+  const handleEdit = async (v: FrameworkVersion, name: string) => {
+    try {
+      await updateVersion(v.id, { name });
+      await refreshVersions();
+    } catch (err: any) {
+      console.error("Error updating version:", err.message);
     }
   };
 
@@ -87,12 +108,6 @@ export default function VersionManager() {
     }
   };
 
-  const handleEdit = (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    console.log("Edit clicked for version:", id);
-    // Later we’ll open a modal to rename or adjust metadata
-  };
-
   if (loading) return <div>Loading framework versions…</div>;
 
   return (
@@ -110,7 +125,7 @@ export default function VersionManager() {
           </button>
           {editMode && (
             <button
-              onClick={handleCreate}
+              onClick={() => setShowNew(true)}
               className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700"
             >
               <Plus size={16} />
@@ -147,9 +162,7 @@ export default function VersionManager() {
             {versions.map((v) => (
               <tr
                 key={v.id}
-                className={`cursor-pointer ${
-                  current?.id === v.id ? "bg-blue-50" : ""
-                }`}
+                className={`cursor-pointer ${current?.id === v.id ? "bg-blue-50" : ""}`}
                 onClick={() => setCurrent(v)}
               >
                 <td className="px-2 py-1 font-medium">{v.name}</td>
@@ -168,23 +181,27 @@ export default function VersionManager() {
                   {new Date(v.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-2 py-1">
-                  {v.updated_at
-                    ? new Date(v.updated_at).toLocaleDateString()
-                    : "-"}
+                  {v.updated_at ? new Date(v.updated_at).toLocaleDateString() : "-"}
                 </td>
                 <td className="px-2 py-1 text-right">
                   {editMode && (
                     <div className="flex gap-2 justify-end text-gray-600">
                       <button
                         title="Edit"
-                        onClick={(e) => handleEdit(v.id, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowEdit(v);
+                        }}
                         className="hover:text-blue-600"
                       >
                         <Edit3 size={16} />
                       </button>
                       <button
                         title="Clone"
-                        onClick={(e) => handleClone(v.id, `${v.name} (copy)`, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowClone(v);
+                        }}
                         className="hover:text-blue-600"
                       >
                         <Copy size={16} />
@@ -215,21 +232,40 @@ export default function VersionManager() {
       {/* Framework Editor below */}
       {current?.id && (
         <div className="border-t pt-4 space-y-2">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="font-medium">{current.name}</h3>
-              <p className="text-xs text-gray-500">
-                {current.status} • Created{" "}
-                {new Date(current.created_at).toLocaleDateString()}
-                {current.updated_at &&
-                  ` • Last revised ${new Date(
-                    current.updated_at
-                  ).toLocaleDateString()}`}
-              </p>
-            </div>
+          <div>
+            <h3 className="font-medium">{current.name}</h3>
+            <p className="text-xs text-gray-500">
+              {current.status} • Created {new Date(current.created_at).toLocaleDateString()}
+              {current.updated_at &&
+                ` • Last revised ${new Date(current.updated_at).toLocaleDateString()}`}
+            </p>
           </div>
           <FrameworkEditor versionId={current.id} editable={editMode} />
         </div>
+      )}
+
+      {/* Modals */}
+      {showNew && (
+        <NewVersionModal
+          onClose={() => setShowNew(false)}
+          onSubmit={handleCreate}
+        />
+      )}
+
+      {showClone && (
+        <CloneVersionModal
+          initialName={`${showClone.name} (copy)`}
+          onClose={() => setShowClone(null)}
+          onSubmit={(name) => handleClone(showClone, name)}
+        />
+      )}
+
+      {showEdit && (
+        <EditVersionModal
+          initialName={showEdit.name}
+          onClose={() => setShowEdit(null)}
+          onSubmit={(name) => handleEdit(showEdit, name)}
+        />
       )}
     </div>
   );
