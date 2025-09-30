@@ -1,16 +1,16 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import { groupThemes, GroupKey } from "@/lib/theme";
 
 type Props = {
-  /** Page title (e.g. "Primary Framework Editor") */
+  /** Main page title */
   title: string;
   /** Group key (used for theming: "dashboard", "about", "admin", "ssc-config", etc.) */
   group: GroupKey;
-  /** Short description text shown under the page title */
+  /** Short description text shown under the title */
   description?: string;
-  /** Optional tool name (legacy support, deprecated) */
+  /** Optional tool name (e.g. "Primary Framework Editor") */
   tool?: string;
   /** Breadcrumbs element */
   breadcrumbs?: React.ReactNode;
@@ -25,47 +25,35 @@ export default function PageHeader({
 }: Props) {
   const theme = groupThemes[group];
 
-  // Warn if legacy `tool` is used
-  useEffect(() => {
-    if (tool) {
-      console.warn(
-        `[PageHeader] The "tool" prop is deprecated. Use "title" instead. (Received: "${tool}")`
-      );
-    }
-  }, [tool]);
-
   return (
-    <div className="mb-6">
-      {/* Global Toolset Title */}
-      <h1 className="text-3xl font-bold" style={{ color: "#630710" }}>
-        Shelter and Settlements Severity Classification Toolset
+    <div className="mb-6 px-6"> {/* <-- added px-6 for horizontal padding */}
+      {/* Global title */}
+      <h1 className="text-2xl font-bold" style={{ color: "#630710" }}>
+        {title}
       </h1>
 
-      {/* Group Title */}
-      <div className="mt-2">
-        <span className={`text-lg font-semibold ${theme.text}`}>
-          {theme.label}
-        </span>
+      {/* Group + Tool */}
+      <div className="mt-1 flex items-center gap-2">
+        <span className={`font-semibold ${theme.text}`}>{theme.label}</span>
+        {tool && (
+          <>
+            <span className="text-gray-400">/</span>
+            <span className="font-medium text-gray-700">{tool}</span>
+          </>
+        )}
       </div>
-
-      {/* Page Title */}
-      <h2 className="mt-1 text-xl font-semibold text-gray-900">
-        {title || tool /* fallback if tool was passed */}
-      </h2>
 
       {/* Description */}
       {description && (
         <p className="mt-1 text-sm text-gray-600">{description}</p>
       )}
 
-      {/* Divider */}
-      <div className="my-4 border-t border-gray-200" />
-
-      {/* Breadcrumbs */}
-      {breadcrumbs && <div className="mb-4">{breadcrumbs}</div>}
-
-      {/* Divider */}
-      <div className="border-t border-gray-200" />
+      {/* Breadcrumbs framed with subtle spacing */}
+      {breadcrumbs && (
+        <div className="mt-4 mb-4 border-t border-b border-gray-200 py-2">
+          {breadcrumbs}
+        </div>
+      )}
     </div>
   );
 }
