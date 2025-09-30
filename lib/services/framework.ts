@@ -27,16 +27,13 @@ export async function createVersion(name: string): Promise<FrameworkVersion> {
   return data as FrameworkVersion;
 }
 
-export async function cloneVersion(
-  fromVersionId: string,
-  newName: string
-): Promise<FrameworkVersion> {
+export async function cloneVersion(fromVersionId: string, newName: string) {
   const { data, error } = await supabaseServer.rpc("clone_framework_version", {
     v_from_version_id: fromVersionId,
     v_new_name: newName,
   });
   if (error) throw new Error(error.message);
-  return data as FrameworkVersion;
+  return data;
 }
 
 export async function publishVersion(
@@ -78,9 +75,7 @@ export async function deleteVersion(id: string) {
 // ─────────────────────────────────────────────
 // Framework Items (Tree Loader via RPC)
 // ─────────────────────────────────────────────
-export async function getFrameworkTree(
-  versionId: string
-): Promise<NormalizedFramework[]> {
+export async function getVersionTree(versionId: string) {
   const { data, error } = await supabaseServer.rpc("get_framework_tree", {
     v_version_id: versionId,
   });
@@ -88,48 +83,60 @@ export async function getFrameworkTree(
   return data as NormalizedFramework[];
 }
 
+/**
+ * Replace all items in framework_version_items for a version
+ * - sort_order is per parent (1..N for pillars, themes-in-pillar, subthemes-in-theme)
+ * - ref_code formats: P#, T#.#, ST#.#.#
+ */
 export async function replaceFrameworkVersionItems(
   versionId: string,
   items: NormalizedFramework[]
 ): Promise<void> {
   const rows: any[] = [];
-  let sortCounter = 1;
 
-  for (const pillar of items) {
+  for (let pIdx = 0; pIdx < items.length; pIdx++) {
+    const pillar = items[pIdx];
+
+    // Pillar row
     rows.push({
       version_id: versionId,
       pillar_id: pillar.id,
       theme_id: null,
       subtheme_id: null,
-      ref_code: pillar.ref_code ?? `P${sortCounter}`,
-      sort_order: sortCounter++,
+      ref_code: `P${pIdx + 1}`,
+      sort_order: pIdx + 1, // per parent: pillar index
     });
 
-    for (const theme of pillar.themes ?? []) {
+    const themes = pillar.themes ?? [];
+    for (let tIdx = 0; tIdx < themes.length; tIdx++) {
+      const theme = themes[tIdx];
+
       rows.push({
         version_id: versionId,
         pillar_id: pillar.id,
         theme_id: theme.id,
         subtheme_id: null,
-        ref_code: theme.ref_code ?? `${pillar.ref_code}.T${theme.sort_order}`,
-        sort_order: sortCounter++,
+        ref_code: `T${pIdx + 1}.${tIdx + 1}`,
+        sort_order: tIdx + 1, // per parent: theme index within pillar
       });
 
-      for (const sub of theme.subthemes ?? []) {
+      const subs = theme.subthemes ?? [];
+      for (let sIdx = 0; sIdx < subs.length; sIdx++) {
+        const sub = subs[sIdx];
+
         rows.push({
           version_id: versionId,
           pillar_id: pillar.id,
           theme_id: theme.id,
           subtheme_id: sub.id,
-          ref_code:
-            sub.ref_code ??
-            `${pillar.ref_code}.T${theme.sort_order}.ST${sub.sort_order}`,
-          sort_order: sortCounter++,
+          ref_code: `ST${pIdx + 1}.${tIdx + 1}.${sIdx + 1}`,
+          sort_order: sIdx + 1, // per parent: subtheme index within theme
         });
       }
     }
   }
 
+  // replace all rows
   const { error: delError } = await supabaseServer
     .from("framework_version_items")
     .delete()
@@ -188,12 +195,22 @@ export async function deletePillar(id: string) {
 }
 
 // ─────────────────────────────────────────────
-// Catalogue: Themes
+// Catalogue: Themes/Subthemes
+// (you already have listThemeCatalogue / listSubthemeCatalogue / createTheme / createSubtheme)
 // ─────────────────────────────────────────────
 export async function listThemeCatalogue(versionId: string, pillarId: string) {
   const { data, error } = await supabaseServer.rpc("list_theme_catalogue", {
     v_version_id: versionId,
     v_pillar_id: pillarId,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function listSubthemeCatalogue(versionId: string, themeId: string) {
+  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
+    v_version_id: versionId,
+    v_theme_id: themeId,
   });
   if (error) throw new Error(error.message);
   return data;
@@ -209,40 +226,6 @@ export async function createTheme(pillarId: string, name: string, description?: 
   return data;
 }
 
-export async function updateTheme(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("theme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deleteTheme(id: string) {
-  const { error } = await supabaseServer
-    .from("theme_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Catalogue: Subthemes
-// ─────────────────────────────────────────────
-export async function listSubthemeCatalogue(versionId: string, themeId: string) {
-  const { data, error } = await supabaseServer.rpc("list_subtheme_catalogue", {
-    v_version_id: versionId,
-    v_theme_id: themeId,
-  });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
 export async function createSubtheme(themeId: string, name: string, description?: string) {
   const { data, error } = await supabaseServer
     .from("subtheme_catalogue")
@@ -252,30 +235,3 @@ export async function createSubtheme(themeId: string, name: string, description?
   if (error) throw new Error(error.message);
   return data;
 }
-
-export async function updateSubtheme(
-  id: string,
-  patch: { name?: string; description?: string }
-) {
-  const { data, error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function deleteSubtheme(id: string) {
-  const { error } = await supabaseServer
-    .from("subtheme_catalogue")
-    .delete()
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-// ─────────────────────────────────────────────
-// Backwards compatibility alias
-// ─────────────────────────────────────────────
-export { getFrameworkTree as getVersionTree };
