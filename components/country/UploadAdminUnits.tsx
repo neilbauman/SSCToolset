@@ -37,7 +37,20 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
     setLoading(true);
     setSaved(false);
 
-    // Transform rows into DB format
+    // 1. Delete existing rows for this country
+    const { error: deleteError } = await supabase
+      .from("admin_units")
+      .delete()
+      .eq("country_iso", countryIso);
+
+    if (deleteError) {
+      console.error(deleteError);
+      setError("Failed to clear old data.");
+      setLoading(false);
+      return;
+    }
+
+    // 2. Transform rows into DB format
     const rows = data.map((row) => ({
       country_iso: countryIso,
       pcode: String(row.pcode || "").trim(),
@@ -49,15 +62,17 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
       metadata: row.metadata ? JSON.parse(row.metadata) : {},
     }));
 
-    const { error } = await supabase.from("admin_units").insert(rows);
+    // 3. Insert fresh rows
+    const { error: insertError } = await supabase.from("admin_units").insert(rows);
 
-    if (error) {
-      console.error(error);
-      setError("Failed to save data to database.");
+    if (insertError) {
+      console.error(insertError);
+      setError("Failed to save new data to database.");
     } else {
       setSaved(true);
       setError(null);
     }
+
     setLoading(false);
   };
 
