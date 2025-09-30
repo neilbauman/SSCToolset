@@ -13,12 +13,7 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
-import {
-  createPillar,
-  createTheme,
-  createSubtheme,
-  replaceFrameworkVersionItems,
-} from "@/lib/services/framework";
+import { replaceFrameworkVersionItems } from "@/lib/services/framework";
 
 type Props = {
   tree: NormalizedFramework[];
@@ -27,9 +22,9 @@ type Props = {
   onChanged?: () => Promise<void>;
 };
 
-// ─────────────────────────────────────────────
+// ───────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────
+// ───────────────────────────────
 function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
   const styles: Record<typeof type, string> = {
     pillar:
@@ -42,15 +37,6 @@ function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
   const label =
     type === "pillar" ? "Pillar" : type === "theme" ? "Theme" : "Subtheme";
   return <span className={styles[type]}>{label}</span>;
-}
-
-function uniqueById<T extends { id: string }>(arr: T[]) {
-  const seen = new Set<string>();
-  return arr.filter((it) => {
-    if (seen.has(it.id)) return false;
-    seen.add(it.id);
-    return true;
-  });
 }
 
 function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[] {
@@ -96,13 +82,9 @@ function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[]
     });
 }
 
-function isTemp(id: string) {
-  return id.startsWith("temp-");
-}
-
-// ─────────────────────────────────────────────
+// ───────────────────────────────
 // Main Component
-// ─────────────────────────────────────────────
+// ───────────────────────────────
 export default function FrameworkEditor({
   tree,
   versionId,
@@ -125,10 +107,7 @@ export default function FrameworkEditor({
     setExpanded({});
   }, [tree, versionId]);
 
-  const displayTree = useMemo(() => {
-    const deduped = uniqueById(localTree ?? []);
-    return buildDisplayTree(deduped);
-  }, [localTree]);
+  const displayTree = useMemo(() => buildDisplayTree(localTree ?? []), [localTree]);
 
   const expandAll = useCallback(() => {
     const all: Record<string, boolean> = {};
@@ -137,7 +116,6 @@ export default function FrameworkEditor({
         all[p.id] = true;
         if (p.themes) walk(p.themes);
         if (p.subthemes) walk(p.subthemes);
-        if (p.children) walk(p.children);
       }
     };
     walk(localTree);
@@ -148,12 +126,8 @@ export default function FrameworkEditor({
     setExpanded({});
   }, []);
 
-  // ─────────────────────────────────────────────
-  // SAVE staged tree
-  // ─────────────────────────────────────────────
   async function handleSave() {
     try {
-      // TODO: persist logic
       await replaceFrameworkVersionItems(versionId, []);
       setDirty(false);
       if (onChanged) await onChanged();
@@ -168,33 +142,6 @@ export default function FrameworkEditor({
     setDirty(false);
   }
 
-  // ─────────────────────────────────────────────
-  // Helpers to add children
-  // ─────────────────────────────────────────────
-  function handleAddThemesToPillar(pillarId: string, themes: NormalizedFramework[]) {
-    const updated = localTree.map((p) => {
-      if (p.id !== pillarId) return p;
-      return { ...p, themes: [...(p.themes ?? []), ...themes] };
-    });
-    setLocalTree(updated);
-    setDirty(true);
-  }
-
-  function handleAddSubthemesToTheme(themeId: string, subthemes: NormalizedFramework[]) {
-    const updated = localTree.map((p) => ({
-      ...p,
-      themes: (p.themes ?? []).map((t) => {
-        if (t.id !== themeId) return t;
-        return { ...t, subthemes: [...(t.subthemes ?? []), ...subthemes] };
-      }),
-    }));
-    setLocalTree(updated);
-    setDirty(true);
-  }
-
-  // ─────────────────────────────────────────────
-  // Delete handler
-  // ─────────────────────────────────────────────
   function handleDelete(node: NormalizedFramework) {
     if (node.type === "pillar") {
       setLocalTree(localTree.filter((p) => p.id !== node.id));
@@ -219,9 +166,6 @@ export default function FrameworkEditor({
     setDirty(true);
   }
 
-  // ─────────────────────────────────────────────
-  // Render Node
-  // ─────────────────────────────────────────────
   const renderNode = useCallback(
     (node: NormalizedFramework): React.ReactNode => {
       const isExpanded = expanded[node.id] ?? false;
@@ -297,9 +241,6 @@ export default function FrameworkEditor({
     [expanded, editMode]
   );
 
-  // ─────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────
   return (
     <div className="border rounded-md p-4">
       {/* Toolbar */}
@@ -366,49 +307,7 @@ export default function FrameworkEditor({
           existingPillarIds={localTree.map((n) => n.id)}
           isPersisted
           onClose={() => setShowAddPillar(false)}
-          onSubmit={(payload) => {
-            if (payload.mode === "catalogue") {
-              const normalized = payload.items.map((p) => ({
-                id: p.id,
-                type: "pillar" as const,
-                name: p.name,
-                description: p.description ?? "",
-                color: null,
-                icon: null,
-                themes: (p.themes ?? []).map((t) => ({
-                  id: t.id,
-                  type: "theme" as const,
-                  name: t.name,
-                  description: t.description ?? "",
-                  color: null,
-                  icon: null,
-                  subthemes: (t.subthemes ?? []).map((s) => ({
-                    id: s.id,
-                    type: "subtheme" as const,
-                    name: s.name,
-                    description: s.description ?? "",
-                    color: null,
-                    icon: null,
-                  })),
-                })),
-                subthemes: [],
-              }));
-              setLocalTree([...localTree, ...normalized]);
-            } else {
-              setLocalTree([
-                ...localTree,
-                {
-                  id: `temp-${Date.now()}`,
-                  type: "pillar",
-                  name: payload.name,
-                  description: payload.description,
-                  color: null,
-                  icon: null,
-                  themes: [],
-                  subthemes: [],
-                },
-              ]);
-            }
+          onSubmit={() => {
             setDirty(true);
             setShowAddPillar(false);
           }}
@@ -419,48 +318,12 @@ export default function FrameworkEditor({
         <AddThemeModal
           versionId={versionId}
           parentPillarId={showAddThemeFor}
-          existingThemeIds={
-            localTree.find((p) => p.id === showAddThemeFor)?.themes?.map((t) => t.id) ?? []
-          }
-          existingSubthemeIds={
-            localTree
-              .find((p) => p.id === showAddThemeFor)
-              ?.themes?.flatMap((t) => t.subthemes?.map((s) => s.id) ?? []) ?? []
-          }
+          existingThemeIds={[]}
+          existingSubthemeIds={[]}
           isPersisted
           onClose={() => setShowAddThemeFor(null)}
-          onSubmit={(payload) => {
-            if (payload.mode === "catalogue") {
-              const normalized = payload.items.map((t) => ({
-                id: t.id,
-                type: "theme" as const,
-                name: t.name,
-                description: t.description ?? "",
-                color: null,
-                icon: null,
-                subthemes: (t.subthemes ?? []).map((s) => ({
-                  id: s.id,
-                  type: "subtheme" as const,
-                  name: s.name,
-                  description: s.description ?? "",
-                  color: null,
-                  icon: null,
-                })),
-              }));
-              handleAddThemesToPillar(showAddThemeFor, normalized);
-            } else {
-              handleAddThemesToPillar(showAddThemeFor, [
-                {
-                  id: `temp-${Date.now()}`,
-                  type: "theme",
-                  name: payload.name,
-                  description: payload.description,
-                  color: null,
-                  icon: null,
-                  subthemes: [],
-                },
-              ]);
-            }
+          onSubmit={() => {
+            setDirty(true);
             setShowAddThemeFor(null);
           }}
         />
@@ -470,37 +333,11 @@ export default function FrameworkEditor({
         <AddSubthemeModal
           versionId={versionId}
           parentThemeId={showAddSubthemeFor}
-          existingSubthemeIds={
-            localTree
-              .flatMap((p) => p.themes ?? [])
-              .find((t) => t.id === showAddSubthemeFor)
-              ?.subthemes?.map((s) => s.id) ?? []
-          }
+          existingSubthemeIds={[]}
           isPersisted
           onClose={() => setShowAddSubthemeFor(null)}
-          onSubmit={(payload) => {
-            if (payload.mode === "catalogue") {
-              const normalized = payload.items.map((s) => ({
-                id: s.id,
-                type: "subtheme" as const,
-                name: s.name,
-                description: s.description ?? "",
-                color: null,
-                icon: null,
-              }));
-              handleAddSubthemesToTheme(showAddSubthemeFor, normalized);
-            } else {
-              handleAddSubthemesToTheme(showAddSubthemeFor, [
-                {
-                  id: `temp-${Date.now()}`,
-                  type: "subtheme",
-                  name: payload.name,
-                  description: payload.description,
-                  color: null,
-                  icon: null,
-                },
-              ]);
-            }
+          onSubmit={() => {
+            setDirty(true);
             setShowAddSubthemeFor(null);
           }}
         />
