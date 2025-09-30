@@ -128,10 +128,11 @@ export async function deletePillar(id: string) {
 // ─────────────────────────────────────────────
 // Catalogue: Themes
 // ─────────────────────────────────────────────
-export async function listThemeCatalogue(versionId: string) {
-  const { data, error } = await supabaseServer.rpc("list_theme_catalogue", {
-    v_version_id: versionId,
-  });
+export async function listThemeCatalogue(versionId: string, pillarId?: string) {
+  const params: Record<string, any> = { v_version_id: versionId };
+  if (pillarId) params.v_pillar_id = pillarId;
+
+  const { data, error } = await supabaseServer.rpc("list_theme_catalogue", params);
   if (error) throw new Error(error.message);
   return data;
 }
