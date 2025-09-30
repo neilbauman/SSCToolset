@@ -12,7 +12,7 @@ import { Pencil, Trash2 } from "lucide-react";
 export default function CountryDetailPage({ params }: any) {
   const id = params?.id ?? "unknown"; // ISO code (PHL, NPL, etc.)
 
-  // Country metadata (mock for now — could also come from Supabase "countries" table)
+  // Country metadata (mock for now — can later come from Supabase "countries")
   const country = {
     iso: id,
     name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
@@ -27,24 +27,24 @@ export default function CountryDetailPage({ params }: any) {
   const [adminUnits, setAdminUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch admin units from Supabase
+  // Fetch admin units
+  const fetchUnits = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("admin_units")
+      .select("*")
+      .eq("country_iso", id)
+      .order("level", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching admin units:", error);
+    } else {
+      setAdminUnits(data || []);
+    }
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchUnits = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("admin_units")
-        .select("*")
-        .eq("country_iso", id)
-        .order("level", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching admin units:", error);
-      } else {
-        setAdminUnits(data || []);
-      }
-      setLoading(false);
-    };
-
     fetchUnits();
   }, [id]);
 
@@ -156,7 +156,7 @@ export default function CountryDetailPage({ params }: any) {
       </div>
 
       {/* Upload + Preview Admin Units */}
-      <UploadAdminUnits countryIso={country.iso} />
+      <UploadAdminUnits countryIso={country.iso} onSaved={fetchUnits} />
     </SidebarLayout>
   );
 }
