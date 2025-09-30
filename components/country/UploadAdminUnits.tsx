@@ -43,7 +43,7 @@ export default function UploadAdminUnits({
     setLoading(true);
     setSaved(false);
 
-    // 1. Delete existing rows
+    // 1. Delete existing rows for this country
     const { error: deleteError } = await supabase
       .from("admin_units")
       .delete()
@@ -56,7 +56,7 @@ export default function UploadAdminUnits({
       return;
     }
 
-    // 2. Transform rows
+    // 2. Transform rows into DB format
     const rows = data.map((row) => ({
       country_iso: countryIso,
       pcode: String(row.pcode || "").trim(),
@@ -68,7 +68,7 @@ export default function UploadAdminUnits({
       metadata: row.metadata ? JSON.parse(row.metadata) : {},
     }));
 
-    // 3. Insert rows
+    // 3. Insert new rows
     const { error: insertError } = await supabase.from("admin_units").insert(rows);
 
     if (insertError) {
@@ -77,7 +77,7 @@ export default function UploadAdminUnits({
     } else {
       setSaved(true);
       setError(null);
-      if (onSaved) onSaved(); // 🔑 notify parent
+      if (onSaved) onSaved(); // 🔑 notify parent to refresh
     }
 
     setLoading(false);
