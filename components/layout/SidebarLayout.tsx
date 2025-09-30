@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Menu, X, Home, Settings } from "lucide-react";
 import Link from "next/link";
-import clsx from "clsx";
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false); // collapsed mode (desktop)
@@ -13,14 +12,8 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <div
-        className={clsx(
-          "fixed inset-y-0 left-0 z-30 bg-gray-800 text-white transform transition-all duration-300 lg:static lg:translate-x-0",
-          {
-            "translate-x-0 w-64": open && !collapsed, // full width
-            "translate-x-0 w-16": open && collapsed, // mini collapsed
-            "-translate-x-full w-64": !open, // hidden (mobile)
-          }
-        )}
+        className={`fixed inset-y-0 left-0 z-30 bg-gray-800 text-white transform transition-all duration-300 lg:static lg:translate-x-0
+          ${open ? (collapsed ? "translate-x-0 w-16" : "translate-x-0 w-64") : "-translate-x-full w-64"}`}
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
@@ -93,10 +86,9 @@ function SidebarLink({
   return (
     <Link
       href={href}
-      className={clsx(
-        "flex items-center px-4 py-2 hover:bg-gray-700 rounded transition-colors",
-        { "justify-center": collapsed, "gap-2": !collapsed }
-      )}
+      className={`flex items-center px-4 py-2 hover:bg-gray-700 rounded transition-colors ${
+        collapsed ? "justify-center" : "gap-2"
+      }`}
       title={collapsed ? label : undefined}
     >
       {icon}
