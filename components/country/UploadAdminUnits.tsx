@@ -3,10 +3,13 @@
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/Button";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function UploadAdminUnits() {
+export default function UploadAdminUnits({ countryIso }: { countryIso: string }) {
   const [data, setData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -21,12 +24,41 @@ export default function UploadAdminUnits() {
         const parsed = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
         setData(parsed);
         setError(null);
+        setSaved(false);
       } catch (err: any) {
         console.error(err);
         setError("Failed to parse file. Please ensure it matches the template.");
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setSaved(false);
+
+    // Transform rows into DB format
+    const rows = data.map((row) => ({
+      country_iso: countryIso,
+      pcode: String(row.pcode || "").trim(),
+      name: String(row.name || "").trim(),
+      level: String(row.level || "").trim(),
+      parent_pcode: row.parent_pcode ? String(row.parent_pcode).trim() : null,
+      population: row.population ? Number(row.population) : null,
+      last_updated: row.last_updated ? new Date(row.last_updated) : null,
+      metadata: row.metadata ? JSON.parse(row.metadata) : {},
+    }));
+
+    const { error } = await supabase.from("admin_units").insert(rows);
+
+    if (error) {
+      console.error(error);
+      setError("Failed to save data to database.");
+    } else {
+      setSaved(true);
+      setError(null);
+    }
+    setLoading(false);
   };
 
   return (
@@ -40,6 +72,7 @@ export default function UploadAdminUnits() {
       />
 
       {error && <p className="text-red-600">{error}</p>}
+      {saved && <p className="text-green-600">Data saved successfully!</p>}
 
       {data.length > 0 && (
         <div className="overflow-x-auto">
@@ -72,9 +105,10 @@ export default function UploadAdminUnits() {
           )}
           <Button
             className="mt-4 bg-green-600 text-white hover:bg-green-700"
-            onClick={() => console.log("Ready to insert into Supabase:", data)}
+            onClick={handleSave}
+            disabled={loading}
           >
-            Save to Database
+            {loading ? "Saving..." : "Save to Database"}
           </Button>
         </div>
       )}
