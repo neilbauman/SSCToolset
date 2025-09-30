@@ -235,6 +235,20 @@ export async function listThemeCatalogue(versionId: string, pillarId: string) {
   return data;
 }
 
+export async function createTheme(
+  pillarId: string,
+  name: string,
+  description?: string
+) {
+  const { data, error } = await supabaseServer
+    .from("theme_catalogue")
+    .insert({ pillar_id: pillarId, name, description })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function updateTheme(
   id: string,
   patch: { name?: string; description?: string }
@@ -265,6 +279,20 @@ export async function listSubthemeCatalogue(versionId: string, themeId: string) 
     v_version_id: versionId,
     v_theme_id: themeId,
   });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function createSubtheme(
+  themeId: string,
+  name: string,
+  description?: string
+) {
+  const { data, error } = await supabaseServer
+    .from("subtheme_catalogue")
+    .insert({ theme_id: themeId, name, description })
+    .select()
+    .single();
   if (error) throw new Error(error.message);
   return data;
 }
