@@ -1,4 +1,3 @@
-// components/framework/VersionManager.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -37,6 +36,8 @@ export default function VersionManager() {
     try {
       const data = await listVersions();
       setVersions(data);
+    } catch (err) {
+      console.error("Error fetching versions:", err);
     } finally {
       setLoading(false);
     }
@@ -53,7 +54,8 @@ export default function VersionManager() {
     }
   };
 
-  const handleClone = async (id: string, newName: string) => {
+  const handleClone = async (id: string, newName: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     try {
       const newVersion = await cloneVersion(id, newName);
       await refreshVersions();
@@ -64,7 +66,8 @@ export default function VersionManager() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     try {
       await deleteVersion(id);
       await refreshVersions();
@@ -74,13 +77,20 @@ export default function VersionManager() {
     }
   };
 
-  const handlePublish = async (id: string, publish: boolean) => {
+  const handlePublish = async (id: string, publish: boolean, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     try {
       await publishVersion(id, publish);
       await refreshVersions();
     } catch (err: any) {
       console.error("Error publishing version:", err.message);
     }
+  };
+
+  const handleEdit = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    console.log("Edit clicked for version:", id);
+    // Later we’ll open a modal to rename or adjust metadata
   };
 
   if (loading) return <div>Loading framework versions…</div>;
@@ -167,39 +177,28 @@ export default function VersionManager() {
                     <div className="flex gap-2 justify-end text-gray-600">
                       <button
                         title="Edit"
+                        onClick={(e) => handleEdit(v.id, e)}
                         className="hover:text-blue-600"
-                        // TODO: Wire edit modal
                       >
                         <Edit3 size={16} />
                       </button>
                       <button
                         title="Clone"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleClone(v.id, `${v.name} (copy)`);
-                        }}
+                        onClick={(e) => handleClone(v.id, `${v.name} (copy)`, e)}
                         className="hover:text-blue-600"
                       >
                         <Copy size={16} />
                       </button>
                       <button
                         title="Delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(v.id);
-                        }}
+                        onClick={(e) => handleDelete(v.id, e)}
                         className="hover:text-red-600"
                       >
                         <Trash2 size={16} />
                       </button>
                       <button
-                        title={
-                          v.status === "published" ? "Unpublish" : "Publish"
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePublish(v.id, v.status !== "published");
-                        }}
+                        title={v.status === "published" ? "Unpublish" : "Publish"}
+                        onClick={(e) => handlePublish(v.id, v.status !== "published", e)}
                         className="hover:text-green-600"
                       >
                         <Upload size={16} />
@@ -214,7 +213,7 @@ export default function VersionManager() {
       )}
 
       {/* Framework Editor below */}
-      {current && (
+      {current?.id && (
         <div className="border-t pt-4 space-y-2">
           <div className="flex justify-between items-center">
             <div>
