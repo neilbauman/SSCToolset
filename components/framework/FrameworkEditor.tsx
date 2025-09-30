@@ -12,6 +12,8 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Plus, Pencil, Trash2 } from "lucide-react";
 import EditEntityModal from "./EditEntityModal";
 import AddPillarModal from "./AddPillarModal";
+import AddThemeModal from "./AddThemeModal";
+import AddSubthemeModal from "./AddSubthemeModal";
 
 type Props = {
   versionId: string;
@@ -22,8 +24,13 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   const [tree, setTree] = useState<NormalizedFramework[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
+
   const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(null);
   const [showAddPillar, setShowAddPillar] = useState(false);
+  const [addThemeParent, setAddThemeParent] = useState<NormalizedFramework | null>(null);
+  const [addSubthemeParent, setAddSubthemeParent] = useState<NormalizedFramework | null>(
+    null
+  );
 
   useEffect(() => {
     loadTree();
@@ -39,11 +46,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -75,8 +79,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   }
 
   // Recursive renderer
-  const renderRows = (items: NormalizedFramework[], level = 0) => {
-    return items.map((node) => {
+  const renderRows = (items: NormalizedFramework[], level = 0) =>
+    items.map((node) => {
       const hasChildren =
         (node.type === "pillar" && node.themes && node.themes.length > 0) ||
         (node.type === "theme" && node.subthemes && node.subthemes.length > 0);
@@ -141,13 +145,9 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                   <button
                     onClick={async () => {
                       try {
-                        if (node.type === "pillar") {
-                          await deletePillar(node.id);
-                        } else if (node.type === "theme") {
-                          await deleteTheme(node.id);
-                        } else if (node.type === "subtheme") {
-                          await deleteSubtheme(node.id);
-                        }
+                        if (node.type === "pillar") await deletePillar(node.id);
+                        else if (node.type === "theme") await deleteTheme(node.id);
+                        else if (node.type === "subtheme") await deleteSubtheme(node.id);
 
                         const deleteNode = (
                           items: NormalizedFramework[]
@@ -157,7 +157,9 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                             .map((i) => ({
                               ...i,
                               themes: i.themes ? deleteNode(i.themes) : i.themes,
-                              subthemes: i.subthemes ? deleteNode(i.subthemes) : i.subthemes,
+                              subthemes: i.subthemes
+                                ? deleteNode(i.subthemes)
+                                : i.subthemes,
                             }));
 
                         setTree(deleteNode(tree));
@@ -172,16 +174,25 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                     <Trash2 size={16} />
                   </button>
 
-                  {/* Add Child (placeholder) */}
-                  <button
-                    onClick={() => {
-                      console.log("TODO: Add child for", node.type);
-                    }}
-                    className="text-gray-600 hover:text-green-600"
-                    title="Add Child"
-                  >
-                    <Plus size={16} />
-                  </button>
+                  {/* Add Child */}
+                  {node.type === "pillar" && (
+                    <button
+                      onClick={() => setAddThemeParent(node)}
+                      className="text-gray-600 hover:text-green-600"
+                      title="Add Theme"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                  {node.type === "theme" && (
+                    <button
+                      onClick={() => setAddSubthemeParent(node)}
+                      className="text-gray-600 hover:text-green-600"
+                      title="Add Subtheme"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -193,7 +204,6 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
         </div>
       );
     });
-  };
 
   return (
     <div>
@@ -282,6 +292,51 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
             setTree([...tree, pillar]);
             setDirty(true);
             setShowAddPillar(false);
+          }}
+        />
+      )}
+
+      {/* Add Theme Modal */}
+      {addThemeParent && (
+        <AddThemeModal
+          versionId={versionId}
+          pillarId={addThemeParent.id}
+          existing={tree}
+          onClose={() => setAddThemeParent(null)}
+          onAdd={(theme) => {
+            const updated = tree.map((p) =>
+              p.id === addThemeParent.id
+                ? { ...p, themes: [...(p.themes || []), theme] }
+                : p
+            );
+            setTree(updated);
+            setDirty(true);
+            setAddThemeParent(null);
+          }}
+        />
+      )}
+
+      {/* Add Subtheme Modal */}
+      {addSubthemeParent && (
+        <AddSubthemeModal
+          versionId={versionId}
+          themeId={addSubthemeParent.id}
+          existing={tree}
+          onClose={() => setAddSubthemeParent(null)}
+          onAdd={(sub) => {
+            const update = (items: NormalizedFramework[]): NormalizedFramework[] =>
+              items.map((i) =>
+                i.id === addSubthemeParent.id
+                  ? { ...i, subthemes: [...(i.subthemes || []), sub] }
+                  : {
+                      ...i,
+                      themes: i.themes ? update(i.themes) : i.themes,
+                      subthemes: i.subthemes ? update(i.subthemes) : i.subthemes,
+                    }
+              );
+            setTree(update(tree));
+            setDirty(true);
+            setAddSubthemeParent(null);
           }}
         />
       )}
