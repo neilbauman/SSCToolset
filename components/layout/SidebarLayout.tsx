@@ -1,46 +1,64 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Home, Settings } from "lucide-react";
 import Link from "next/link";
+import clsx from "clsx";
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(false); // collapsed mode (desktop)
+  const [open, setOpen] = useState(true); // open/closed (mobile)
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-30 bg-gray-800 text-white transform transition-transform duration-300 lg:static lg:translate-x-0 ${
-          open ? "translate-x-0 w-64" : "-translate-x-full w-64"
-        }`}
+        className={clsx(
+          "fixed inset-y-0 left-0 z-30 bg-gray-800 text-white transform transition-all duration-300 lg:static lg:translate-x-0",
+          {
+            "translate-x-0 w-64": open && !collapsed, // full width
+            "translate-x-0 w-16": open && collapsed, // mini collapsed
+            "-translate-x-full w-64": !open, // hidden (mobile)
+          }
+        )}
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          <span className="font-bold">SSC Toolset</span>
-          <button
-            onClick={() => setOpen(false)}
-            className="lg:hidden p-1 hover:bg-gray-700 rounded"
-          >
-            <X size={18} />
-          </button>
+          {!collapsed && <span className="font-bold">SSC Toolset</span>}
+          <div className="flex items-center gap-2">
+            {/* Collapse toggle (desktop only) */}
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="hidden lg:block p-1 hover:bg-gray-700 rounded"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <Menu size={18} /> : <X size={18} />}
+            </button>
+            {/* Mobile close button */}
+            <button
+              onClick={() => setOpen(false)}
+              className="lg:hidden p-1 hover:bg-gray-700 rounded"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Navigation */}
         <nav className="mt-4 space-y-2">
-          <Link
+          <SidebarLink
             href="/dashboard"
-            className="block px-4 py-2 hover:bg-gray-700 rounded"
-          >
-            Dashboard
-          </Link>
-          <Link
+            icon={<Home size={18} />}
+            label="Dashboard"
+            collapsed={collapsed}
+          />
+          <SidebarLink
             href="/configuration"
-            className="block px-4 py-2 hover:bg-gray-700 rounded"
-          >
-            Configuration
-          </Link>
-          {/* Add more links as needed */}
+            icon={<Settings size={18} />}
+            label="Configuration"
+            collapsed={collapsed}
+          />
+          {/* Add more links */}
         </nav>
       </div>
 
@@ -57,5 +75,32 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
+  );
+}
+
+/** Reusable nav link that adapts to collapsed mode */
+function SidebarLink({
+  href,
+  icon,
+  label,
+  collapsed,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  collapsed: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={clsx(
+        "flex items-center px-4 py-2 hover:bg-gray-700 rounded transition-colors",
+        { "justify-center": collapsed, "gap-2": !collapsed }
+      )}
+      title={collapsed ? label : undefined}
+    >
+      {icon}
+      {!collapsed && <span>{label}</span>}
+    </Link>
   );
 }
