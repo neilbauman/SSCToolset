@@ -7,8 +7,8 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import { Pencil, Trash2 } from "lucide-react";
 
-export default function CountryDetailPage({ params }: { params: { id: string } }) {
-  const id = params.id; // e.g. "PHL"
+export default function CountryDetailPage({ params }: any) {
+  const id = params?.id ?? "unknown"; // loosened typing
 
   // Mock data (replace with Supabase later)
   const country = {
