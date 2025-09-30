@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Menu, X, Home, Settings } from "lucide-react";
 import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
+import type { GroupKey } from "@/lib/theme";
 
 export default function SidebarLayout({
   children,
@@ -12,7 +13,7 @@ export default function SidebarLayout({
   children: React.ReactNode;
   headerProps: {
     title: string;
-    group: string;
+    group: GroupKey;
     description?: string;
     tool?: string;
     breadcrumbs?: React.ReactNode;
@@ -62,7 +63,6 @@ export default function SidebarLayout({
               label="Configuration"
               collapsed={collapsed}
             />
-            {/* Add more links here */}
           </nav>
         </div>
 
