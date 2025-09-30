@@ -34,6 +34,7 @@ export default function EditVersionModal({ initialName, onClose, onSubmit }: Pro
             onClick={async () => {
               if (!name.trim()) return;
               await onSubmit(name.trim());
+              onClose(); // ✅ close modal after save
             }}
           >
             Save
