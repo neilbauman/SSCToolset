@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getVersionTree, replaceFrameworkVersionItems } from "@/lib/services/framework";
+import {
+  getVersionTree,
+  replaceFrameworkVersionItems,
+  deletePillar,
+  deleteTheme,
+  deleteSubtheme,
+} from "@/lib/services/framework";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Plus, Pencil, Trash2 } from "lucide-react";
 import EditEntityModal from "./EditEntityModal";
@@ -120,6 +126,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
             <div className="col-span-2 py-2 flex gap-2">
               {editable && (
                 <>
+                  {/* Edit */}
                   <button
                     onClick={() => setEditingEntity(node)}
                     className="text-gray-600 hover:text-blue-600"
@@ -127,25 +134,43 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                   >
                     <Pencil size={16} />
                   </button>
+
+                  {/* Delete */}
                   <button
-                    onClick={() => {
-                      // delete node from tree
-                      const deleteNode = (items: NormalizedFramework[]): NormalizedFramework[] =>
-                        items
-                          .filter((i) => i.id !== node.id)
-                          .map((i) => ({
-                            ...i,
-                            themes: i.themes ? deleteNode(i.themes) : i.themes,
-                            subthemes: i.subthemes ? deleteNode(i.subthemes) : i.subthemes,
-                          }));
-                      setTree(deleteNode(tree));
-                      setDirty(true);
+                    onClick={async () => {
+                      try {
+                        if (node.type === "pillar") {
+                          await deletePillar(node.id);
+                        } else if (node.type === "theme") {
+                          await deleteTheme(node.id);
+                        } else if (node.type === "subtheme") {
+                          await deleteSubtheme(node.id);
+                        }
+
+                        const deleteNode = (
+                          items: NormalizedFramework[]
+                        ): NormalizedFramework[] =>
+                          items
+                            .filter((i) => i.id !== node.id)
+                            .map((i) => ({
+                              ...i,
+                              themes: i.themes ? deleteNode(i.themes) : i.themes,
+                              subthemes: i.subthemes ? deleteNode(i.subthemes) : i.subthemes,
+                            }));
+
+                        setTree(deleteNode(tree));
+                        setDirty(true);
+                      } catch (err: any) {
+                        console.error("Error deleting entity:", err.message);
+                      }
                     }}
                     className="text-gray-600 hover:text-red-600"
                     title="Delete"
                   >
                     <Trash2 size={16} />
                   </button>
+
+                  {/* Add Child (placeholder for now) */}
                   <button
                     onClick={() => {
                       console.log("TODO: Add child for", node.type);
@@ -170,6 +195,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
 
   return (
     <div>
+      {/* Toolbar */}
       <div className="flex justify-between mb-2">
         <div className="flex gap-2">
           <button
@@ -213,6 +239,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
         )}
       </div>
 
+      {/* Header Row */}
       <div className="grid grid-cols-12 bg-gray-50 border-b font-medium text-sm">
         <div className="col-span-3 py-2 px-2">Type / Ref Code</div>
         <div className="col-span-5 py-2">Name / Description</div>
@@ -220,13 +247,15 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
         <div className="col-span-2 py-2">Actions</div>
       </div>
 
+      {/* Tree Rows */}
       <div>{renderRows(tree)}</div>
 
+      {/* Edit Modal */}
       {editingEntity && (
         <EditEntityModal
           entity={editingEntity}
           onClose={() => setEditingEntity(null)}
-          onSave={({ name, description }) => {
+          onSaveLocal={({ name, description }) => {
             const updateTree = (items: NormalizedFramework[]): NormalizedFramework[] =>
               items.map((i) =>
                 i.id === editingEntity.id
@@ -237,7 +266,6 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                       subthemes: i.subthemes ? updateTree(i.subthemes) : i.subthemes,
                     }
               );
-
             setTree(updateTree(tree));
             setDirty(true);
           }}
