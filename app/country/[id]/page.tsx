@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { useState } from "react";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
+import { Pencil, Trash2 } from "lucide-react";
 
 export default async function CountryDetailPage({ params }: any) {
   const resolved = params?.then ? await params : params;
@@ -22,6 +23,7 @@ export default async function CountryDetailPage({ params }: any) {
   };
 
   const [openMeta, setOpenMeta] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const headerProps = {
     title: country.name,
@@ -37,6 +39,13 @@ export default async function CountryDetailPage({ params }: any) {
       />
     ),
   };
+
+  // Mock admin units
+  const adminUnits = [
+    { id: 1, name: "Metro Manila", pcode: "PH001", level: "ADM1", population: 13484462 },
+    { id: 2, name: "Quezon City", pcode: "PH001001", level: "ADM2", population: 2960048 },
+    { id: 3, name: "Barangay Bagong Pag-asa", pcode: "PH001001001", level: "ADM3", population: null },
+  ];
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -73,7 +82,16 @@ export default async function CountryDetailPage({ params }: any) {
 
       {/* Admin Units Table */}
       <div className="border rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Administrative Units</h2>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">Administrative Units</h2>
+          <Button
+            className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+            onClick={() => setEditMode(!editMode)}
+          >
+            {editMode ? "Exit Edit Mode" : "Edit Mode"}
+          </Button>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-100 text-left">
@@ -82,27 +100,32 @@ export default async function CountryDetailPage({ params }: any) {
                 <th className="px-4 py-2">PCode</th>
                 <th className="px-4 py-2">Level</th>
                 <th className="px-4 py-2">Population</th>
+                {editMode && <th className="px-4 py-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              <tr className="border-t">
-                <td className="px-4 py-2">Metro Manila</td>
-                <td className="px-4 py-2">PH001</td>
-                <td className="px-4 py-2">ADM1</td>
-                <td className="px-4 py-2">13,484,462</td>
-              </tr>
-              <tr className="border-t">
-                <td className="px-4 py-2">Quezon City</td>
-                <td className="px-4 py-2">PH001001</td>
-                <td className="px-4 py-2">ADM2</td>
-                <td className="px-4 py-2">2,960,048</td>
-              </tr>
-              <tr className="border-t">
-                <td className="px-4 py-2">Barangay Bagong Pag-asa</td>
-                <td className="px-4 py-2">PH001001001</td>
-                <td className="px-4 py-2">ADM3</td>
-                <td className="px-4 py-2 italic text-gray-400">—</td>
-              </tr>
+              {adminUnits.map((u) => (
+                <tr key={u.id} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2">{u.name}</td>
+                  <td className="px-4 py-2">{u.pcode}</td>
+                  <td className="px-4 py-2">{u.level}</td>
+                  <td className="px-4 py-2">
+                    {u.population ? u.population.toLocaleString() : (
+                      <span className="italic text-gray-400">—</span>
+                    )}
+                  </td>
+                  {editMode && (
+                    <td className="px-4 py-2 flex gap-2">
+                      <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
