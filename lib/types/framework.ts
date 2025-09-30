@@ -1,5 +1,8 @@
 // lib/types/framework.ts
 
+// ─────────────────────────────────────────────
+// Framework Versions
+// ─────────────────────────────────────────────
 export type FrameworkVersion = {
   id: string;
   name: string;
@@ -9,6 +12,9 @@ export type FrameworkVersion = {
   created_by?: string;
 };
 
+// ─────────────────────────────────────────────
+// Framework Entities
+// ─────────────────────────────────────────────
 export type FrameworkEntity = {
   id: string;
   name: string;
@@ -18,6 +24,9 @@ export type FrameworkEntity = {
   can_have_indicators?: boolean;
 };
 
+// ─────────────────────────────────────────────
+// Framework Version Items
+// ─────────────────────────────────────────────
 export type FrameworkItem = {
   id: string;
   version_id: string;
@@ -31,6 +40,9 @@ export type FrameworkItem = {
   subtheme: FrameworkEntity | null;
 };
 
+// ─────────────────────────────────────────────
+// Normalized Framework (Tree)
+// ─────────────────────────────────────────────
 export type NormalizedFramework = {
   id: string;
   type: "pillar" | "theme" | "subtheme";
@@ -45,31 +57,29 @@ export type NormalizedFramework = {
   subthemes?: NormalizedFramework[];
 };
 
-// ───────────────────────────────
-// Catalogue types
-// ───────────────────────────────
+// ─────────────────────────────────────────────
+// Catalogue Types
+// ─────────────────────────────────────────────
 export type CataloguePillar = {
   id: string;
   name: string;
   description?: string;
   can_have_indicators?: boolean;
   sort_order?: number;
-  themes?: CatalogueTheme[];
 };
 
 export type CatalogueTheme = {
   id: string;
-  pillar_id?: string;
+  pillar_id: string;
   name: string;
   description?: string;
   can_have_indicators?: boolean;
   sort_order?: number;
-  subthemes?: CatalogueSubtheme[];
 };
 
 export type CatalogueSubtheme = {
   id: string;
-  theme_id?: string;
+  theme_id: string;
   name: string;
   description?: string;
   can_have_indicators?: boolean;
