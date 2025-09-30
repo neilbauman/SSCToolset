@@ -10,7 +10,7 @@ export default function UploadAdminUnits({
   onSaved,
 }: {
   countryIso: string;
-  onSaved?: () => void;
+  onSaved?: (resetPage?: boolean) => void;
 }) {
   const [data, setData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export default function UploadAdminUnits({
     } else {
       setSaved(true);
       setError(null);
-      if (onSaved) onSaved(); // 🔑 notify parent to refresh
+      if (onSaved) onSaved(true); // 🔑 notify parent and request reset to page 0
     }
 
     setLoading(false);
