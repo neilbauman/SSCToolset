@@ -2,10 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Modal from "../ui/Modal";
-import {
-  listThemeCatalogue,
-  createTheme,
-} from "@/lib/services/framework";
+import { listThemeCatalogue, createTheme } from "@/lib/services/framework";
 import type { NormalizedFramework } from "@/lib/types/framework";
 
 type Props = {
@@ -25,7 +22,6 @@ export default function AddThemeModal({
 }: Props) {
   const [catalogue, setCatalogue] = useState<any[]>([]);
   const [mode, setMode] = useState<"catalogue" | "new">("catalogue");
-
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -57,6 +53,7 @@ export default function AddThemeModal({
       }
       onClose();
     } else {
+      if (!name.trim()) return;
       const created = await createTheme(pillarId, name.trim(), description);
       const newTheme: NormalizedFramework = {
         id: created.id,
