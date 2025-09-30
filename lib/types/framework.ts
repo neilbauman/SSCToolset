@@ -13,7 +13,7 @@ export type FrameworkVersion = {
 };
 
 // ─────────────────────────────────────────────
-// Framework Entities
+// Framework Entities (from catalogue tables)
 // ─────────────────────────────────────────────
 export type FrameworkEntity = {
   id: string;
@@ -25,7 +25,7 @@ export type FrameworkEntity = {
 };
 
 // ─────────────────────────────────────────────
-// Framework Version Items
+// Framework Version Items (DB rows)
 // ─────────────────────────────────────────────
 export type FrameworkItem = {
   id: string;
@@ -34,14 +34,14 @@ export type FrameworkItem = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  ref_code?: string;
+  ref_code: string; // always populated when normalized
   pillar: FrameworkEntity | null;
   theme: FrameworkEntity | null;
   subtheme: FrameworkEntity | null;
 };
 
 // ─────────────────────────────────────────────
-// Normalized Framework (Tree)
+// Normalized Framework Tree
 // ─────────────────────────────────────────────
 export type NormalizedFramework = {
   id: string;
@@ -51,8 +51,9 @@ export type NormalizedFramework = {
   color: string | null;
   icon: string | null;
   can_have_indicators?: boolean;
-  sort_order?: number;
-  ref_code?: string;
+  sort_order: number;
+  ref_code: string;
+  // Children
   themes?: NormalizedFramework[];
   subthemes?: NormalizedFramework[];
 };
@@ -85,3 +86,14 @@ export type CatalogueSubtheme = {
   can_have_indicators?: boolean;
   sort_order?: number;
 };
+
+// ─────────────────────────────────────────────
+// Editor Support Types
+// ─────────────────────────────────────────────
+export type FrameworkNodeType = "pillar" | "theme" | "subtheme";
+
+export type FrameworkAction =
+  | { type: "add"; parentId?: string; node: NormalizedFramework }
+  | { type: "update"; node: NormalizedFramework }
+  | { type: "delete"; id: string; nodeType: FrameworkNodeType }
+  | { type: "move"; id: string; newParentId?: string; newSortOrder: number };
