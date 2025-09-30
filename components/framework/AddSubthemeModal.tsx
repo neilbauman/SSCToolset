@@ -6,7 +6,7 @@ import { listSubthemeCatalogue } from "@/lib/services/framework";
 import type { CatalogueSubtheme } from "@/lib/types/framework";
 
 type Props = {
-  versionId: string;
+  versionId: string; // kept for parity; not used by listSubthemeCatalogue
   parentThemeId: string;
   existingSubthemeIds: string[];
   isPersisted: boolean;
@@ -33,6 +33,7 @@ export default function AddSubthemeModal({
   useEffect(() => {
     async function load() {
       try {
+        // ✅ listSubthemeCatalogue now only takes themeId
         const data = await listSubthemeCatalogue(parentThemeId);
         setSubthemes(data);
       } catch (err) {
@@ -41,6 +42,10 @@ export default function AddSubthemeModal({
     }
     if (isPersisted) load();
   }, [parentThemeId, isPersisted]);
+
+  function toggle(id: string, checked: boolean) {
+    setSelected((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
+  }
 
   function handleSubmit() {
     if (selected.length > 0) {
@@ -55,36 +60,34 @@ export default function AddSubthemeModal({
   return (
     <Modal open onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Add Subtheme</h2>
+
       {isPersisted ? (
-        <div className="space-y-2">
-          {subthemes.map((s) => (
-            <label key={s.id} className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                value={s.id}
-                disabled={existingSubthemeIds.includes(s.id)}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setSelected([...selected, s.id]);
-                  } else {
-                    setSelected(selected.filter((id) => id !== s.id));
-                  }
-                }}
-              />
-              <span
-                className={
-                  existingSubthemeIds.includes(s.id)
-                    ? "text-gray-400"
-                    : "text-gray-800"
-                }
-              >
-                {s.name}
-              </span>
-            </label>
-          ))}
+        <div className="space-y-2 max-h-80 overflow-auto pr-1">
+          {subthemes.map((s) => {
+            const disabled = existingSubthemeIds.includes(s.id);
+            return (
+              <label key={s.id} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  value={s.id}
+                  disabled={disabled}
+                  onChange={(e) => toggle(s.id, e.target.checked)}
+                  className="mt-1"
+                />
+                <div>
+                  <div className={disabled ? "text-gray-400" : "text-gray-900"}>
+                    {s.name}
+                  </div>
+                  {s.description && (
+                    <div className="text-xs text-gray-500">{s.description}</div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <input
             type="text"
             placeholder="Subtheme name"
@@ -93,18 +96,16 @@ export default function AddSubthemeModal({
             className="w-full border rounded p-2"
           />
           <textarea
-            placeholder="Description"
+            placeholder="Description (optional)"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="w-full border rounded p-2"
           />
         </div>
       )}
-      <div className="mt-4 flex justify-end space-x-2">
-        <button
-          onClick={onClose}
-          className="px-3 py-1 text-sm bg-gray-200 rounded"
-        >
+
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={onClose} className="px-3 py-1 text-sm bg-gray-200 rounded">
           Cancel
         </button>
         <button
