@@ -3,75 +3,76 @@
 import { useState } from "react";
 import { Menu, X, Home, Settings } from "lucide-react";
 import Link from "next/link";
+import PageHeader from "@/components/ui/PageHeader";
 
-export default function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false); // collapsed mode (desktop)
-  const [open, setOpen] = useState(true); // open/closed (mobile)
+export default function SidebarLayout({
+  children,
+  headerProps,
+}: {
+  children: React.ReactNode;
+  headerProps: {
+    title: string;
+    group: string;
+    description?: string;
+    tool?: string;
+    breadcrumbs?: React.ReactNode;
+  };
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [open, setOpen] = useState(true);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 z-30 bg-gray-800 text-white transform transition-all duration-300 lg:static lg:translate-x-0
-          ${open ? (collapsed ? "translate-x-0 w-16" : "translate-x-0 w-64") : "-translate-x-full w-64"}`}
-      >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          {!collapsed && <span className="font-bold">SSC Toolset</span>}
-          <div className="flex items-center gap-2">
-            {/* Collapse toggle (desktop only) */}
+    <div className="flex flex-col h-screen">
+      {/* Fixed PageHeader */}
+      <div className="flex-none border-b shadow-sm bg-white z-10">
+        <PageHeader {...headerProps} />
+      </div>
+
+      {/* Main area: sidebar + content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div
+          className={`bg-gray-800 text-white transition-all duration-300 border-r ${
+            collapsed ? "w-16" : "w-64"
+          }`}
+        >
+          {/* Sidebar header with collapse toggle */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+            {!collapsed && <span className="font-bold">SSC Toolset</span>}
             <button
               onClick={() => setCollapsed(!collapsed)}
-              className="hidden lg:block p-1 hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-gray-700 rounded"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {collapsed ? <Menu size={18} /> : <X size={18} />}
             </button>
-            {/* Mobile close button */}
-            <button
-              onClick={() => setOpen(false)}
-              className="lg:hidden p-1 hover:bg-gray-700 rounded"
-            >
-              <X size={18} />
-            </button>
           </div>
+
+          {/* Navigation */}
+          <nav className="mt-4 space-y-2">
+            <SidebarLink
+              href="/dashboard"
+              icon={<Home size={18} />}
+              label="Dashboard"
+              collapsed={collapsed}
+            />
+            <SidebarLink
+              href="/configuration"
+              icon={<Settings size={18} />}
+              label="Configuration"
+              collapsed={collapsed}
+            />
+            {/* Add more links here */}
+          </nav>
         </div>
 
-        {/* Navigation */}
-        <nav className="mt-4 space-y-2">
-          <SidebarLink
-            href="/dashboard"
-            icon={<Home size={18} />}
-            label="Dashboard"
-            collapsed={collapsed}
-          />
-          <SidebarLink
-            href="/configuration"
-            icon={<Settings size={18} />}
-            label="Configuration"
-            collapsed={collapsed}
-          />
-          {/* Add more links */}
-        </nav>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Top bar with toggle (mobile only) */}
-        <div className="lg:hidden flex items-center p-2 border-b">
-          <button onClick={() => setOpen(true)}>
-            <Menu size={20} />
-          </button>
-          <span className="ml-2 font-semibold">SSC Toolset</span>
-        </div>
-
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">{children}</div>
       </div>
     </div>
   );
 }
 
-/** Reusable nav link that adapts to collapsed mode */
 function SidebarLink({
   href,
   icon,
