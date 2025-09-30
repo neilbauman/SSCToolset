@@ -24,7 +24,7 @@ import {
 export default function VersionManager() {
   const [versions, setVersions] = useState<FrameworkVersion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [current, setCurrent] = useState<FrameworkVersion | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
 
@@ -37,9 +37,6 @@ export default function VersionManager() {
     try {
       const data = await listVersions();
       setVersions(data);
-      if (!currentId && data.length > 0) {
-        setCurrentId(data[0].id);
-      }
     } finally {
       setLoading(false);
     }
@@ -49,7 +46,7 @@ export default function VersionManager() {
     try {
       const newVersion = await createVersion("Untitled Framework");
       await refreshVersions();
-      setCurrentId(newVersion.id);
+      setCurrent(newVersion);
       setEditMode(true);
     } catch (err: any) {
       console.error("Error creating version:", err.message);
@@ -60,7 +57,7 @@ export default function VersionManager() {
     try {
       const newVersion = await cloneVersion(id, newName);
       await refreshVersions();
-      setCurrentId(newVersion.id);
+      setCurrent(newVersion);
       setEditMode(true);
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
@@ -71,10 +68,7 @@ export default function VersionManager() {
     try {
       await deleteVersion(id);
       await refreshVersions();
-      if (currentId === id) {
-        setCurrentId(null);
-        setEditMode(false);
-      }
+      if (current?.id === id) setCurrent(null);
     } catch (err: any) {
       console.error("Error deleting version:", err.message);
     }
@@ -95,23 +89,14 @@ export default function VersionManager() {
     <div className="space-y-6">
       {/* Header controls */}
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Framework Versions</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <h2 className="text-lg font-semibold">Primary Framework Versions</h2>
           <button
             onClick={() => setShowPanel((prev) => !prev)}
             className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
           >
             {showPanel ? <EyeOff size={16} /> : <Eye size={16} />}
             {showPanel ? "Hide Versioning" : "Show Versioning"}
-          </button>
-          <button
-            onClick={() => setEditMode((prev) => !prev)}
-            className={`flex items-center gap-1 px-2 py-1 text-sm rounded ${
-              editMode ? "bg-blue-600 text-white" : "bg-gray-200 hover:bg-gray-300"
-            }`}
-          >
-            <Edit3 size={16} />
-            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
           </button>
           {editMode && (
             <button
@@ -123,18 +108,29 @@ export default function VersionManager() {
             </button>
           )}
         </div>
+        <div>
+          <button
+            onClick={() => setEditMode((prev) => !prev)}
+            className={`flex items-center gap-1 px-2 py-1 text-sm rounded ${
+              editMode ? "bg-blue-600 text-white" : "bg-gray-200 hover:bg-gray-300"
+            }`}
+          >
+            <Edit3 size={16} />
+            {editMode ? "Exit Edit Mode" : "Enter Edit Mode"}
+          </button>
+        </div>
       </div>
 
       {/* Versions Table */}
       {showPanel && (
-        <table className="w-full border text-sm">
+        <table className="w-full border text-sm table-fixed">
           <thead className="bg-gray-100">
             <tr>
-              <th className="text-left px-2 py-1">Name</th>
-              <th className="text-left px-2 py-1">Status</th>
-              <th className="text-left px-2 py-1">Created</th>
-              <th className="text-left px-2 py-1">Last Revised</th>
-              {editMode && <th className="text-left px-2 py-1">Actions</th>}
+              <th className="text-left px-2 py-1 w-[35%]">Name</th>
+              <th className="text-left px-2 py-1 w-[15%]">Status</th>
+              <th className="text-left px-2 py-1 w-[20%]">Created</th>
+              <th className="text-left px-2 py-1 w-[20%]">Last Revised</th>
+              <th className="text-right px-2 py-1 w-[10%]">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -142,11 +138,9 @@ export default function VersionManager() {
               <tr
                 key={v.id}
                 className={`cursor-pointer ${
-                  v.id === currentId ? "bg-blue-50" : ""
+                  current?.id === v.id ? "bg-blue-50" : ""
                 }`}
-                onClick={() => {
-                  setCurrentId(v.id);
-                }}
+                onClick={() => setCurrent(v)}
               >
                 <td className="px-2 py-1 font-medium">{v.name}</td>
                 <td className="px-2 py-1">
@@ -168,9 +162,9 @@ export default function VersionManager() {
                     ? new Date(v.updated_at).toLocaleDateString()
                     : "-"}
                 </td>
-                {editMode && (
-                  <td className="px-2 py-1">
-                    <div className="flex gap-2 text-gray-600">
+                <td className="px-2 py-1 text-right">
+                  {editMode && (
+                    <div className="flex gap-2 justify-end text-gray-600">
                       <button
                         title="Edit"
                         className="hover:text-blue-600"
@@ -211,8 +205,8 @@ export default function VersionManager() {
                         <Upload size={16} />
                       </button>
                     </div>
-                  </td>
-                )}
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -220,9 +214,22 @@ export default function VersionManager() {
       )}
 
       {/* Framework Editor below */}
-      {currentId && (
-        <div className="border-t pt-4">
-          <FrameworkEditor versionId={currentId} editable={editMode} />
+      {current && (
+        <div className="border-t pt-4 space-y-2">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="font-medium">{current.name}</h3>
+              <p className="text-xs text-gray-500">
+                {current.status} • Created{" "}
+                {new Date(current.created_at).toLocaleDateString()}
+                {current.updated_at &&
+                  ` • Last revised ${new Date(
+                    current.updated_at
+                  ).toLocaleDateString()}`}
+              </p>
+            </div>
+          </div>
+          <FrameworkEditor versionId={current.id} editable={editMode} />
         </div>
       )}
     </div>
