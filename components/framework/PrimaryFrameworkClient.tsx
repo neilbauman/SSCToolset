@@ -1,134 +1,129 @@
+// components/framework/PrimaryFrameworkClient.tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import { FrameworkVersion } from "@/lib/types/framework";
-import FrameworkEditor from "./FrameworkEditor";
-import VersionManager from "./VersionManager";
+import React, { useState, useEffect } from "react";
 import {
   listVersions,
   createVersion,
   cloneVersion,
-  updateVersion,
-  publishVersion,
   deleteVersion,
-  getVersionTree,
+  publishVersion,
 } from "@/lib/services/framework";
+import type { FrameworkVersion } from "@/lib/types/framework";
 
-type Props = {
-  versions: FrameworkVersion[];
-  openedId?: string;
-};
-
-export default function PrimaryFrameworkClient({ versions, openedId }: Props) {
-  const [currentId, setCurrentId] = useState<string>(
-    openedId ?? versions[0]?.id ?? ""
-  );
-  const [versionList, setVersionList] = useState<FrameworkVersion[]>(versions);
-  const [tree, setTree] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-
-  async function refreshVersions(): Promise<FrameworkVersion[]> {
-    const vs = await listVersions();
-    setVersionList(vs);
-    return vs;
-  }
+export default function PrimaryFrameworkClient() {
+  const [versions, setVersions] = useState<FrameworkVersion[]>([]);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (openedId) setCurrentId(openedId);
-  }, [openedId]);
+    refreshVersions();
+  }, []);
 
-  const loadTree = async (versionId: string) => {
-    if (!versionId) return;
+  const refreshVersions = async () => {
     setLoading(true);
     try {
-      const data = await getVersionTree(versionId);
-      setTree(data ?? []);
-    } catch (err: any) {
-      console.error("Error loading framework tree:", err.message);
+      const data = await listVersions();
+      setVersions(data);
+      if (!currentId && data.length > 0) {
+        setCurrentId(data[0].id);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (currentId) loadTree(currentId);
-  }, [currentId]);
-
-  // Handlers
-  async function handleNew(name: string): Promise<void> {
+  const handleCreate = async () => {
     try {
-      const v = await createVersion(name);
-      setCurrentId(v.id);
-      await refreshVersions();
+      const newVersion = await createVersion("Untitled Framework");
+      setVersions((prev) => [...prev, newVersion]);
+      setCurrentId(newVersion.id);
     } catch (err: any) {
-      console.error("Error creating new version:", err.message);
+      console.error("Error creating version:", err.message);
     }
-  }
+  };
 
-  async function handleEdit(id: string, patch: { name?: string }): Promise<void> {
+  const handleClone = async (id: string, newName: string) => {
     try {
-      await updateVersion(id, patch);
-      await refreshVersions();
-    } catch (err: any) {
-      console.error("Error editing version:", err.message);
-    }
-  }
-
-  async function handleClone(id: string, newName: string): Promise<void> {
-    try {
-      const newId = await cloneVersion(id, newName);
-      setCurrentId(newId);
+      const newVersion = await cloneVersion(id, newName);
+      setCurrentId(newVersion.id); // ✅ FIX: only set the ID
       await refreshVersions();
     } catch (err: any) {
       console.error("Error cloning version:", err.message);
     }
-  }
+  };
 
-  async function handleDelete(id: string): Promise<void> {
+  const handleDelete = async (id: string) => {
     try {
       await deleteVersion(id);
-      const vs = await refreshVersions();
-      setCurrentId(vs[0]?.id ?? "");
+      await refreshVersions();
     } catch (err: any) {
       console.error("Error deleting version:", err.message);
     }
-  }
+  };
 
-  async function handlePublish(id: string, publish: boolean): Promise<void> {
+  const handlePublish = async (id: string, publish: boolean) => {
     try {
       await publishVersion(id, publish);
       await refreshVersions();
     } catch (err: any) {
       console.error("Error publishing version:", err.message);
     }
-  }
+  };
+
+  if (loading) return <div>Loading...</div>;
 
   return (
     <div>
-      <VersionManager
-        versions={versionList}
-        selectedId={currentId}
-        editMode={editMode}
-        onToggleEdit={() => setEditMode(!editMode)}
-        onSelect={(id) => setCurrentId(id)}
-        onNew={handleNew}
-        onEdit={handleEdit}
-        onClone={handleClone}
-        onDelete={handleDelete}
-        onPublish={handlePublish}
-      />
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">Framework Versions</h2>
+        <button
+          onClick={handleCreate}
+          className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
+        >
+          + New Version
+        </button>
+      </div>
 
-      {loading ? (
-        <div className="text-gray-500 text-sm">Loading...</div>
-      ) : (
-        <FrameworkEditor
-          tree={tree}
-          versionId={currentId}
-          editMode={editMode}
-          onChanged={() => loadTree(currentId)}
-        />
-      )}
+      <ul className="border rounded divide-y">
+        {versions.map((v) => (
+          <li
+            key={v.id}
+            className={`p-2 flex justify-between items-center ${
+              v.id === currentId ? "bg-blue-50" : ""
+            }`}
+          >
+            <div>
+              <div className="font-medium">{v.name}</div>
+              <div className="text-xs text-gray-500">
+                {v.status} • {new Date(v.created_at).toLocaleString()}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="text-blue-600 text-sm"
+                onClick={() => handleClone(v.id, `${v.name} (copy)`)}
+              >
+                Clone
+              </button>
+              <button
+                className="text-red-600 text-sm"
+                onClick={() => handleDelete(v.id)}
+              >
+                Delete
+              </button>
+              <button
+                className="text-green-600 text-sm"
+                onClick={() =>
+                  handlePublish(v.id, v.status !== "published")
+                }
+              >
+                {v.status === "published" ? "Unpublish" : "Publish"}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
