@@ -24,6 +24,9 @@ export default function AddThemeModal({
   onAdd,
 }: Props) {
   const [catalogue, setCatalogue] = useState<any[]>([]);
+  const [mode, setMode] = useState<"catalogue" | "new">("catalogue");
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
@@ -35,56 +38,124 @@ export default function AddThemeModal({
     load();
   }, [versionId, pillarId]);
 
+  async function handleSubmit() {
+    if (mode === "catalogue") {
+      const selected = catalogue.filter((c) => selectedIds.includes(c.id));
+      for (const c of selected) {
+        const theme: NormalizedFramework = {
+          id: c.id,
+          type: "theme",
+          name: c.name,
+          description: c.description,
+          sort_order: (existing.length || 0) + 1,
+          ref_code: c.ref_code ?? `T${pillarId}.${existing.length + 1}`,
+          color: null,
+          icon: null,
+          subthemes: [],
+        };
+        onAdd(theme);
+      }
+      onClose();
+    } else {
+      const created = await createTheme(pillarId, name.trim(), description);
+      const newTheme: NormalizedFramework = {
+        id: created.id,
+        type: "theme",
+        name: created.name,
+        description: created.description,
+        sort_order: (existing.length || 0) + 1,
+        ref_code: created.ref_code ?? `T${pillarId}.${existing.length + 1}`,
+        color: null,
+        icon: null,
+        subthemes: [],
+      };
+      onAdd(newTheme);
+      onClose();
+    }
+  }
+
   return (
     <Modal open={true} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Add Theme</h2>
 
-      <div className="space-y-4">
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Theme name"
-          className="w-full rounded border px-3 py-2 text-sm"
-        />
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Theme description"
-          className="w-full rounded border px-3 py-2 text-sm"
-        />
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-3 py-1 rounded ${
+            mode === "catalogue" ? "bg-blue-600 text-white" : "bg-gray-200"
+          }`}
+          onClick={() => setMode("catalogue")}
+        >
+          From Catalogue
+        </button>
+        <button
+          className={`px-3 py-1 rounded ${
+            mode === "new" ? "bg-blue-600 text-white" : "bg-gray-200"
+          }`}
+          onClick={() => setMode("new")}
+        >
+          New
+        </button>
+      </div>
 
-        <div className="flex justify-end gap-2">
-          <button
-            className="px-4 py-2 rounded bg-gray-200 text-sm"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className="px-4 py-2 rounded bg-blue-600 text-white text-sm"
-            onClick={async () => {
-              if (!name.trim()) return;
-              const created = await createTheme(pillarId, name.trim(), description);
-              const newTheme: NormalizedFramework = {
-                id: created.id,
-                type: "theme",
-                name: created.name,
-                description: created.description,
-                sort_order: (existing.length || 0) + 1,
-                ref_code: created.ref_code ?? `T${pillarId}.${existing.length + 1}`,
-                color: null,
-                icon: null,
-                themes: [],
-                subthemes: [],
-              };
-              onAdd(newTheme);
-              onClose();
-            }}
-          >
-            Add
-          </button>
+      {mode === "catalogue" ? (
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {catalogue.map((c) => {
+            const already = existing.some((e) => e.id === c.id);
+            return (
+              <label
+                key={c.id}
+                className={`flex items-center gap-2 p-2 rounded ${
+                  already ? "opacity-50" : ""
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={already}
+                  checked={selectedIds.includes(c.id)}
+                  onChange={(e) =>
+                    setSelectedIds((prev) =>
+                      e.target.checked
+                        ? [...prev, c.id]
+                        : prev.filter((id) => id !== c.id)
+                    )
+                  }
+                />
+                <div>
+                  <div className="font-medium">{c.name}</div>
+                  <div className="text-xs text-gray-500">{c.description}</div>
+                </div>
+              </label>
+            );
+          })}
         </div>
+      ) : (
+        <div className="space-y-4">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Theme name"
+            className="w-full rounded border px-3 py-2 text-sm"
+          />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Theme description"
+            className="w-full rounded border px-3 py-2 text-sm"
+          />
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 mt-4">
+        <button className="px-4 py-2 bg-gray-200 rounded" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="px-4 py-2 bg-blue-600 text-white rounded"
+          onClick={handleSubmit}
+        >
+          Add
+        </button>
       </div>
     </Modal>
   );
