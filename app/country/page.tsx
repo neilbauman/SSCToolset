@@ -14,9 +14,9 @@ export default function CountryPage() {
 
   // Mock data for now
   const countries = [
-    { id: 1, name: "Philippines", iso: "PHL", population: 113900000, lastUpdated: "2024-01-01" },
-    { id: 2, name: "Nepal", iso: "NPL", population: 30000000, lastUpdated: "2023-08-10" },
-    { id: 3, name: "Honduras", iso: "HND", population: null, lastUpdated: "2023-11-15" },
+    { iso: "PHL", name: "Philippines", population: 113900000, lastUpdated: "2024-01-01" },
+    { iso: "NPL", name: "Nepal", population: 30000000, lastUpdated: "2023-08-10" },
+    { iso: "HND", name: "Honduras", population: null, lastUpdated: "2023-11-15" },
   ];
 
   const headerProps = {
@@ -58,10 +58,13 @@ export default function CountryPage() {
           </thead>
           <tbody>
             {countries.map((c) => (
-              <tr key={c.id} className="border-t hover:bg-gray-50">
+              <tr key={c.iso} className="border-t hover:bg-gray-50">
                 <td className="px-4 py-2">
-                  <Link href={`/country/${c.id}`}>
-                    <a className="text-blue-700 hover:underline">{c.name}</a>
+                  <Link
+                    href={`/country/${c.iso}`}
+                    className="text-blue-700 hover:underline"
+                  >
+                    {c.name}
                   </Link>
                 </td>
                 <td className="px-4 py-2">{c.iso}</td>
