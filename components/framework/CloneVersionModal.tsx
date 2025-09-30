@@ -34,6 +34,7 @@ export default function CloneVersionModal({ initialName, onClose, onSubmit }: Pr
             onClick={async () => {
               if (!name.trim()) return;
               await onSubmit(name.trim());
+              onClose(); // ✅ close modal after clone
             }}
           >
             Clone
