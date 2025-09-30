@@ -8,7 +8,8 @@ import type { NormalizedFramework } from "@/lib/types/framework";
 type Props = {
   versionId: string;
   pillarId: string;
-  existing: NormalizedFramework[];
+  existing: NormalizedFramework[]; // existing themes under this pillar
+  pillarSortOrder?: number;        // needed to generate ref_code
   onClose: () => void;
   onAdd: (theme: NormalizedFramework) => void;
 };
@@ -17,6 +18,7 @@ export default function AddThemeModal({
   versionId,
   pillarId,
   existing,
+  pillarSortOrder = 1,
   onClose,
   onAdd,
 }: Props) {
@@ -37,31 +39,33 @@ export default function AddThemeModal({
   async function handleSubmit() {
     if (mode === "catalogue") {
       const selected = catalogue.filter((c) => selectedIds.includes(c.id));
-      for (const c of selected) {
+      selected.forEach((c, idx) => {
+        const sort = existing.length + idx + 1;
         const theme: NormalizedFramework = {
           id: c.id,
           type: "theme",
           name: c.name,
           description: c.description,
-          sort_order: (existing.length || 0) + 1,
-          ref_code: c.ref_code ?? `T${pillarId}.${existing.length + 1}`,
+          sort_order: sort,
+          ref_code: `T${pillarSortOrder}.${sort}`,
           color: null,
           icon: null,
           subthemes: [],
         };
         onAdd(theme);
-      }
+      });
       onClose();
     } else {
       if (!name.trim()) return;
       const created = await createTheme(pillarId, name.trim(), description);
+      const sort = (existing.length || 0) + 1;
       const newTheme: NormalizedFramework = {
         id: created.id,
         type: "theme",
         name: created.name,
         description: created.description,
-        sort_order: (existing.length || 0) + 1,
-        ref_code: created.ref_code ?? `T${pillarId}.${existing.length + 1}`,
+        sort_order: sort,
+        ref_code: `T${pillarSortOrder}.${sort}`,
         color: null,
         icon: null,
         subthemes: [],
