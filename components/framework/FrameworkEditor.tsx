@@ -1,89 +1,27 @@
 "use client";
 
-import React, { useMemo, useState, useCallback } from "react";
-import {
-  ChevronRight,
-  ChevronDown,
-  GripVertical,
-  Pencil,
-  Trash2,
-  Plus,
-} from "lucide-react";
+import { useState, useCallback } from "react";
 import type { NormalizedFramework } from "@/lib/types/framework";
 import AddPillarModal from "./AddPillarModal";
 import AddThemeModal from "./AddThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
-import {
-  createPillar,
-  createTheme,
-  createSubtheme,
-  replaceFrameworkVersionItems,
-} from "@/lib/services/framework";
 
 type Props = {
   tree: NormalizedFramework[];
   versionId: string;
-  editMode?: boolean;
-  onChanged?: () => Promise<void>;
+  editMode: boolean;
+  onChanged: () => void;
 };
 
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
-function TypeBadge({ type }: { type: "pillar" | "theme" | "subtheme" }) {
-  const styles: Record<typeof type, string> = {
-    pillar:
-      "bg-blue-50 text-blue-700 border border-blue-200 text-[12px] px-2 py-[2px] rounded-full",
-    theme:
-      "bg-green-50 text-green-700 border border-green-200 text-[12px] px-2 py-[2px] rounded-full",
-    subtheme:
-      "bg-purple-50 text-purple-700 border border-purple-200 text-[12px] px-2 py-[2px] rounded-full",
-  };
-  const label =
-    type === "pillar" ? "Pillar" : type === "theme" ? "Theme" : "Subtheme";
-  return <span className={styles[type]}>{label}</span>;
-}
-
-function buildDisplayTree(pillars: NormalizedFramework[]): NormalizedFramework[] {
-  return pillars
-    .map((pillar, pIndex) => {
-      const pillarRef = `P${pIndex + 1}`;
-      return {
-        ...pillar,
-        sort_order: pIndex + 1,
-        ref_code: pillarRef,
-        themes: (pillar.themes ?? []).map((theme, tIndex) => {
-          const themeRef = `P${pIndex + 1}.T${tIndex + 1}`;
-          return {
-            ...theme,
-            sort_order: tIndex + 1,
-            ref_code: themeRef,
-            subthemes: (theme.subthemes ?? []).map((sub, sIndex) => {
-              const subRef = `P${pIndex + 1}.T${tIndex + 1}.S${sIndex + 1}`;
-              return { ...sub, sort_order: sIndex + 1, ref_code: subRef };
-            }),
-          };
-        }),
-      };
-    });
-}
-
-function isTemp(id: string) {
-  return id.startsWith("temp-");
-}
-
-// ─────────────────────────────────────────────
-// Main Component
-// ─────────────────────────────────────────────
 export default function FrameworkEditor({
   tree,
   versionId,
-  editMode = true,
+  editMode,
   onChanged,
 }: Props) {
+  const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree ?? []);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState(false);
-  const [localTree, setLocalTree] = useState<NormalizedFramework[]>(tree);
 
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [showAddThemeFor, setShowAddThemeFor] = useState<string | null>(null);
@@ -91,236 +29,271 @@ export default function FrameworkEditor({
     null
   );
 
-  React.useEffect(() => {
-    setLocalTree(tree);
-    setDirty(false);
-    setExpanded({});
-  }, [tree, versionId]);
-
-  const displayTree = useMemo(
-    () => buildDisplayTree(localTree ?? []),
-    [localTree]
-  );
-
   // ─────────────────────────────────────────────
-  // SAVE: create catalogue entries for temp IDs + replace items
+  // Helpers
   // ─────────────────────────────────────────────
-  async function handleSave() {
-    try {
-      const resolvedPillars: NormalizedFramework[] = [];
-
-      for (let pIdx = 0; pIdx < localTree.length; pIdx++) {
-        let pillar = localTree[pIdx];
-        let pillarId = pillar.id;
-        if (isTemp(pillarId)) {
-          const created = await createPillar(pillar.name, pillar.description ?? "");
-          pillarId = created.id;
-        }
-
-        const resolvedThemes: NormalizedFramework[] = [];
-        for (let tIdx = 0; tIdx < (pillar.themes ?? []).length; tIdx++) {
-          let theme = pillar.themes![tIdx];
-          let themeId = theme.id;
-          if (isTemp(themeId)) {
-            const created = await createTheme(pillarId, theme.name, theme.description ?? "");
-            themeId = created.id;
-          }
-
-          const resolvedSubs: NormalizedFramework[] = [];
-          for (let sIdx = 0; sIdx < (theme.subthemes ?? []).length; sIdx++) {
-            let sub = theme.subthemes![sIdx];
-            let subId = sub.id;
-            if (isTemp(subId)) {
-              const created = await createSubtheme(themeId, sub.name, sub.description ?? "");
-              subId = created.id;
-            }
-            resolvedSubs.push({ ...sub, id: subId });
-          }
-
-          resolvedThemes.push({ ...theme, id: themeId, subthemes: resolvedSubs });
-        }
-
-        resolvedPillars.push({ ...pillar, id: pillarId, themes: resolvedThemes });
-      }
-
-      // Flatten for framework_version_items
-      const items: {
-        version_id: string;
-        pillar_id: string | null;
-        theme_id: string | null;
-        subtheme_id: string | null;
-        sort_order: number;
-        ref_code: string;
-      }[] = [];
-
-      resolvedPillars.forEach((p, pIdx) => {
-        const pRef = `P${pIdx + 1}`;
-        items.push({
-          version_id: versionId,
-          pillar_id: p.id,
-          theme_id: null,
-          subtheme_id: null,
-          sort_order: pIdx + 1,
-          ref_code: pRef,
-        });
-
-        (p.themes ?? []).forEach((t, tIdx) => {
-          const tRef = `P${pIdx + 1}.T${tIdx + 1}`;
-          items.push({
-            version_id: versionId,
-            pillar_id: p.id,
-            theme_id: t.id,
-            subtheme_id: null,
-            sort_order: tIdx + 1,
-            ref_code: tRef,
-          });
-
-          (t.subthemes ?? []).forEach((s, sIdx) => {
-            const sRef = `P${pIdx + 1}.T${tIdx + 1}.S${sIdx + 1}`;
-            items.push({
-              version_id: versionId,
-              pillar_id: p.id,
-              theme_id: t.id,
-              subtheme_id: s.id,
-              sort_order: sIdx + 1,
-              ref_code: sRef,
-            });
-          });
-        });
-      });
-
-      await replaceFrameworkVersionItems(versionId, items);
-      setDirty(false);
-      if (onChanged) await onChanged();
-    } catch (err: any) {
-      console.error("Save failed:", err.message);
-      alert(`Save failed: ${err.message}`);
+  function toggleExpandAll(expand: boolean) {
+    const all: Record<string, boolean> = {};
+    function mark(node: NormalizedFramework) {
+      all[node.id] = expand;
+      node.themes?.forEach(mark);
+      node.subthemes?.forEach(mark);
     }
+    localTree.forEach(mark);
+    setExpanded(all);
   }
 
-  function handleDiscard() {
-    setLocalTree(tree);
-    setDirty(false);
+  function computeRefCode(node: NormalizedFramework, idxPath: number[]): string {
+    if (node.type === "pillar") return `P${idxPath[0] + 1}`;
+    if (node.type === "theme")
+      return `T${idxPath[1] + 1}.${idxPath[0] + 1}`;
+    if (node.type === "subtheme")
+      return `ST${idxPath[2] + 1}.${idxPath[1] + 1}.${idxPath[0] + 1}`;
+    return "";
   }
 
   // ─────────────────────────────────────────────
-  // Render Node
+  // Add Handlers
+  // ─────────────────────────────────────────────
+  function handleAddPillarsFromCatalogue(items: any[]) {
+    const converted: NormalizedFramework[] = items.map((p, idx) => ({
+      id: `temp-${Date.now()}-${idx}`,
+      type: "pillar",
+      name: p.name,
+      description: p.description ?? "",
+      color: null,
+      icon: null,
+      sort_order: p.sort_order ?? localTree.length + 1,
+      ref_code: `P${localTree.length + 1}`,
+      themes: [],
+    }));
+    setLocalTree([...localTree, ...converted]);
+    setDirty(true);
+  }
+
+  function handleAddThemesFromCatalogue(parentId: string, items: any[]) {
+    const updated = localTree.map((pillar) => {
+      if (pillar.id !== parentId) return pillar;
+      const newThemes: NormalizedFramework[] = items.map((t, idx) => ({
+        id: `temp-${Date.now()}-${idx}`,
+        type: "theme",
+        name: t.name,
+        description: t.description ?? "",
+        color: null,
+        icon: null,
+        sort_order: t.sort_order ?? (pillar.themes?.length || 0) + 1,
+        ref_code: `T${(pillar.themes?.length || 0) + 1}.${pillar.ref_code}`,
+        subthemes: [],
+      }));
+      return { ...pillar, themes: [...(pillar.themes || []), ...newThemes] };
+    });
+    setLocalTree(updated);
+    setDirty(true);
+  }
+
+  function handleAddSubthemesFromCatalogue(parentId: string, items: any[]) {
+    const updated = localTree.map((pillar) => ({
+      ...pillar,
+      themes: pillar.themes?.map((theme) => {
+        if (theme.id !== parentId) return theme;
+        const newSubs: NormalizedFramework[] = items.map((s, idx) => ({
+          id: `temp-${Date.now()}-${idx}`,
+          type: "subtheme",
+          name: s.name,
+          description: s.description ?? "",
+          color: null,
+          icon: null,
+          sort_order: s.sort_order ?? (theme.subthemes?.length || 0) + 1,
+          ref_code: `ST${(theme.subthemes?.length || 0) + 1}.${theme.ref_code}`,
+        }));
+        return { ...theme, subthemes: [...(theme.subthemes || []), ...newSubs] };
+      }),
+    }));
+    setLocalTree(updated);
+    setDirty(true);
+  }
+
+  // ─────────────────────────────────────────────
+  // Render Helpers
   // ─────────────────────────────────────────────
   const renderNode = useCallback(
-    (node: NormalizedFramework): React.ReactNode => {
+    (node: NormalizedFramework, idxPath: number[] = []): JSX.Element => {
       const isExpanded = expanded[node.id] ?? false;
       const hasChildren =
         (node.themes && node.themes.length > 0) ||
         (node.subthemes && node.subthemes.length > 0);
 
       return (
-        <>
-          <tr key={node.id} className="border-t">
-            <td className="px-2 py-1 w-1/6">
-              <div className="flex items-center space-x-2">
-                {hasChildren && (
+        <div key={node.id} className="ml-4 border-l pl-4">
+          <div className="flex items-center justify-between py-1">
+            <div className="flex items-center space-x-2">
+              {hasChildren && (
+                <button
+                  className="text-xs text-gray-500"
+                  onClick={() =>
+                    setExpanded({ ...expanded, [node.id]: !isExpanded })
+                  }
+                >
+                  {isExpanded ? "−" : "+"}
+                </button>
+              )}
+              <span className="font-medium">{node.name}</span>
+              {node.description && (
+                <span className="text-xs text-gray-500 ml-2">
+                  {node.description}
+                </span>
+              )}
+            </div>
+            {editMode && (
+              <div className="flex space-x-2">
+                {node.type === "pillar" && (
                   <button
-                    onClick={() =>
-                      setExpanded((prev) => ({ ...prev, [node.id]: !isExpanded }))
-                    }
-                    className="text-gray-500"
+                    className="text-xs text-blue-600"
+                    onClick={() => setShowAddThemeFor(node.id)}
                   >
-                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    + Theme
                   </button>
                 )}
-                <GripVertical size={14} className="text-gray-400" />
-                <TypeBadge type={node.type} />
-                <span className="text-xs text-gray-500">{node.ref_code}</span>
+                {node.type === "theme" && (
+                  <button
+                    className="text-xs text-green-600"
+                    onClick={() => setShowAddSubthemeFor(node.id)}
+                  >
+                    + Subtheme
+                  </button>
+                )}
               </div>
-            </td>
-            <td className="px-2 py-1 w-1/2">
-              <div className="font-medium">{node.name}</div>
-              {node.description && (
-                <div className="text-xs text-gray-500">{node.description}</div>
-              )}
-            </td>
-            <td className="px-2 py-1 w-1/6">{node.sort_order ?? "-"}</td>
-            <td className="px-2 py-1 w-1/6 text-right">
-              {editMode && (
-                <div className="flex justify-end space-x-2">
-                  <button className="text-gray-500 hover:text-blue-600" title="Edit">
-                    <Pencil size={14} />
-                  </button>
-                  <button className="text-gray-500 hover:text-red-600" title="Delete">
-                    <Trash2 size={14} />
-                  </button>
-                  {node.type !== "subtheme" && (
-                    <button
-                      className="text-gray-500 hover:text-green-600"
-                      title="Add child"
-                      onClick={() => {
-                        if (node.type === "pillar") setShowAddThemeFor(node.id);
-                        if (node.type === "theme") setShowAddSubthemeFor(node.id);
-                      }}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </td>
-          </tr>
-          {isExpanded && (
-            <>
-              {node.themes?.map((t) => renderNode(t))}
-              {node.subthemes?.map((s) => renderNode(s))}
-            </>
-          )}
-        </>
+            )}
+          </div>
+          {isExpanded && node.themes?.map((t, idx) => renderNode(t, [idx, ...idxPath]))}
+          {isExpanded &&
+            node.subthemes?.map((s, idx) => renderNode(s, [idx, ...idxPath]))}
+        </div>
       );
     },
-    [expanded, editMode]
+    [expanded, editMode, localTree]
   );
 
+  // ─────────────────────────────────────────────
+  // Save Handler
+  // ─────────────────────────────────────────────
+  async function handleSave() {
+    console.log("TODO: persist localTree to Supabase", localTree);
+    setDirty(false);
+    onChanged();
+  }
+
   return (
-    <div className="border rounded-md p-4">
-      {/* Save/Discard */}
-      {editMode && dirty && (
-        <div className="flex space-x-2 mb-4">
-          <button
-            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-            onClick={handleSave}
-          >
-            Save
-          </button>
-          <button
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
-            onClick={handleDiscard}
-          >
-            Discard
-          </button>
+    <div>
+      {/* Controls */}
+      {editMode && (
+        <div className="flex justify-between mb-4">
+          <div className="space-x-2">
+            <button
+              onClick={() => toggleExpandAll(true)}
+              className="px-2 py-1 text-xs bg-gray-200 rounded"
+            >
+              Expand All
+            </button>
+            <button
+              onClick={() => toggleExpandAll(false)}
+              className="px-2 py-1 text-xs bg-gray-200 rounded"
+            >
+              Collapse All
+            </button>
+          </div>
+          <div className="space-x-2">
+            <button
+              onClick={handleSave}
+              disabled={!dirty}
+              className={`px-3 py-1 text-xs rounded ${
+                dirty ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
+              }`}
+            >
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setLocalTree(tree);
+                setDirty(false);
+              }}
+              className="px-3 py-1 text-xs bg-gray-200 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => setShowAddPillar(true)}
+              className="px-3 py-1 text-xs bg-green-600 text-white rounded"
+            >
+              + Pillar
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Table */}
-      <table className="w-full text-sm border border-gray-200 rounded-md">
-        <thead className="bg-gray-50 text-gray-700">
-          <tr>
-            <th className="px-2 py-1 text-left w-1/6">Type / Ref Code</th>
-            <th className="px-2 py-1 text-left w-1/2">Name / Description</th>
-            <th className="px-2 py-1 text-left w-1/6">Sort Order</th>
-            <th className="px-2 py-1 text-right w-1/6">Actions</th>
-          </tr>
-        </thead>
-        <tbody>{displayTree.map((p) => renderNode(p))}</tbody>
-      </table>
+      {/* Tree */}
+      <div>{localTree.map((p, idx) => renderNode(p, [idx]))}</div>
 
-      {/* Modals (same wiring as before, omitted for brevity) */}
+      {/* Modals */}
       {showAddPillar && (
         <AddPillarModal
           versionId={versionId}
           existingPillarIds={localTree.map((n) => n.id)}
-          isPersisted
+          isPersisted={true}
           onClose={() => setShowAddPillar(false)}
           onSubmit={(payload) => {
-            // same logic as before to add pillar
-            setDirty(true);
-            setShowAddPillar(false);
+            if (payload.mode === "catalogue") {
+              handleAddPillarsFromCatalogue(payload.items);
+            } else {
+              handleAddPillarsFromCatalogue([
+                { id: `temp-${Date.now()}`, name: payload.name, description: payload.description },
+              ]);
+            }
+          }}
+        />
+      )}
+
+      {showAddThemeFor && (
+        <AddThemeModal
+          versionId={versionId}
+          parentPillarId={showAddThemeFor}
+          existingThemeIds={
+            localTree.find((p) => p.id === showAddThemeFor)?.themes?.map((t) => t.id) || []
+          }
+          existingSubthemeIds={[]}
+          isPersisted={true}
+          onClose={() => setShowAddThemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddThemesFromCatalogue(showAddThemeFor, payload.items);
+            } else {
+              handleAddThemesFromCatalogue(showAddThemeFor, [
+                { id: `temp-${Date.now()}`, name: payload.name, description: payload.description },
+              ]);
+            }
+          }}
+        />
+      )}
+
+      {showAddSubthemeFor && (
+        <AddSubthemeModal
+          versionId={versionId}
+          parentThemeId={showAddSubthemeFor}
+          existingSubthemeIds={
+            localTree
+              .flatMap((p) => p.themes || [])
+              .find((t) => t.id === showAddSubthemeFor)?.subthemes?.map((s) => s.id) || []
+          }
+          isPersisted={true}
+          onClose={() => setShowAddSubthemeFor(null)}
+          onSubmit={(payload) => {
+            if (payload.mode === "catalogue") {
+              handleAddSubthemesFromCatalogue(showAddSubthemeFor, payload.items);
+            } else {
+              handleAddSubthemesFromCatalogue(showAddSubthemeFor, [
+                { id: `temp-${Date.now()}`, name: payload.name, description: payload.description },
+              ]);
+            }
           }}
         />
       )}
