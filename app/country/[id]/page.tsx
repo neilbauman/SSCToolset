@@ -3,14 +3,13 @@
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Button } from "@/components/ui/Button";
 import { useState } from "react";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 
 export default async function CountryDetailPage({ params }: any) {
-  // Handle both object or promise (Next.js 15 typing quirk)
   const resolved = params?.then ? await params : params;
   const id = resolved?.id ?? "unknown";
 
-  // Mock country data (replace with Supabase query later)
   const country = {
     id,
     name: "Philippines",
@@ -23,23 +22,23 @@ export default async function CountryDetailPage({ params }: any) {
 
   const [openMeta, setOpenMeta] = useState(false);
 
-  const handleSaveMetadata = (updated: any) => {
-    console.log("Updated metadata:", updated);
+  const headerProps = {
+    title: country.name,
+    group: "country" as const,
+    description: "Baseline datasets and metadata for this country.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: country.name },
+        ]}
+      />
+    ),
   };
 
   return (
-    <SidebarLayout
-      headerProps={{
-        title: country.name,
-        group: "Country Configuration",
-        description: "Baseline datasets and metadata for this country.",
-        breadcrumbs: [
-          { name: "Dashboard", href: "/" },
-          { name: "Country Configuration", href: "/country" },
-          { name: country.name, href: `/country/${country.id}` },
-        ],
-      }}
-    >
+    <SidebarLayout headerProps={headerProps}>
       {/* Metadata Section */}
       <div className="border rounded-lg p-4 mb-6 shadow-sm">
         <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
@@ -57,7 +56,6 @@ export default async function CountryDetailPage({ params }: any) {
         </Button>
       </div>
 
-      {/* Edit Metadata Modal */}
       <EditMetadataModal
         open={openMeta}
         onClose={() => setOpenMeta(false)}
@@ -68,7 +66,7 @@ export default async function CountryDetailPage({ params }: any) {
           boundariesSource: country.sources.boundaries,
           populationSource: country.sources.population,
         }}
-        onSave={handleSaveMetadata}
+        onSave={(updated) => console.log("Updated metadata:", updated)}
       />
     </SidebarLayout>
   );
