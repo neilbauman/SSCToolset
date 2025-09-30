@@ -1,19 +1,10 @@
 import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { listVersions } from "@/lib/services/framework";
 import PrimaryFrameworkClient from "@/components/framework/PrimaryFrameworkClient";
-import { groupThemes } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
-// ✅ Make props untyped (or very loose) to avoid PageProps collision
-export default async function PrimaryFrameworkPage(props: any) {
-  const searchParams = props?.searchParams as { version?: string } | undefined;
-  const openedId = searchParams?.version ?? undefined;
-
-  const versions = await listVersions();
-  const theme = groupThemes["ssc-config"];
-
+export default async function PrimaryFrameworkPage() {
   return (
     <div>
       <PageHeader
@@ -32,7 +23,8 @@ export default async function PrimaryFrameworkPage(props: any) {
         }
       />
 
-      <PrimaryFrameworkClient versions={versions} openedId={openedId} />
+      {/* Version Manager + Framework Editor */}
+      <PrimaryFrameworkClient />
     </div>
   );
 }
