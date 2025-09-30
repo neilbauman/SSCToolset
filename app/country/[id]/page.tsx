@@ -7,17 +7,15 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import { Pencil, Trash2 } from "lucide-react";
 
-export default async function CountryDetailPage({ params }: any) {
-  const resolved = params?.then ? await params : params;
-  const id = resolved?.id ?? "unknown";
+export default function CountryDetailPage({ params }: { params: { id: string } }) {
+  const id = params.id; // e.g. "PHL"
 
   // Mock data (replace with Supabase later)
   const country = {
-    id,
-    name: "Philippines",
-    iso: "PHL",
-    population: 113900000,
-    lastUpdated: "2024-01-01",
+    iso: id,
+    name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
+    population: id === "PHL" ? 113900000 : id === "NPL" ? 30000000 : null,
+    lastUpdated: id === "PHL" ? "2024-01-01" : id === "NPL" ? "2023-08-10" : "2023-11-15",
     admLabels: { adm1: "Province", adm2: "Municipality", adm3: "Barangay" },
     sources: { boundaries: "HDX COD 2024", population: "NSO Census 2020" },
   };
@@ -42,9 +40,9 @@ export default async function CountryDetailPage({ params }: any) {
 
   // Mock admin units
   const adminUnits = [
-    { id: 1, name: "Metro Manila", pcode: "PH001", level: "ADM1", population: 13484462 },
-    { id: 2, name: "Quezon City", pcode: "PH001001", level: "ADM2", population: 2960048 },
-    { id: 3, name: "Barangay Bagong Pag-asa", pcode: "PH001001001", level: "ADM3", population: null },
+    { id: "PH001", name: "Metro Manila", level: "ADM1", population: 13484462 },
+    { id: "PH001001", name: "Quezon City", level: "ADM2", population: 2960048 },
+    { id: "PH001001001", name: "Barangay Bagong Pag-asa", level: "ADM3", population: null },
   ];
 
   return (
@@ -107,10 +105,12 @@ export default async function CountryDetailPage({ params }: any) {
               {adminUnits.map((u) => (
                 <tr key={u.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-2">{u.name}</td>
-                  <td className="px-4 py-2">{u.pcode}</td>
+                  <td className="px-4 py-2">{u.id}</td>
                   <td className="px-4 py-2">{u.level}</td>
                   <td className="px-4 py-2">
-                    {u.population ? u.population.toLocaleString() : (
+                    {u.population ? (
+                      u.population.toLocaleString()
+                    ) : (
                       <span className="italic text-gray-400">—</span>
                     )}
                   </td>
