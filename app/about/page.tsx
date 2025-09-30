@@ -1,25 +1,26 @@
-import PageHeader from "@/components/ui/PageHeader";
+// app/about/page.tsx
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 
 export const dynamic = "force-dynamic";
 
 export default function AboutPage() {
-  return (
-    <div>
-      <PageHeader
-        title="About"
-        group="about"
-        description="Information about the SSC Toolset."
-        breadcrumbs={
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/dashboard" },
-              { label: "About" },
-            ]}
-          />
-        }
+  const headerProps = {
+    title: "About",
+    group: "about" as const,
+    description: "Information about the SSC Toolset.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "About" },
+        ]}
       />
+    ),
+  };
 
+  return (
+    <>
+      {/* SidebarLayout automatically wraps this page with the sidebar and header */}
       <div className="prose max-w-3xl mt-6">
         <p>
           The Shelter and Settlements Severity Classification (SSC) Toolset is
@@ -39,6 +40,6 @@ export default function AboutPage() {
           severity classifications.
         </p>
       </div>
-    </div>
+    </>
   );
 }
