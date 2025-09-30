@@ -11,6 +11,7 @@ import {
 import type { NormalizedFramework } from "@/lib/types/framework";
 import { ChevronRight, ChevronDown, Plus, Pencil, Trash2 } from "lucide-react";
 import EditEntityModal from "./EditEntityModal";
+import AddPillarModal from "./AddPillarModal";
 
 type Props = {
   versionId: string;
@@ -22,6 +23,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
   const [editingEntity, setEditingEntity] = useState<NormalizedFramework | null>(null);
+  const [showAddPillar, setShowAddPillar] = useState(false);
 
   useEffect(() => {
     loadTree();
@@ -120,10 +122,10 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
             </div>
 
             {/* Sort Order */}
-            <div className="col-span-2 py-2">{node.sort_order}</div>
+            <div className="col-span-2 py-2 text-center">{node.sort_order}</div>
 
             {/* Actions */}
-            <div className="col-span-2 py-2 flex gap-2">
+            <div className="col-span-2 py-2 flex justify-end gap-2">
               {editable && (
                 <>
                   {/* Edit */}
@@ -170,7 +172,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
                     <Trash2 size={16} />
                   </button>
 
-                  {/* Add Child (placeholder for now) */}
+                  {/* Add Child (placeholder) */}
                   <button
                     onClick={() => {
                       console.log("TODO: Add child for", node.type);
@@ -213,9 +215,7 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
           {editable && (
             <button
               className="px-2 py-1 bg-blue-600 text-white rounded text-sm"
-              onClick={() => {
-                console.log("TODO: Add pillar");
-              }}
+              onClick={() => setShowAddPillar(true)}
             >
               + Add Pillar
             </button>
@@ -243,8 +243,8 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
       <div className="grid grid-cols-12 bg-gray-50 border-b font-medium text-sm">
         <div className="col-span-3 py-2 px-2">Type / Ref Code</div>
         <div className="col-span-5 py-2">Name / Description</div>
-        <div className="col-span-2 py-2">Sort Order</div>
-        <div className="col-span-2 py-2">Actions</div>
+        <div className="col-span-2 py-2 text-center">Sort Order</div>
+        <div className="col-span-2 py-2 text-right">Actions</div>
       </div>
 
       {/* Tree Rows */}
@@ -268,6 +268,20 @@ export default function FrameworkEditor({ versionId, editable = false }: Props) 
               );
             setTree(updateTree(tree));
             setDirty(true);
+          }}
+        />
+      )}
+
+      {/* Add Pillar Modal */}
+      {showAddPillar && (
+        <AddPillarModal
+          versionId={versionId}
+          existing={tree}
+          onClose={() => setShowAddPillar(false)}
+          onAdd={(pillar) => {
+            setTree([...tree, pillar]);
+            setDirty(true);
+            setShowAddPillar(false);
           }}
         />
       )}
