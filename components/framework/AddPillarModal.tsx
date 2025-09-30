@@ -1,11 +1,7 @@
-// components/framework/AddPillarModal.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  listPillarCatalogue,
-  createPillar,
-} from "@/lib/services/framework";
+import { listPillarCatalogue, createPillar } from "@/lib/services/framework";
 import type { NormalizedFramework, CataloguePillar } from "@/lib/types/framework";
 
 type Props = {
@@ -15,12 +11,7 @@ type Props = {
   onAdd: (pillar: NormalizedFramework) => void;
 };
 
-export default function AddPillarModal({
-  versionId,
-  existing,
-  onClose,
-  onAdd,
-}: Props) {
+export default function AddPillarModal({ versionId, existing, onClose, onAdd }: Props) {
   const [tab, setTab] = useState<"catalogue" | "new">("catalogue");
   const [catalogue, setCatalogue] = useState<CataloguePillar[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -43,8 +34,8 @@ export default function AddPillarModal({
             description: cat.description ?? "",
             color: null,
             icon: null,
-            sort_order: (existing.length ?? 0) + 1,
-            ref_code: `P${existing.length + 1}`,
+            sort_order: (existing?.length ?? 0) + 1,
+            ref_code: `P${(existing?.length ?? 0) + 1}`,
             themes: [],
           });
         }
@@ -58,8 +49,8 @@ export default function AddPillarModal({
         description: created.description ?? "",
         color: null,
         icon: null,
-        sort_order: (existing.length ?? 0) + 1,
-        ref_code: `P${existing.length + 1}`,
+        sort_order: (existing?.length ?? 0) + 1,
+        ref_code: `P${(existing?.length ?? 0) + 1}`,
         themes: [],
       });
     }
@@ -88,12 +79,9 @@ export default function AddPillarModal({
         {tab === "catalogue" ? (
           <div className="max-h-64 overflow-y-auto border p-2">
             {catalogue.map((c) => {
-              const already = existing.some((p) => p.id === c.id);
+              const already = existing?.some((p) => p.id === c.id);
               return (
-                <label
-                  key={c.id}
-                  className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}
-                >
+                <label key={c.id} className={`flex items-center gap-2 p-1 ${already ? "opacity-50" : ""}`}>
                   <input
                     type="checkbox"
                     disabled={already}
@@ -129,18 +117,8 @@ export default function AddPillarModal({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-gray-200 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
-          >
-            Add
-          </button>
+          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 text-sm">Cancel</button>
+          <button onClick={handleSubmit} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Add</button>
         </div>
       </div>
     </div>
