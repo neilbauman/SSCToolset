@@ -6,17 +6,11 @@ import { Button } from "@/components/ui/Button";
 import { useState } from "react";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 
-// Explicit props type for dynamic route
-interface CountryDetailProps {
-  params: { id: string } | Promise<{ id: string }>;
-}
+export default async function CountryDetailPage({ params }: any) {
+  // If params is a promise, await it; otherwise use directly
+  const resolved = params?.then ? await params : params;
+  const id = resolved?.id ?? "unknown";
 
-export default async function CountryDetailPage({ params }: CountryDetailProps) {
-  // Handle the fact that params might be a Promise
-  const resolved = await params;
-  const id = resolved.id;
-
-  // Mock country data for now (later replace with Supabase query using id)
   const country = {
     id,
     name: "Philippines",
@@ -27,7 +21,6 @@ export default async function CountryDetailPage({ params }: CountryDetailProps) 
     sources: { boundaries: "HDX COD 2024", population: "NSO Census 2020" },
   };
 
-  // Local client state
   const [openMeta, setOpenMeta] = useState(false);
 
   const handleSaveMetadata = (updated: any) => {
@@ -47,7 +40,6 @@ export default async function CountryDetailPage({ params }: CountryDetailProps) 
         ]}
       />
 
-      {/* Metadata Section */}
       <div className="border rounded-lg p-4 mb-6 shadow-sm">
         <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
         <p>ADM1 = {country.admLabels.adm1}</p>
@@ -64,7 +56,6 @@ export default async function CountryDetailPage({ params }: CountryDetailProps) 
         </Button>
       </div>
 
-      {/* Edit Metadata Modal */}
       <EditMetadataModal
         open={openMeta}
         onClose={() => setOpenMeta(false)}
