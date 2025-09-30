@@ -5,7 +5,13 @@ import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/Button";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function UploadAdminUnits({ countryIso }: { countryIso: string }) {
+export default function UploadAdminUnits({
+  countryIso,
+  onSaved,
+}: {
+  countryIso: string;
+  onSaved?: () => void;
+}) {
   const [data, setData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +43,7 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
     setLoading(true);
     setSaved(false);
 
-    // 1. Delete existing rows for this country
+    // 1. Delete existing rows
     const { error: deleteError } = await supabase
       .from("admin_units")
       .delete()
@@ -50,7 +56,7 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
       return;
     }
 
-    // 2. Transform rows into DB format
+    // 2. Transform rows
     const rows = data.map((row) => ({
       country_iso: countryIso,
       pcode: String(row.pcode || "").trim(),
@@ -62,7 +68,7 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
       metadata: row.metadata ? JSON.parse(row.metadata) : {},
     }));
 
-    // 3. Insert fresh rows
+    // 3. Insert rows
     const { error: insertError } = await supabase.from("admin_units").insert(rows);
 
     if (insertError) {
@@ -71,6 +77,7 @@ export default function UploadAdminUnits({ countryIso }: { countryIso: string })
     } else {
       setSaved(true);
       setError(null);
+      if (onSaved) onSaved(); // 🔑 notify parent
     }
 
     setLoading(false);
