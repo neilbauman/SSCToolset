@@ -1,8 +1,8 @@
 "use client";
 
-import SidebarLayout from "@/components/core/layout/SidebarLayout";
-import PageHeader from "@/components/core/layout/PageHeader";
-import { Button } from "@/components/core/ui/Button";
+import SidebarLayout from "@/components/layout/SidebarLayout";
+import PageHeader from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
 
 export default function CountryDetailPage({ params }: { params: { id: string } }) {
   // Mock country record
