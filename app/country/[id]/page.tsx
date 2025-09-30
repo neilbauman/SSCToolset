@@ -26,15 +26,32 @@ export default function CountryDetailPage({ params }: any) {
   const [editMode, setEditMode] = useState(false);
   const [adminUnits, setAdminUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const pageSize = 50;
 
-  // Fetch admin units
+  // Fetch admin units with pagination
   const fetchUnits = async () => {
     setLoading(true);
+
+    // Count total rows
+    const { count } = await supabase
+      .from("admin_units")
+      .select("*", { count: "exact", head: true })
+      .eq("country_iso", id);
+
+    if (count) setTotal(count);
+
+    // Fetch paginated slice
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+
     const { data, error } = await supabase
       .from("admin_units")
       .select("*")
       .eq("country_iso", id)
-      .order("level", { ascending: true });
+      .order("level", { ascending: true })
+      .range(from, to);
 
     if (error) {
       console.error("Error fetching admin units:", error);
@@ -46,7 +63,7 @@ export default function CountryDetailPage({ params }: any) {
 
   useEffect(() => {
     fetchUnits();
-  }, [id]);
+  }, [id, page]);
 
   const headerProps = {
     title: country.name,
@@ -113,45 +130,68 @@ export default function CountryDetailPage({ params }: any) {
         ) : adminUnits.length === 0 ? (
           <p className="text-gray-500 italic">No admin units uploaded yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 text-left">
-                <tr>
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">PCode</th>
-                  <th className="px-4 py-2">Level</th>
-                  <th className="px-4 py-2">Population</th>
-                  {editMode && <th className="px-4 py-2">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {adminUnits.map((u) => (
-                  <tr key={u.pcode} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2">{u.name}</td>
-                    <td className="px-4 py-2">{u.pcode}</td>
-                    <td className="px-4 py-2">{u.level}</td>
-                    <td className="px-4 py-2">
-                      {u.population ? (
-                        u.population.toLocaleString()
-                      ) : (
-                        <span className="italic text-gray-400">—</span>
-                      )}
-                    </td>
-                    {editMode && (
-                      <td className="px-4 py-2 flex gap-2">
-                        <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </td>
-                    )}
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100 text-left">
+                  <tr>
+                    <th className="px-4 py-2">Name</th>
+                    <th className="px-4 py-2">PCode</th>
+                    <th className="px-4 py-2">Level</th>
+                    <th className="px-4 py-2">Population</th>
+                    {editMode && <th className="px-4 py-2">Actions</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {adminUnits.map((u) => (
+                    <tr key={u.pcode} className="border-t hover:bg-gray-50">
+                      <td className="px-4 py-2">{u.name}</td>
+                      <td className="px-4 py-2">{u.pcode}</td>
+                      <td className="px-4 py-2">{u.level}</td>
+                      <td className="px-4 py-2">
+                        {u.population ? (
+                          u.population.toLocaleString()
+                        ) : (
+                          <span className="italic text-gray-400">—</span>
+                        )}
+                      </td>
+                      {editMode && (
+                        <td className="px-4 py-2 flex gap-2">
+                          <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex justify-between items-center mt-4">
+              <Button
+                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </Button>
+              <p className="text-sm text-gray-600">
+                Page {page + 1} of {Math.ceil(total / pageSize) || 1}
+              </p>
+              <Button
+                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+                disabled={(page + 1) * pageSize >= total}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </>
         )}
       </div>
 
