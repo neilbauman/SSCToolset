@@ -2,55 +2,150 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import Link from "next/link";
-import { Map as MapIcon, Users, Database } from "lucide-react";
+import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
+import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import EditMetadataModal from "@/components/country/EditMetadataModal";
 
-interface CountryRecord {
-  iso_code: string;
-  name: string;
-  adm0_label: string;
-  adm1_label: string;
-  adm2_label: string;
-  adm3_label: string;
-  adm4_label: string;
-  adm5_label: string;
-  boundaries_source?: string;
-  population_source?: string;
-  dataset_sources?: { name: string; url?: string }[];
-  extra_metadata?: Record<string, string>;
+function SoftButton({
+  children,
+  color = "gray",
+  href,
+  onClick,
+}: {
+  children: React.ReactNode;
+  color?: "gray" | "green" | "blue" | "red";
+  href?: string;
+  onClick?: () => void;
+}) {
+  const base =
+    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors";
+  const colors: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
+    green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
+    blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
+    red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
+  };
+
+  if (href) {
+    return (
+      <Link href={href} className={`${base} ${colors[color]}`}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button onClick={onClick} className={`${base} ${colors[color]}`}>
+      {children}
+    </button>
+  );
 }
 
-export default function CountryPage({ params }: any) {
-  const countryIso = params.id;
-  const [country, setCountry] = useState<CountryRecord | null>(null);
+function renderMetaValue(value: string) {
+  if (!value || value.trim() === "") {
+    return (
+      <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
+        Empty
+      </span>
+    );
+  }
+  if (value === "N/A") {
+    return <span className="italic text-gray-400">Not applicable</span>;
+  }
+  return value;
+}
+
+export default function CountryConfigLandingPage({ params }: any) {
+  const id = params?.id ?? "unknown";
+
+  const [country, setCountry] = useState<any>(null);
+  const [adminStats, setAdminStats] = useState<Record<string, number>>({});
+  const [adminStatus, setAdminStatus] = useState<
+    "uploaded" | "partial" | "missing"
+  >("missing");
+  const [openMeta, setOpenMeta] = useState(false);
+
+  const center: LatLngExpression = [12.8797, 121.774];
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", countryIso)
+        .eq("iso_code", id) // ✅ FIXED: use iso_code
         .single();
-      if (!error) setCountry(data as CountryRecord);
+      if (data) setCountry(data);
     };
     fetchCountry();
-  }, [countryIso]);
+  }, [id]);
+
+  useEffect(() => {
+    const fetchAdminStats = async () => {
+      const { data } = await supabase
+        .from("admin_units")
+        .select("level, pcode")
+        .eq("country_iso", id);
+      if (!data || data.length === 0) {
+        setAdminStatus("missing");
+        return;
+      }
+      const counts: Record<string, number> = {};
+      data.forEach((row) => {
+        counts[row.level] = (counts[row.level] || 0) + 1;
+      });
+      setAdminStats(counts);
+      if (Object.keys(counts).length >= 3) setAdminStatus("uploaded");
+      else setAdminStatus("partial");
+    };
+    fetchAdminStats();
+  }, [id]);
+
+  const datasets = [
+    {
+      key: "admins",
+      title: "Places / Admin Units",
+      description: "Administrative boundaries and place codes.",
+      status: adminStatus,
+      stats: Object.entries(adminStats)
+        .map(([lvl, cnt]) => `${lvl}: ${cnt}`)
+        .join(", "),
+      icon: <Map className="w-6 h-6 text-green-600" />,
+      href: `/country/${id}/admins`,
+    },
+    {
+      key: "population",
+      title: "Populations / Demographics",
+      description: "Census population and demographic indicators.",
+      status: "missing",
+      stats: "",
+      icon: <Users className="w-6 h-6 text-gray-500" />,
+      href: `/country/${id}/population`,
+    },
+    {
+      key: "gis",
+      title: "GIS / Mapping",
+      description: "Geospatial boundary data and mapping layers.",
+      status: "partial",
+      stats: "ADM1 & ADM2 uploaded, ADM3 missing",
+      icon: <Database className="w-6 h-6 text-yellow-600" />,
+      href: `/country/${id}/gis`,
+    },
+  ];
 
   const headerProps = {
-    title: `Country Dashboard: ${countryIso}`,
+    title: `${country?.name ?? id} – Country Configuration`,
     group: "country-config" as const,
-    description:
-      "Overview of baseline datasets and configuration for this country.",
+    description: "Manage baseline datasets and metadata for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso },
+          { label: country?.name ?? id },
         ]}
       />
     ),
@@ -59,14 +154,14 @@ export default function CountryPage({ params }: any) {
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Map Overview */}
-        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm bg-white">
+        {/* Map */}
+        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
           <MapContainer
-            center={[12.8797, 121.774]} // Default Philippines center
+            center={center}
             zoom={5}
-            style={{ height: "400px", width: "100%" }}
-            className="rounded-md"
+            style={{ height: "500px", width: "100%" }}
+            className="rounded-md z-0"
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -76,108 +171,154 @@ export default function CountryPage({ params }: any) {
         </div>
 
         {/* Metadata */}
-        <div className="border rounded-lg p-4 shadow-sm bg-white">
-          <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
+        <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
+            {country ? (
+              <>
+                {/* Core */}
+                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+                  Core Metadata
+                </h3>
+                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
+                <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
+                <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
+                <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
+                <p><strong>ADM2 Label:</strong> {renderMetaValue(country.adm2_label)}</p>
+                <p><strong>ADM3 Label:</strong> {renderMetaValue(country.adm3_label)}</p>
+                <p><strong>ADM4 Label:</strong> {renderMetaValue(country.adm4_label)}</p>
+                <p><strong>ADM5 Label:</strong> {renderMetaValue(country.adm5_label)}</p>
 
-          {country ? (
-            <>
-              <h3 className="text-[color:var(--gsc-red)] font-medium mb-1">
-                Core Metadata
-              </h3>
-              <ul className="text-sm mb-3">
-                <li><strong>ISO:</strong> {country.iso_code}</li>
-                <li><strong>Name:</strong> {country.name}</li>
-                <li><strong>ADM0 Label:</strong> {country.adm0_label}</li>
-                <li><strong>ADM1 Label:</strong> {country.adm1_label}</li>
-                <li><strong>ADM2 Label:</strong> {country.adm2_label}</li>
-                <li><strong>ADM3 Label:</strong> {country.adm3_label}</li>
-                <li><strong>ADM4 Label:</strong> {country.adm4_label}</li>
-                <li><strong>ADM5 Label:</strong> {country.adm5_label}</li>
-              </ul>
-
-              {country.dataset_sources && (
-                <div className="mb-3">
-                  <h4 className="font-medium">Sources:</h4>
-                  <ul className="list-disc pl-4 text-sm text-blue-600">
-                    {country.dataset_sources.map((s, i) => (
-                      <li key={i}>
-                        {s.url ? (
-                          <a href={s.url} target="_blank" rel="noreferrer">
-                            {s.name}
-                          </a>
-                        ) : (
-                          s.name
-                        )}
+                <p className="mt-2 font-medium">Sources:</p>
+                {country.dataset_sources?.length > 0 ? (
+                  <ul className="list-disc pl-6 text-sm text-blue-700">
+                    {country.dataset_sources.map((src: any, idx: number) => (
+                      <li key={idx}>
+                        <a
+                          href={src.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline"
+                        >
+                          {src.name}
+                        </a>
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
+                ) : (
+                  <p className="italic text-gray-400">No sources provided</p>
+                )}
 
-              {country.extra_metadata && (
-                <>
-                  <h3 className="text-[color:var(--gsc-red)] font-medium mb-1">
-                    Extra Metadata
-                  </h3>
-                  <ul className="text-sm">
-                    {Object.entries(country.extra_metadata).map(([k, v]) => (
-                      <li key={k}>
-                        <strong>{k}:</strong> {v}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-gray-500 italic">Loading metadata...</p>
-          )}
+                {/* Extra */}
+                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
+                  Extra Metadata
+                </h3>
+                {country.extra_metadata &&
+                  Object.entries(country.extra_metadata).map(([k, v]) => (
+                    <p key={k}>
+                      <strong>{k}:</strong> {String(v)}
+                    </p>
+                  ))}
+              </>
+            ) : (
+              <p className="text-gray-500">Loading metadata...</p>
+            )}
+          </div>
+          <SoftButton color="gray" onClick={() => setOpenMeta(true)}>
+            <Pencil className="inline w-4 h-4 mr-1" /> Edit Metadata
+          </SoftButton>
         </div>
       </div>
 
-      {/* Dataset Cards */}
+      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        {/* Admin Units */}
-        <Link
-          href={`/country/${countryIso}/admins`}
-          className="border rounded-lg p-4 shadow-sm hover:shadow-md transition flex items-center gap-3 bg-white"
-        >
-          <Database className="w-6 h-6 text-[color:var(--gsc-green)]" />
-          <div>
-            <h3 className="font-semibold text-lg">Places / Admin Units</h3>
-            <p className="text-sm text-gray-600">
-              Upload and manage administrative boundaries.
-            </p>
+        {datasets.map((d) => (
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {d.icon}
+                <h3 className="text-lg font-semibold">{d.title}</h3>
+              </div>
+              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
+                {d.status}
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">{d.description}</p>
+            {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
+            <div className="flex gap-2">
+              <SoftButton color="gray">Download Template</SoftButton>
+              <SoftButton color="green">Upload Data</SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
+            </div>
           </div>
-        </Link>
+        ))}
 
-        {/* Population */}
-        <Link
-          href={`/country/${countryIso}/population`}
-          className="border rounded-lg p-4 shadow-sm hover:shadow-md transition flex items-center gap-3 bg-white"
-        >
-          <Users className="w-6 h-6 text-[color:var(--gsc-blue)]" />
-          <div>
-            <h3 className="font-semibold text-lg">
-              Population &amp; Demographics
-            </h3>
-            <p className="text-sm text-gray-600">
-              Upload and manage population datasets by admin unit.
-            </p>
+        {/* Flexible datasets */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-blue-600" />
+              <h3 className="text-lg font-semibold">Other Datasets</h3>
+            </div>
+            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">
+              Flexible
+            </span>
           </div>
-        </Link>
-
-        {/* GIS */}
-        <div className="border rounded-lg p-4 shadow-sm bg-gray-50 flex items-center gap-3">
-          <MapIcon className="w-6 h-6 text-[color:var(--gsc-orange)]" />
-          <div>
-            <h3 className="font-semibold text-lg">GIS &amp; Mapping</h3>
-            <p className="text-sm text-gray-600">
-              Coming soon: Upload shapefiles and visualize datasets.
-            </p>
-          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Additional country-specific datasets that extend the baseline.
+          </p>
+          <p className="italic text-gray-500">🚧 To be implemented.</p>
         </div>
       </div>
+
+      {/* Modal */}
+      {country && (
+        <EditMetadataModal
+          open={openMeta}
+          onClose={() => setOpenMeta(false)}
+          metadata={{
+            iso: country.iso_code, // ✅ FIXED
+            name: country.name,
+            admLabels: {
+              adm0: country.adm0_label,
+              adm1: country.adm1_label,
+              adm2: country.adm2_label,
+              adm3: country.adm3_label,
+              adm4: country.adm4_label,
+              adm5: country.adm5_label,
+            },
+            datasetSources: country.dataset_sources || [],
+            extra: country.extra_metadata || {},
+          }}
+          onSave={async (updated) => {
+            await supabase.from("countries").upsert({
+              iso_code: updated.iso, // ✅ FIXED
+              name: updated.name,
+              adm0_label: updated.admLabels.adm0,
+              adm1_label: updated.admLabels.adm1,
+              adm2_label: updated.admLabels.adm2,
+              adm3_label: updated.admLabels.adm3,
+              adm4_label: updated.admLabels.adm4,
+              adm5_label: updated.admLabels.adm5,
+              dataset_sources: updated.datasetSources,
+              extra_metadata: updated.extra ?? {},
+            });
+            setCountry({
+              ...country,
+              ...updated,
+              iso_code: updated.iso,
+              adm0_label: updated.admLabels.adm0,
+              adm1_label: updated.admLabels.adm1,
+              adm2_label: updated.admLabels.adm2,
+              adm3_label: updated.admLabels.adm3,
+              adm4_label: updated.admLabels.adm4,
+              adm5_label: updated.admLabels.adm5,
+              dataset_sources: updated.datasetSources,
+              extra_metadata: updated.extra ?? {},
+            });
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
