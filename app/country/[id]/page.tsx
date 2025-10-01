@@ -77,7 +77,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso", id) // ✅ fixed: use iso not iso_code
+        .eq("iso_code", id) // ✅ use iso_code
         .single();
       if (data) setCountry(data);
     };
@@ -154,8 +154,8 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Map */}
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
           <MapContainer
@@ -171,17 +171,15 @@ export default function CountryConfigLandingPage({ params }: any) {
           </MapContainer>
         </div>
 
-        {/* Metadata */}
         <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
           <div>
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
             {country ? (
               <>
-                {/* Core */}
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
-                <p><strong>ISO:</strong> {renderMetaValue(country.iso)}</p>
+                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
                 <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
                 <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
                 <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
@@ -210,7 +208,6 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <p className="italic text-gray-400">No sources provided</p>
                 )}
 
-                {/* Extra */}
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
                   Extra Metadata
                 </h3>
@@ -261,7 +258,6 @@ export default function CountryConfigLandingPage({ params }: any) {
           </div>
         ))}
 
-        {/* Other datasets placeholder */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -279,13 +275,13 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Edit Metadata Modal */}
+      {/* Metadata Modal */}
       {country && (
         <EditMetadataModal
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
-            iso: country.iso,
+            iso_code: country.iso_code, // ✅ back to iso_code
             name: country.name,
             admLabels: {
               adm0: country.adm0_label,
@@ -300,7 +296,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
           onSave={async (updated) => {
             await supabase.from("countries").upsert({
-              iso: updated.iso, // ✅ fixed
+              iso_code: updated.iso_code,
               name: updated.name,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
