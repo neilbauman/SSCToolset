@@ -1,75 +1,94 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-interface AddCountryModalProps {
+export default function AddCountryModal({
+  open,
+  onClose,
+  onSave,
+}: {
   open: boolean;
   onClose: () => void;
-  onSave: (country: { name: string; iso: string; population?: number }) => void;
-}
-
-export default function AddCountryModal({ open, onClose, onSave }: AddCountryModalProps) {
+  onSave: () => void; // triggers a refresh in parent
+}) {
+  const [isoCode, setIsoCode] = useState("");
   const [name, setName] = useState("");
-  const [iso, setIso] = useState("");
-  const [population, setPopulation] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null; // keep it simple for now, later replace with Dialog component
+  if (!open) return null;
 
-  const handleSave = () => {
-    onSave({
-      name,
-      iso: iso.toUpperCase(),
-      population: population ? parseInt(population, 10) : undefined,
-    });
-    setName("");
-    setIso("");
-    setPopulation("");
-    onClose();
+  const handleSave = async () => {
+    if (!isoCode || !name) {
+      setError("ISO code and name are required");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: insertError } = await supabase.from("countries").insert([
+        {
+          iso_code: isoCode.trim().toUpperCase(),
+          name: name.trim(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+
+      if (insertError) {
+        setError(insertError.message);
+      } else {
+        onSave();
+        onClose();
+        setIsoCode("");
+        setName("");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unexpected error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
         <h2 className="text-lg font-semibold mb-4">Add Country</h2>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="Philippines"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">ISO Code</label>
-            <input
-              type="text"
-              value={iso}
-              maxLength={3}
-              onChange={(e) => setIso(e.target.value)}
-              className="w-full border rounded px-3 py-2 uppercase"
-              placeholder="PHL"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Population (optional)</label>
-            <input
-              type="number"
-              value={population}
-              onChange={(e) => setPopulation(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="113900000"
-            />
-          </div>
-        </div>
+        <label className="block text-sm font-medium mb-1">ISO Code</label>
+        <input
+          value={isoCode}
+          onChange={(e) => setIsoCode(e.target.value)}
+          className="w-full border rounded px-3 py-2 text-sm mb-3"
+          placeholder="e.g. PHL"
+        />
 
-        <div className="flex justify-end gap-2 mt-6">
-          <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save</Button>
+        <label className="block text-sm font-medium mb-1">Name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full border rounded px-3 py-2 text-sm mb-3"
+          placeholder="e.g. Philippines"
+        />
+
+        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {loading ? "Saving..." : "Save"}
+          </button>
         </div>
       </div>
     </div>
