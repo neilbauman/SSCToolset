@@ -202,7 +202,7 @@ export default function CountryConfigLandingPage({ params }: any) {
             center={center}
             zoom={5}
             style={{ height: "500px", width: "100%" }}
-            className="rounded-md"
+            className="rounded-md z-0"
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -217,38 +217,17 @@ export default function CountryConfigLandingPage({ params }: any) {
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
             {country ? (
               <>
-                <p>
-                  <strong>ISO:</strong> {renderMetaValue(country.iso)}
-                </p>
-                <p>
-                  <strong>Name:</strong> {renderMetaValue(country.name)}
-                </p>
-                <p>
-                  <strong>ADM0:</strong> {renderMetaValue(country.adm0_label)}
-                </p>
-                <p>
-                  <strong>ADM1:</strong> {renderMetaValue(country.adm1_label)}
-                </p>
-                <p>
-                  <strong>ADM2:</strong> {renderMetaValue(country.adm2_label)}
-                </p>
-                <p>
-                  <strong>ADM3:</strong> {renderMetaValue(country.adm3_label)}
-                </p>
-                <p>
-                  <strong>ADM4:</strong> {renderMetaValue(country.adm4_label)}
-                </p>
-                <p>
-                  <strong>ADM5:</strong> {renderMetaValue(country.adm5_label)}
-                </p>
-                <p>
-                  <strong>Boundaries Source:</strong>{" "}
-                  {renderMetaValue(country.boundaries_source)}
-                </p>
-                <p>
-                  <strong>Population Source:</strong>{" "}
-                  {renderMetaValue(country.population_source)}
-                </p>
+                <p><strong>ISO:</strong> {renderMetaValue(country.iso)}</p>
+                <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
+                <p><strong>ADM0:</strong> {renderMetaValue(country.adm0_label)}</p>
+                <p><strong>ADM1:</strong> {renderMetaValue(country.adm1_label)}</p>
+                <p><strong>ADM2:</strong> {renderMetaValue(country.adm2_label)}</p>
+                <p><strong>ADM3:</strong> {renderMetaValue(country.adm3_label)}</p>
+                <p><strong>ADM4:</strong> {renderMetaValue(country.adm4_label)}</p>
+                <p><strong>ADM5:</strong> {renderMetaValue(country.adm5_label)}</p>
+                <p><strong>Boundaries Source:</strong> {renderMetaValue(country.boundaries_source)}</p>
+                <p><strong>Population Source:</strong> {renderMetaValue(country.population_source)}</p>
+
                 <p className="mt-2 font-medium">Dataset Sources:</p>
                 {country.dataset_sources && country.dataset_sources.length > 0 ? (
                   <ul className="list-disc pl-6 text-sm text-blue-700">
@@ -268,6 +247,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 ) : (
                   <p className="italic text-gray-400">No dataset sources</p>
                 )}
+
                 {country.extra_metadata &&
                   Object.entries(country.extra_metadata).map(([k, v]) => (
                     <p key={k}>
@@ -285,13 +265,10 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Dataset cards (unchanged) */}
+      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
-          <div
-            key={d.key}
-            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
-          >
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
@@ -300,15 +277,11 @@ export default function CountryConfigLandingPage({ params }: any) {
               {statusBadge(d.status)}
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-            {d.stats && (
-              <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>
-            )}
+            {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>
-                View
-              </SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
             </div>
           </div>
         ))}
@@ -367,7 +340,7 @@ export default function CountryConfigLandingPage({ params }: any) {
               boundaries_source: updated.sources.boundaries,
               population_source: updated.sources.population,
               dataset_sources: updated.datasetSources,
-              extra_metadata: updated.extra,
+              extra_metadata: updated.extra ?? {},
             });
 
             if (error) {
@@ -385,7 +358,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 boundaries_source: updated.sources.boundaries,
                 population_source: updated.sources.population,
                 dataset_sources: updated.datasetSources,
-                extra_metadata: updated.extra,
+                extra_metadata: updated.extra ?? {},
               });
             }
           }}
