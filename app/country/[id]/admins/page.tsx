@@ -15,12 +15,8 @@ interface AdminUnit {
   source?: { name: string; url?: string };
 }
 
-export default function AdminUnitsPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const countryIso = params.id;
+export default function AdminUnitsPage({ params }: any) {
+  const countryIso = params?.id as string;
   const [country, setCountry] = useState<any>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [search, setSearch] = useState("");
