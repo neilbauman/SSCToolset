@@ -55,7 +55,6 @@ function SoftButton({
   );
 }
 
-// Extra metadata renderer
 function renderExtraEntry(entry: { label: string; value: string; url?: string }) {
   return entry.url ? (
     <a
@@ -71,7 +70,6 @@ function renderExtraEntry(entry: { label: string; value: string; url?: string })
   );
 }
 
-// Status badge component
 function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | "empty" }) {
   const styles: Record<string, string> = {
     uploaded: "bg-green-100 text-green-700",
@@ -93,6 +91,7 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [adminCount, setAdminCount] = useState(0);
   const [popCount, setPopCount] = useState(0);
   const [gisCount, setGisCount] = useState(0);
+  const [statusData, setStatusData] = useState<any>(null);
   const [openMeta, setOpenMeta] = useState(false);
 
   useEffect(() => {
@@ -108,27 +107,55 @@ export default function CountryConfigLandingPage({ params }: any) {
   }, [id]);
 
   useEffect(() => {
-    const fetchCounts = async () => {
-      const { count: adminCnt } = await supabase
+    const fetchStatuses = async () => {
+      const { data: admins } = await supabase
         .from("admin_units")
-        .select("*", { count: "exact", head: true })
+        .select("level")
         .eq("country_iso", id);
-      setAdminCount(adminCnt || 0);
 
-      const { count: popCnt } = await supabase
+      const { data: pop } = await supabase
         .from("population_data")
-        .select("*", { count: "exact", head: true })
+        .select("pcode, population")
         .eq("country_iso", id);
-      setPopCount(popCnt || 0);
 
-      const { count: gisCnt } = await supabase
+      const { data: gis } = await supabase
         .from("gis_layers")
-        .select("*", { count: "exact", head: true })
+        .select("geometry_available")
         .eq("country_iso", id);
-      setGisCount(gisCnt || 0);
+
+      setAdminCount(admins?.length || 0);
+      setPopCount(pop?.length || 0);
+      setGisCount(gis?.length || 0);
+      setStatusData({ admins, pop, gis });
     };
-    fetchCounts();
+    fetchStatuses();
   }, [id]);
+
+  const computeStatus = (key: string) => {
+    if (key === "admins") {
+      const admins = statusData?.admins || [];
+      if (admins.length === 0) return "missing";
+      const levels = new Set(admins.map((a: any) => a.level));
+      const required = ["ADM0", "ADM1", "ADM2"];
+      const hasAll = required.every((lvl) => levels.has(lvl));
+      return hasAll ? "uploaded" : "partial";
+    }
+    if (key === "population") {
+      const pop = statusData?.pop || [];
+      if (pop.length === 0) return "missing";
+      const invalid = pop.some(
+        (p: any) => !p.pcode || !p.population || p.population <= 0
+      );
+      return invalid ? "partial" : "uploaded";
+    }
+    if (key === "gis") {
+      const gis = statusData?.gis || [];
+      if (gis.length === 0) return "missing";
+      const invalid = gis.some((g: any) => g.geometry_available === false);
+      return invalid ? "partial" : "uploaded";
+    }
+    return "empty";
+  };
 
   const datasets = [
     {
@@ -136,7 +163,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
       count: adminCount,
-      status: adminCount > 0 ? "uploaded" : "missing",
+      status: computeStatus("admins"),
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
     },
@@ -145,7 +172,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
       count: popCount,
-      status: popCount > 0 ? "uploaded" : "missing",
+      status: computeStatus("population"),
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
     },
@@ -154,7 +181,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
       count: gisCount,
-      status: gisCount > 0 ? "uploaded" : "missing",
+      status: computeStatus("gis"),
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
     },
