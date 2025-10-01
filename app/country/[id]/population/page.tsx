@@ -1,31 +1,27 @@
 "use client";
 
+import type { PageProps } from "next";
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
-import { Users, Database, Pencil } from "lucide-react";
+import { Users, ShieldCheck, Pencil } from "lucide-react";
 
 type Country = {
-  iso_code: string;
+  iso: string;
   name: string;
 };
 
 type PopulationRow = {
   id: string;
-  country_iso: string;
   pcode: string;
-  name: string;
-  level: string;
-  parent_pcode?: string | null;
-  population?: number | null;
-  last_updated?: string | null;
+  population: number;
+  last_updated: string;
   source?: { name: string; url?: string };
 };
 
-export default function PopulationPage({ params }: { params: { id: string } }) {
+export default function PopulationPage({ params }: PageProps<{ id: string }>) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
@@ -34,13 +30,16 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     null
   );
   const [openSource, setOpenSource] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
-        .select("iso_code, name")
-        .eq("iso_code", countryIso)
+        .select("iso, name")
+        .eq("iso", countryIso)
         .single();
       if (data) setCountry(data as Country);
     };
@@ -71,15 +70,27 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     fetchSource();
   }, [countryIso]);
 
-  const totalPop = population.reduce(
-    (sum, row) => sum + (row.population ?? 0),
+  // Health checks
+  const totalPopulation = population.reduce(
+    (acc, row) => acc + (row.population || 0),
     0
   );
+  const allLinkedToPCodes =
+    population.length > 0 && population.every((p) => !!p.pcode);
+
+  // Pagination + search
+  const filtered = population.filter(
+    (p) =>
+      p.pcode.toLowerCase().includes(search.toLowerCase()) ||
+      (p.population ?? "").toString().includes(search)
+  );
+  const totalPages = Math.ceil((filtered.length || 1) / pageSize);
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded population and demographic data.",
+    description: "Manage and inspect uploaded population datasets.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -94,6 +105,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
@@ -109,7 +121,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
           </p>
           <p className="text-sm text-gray-700 mb-2">
             <strong>Total Population:</strong>{" "}
-            {totalPop > 0 ? totalPop.toLocaleString() : "N/A"}
+            {totalPopulation.toLocaleString()}
           </p>
           <div className="flex items-center justify-between mt-2">
             <p className="text-sm">
@@ -141,63 +153,104 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Data Health */}
-        <DatasetHealth
-          checks={[
-            {
-              label: "All rows linked to valid PCodes",
-              status:
-                population.length > 0
-                  ? population.every((p) => p.pcode)
-                    ? "green"
-                    : "red"
-                  : "red",
-            },
-            {
-              label: "Population totals present",
-              status:
-                totalPop > 0
-                  ? "green"
-                  : population.length > 0
-                  ? "yellow"
-                  : "red",
-            },
-          ]}
-        />
+        <div className="border rounded-lg p-4 shadow-sm relative">
+          <div className="absolute top-2 right-2">
+            {allLinkedToPCodes ? (
+              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
+                uploaded
+              </span>
+            ) : population.length > 0 ? (
+              <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
+                partial
+              </span>
+            ) : (
+              <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
+                missing
+              </span>
+            )}
+          </div>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
+          </h2>
+          <ul className="text-sm list-disc pl-6">
+            <li
+              className={allLinkedToPCodes ? "text-green-700" : "text-red-700"}
+            >
+              {allLinkedToPCodes
+                ? "All rows linked to valid PCodes"
+                : "Some rows missing PCodes"}
+            </li>
+            <li className="text-yellow-700">
+              Projection to current year not applied yet
+            </li>
+            <li className="text-yellow-700">Household linkage not defined</li>
+          </ul>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="border rounded-lg p-4 shadow-sm overflow-x-auto">
+      {/* Data Table */}
+      <div className="border rounded-lg p-4 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <input
+            type="text"
+            placeholder="Search by PCode or Population..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="border px-3 py-1 rounded w-1/3 text-sm"
+          />
+          <span className="text-sm text-gray-500">
+            Showing {paginated.length} of {filtered.length}
+          </span>
+        </div>
         <table className="w-full text-sm border">
           <thead className="bg-gray-100">
             <tr>
-              <th className="border px-2 py-1 text-left">Name</th>
               <th className="border px-2 py-1 text-left">PCode</th>
-              <th className="border px-2 py-1 text-left">Level</th>
-              <th className="border px-2 py-1 text-right">Population</th>
-              <th className="border px-2 py-1 text-left">Parent PCode</th>
+              <th className="border px-2 py-1 text-left">Population</th>
+              <th className="border px-2 py-1 text-left">Last Updated</th>
             </tr>
           </thead>
           <tbody>
-            {population.map((row) => (
+            {paginated.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50">
-                <td className="border px-2 py-1">{row.name}</td>
                 <td className="border px-2 py-1">{row.pcode}</td>
-                <td className="border px-2 py-1">{row.level}</td>
-                <td className="border px-2 py-1 text-right">
-                  {row.population?.toLocaleString() ?? "-"}
+                <td className="border px-2 py-1">
+                  {row.population.toLocaleString()}
                 </td>
-                <td className="border px-2 py-1">{row.parent_pcode ?? "-"}</td>
+                <td className="border px-2 py-1">{row.last_updated}</td>
               </tr>
             ))}
-            {population.length === 0 && (
+            {paginated.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center text-gray-500 py-6">
-                  No population data uploaded
+                <td colSpan={3} className="text-center text-gray-500 py-6">
+                  No results
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        <div className="flex justify-between items-center mt-3 text-sm">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-2 py-1 border rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span>
+            Page {page} of {totalPages || 1}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
+            disabled={page >= (totalPages || 1)}
+            className="px-2 py-1 border rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* Edit Source Modal */}
