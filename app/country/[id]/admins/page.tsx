@@ -30,8 +30,8 @@ function CoreBadge() {
   );
 }
 
-// ✅ Page Component
-export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+// ✅ Loosened params typing to avoid Next.js 15 PageProps issue
+export default function AdminUnitsPage({ params }: any) {
   const id = params?.id ?? "unknown";
 
   const [units, setUnits] = useState<any[]>([]);
