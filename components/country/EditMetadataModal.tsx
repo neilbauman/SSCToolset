@@ -49,7 +49,11 @@ export default function EditMetadataModal({
     }));
   };
 
-  const handleDatasetChange = (idx: number, field: "name" | "url", value: string) => {
+  const handleDatasetChange = (
+    idx: number,
+    field: "name" | "url",
+    value: string
+  ) => {
     const updated = [...localMeta.datasetSources];
     updated[idx] = { ...updated[idx], [field]: value };
     setLocalMeta((prev) => ({ ...prev, datasetSources: updated }));
@@ -96,6 +100,7 @@ export default function EditMetadataModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 overflow-y-auto max-h-[90vh]">
+        {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Edit Metadata</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
@@ -103,8 +108,10 @@ export default function EditMetadataModal({
           </button>
         </div>
 
-        {/* Core */}
-        <h3 className="font-medium mb-2">Core Metadata</h3>
+        {/* Core Metadata */}
+        <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+          Core Metadata
+        </h3>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="text-sm text-gray-600">Country ISO</label>
@@ -129,23 +136,31 @@ export default function EditMetadataModal({
         </div>
 
         {/* ADM Labels */}
-        <h3 className="font-medium mb-2">Administrative Labels</h3>
+        <h4 className="text-xs font-medium text-gray-600 mb-1">
+          Administrative Labels
+        </h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-          {(["adm0", "adm1", "adm2", "adm3", "adm4", "adm5"] as const).map((lvl) => (
-            <div key={lvl}>
-              <label className="text-xs text-gray-500">{lvl.toUpperCase()} Label</label>
-              <input
-                type="text"
-                value={localMeta.admLabels[lvl]}
-                onChange={(e) => handleAdmChange(lvl, e.target.value)}
-                className="border rounded px-3 py-2 text-sm w-full"
-              />
-            </div>
-          ))}
+          {(["adm0", "adm1", "adm2", "adm3", "adm4", "adm5"] as const).map(
+            (lvl) => (
+              <div key={lvl}>
+                <label className="text-xs text-gray-500">
+                  {lvl.toUpperCase()} Label
+                </label>
+                <input
+                  type="text"
+                  value={localMeta.admLabels[lvl]}
+                  onChange={(e) => handleAdmChange(lvl, e.target.value)}
+                  className="border rounded px-3 py-2 text-sm w-full"
+                />
+              </div>
+            )
+          )}
         </div>
 
         {/* Sources */}
-        <h3 className="font-medium mb-2">Sources</h3>
+        <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+          Sources
+        </h3>
         <div className="space-y-2 mb-4">
           {localMeta.datasetSources.map((ds, idx) => (
             <div key={idx} className="flex gap-2 items-center">
@@ -180,7 +195,9 @@ export default function EditMetadataModal({
         </button>
 
         {/* Extra Metadata */}
-        <h3 className="font-medium mt-6 mb-2">Extra Metadata</h3>
+        <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-6 mb-2">
+          Extra Metadata
+        </h3>
         <div className="space-y-2 mb-4">
           {Object.entries(localMeta.extra || {}).map(([key, val]) => (
             <div key={key} className="flex gap-2 items-center">
@@ -216,6 +233,7 @@ export default function EditMetadataModal({
           <Plus className="w-4 h-4" /> Add Extra Field
         </button>
 
+        {/* Footer */}
         <div className="mt-6 flex justify-end gap-3">
           <button
             onClick={onClose}
