@@ -7,6 +7,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import { Users, Pencil } from "lucide-react";
+import { CountryPageProps } from "@/app/country/types";
 
 type Country = {
   iso: string;
@@ -23,12 +24,14 @@ type PopulationRow = {
   source?: { name: string; url?: string };
 };
 
-export default function PopulationPage({ params }: { params: { id: string } }) {
+export default function PopulationPage({ params }: CountryPageProps) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -36,7 +39,11 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("iso, name").eq("iso", countryIso).single();
+      const { data } = await supabase
+        .from("countries")
+        .select("iso, name")
+        .eq("iso", countryIso)
+        .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
@@ -44,7 +51,10 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchPopulation = async () => {
-      const { data } = await supabase.from("population_data").select("*").eq("country_iso", countryIso);
+      const { data } = await supabase
+        .from("population_data")
+        .select("*")
+        .eq("country_iso", countryIso);
       if (data) setPopulation(data as PopulationRow[]);
     };
     fetchPopulation();
@@ -52,17 +62,25 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchSource = async () => {
-      const { data } = await supabase.from("population_data").select("source").eq("country_iso", countryIso).limit(1).maybeSingle();
+      const { data } = await supabase
+        .from("population_data")
+        .select("source")
+        .eq("country_iso", countryIso)
+        .limit(1)
+        .maybeSingle();
       if (data?.source) setSource(data.source as any);
     };
     fetchSource();
   }, [countryIso]);
 
   // Health checks
-  const missingPop = population.filter((p) => !p.population || p.population <= 0).length;
+  const missingPop = population.filter(
+    (p) => !p.population || p.population <= 0
+  ).length;
   const hasPopulation = population.length > 0 && missingPop === 0;
   const hasGISLink = false; // placeholder until GIS alignment
-  const allHavePcodes = population.length > 0 && population.every((p) => p.pcode);
+  const allHavePcodes =
+    population.length > 0 && population.every((p) => p.pcode);
   const missingPcodes = population.filter((p) => !p.pcode).length;
 
   // Pagination + search
@@ -83,7 +101,10 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          {
+            label: country?.name ?? countryIso,
+            href: `/country/${countryIso}`,
+          },
           { label: "Population" },
         ]}
       />
@@ -114,7 +135,12 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
               <strong>Dataset Source:</strong>{" "}
               {source ? (
                 source.url ? (
-                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
                     {source.name}
                   </a>
                 ) : (
@@ -215,7 +241,10 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
+          await supabase
+            .from("population_data")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
