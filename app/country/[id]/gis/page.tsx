@@ -7,6 +7,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import { Map, Pencil } from "lucide-react";
+import { CountryPageProps } from "@/app/country/types";
 
 type Country = {
   iso: string;
@@ -23,12 +24,14 @@ type GISRow = {
   source?: { name: string; url?: string };
 };
 
-export default function GISPage({ params }: { params: { id: string } }) {
+export default function GISPage({ params }: CountryPageProps) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [gisData, setGisData] = useState<GISRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -36,7 +39,11 @@ export default function GISPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("iso, name").eq("iso", countryIso).single();
+      const { data } = await supabase
+        .from("countries")
+        .select("iso, name")
+        .eq("iso", countryIso)
+        .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
@@ -44,7 +51,10 @@ export default function GISPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchGIS = async () => {
-      const { data } = await supabase.from("gis_data").select("*").eq("country_iso", countryIso);
+      const { data } = await supabase
+        .from("gis_data")
+        .select("*")
+        .eq("country_iso", countryIso);
       if (data) setGisData(data as GISRow[]);
     };
     fetchGIS();
@@ -52,14 +62,20 @@ export default function GISPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const fetchSource = async () => {
-      const { data } = await supabase.from("gis_data").select("source").eq("country_iso", countryIso).limit(1).maybeSingle();
+      const { data } = await supabase
+        .from("gis_data")
+        .select("source")
+        .eq("country_iso", countryIso)
+        .limit(1)
+        .maybeSingle();
       if (data?.source) setSource(data.source as any);
     };
     fetchSource();
   }, [countryIso]);
 
   // Health checks
-  const hasGeometries = gisData.length > 0 && gisData.every((g) => g.geometry_available);
+  const hasGeometries =
+    gisData.length > 0 && gisData.every((g) => g.geometry_available);
   const missingGeoms = gisData.filter((g) => !g.geometry_available).length;
   const allHavePcodes = gisData.length > 0 && gisData.every((g) => g.pcode);
   const missingPcodes = gisData.filter((g) => !g.pcode).length;
@@ -83,7 +99,10 @@ export default function GISPage({ params }: { params: { id: string } }) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          {
+            label: country?.name ?? countryIso,
+            href: `/country/${countryIso}`,
+          },
           { label: "GIS" },
         ]}
       />
@@ -114,7 +133,12 @@ export default function GISPage({ params }: { params: { id: string } }) {
               <strong>Dataset Source:</strong>{" "}
               {source ? (
                 source.url ? (
-                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
                     {source.name}
                   </a>
                 ) : (
@@ -217,7 +241,10 @@ export default function GISPage({ params }: { params: { id: string } }) {
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase.from("gis_data").update({ source: newSource }).eq("country_iso", countryIso);
+          await supabase
+            .from("gis_data")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
