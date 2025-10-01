@@ -1,104 +1,192 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { X, Plus, Trash2 } from "lucide-react";
 
-interface EditMetadataModalProps {
-  open: boolean;
-  onClose: () => void;
-  metadata: {
+interface Metadata {
+  admLabels: {
     adm1: string;
     adm2: string;
     adm3: string;
-    boundariesSource: string;
-    populationSource: string;
   };
-  onSave: (updated: {
-    adm1: string;
-    adm2: string;
-    adm3: string;
-    boundariesSource: string;
-    populationSource: string;
-  }) => void;
+  sources: {
+    boundaries: string;
+    population: string;
+  };
+  extra?: Record<string, string>;
 }
 
-export default function EditMetadataModal({ open, onClose, metadata, onSave }: EditMetadataModalProps) {
-  const [adm1, setAdm1] = useState(metadata.adm1);
-  const [adm2, setAdm2] = useState(metadata.adm2);
-  const [adm3, setAdm3] = useState(metadata.adm3);
-  const [boundariesSource, setBoundariesSource] = useState(metadata.boundariesSource);
-  const [populationSource, setPopulationSource] = useState(metadata.populationSource);
+export default function EditMetadataModal({
+  open,
+  onClose,
+  metadata,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  metadata: Metadata;
+  onSave: (updated: Metadata) => void;
+}) {
+  const [localMeta, setLocalMeta] = useState<Metadata>({
+    ...metadata,
+    extra: metadata.extra || {},
+  });
 
-  if (!open) return null; // simple conditional render for now
+  if (!open) return null;
+
+  const handleCoreChange = (
+    section: "admLabels" | "sources",
+    field: string,
+    value: string
+  ) => {
+    setLocalMeta((prev) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  };
+
+  const handleExtraChange = (key: string, value: string) => {
+    setLocalMeta((prev) => ({
+      ...prev,
+      extra: { ...prev.extra, [key]: value },
+    }));
+  };
+
+  const handleAddExtra = () => {
+    const newKey = `field_${Object.keys(localMeta.extra || {}).length + 1}`;
+    setLocalMeta((prev) => ({
+      ...prev,
+      extra: { ...prev.extra, [newKey]: "" },
+    }));
+  };
+
+  const handleDeleteExtra = (key: string) => {
+    const updated = { ...localMeta.extra };
+    delete updated[key];
+    setLocalMeta((prev) => ({ ...prev, extra: updated }));
+  };
 
   const handleSave = () => {
-    onSave({ adm1, adm2, adm3, boundariesSource, populationSource });
+    onSave(localMeta);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        <h2 className="text-lg font-semibold mb-4">Edit Country Metadata</h2>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Admin Level 1 Label</label>
-            <input
-              type="text"
-              value={adm1}
-              onChange={(e) => setAdm1(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="Province"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Admin Level 2 Label</label>
-            <input
-              type="text"
-              value={adm2}
-              onChange={(e) => setAdm2(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="Municipality"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Admin Level 3 Label</label>
-            <input
-              type="text"
-              value={adm3}
-              onChange={(e) => setAdm3(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="Barangay"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Boundaries Source</label>
-            <input
-              type="text"
-              value={boundariesSource}
-              onChange={(e) => setBoundariesSource(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="HDX COD 2024"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Population Source</label>
-            <input
-              type="text"
-              value={populationSource}
-              onChange={(e) => setPopulationSource(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              placeholder="NSO Census 2020"
-            />
-          </div>
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Edit Metadata</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
-          <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300" onClick={onClose}>
+        {/* Core fields */}
+        <div className="space-y-4">
+          <h3 className="font-medium">Administrative Labels</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <input
+              type="text"
+              value={localMeta.admLabels.adm1}
+              onChange={(e) =>
+                handleCoreChange("admLabels", "adm1", e.target.value)
+              }
+              placeholder="ADM1 name"
+              className="border rounded px-3 py-2 text-sm w-full"
+            />
+            <input
+              type="text"
+              value={localMeta.admLabels.adm2}
+              onChange={(e) =>
+                handleCoreChange("admLabels", "adm2", e.target.value)
+              }
+              placeholder="ADM2 name"
+              className="border rounded px-3 py-2 text-sm w-full"
+            />
+            <input
+              type="text"
+              value={localMeta.admLabels.adm3}
+              onChange={(e) =>
+                handleCoreChange("admLabels", "adm3", e.target.value)
+              }
+              placeholder="ADM3 name"
+              className="border rounded px-3 py-2 text-sm w-full"
+            />
+          </div>
+
+          <h3 className="font-medium">Data Sources</h3>
+          <input
+            type="text"
+            value={localMeta.sources.boundaries}
+            onChange={(e) =>
+              handleCoreChange("sources", "boundaries", e.target.value)
+            }
+            placeholder="Boundaries source"
+            className="border rounded px-3 py-2 text-sm w-full mb-2"
+          />
+          <input
+            type="text"
+            value={localMeta.sources.population}
+            onChange={(e) =>
+              handleCoreChange("sources", "population", e.target.value)
+            }
+            placeholder="Population source"
+            className="border rounded px-3 py-2 text-sm w-full"
+          />
+
+          {/* Flexible fields */}
+          <h3 className="font-medium mt-4">Extra Metadata</h3>
+          <div className="space-y-2">
+            {Object.entries(localMeta.extra || {}).map(([key, val]) => (
+              <div key={key} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={key}
+                  disabled
+                  className="border rounded px-3 py-2 text-sm w-1/3 bg-gray-100"
+                />
+                <input
+                  type="text"
+                  value={val}
+                  onChange={(e) => handleExtraChange(key, e.target.value)}
+                  placeholder="Value"
+                  className="border rounded px-3 py-2 text-sm w-2/3"
+                />
+                <button
+                  onClick={() => handleDeleteExtra(key)}
+                  className="text-red-600 hover:text-red-800"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={handleAddExtra}
+            className="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:underline"
+          >
+            <Plus className="w-4 h-4" /> Add Extra Field
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+          >
             Cancel
-          </Button>
-          <Button onClick={handleSave}>Save</Button>
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>
