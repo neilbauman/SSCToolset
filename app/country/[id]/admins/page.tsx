@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import { Map } from "lucide-react";
+import { Map, ShieldCheck, AlertTriangle } from "lucide-react";
 
 interface AdminUnit {
   id: string;
@@ -47,6 +47,12 @@ export default function AdminUnitsPage({ params }: any) {
     };
     fetchUnits();
   }, [countryIso]);
+
+  // Count per level
+  const levelCounts: Record<string, number> = {};
+  adminUnits.forEach((u) => {
+    levelCounts[u.level] = (levelCounts[u.level] || 0) + 1;
+  });
 
   const filteredUnits = adminUnits.filter(
     (u) =>
@@ -93,6 +99,10 @@ export default function AdminUnitsPage({ params }: any) {
   const source =
     adminUnits.length > 0 && adminUnits[0].source ? adminUnits[0].source : null;
 
+  // Data health checks
+  const missingPcodes = adminUnits.filter((u) => !u.pcode || u.pcode.trim() === "").length;
+  const allHavePcodes = missingPcodes === 0;
+
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Summary */}
@@ -100,25 +110,46 @@ export default function AdminUnitsPage({ params }: any) {
         <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
           <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
         </h2>
+
         {country && (
-          <p className="text-sm text-gray-700 mb-2">
-            Levels:{" "}
-            {[
-              country.adm0_label,
-              country.adm1_label,
-              country.adm2_label,
-              country.adm3_label,
-              country.adm4_label,
-              country.adm5_label,
-            ]
-              .filter(Boolean)
-              .join(", ")}
-          </p>
+          <>
+            <p className="text-sm text-gray-700 mb-2">
+              Levels:{" "}
+              {[
+                country.adm0_label,
+                country.adm1_label,
+                country.adm2_label,
+                country.adm3_label,
+                country.adm4_label,
+                country.adm5_label,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </p>
+            <p className="text-sm mb-2">
+              Total Units: <span className="font-semibold">{adminUnits.length}</span>
+            </p>
+            <div className="text-sm mb-2">
+              {Object.entries(levelCounts).map(([lvl, count]) => {
+                // map "ADM1" -> "Region" etc using country metadata
+                const label =
+                  (lvl === "ADM0" && country.adm0_label) ||
+                  (lvl === "ADM1" && country.adm1_label) ||
+                  (lvl === "ADM2" && country.adm2_label) ||
+                  (lvl === "ADM3" && country.adm3_label) ||
+                  (lvl === "ADM4" && country.adm4_label) ||
+                  (lvl === "ADM5" && country.adm5_label) ||
+                  lvl;
+                return (
+                  <p key={lvl}>
+                    {label}: <span className="font-semibold">{count}</span>
+                  </p>
+                );
+              })}
+            </div>
+          </>
         )}
-        <p className="text-sm mb-2">
-          Total Units:{" "}
-          <span className="font-semibold">{adminUnits.length}</span>
-        </p>
+
         <p className="text-sm">
           Dataset Source:{" "}
           {source ? (
@@ -150,6 +181,21 @@ export default function AdminUnitsPage({ params }: any) {
         </button>
       </div>
 
+      {/* Data Health */}
+      <div className="border rounded-lg p-4 mb-6 shadow-sm">
+        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
+        </h2>
+        <ul className="text-sm list-disc pl-6">
+          <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
+            {allHavePcodes ? "All units have PCodes" : `${missingPcodes} units missing PCodes`}
+          </li>
+          <li className="text-yellow-700">
+            Population linkage not applied yet
+          </li>
+        </ul>
+      </div>
+
       {/* Search + Table */}
       <div className="mb-3 flex justify-between items-center">
         <input
@@ -164,15 +210,9 @@ export default function AdminUnitsPage({ params }: any) {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                Name
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                PCode
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                Level
-              </th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">Name</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">PCode</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">Level</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
