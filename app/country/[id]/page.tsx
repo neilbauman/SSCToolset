@@ -9,7 +9,7 @@ import "leaflet/dist/leaflet.css";
 import Link from "next/link";
 import { useState } from "react";
 
-// Reusable soft button (branded colors)
+// Reusable soft button
 function SoftButton({
   children,
   color = "gray",
@@ -41,7 +41,6 @@ function SoftButton({
 export default function CountryConfigLandingPage({ params }: any) {
   const id = params?.id ?? "unknown";
 
-  // Mock metadata (replace with Supabase later)
   const country = {
     iso: id,
     name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
@@ -52,9 +51,8 @@ export default function CountryConfigLandingPage({ params }: any) {
     },
   };
 
-  const center: LatLngExpression = [12.8797, 121.774]; // Philippines
+  const center: LatLngExpression = [12.8797, 121.774];
 
-  // Mock dataset status
   const datasets = [
     {
       key: "admins",
@@ -136,44 +134,46 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Map */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
-        <MapContainer
-          center={center}
-          zoom={5}
-          style={{ height: "300px", width: "100%" }}
-          className="rounded-md"
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution="&copy; OpenStreetMap contributors"
-          />
-        </MapContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Map - full height column */}
+        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
+          <MapContainer
+            center={center}
+            zoom={5}
+            style={{ height: "500px", width: "100%" }} // taller, more square
+            className="rounded-md"
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
+          </MapContainer>
+        </div>
+
+        {/* Metadata */}
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
+          <p>
+            <strong>ADM1:</strong> {country.admLabels.adm1}
+          </p>
+          <p>
+            <strong>ADM2:</strong> {country.admLabels.adm2}
+          </p>
+          <p>
+            <strong>ADM3:</strong> {country.admLabels.adm3}
+          </p>
+          <p>
+            <strong>Boundaries Source:</strong> {country.sources.boundaries}
+          </p>
+          <p>
+            <strong>Population Source:</strong> {country.sources.population}
+          </p>
+        </div>
       </div>
 
-      {/* Metadata */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-        <p>
-          <strong>ADM1:</strong> {country.admLabels.adm1}
-        </p>
-        <p>
-          <strong>ADM2:</strong> {country.admLabels.adm2}
-        </p>
-        <p>
-          <strong>ADM3:</strong> {country.admLabels.adm3}
-        </p>
-        <p>
-          <strong>Boundaries Source:</strong> {country.sources.boundaries}
-        </p>
-        <p>
-          <strong>Population Source:</strong> {country.sources.population}
-        </p>
-      </div>
-
-      {/* Dataset cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Dataset cards below */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
           <div
             key={d.key}
