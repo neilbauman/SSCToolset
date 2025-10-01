@@ -29,18 +29,18 @@ type AdminUnit = {
   source?: { name: string; url?: string };
 };
 
-export default function AdminUnitsPage({ params }: { params: { id: string } }) {
-  const countryIso = params.id;
+export default function AdminUnitsPage({ params }: any) {
+  const countryIso = params?.id as string;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
+  const [view, setView] = useState<"table" | "tree">("table");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
-  const [view, setView] = useState<"table" | "tree">("table");
 
   useEffect(() => {
     const fetchCountry = async () => {
@@ -78,12 +78,11 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
     fetchSource();
   }, [countryIso]);
 
-  // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
   const hasGISLink = false; // placeholder until GIS integration
+  const hasPopulation = false; // placeholder until population linkage
 
-  // Pagination + search
   const filtered = adminUnits.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -117,9 +116,6 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Database className="w-5 h-5 text-blue-600" />
             Admin Units Summary
-            <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
-              Core
-            </span>
           </h2>
           <p className="text-sm text-gray-700 mb-2">
             <strong>Total Units:</strong> {adminUnits.length}
@@ -149,12 +145,7 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
               <strong>Dataset Source:</strong>{" "}
               {source ? (
                 source.url ? (
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
+                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     {source.name}
                   </a>
                 ) : (
@@ -175,41 +166,24 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
 
         {/* Data Health */}
         <DatasetHealth
-          checks={[
-            {
-              label: allHavePcodes
-                ? "All units have PCodes"
-                : `${missingPcodes} units missing PCodes`,
-              status: allHavePcodes ? "ok" : "fail",
-            },
-            {
-              label: "Population linkage not applied yet",
-              status: "warn",
-            },
-            {
-              label: hasGISLink
-                ? "Aligned with GIS boundaries"
-                : "GIS linkage not validated yet",
-              status: hasGISLink ? "ok" : "fail",
-            },
-          ]}
+          allHavePcodes={allHavePcodes}
+          missingPcodes={missingPcodes}
+          hasGISLink={hasGISLink}
+          hasPopulation={hasPopulation}
+          totalUnits={adminUnits.length}
         />
       </div>
 
       {/* View Toggle */}
       <div className="flex gap-2 mb-4">
         <button
-          className={`px-3 py-1.5 text-sm rounded ${
-            view === "table" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
-          }`}
+          className={`px-3 py-1.5 text-sm rounded ${view === "table" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
           onClick={() => setView("table")}
         >
           Table View
         </button>
         <button
-          className={`px-3 py-1.5 text-sm rounded ${
-            view === "tree" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
-          }`}
+          className={`px-3 py-1.5 text-sm rounded ${view === "tree" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
           onClick={() => setView("tree")}
         >
           Tree View
