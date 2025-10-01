@@ -6,7 +6,6 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import { Plus, Download } from "lucide-react";
-import { generateAdminUnitsTemplate } from "@/lib/templates/adminUnitsTemplate";
 
 interface AdminUnit {
   id: string;
@@ -60,13 +59,7 @@ export default function AdminUnitsPage({ params }: any) {
   };
 
   const handleDownloadTemplate = () => {
-    const blob = generateAdminUnitsTemplate();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `admin_units_template_${countryIso}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    window.location.href = "/api/templates/admin-units";
   };
 
   return (
@@ -116,7 +109,9 @@ export default function AdminUnitsPage({ params }: any) {
                   <td className="px-3 py-2 border">{u.pcode}</td>
                   <td className="px-3 py-2 border">{u.level}</td>
                   <td className="px-3 py-2 border">{u.parent_pcode || "—"}</td>
-                  <td className="px-3 py-2 border">{u.population?.toLocaleString() || "—"}</td>
+                  <td className="px-3 py-2 border">
+                    {u.population?.toLocaleString() || "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
