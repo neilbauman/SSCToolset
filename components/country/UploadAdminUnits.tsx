@@ -17,18 +17,42 @@ export default function UploadAdminUnits({
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const binaryStr = e.target?.result;
         const workbook = XLSX.read(binaryStr, { type: "binary" });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const parsed = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-        setData(parsed);
+
+        // Try to enrich parent_pcode -> parent_name from DB (if present)
+        const parentCodes = parsed.map((row: any) => row.parent_pcode).filter(Boolean);
+        let parents: Record<string, string> = {};
+
+        if (parentCodes.length > 0) {
+          const { data: parentRows } = await supabase
+            .from("admin_units")
+            .select("pcode, name")
+            .in("pcode", parentCodes);
+
+          if (parentRows) {
+            parents = parentRows.reduce(
+              (acc, row) => ({ ...acc, [row.pcode]: row.name }),
+              {}
+            );
+          }
+        }
+
+        const enriched = parsed.map((row: any) => ({
+          ...row,
+          parent_name: row.parent_pcode ? parents[row.parent_pcode] || "" : "",
+        }));
+
+        setData(enriched);
         setError(null);
         setSaved(false);
       } catch (err: any) {
@@ -77,7 +101,7 @@ export default function UploadAdminUnits({
     } else {
       setSaved(true);
       setError(null);
-      if (onSaved) onSaved(true); // 🔑 notify parent and request reset to page 0
+      if (onSaved) onSaved(true); // reset to page 0
     }
 
     setLoading(false);
@@ -101,21 +125,31 @@ export default function UploadAdminUnits({
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
-                {Object.keys(data[0]).map((col) => (
-                  <th key={col} className="px-4 py-2 border">
-                    {col}
-                  </th>
-                ))}
+                {Object.keys(data[0]).map((col) =>
+                  col !== "parent_pcode" ? (
+                    <th key={col} className="px-4 py-2 border">
+                      {col}
+                    </th>
+                  ) : null
+                )}
+                <th className="px-4 py-2 border">Parent Name</th>
               </tr>
             </thead>
             <tbody>
               {data.slice(0, 10).map((row, i) => (
                 <tr key={i} className="border-t hover:bg-gray-50">
-                  {Object.values(row).map((val, j) => (
-                    <td key={j} className="px-4 py-2 border">
-                      {String(val)}
-                    </td>
-                  ))}
+                  {Object.entries(row).map(([col, val]) =>
+                    col !== "parent_pcode" ? (
+                      <td key={col} className="px-4 py-2 border">
+                        {String(val)}
+                      </td>
+                    ) : null
+                  )}
+                  <td className="px-4 py-2 border">
+                    {row.parent_name || (
+                      <span className="italic text-gray-400">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
