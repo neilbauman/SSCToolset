@@ -12,9 +12,14 @@ interface AdminUnit {
   name: string;
   pcode: string;
   level: string;
+  source?: { name: string; url?: string };
 }
 
-export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+interface AdminUnitsPageProps {
+  params: { id: string };
+}
+
+export default function AdminUnitsPage({ params }: AdminUnitsPageProps) {
   const countryIso = params.id;
   const [country, setCountry] = useState<any>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
@@ -63,6 +68,7 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
       .from("admin_units")
       .update({ source: newSource })
       .eq("country_iso", countryIso);
+
     // Update locally
     setAdminUnits((prev) =>
       prev.map((u) => ({
@@ -89,9 +95,7 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
   };
 
   const source =
-    adminUnits.length > 0 && (adminUnits[0] as any).source
-      ? (adminUnits[0] as any).source
-      : null;
+    adminUnits.length > 0 && adminUnits[0].source ? adminUnits[0].source : null;
 
   return (
     <SidebarLayout headerProps={headerProps}>
