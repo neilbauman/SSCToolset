@@ -73,12 +73,24 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", id) // ✅ FIXED: use iso_code
-        .single();
-      if (data) setCountry(data);
+        .eq("iso_code", id) // ✅ FIXED
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error fetching country:", error);
+        return;
+      }
+
+      if (data) {
+        setCountry({
+          ...data,
+          dataset_sources: data.dataset_sources ?? [], // ✅ fallback
+          extra_metadata: data.extra_metadata ?? {}, // ✅ fallback
+        });
+      }
     };
     fetchCountry();
   }, [id]);
@@ -213,12 +225,15 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
                   Extra Metadata
                 </h3>
-                {country.extra_metadata &&
+                {Object.keys(country.extra_metadata || {}).length > 0 ? (
                   Object.entries(country.extra_metadata).map(([k, v]) => (
                     <p key={k}>
                       <strong>{k}:</strong> {String(v)}
                     </p>
-                  ))}
+                  ))
+                ) : (
+                  <p className="italic text-gray-400">No extra metadata</p>
+                )}
               </>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
@@ -277,7 +292,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
-            iso: country.iso_code, // ✅ FIXED
+            iso: country.iso_code,
             name: country.name,
             admLabels: {
               adm0: country.adm0_label,
@@ -292,7 +307,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
           onSave={async (updated) => {
             await supabase.from("countries").upsert({
-              iso_code: updated.iso, // ✅ FIXED
+              iso_code: updated.iso,
               name: updated.name,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
