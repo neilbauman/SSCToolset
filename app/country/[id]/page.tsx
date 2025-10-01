@@ -30,7 +30,7 @@ export default function CountryDetailPage({ params }: any) {
   const [total, setTotal] = useState(0);
   const pageSize = 50;
 
-  // Fetch admin units with pagination
+  // Fetch admin units with parent name resolution
   const fetchUnits = async () => {
     setLoading(true);
 
@@ -42,7 +42,7 @@ export default function CountryDetailPage({ params }: any) {
 
     if (count) setTotal(count);
 
-    // Fetch paginated slice
+    // Paginated slice
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
@@ -55,9 +55,34 @@ export default function CountryDetailPage({ params }: any) {
 
     if (error) {
       console.error("Error fetching admin units:", error);
+      setAdminUnits([]);
     } else {
-      setAdminUnits(data || []);
+      // Enrich with parent names
+      const parentCodes = data.map((u) => u.parent_pcode).filter(Boolean);
+      let parents: Record<string, string> = {};
+
+      if (parentCodes.length > 0) {
+        const { data: parentRows } = await supabase
+          .from("admin_units")
+          .select("pcode, name")
+          .in("pcode", parentCodes);
+
+        if (parentRows) {
+          parents = parentRows.reduce(
+            (acc, row) => ({ ...acc, [row.pcode]: row.name }),
+            {}
+          );
+        }
+      }
+
+      const enriched = data.map((u) => ({
+        ...u,
+        parent_name: u.parent_pcode ? parents[u.parent_pcode] || "" : "",
+      }));
+
+      setAdminUnits(enriched);
     }
+
     setLoading(false);
   };
 
@@ -138,6 +163,7 @@ export default function CountryDetailPage({ params }: any) {
                     <th className="px-4 py-2">Name</th>
                     <th className="px-4 py-2">PCode</th>
                     <th className="px-4 py-2">Level</th>
+                    <th className="px-4 py-2">Parent</th>
                     <th className="px-4 py-2">Population</th>
                     {editMode && <th className="px-4 py-2">Actions</th>}
                   </tr>
@@ -148,6 +174,11 @@ export default function CountryDetailPage({ params }: any) {
                       <td className="px-4 py-2">{u.name}</td>
                       <td className="px-4 py-2">{u.pcode}</td>
                       <td className="px-4 py-2">{u.level}</td>
+                      <td className="px-4 py-2">
+                        {u.parent_name || (
+                          <span className="italic text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2">
                         {u.population ? (
                           u.population.toLocaleString()
