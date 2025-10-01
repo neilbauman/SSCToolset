@@ -1,122 +1,164 @@
 "use client";
 
-import { useState } from "react";
-import { X, Upload } from "lucide-react";
-import Papa from "papaparse";
+import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Table, Upload, FileDown } from "lucide-react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 
-export interface UploadAdminUnitsModalProps {
-  open: boolean;
-  onClose: () => void;
-  countryIso: string;
-  onUploaded: () => void; // ✅ callback after successful upload
+// Status badge reused
+function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
+  const colors: Record<string, string> = {
+    uploaded: "bg-green-100 text-green-800",
+    partial: "bg-yellow-100 text-yellow-800",
+    missing: "bg-red-100 text-red-800",
+  };
+  return (
+    <span className={`px-2 py-1 text-xs rounded font-medium ${colors[status]}`}>
+      {status}
+    </span>
+  );
 }
 
-export default function UploadAdminUnitsModal({
-  open,
-  onClose,
-  countryIso,
-  onUploaded,
-}: UploadAdminUnitsModalProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+// Core badge
+function CoreBadge() {
+  return (
+    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
+      Core
+    </span>
+  );
+}
 
-  if (!open) return null;
+// ✅ Page Component
+export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+  const id = params?.id ?? "unknown";
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-    }
-  };
+  const [units, setUnits] = useState<any[]>([]);
+  const [status, setStatus] = useState<"uploaded" | "partial" | "missing">(
+    "missing"
+  );
+  const [openUpload, setOpenUpload] = useState(false);
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a CSV file.");
+  // fetch admin units
+  const fetchUnits = async () => {
+    const { data } = await supabase
+      .from("admin_units")
+      .select("*")
+      .eq("country_iso", id);
+
+    if (!data || data.length === 0) {
+      setStatus("missing");
+      setUnits([]);
       return;
     }
-    setLoading(true);
-    setError(null);
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rows = results.data as any[];
-          const records = rows.map((r) => ({
-            country_iso: countryIso,
-            name: r.name,
-            pcode: r.pcode,
-            level: r.level,
-            parent_pcode: r.parent_pcode || null,
-            population: r.population ? parseInt(r.population, 10) : null,
-          }));
+    setUnits(data);
 
-          const { error } = await supabase.from("admin_units").upsert(records);
-          if (error) throw error;
+    // heuristic: consider "uploaded" if >= 3 levels
+    const levels = new Set(data.map((u) => u.level));
+    if (levels.size >= 3) setStatus("uploaded");
+    else setStatus("partial");
+  };
 
-          setLoading(false);
-          onUploaded(); // ✅ refresh table in parent
-          onClose(); // close modal
-        } catch (err: any) {
-          console.error("Upload error:", err);
-          setError("Failed to upload admin units. Please check your CSV format.");
-          setLoading(false);
-        }
-      },
-      error: (err) => {
-        console.error("Parse error:", err);
-        setError("Error parsing CSV file.");
-        setLoading(false);
-      },
-    });
+  useEffect(() => {
+    fetchUnits();
+  }, [id]);
+
+  const headerProps = {
+    title: "Administrative Units",
+    group: "country-config" as const,
+    description: "Upload and manage administrative boundaries for this country.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: id, href: `/country/${id}` },
+          { label: "Admin Units" },
+        ]}
+      />
+    ),
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Upload className="w-5 h-5 text-[color:var(--gsc-green)]" />
-            Upload Admin Units
+    <SidebarLayout headerProps={headerProps}>
+      {/* Header actions */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Table className="w-6 h-6 text-green-600" />
+          <h2 className="text-lg font-semibold">
+            Admin Units <CoreBadge />
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
-
-        {/* File input */}
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="mb-4 block w-full text-sm text-gray-600"
-        />
-
-        {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={loading}
-            className="px-4 py-2 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Uploading..." : "Upload"}
-          </button>
-        </div>
+        <StatusBadge status={status} />
       </div>
-    </div>
+
+      {/* Actions */}
+      <div className="flex gap-3 mb-6">
+        <button
+          onClick={() => {
+            window.location.href = `/api/templates/admin-units?country=${id}`;
+          }}
+          className="flex items-center gap-1 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 text-sm"
+        >
+          <FileDown className="w-4 h-4" /> Download Template
+        </button>
+        <button
+          onClick={() => setOpenUpload(true)}
+          className="flex items-center gap-1 px-3 py-2 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90"
+        >
+          <Upload className="w-4 h-4" /> Upload Data
+        </button>
+      </div>
+
+      {/* Table */}
+      {units.length > 0 ? (
+        <div className="border rounded-lg shadow-sm overflow-x-auto">
+          <table className="min-w-full border-collapse">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">
+                  Name
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">
+                  PCode
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">
+                  Level
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">
+                  Population
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {units.map((u, idx) => (
+                <tr key={idx} className="border-t">
+                  <td className="px-4 py-2 text-sm">{u.name}</td>
+                  <td className="px-4 py-2 text-sm">{u.pcode}</td>
+                  <td className="px-4 py-2 text-sm">{u.level}</td>
+                  <td className="px-4 py-2 text-sm">
+                    {u.population ? u.population.toLocaleString() : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-gray-500">No admin units uploaded yet.</p>
+      )}
+
+      {/* Upload modal */}
+      {openUpload && (
+        <UploadAdminUnitsModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={id}
+          onUploaded={fetchUnits} // ✅ refresh after upload
+        />
+      )}
+    </SidebarLayout>
   );
 }
