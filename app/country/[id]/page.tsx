@@ -11,13 +11,13 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import type { CountryParams } from "@/app/country/types";
 
-// Dynamically import Leaflet to avoid SSR "window is not defined"
+// SSR-safe Leaflet
 const MapContainer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.MapContainer),
+  () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
 );
 const TileLayer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.TileLayer),
+  () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
 );
 
@@ -69,6 +69,75 @@ function renderMetaValue(value: string) {
   return value;
 }
 
+// --- Helpers for human-friendly extra metadata rendering ---
+const isPlainObject = (v: unknown): v is Record<string, any> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const humanizeKey = (key: string) => {
+  // snake_case / kebab-case / camelCase -> Title Case
+  const spaced = key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase();
+  return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
+function renderExtraValue(v: unknown) {
+  // strings / numbers / booleans straight through
+  if (
+    typeof v === "string" ||
+    typeof v === "number" ||
+    typeof v === "boolean"
+  ) {
+    return String(v);
+  }
+
+  // arrays → bullet list
+  if (Array.isArray(v)) {
+    if (v.length === 0) return <span className="italic text-gray-400">Empty</span>;
+    return (
+      <ul className="list-disc pl-5">
+        {v.map((item, idx) => (
+          <li key={idx}>{renderExtraValue(item)}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  // objects with { label|value, url? } → linked label/value
+  if (isPlainObject(v)) {
+    const labelish = (v.label ?? v.value) as string | undefined;
+    if (labelish) {
+      const url = typeof v.url === "string" ? v.url : undefined;
+      return url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 hover:underline"
+        >
+          {labelish}
+        </a>
+      ) : (
+        <span>{labelish}</span>
+      );
+    }
+    // Otherwise pretty-print as compact JSON
+    try {
+      return (
+        <code className="text-xs bg-gray-50 px-1 py-0.5 rounded">
+          {JSON.stringify(v)}
+        </code>
+      );
+    } catch {
+      return <span className="italic text-gray-400">Unsupported value</span>;
+    }
+  }
+
+  // fallback
+  return <span className="italic text-gray-400">Unsupported value</span>;
+}
+
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
 
@@ -92,21 +161,18 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   useEffect(() => {
     const fetchCounts = async () => {
-      // Admins
       const { count: adminCnt } = await supabase
         .from("admin_units")
         .select("*", { count: "exact", head: true })
         .eq("country_iso", id);
       setAdminCount(adminCnt || 0);
 
-      // Population
       const { count: popCnt } = await supabase
         .from("population_data")
         .select("*", { count: "exact", head: true })
         .eq("country_iso", id);
       setPopCount(popCnt || 0);
 
-      // GIS
       const { count: gisCnt } = await supabase
         .from("gis_layers")
         .select("*", { count: "exact", head: true })
@@ -201,14 +267,18 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <ul className="list-disc pl-6 text-sm text-blue-700">
                     {country.dataset_sources.map((src: any, idx: number) => (
                       <li key={idx}>
-                        <a
-                          href={src.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                        >
-                          {src.name}
-                        </a>
+                        {src?.url ? (
+                          <a
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                          >
+                            {src.name}
+                          </a>
+                        ) : (
+                          <span>{src?.name ?? "Unknown source"}</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -220,12 +290,18 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
                   Extra Metadata
                 </h3>
-                {country.extra_metadata &&
-                  Object.entries(country.extra_metadata).map(([k, v]) => (
-                    <p key={k}>
-                      <strong>{k}:</strong> {String(v)}
-                    </p>
-                  ))}
+                {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
+                  <div className="space-y-1">
+                    {Object.entries(country.extra_metadata).map(([k, v]) => (
+                      <p key={k}>
+                        <strong>{humanizeKey(k)}:</strong>{" "}
+                        {renderExtraValue(v)}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="italic text-gray-400">None</p>
+                )}
               </>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
@@ -240,10 +316,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       {/* Dataset cards below */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
-          <div
-            key={d.key}
-            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
-          >
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
@@ -262,14 +335,11 @@ export default function CountryConfigLandingPage({ params }: any) {
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>
-                View
-              </SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
             </div>
           </div>
         ))}
 
-        {/* Other datasets */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -304,6 +374,7 @@ export default function CountryConfigLandingPage({ params }: any) {
               adm5: country.adm5_label,
             },
             datasetSources: country.dataset_sources || [],
+            // preserve any existing complex shapes in extra_metadata
             extra: country.extra_metadata || {},
           }}
           onSave={async (updated) => {
