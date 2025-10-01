@@ -78,11 +78,11 @@ export default function EditMetadataModal({
   };
 
   // Extra metadata handlers
-  const handleExtraChange = (key: string, value: string) => {
-    setLocalMeta((prev) => ({
-      ...prev,
-      extra: { ...prev.extra, [key]: value },
-    }));
+  const handleExtraChange = (key: string, newKey: string, value: string) => {
+    const updated = { ...localMeta.extra };
+    delete updated[key]; // remove old key
+    updated[newKey || key] = value; // insert new key or fallback to old
+    setLocalMeta((prev) => ({ ...prev, extra: updated }));
   };
 
   const handleAddExtra = () => {
@@ -216,14 +216,19 @@ export default function EditMetadataModal({
             <div key={key} className="flex gap-2 items-center">
               <input
                 type="text"
-                value={key}
-                disabled
-                className="border rounded px-3 py-2 text-sm w-1/3 bg-gray-100"
+                defaultValue={key}
+                onBlur={(e) =>
+                  handleExtraChange(key, e.target.value.trim() || key, val)
+                }
+                placeholder="Key"
+                className="border rounded px-3 py-2 text-sm w-1/3"
               />
               <input
                 type="text"
                 value={val}
-                onChange={(e) => handleExtraChange(key, e.target.value)}
+                onChange={(e) =>
+                  handleExtraChange(key, key, e.target.value)
+                }
                 placeholder="Value"
                 className="border rounded px-3 py-2 text-sm w-2/3"
               />
