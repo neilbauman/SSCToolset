@@ -229,4 +229,24 @@ export default function PopulationPage({ params }: any) {
             onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
             disabled={page >= (totalPages || 1)}
             className="px-2 py-1 border rounded disabled:opacity-50"
-         
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <EditDatasetSourceModal
+        open={openSource}
+        onClose={() => setOpenSource(false)}
+        source={source || undefined}
+        onSave={async (newSource) => {
+          await supabase
+            .from("population_data")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
+          setSource(newSource);
+        }}
+      />
+    </SidebarLayout>
+  );
+}
