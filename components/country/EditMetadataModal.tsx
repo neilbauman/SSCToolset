@@ -50,14 +50,17 @@ export default function EditMetadataModal({
     value: string
   ) => {
     const updated = [...form.datasetSources];
-    updated[idx][field] = value;
+    updated[idx] = {
+      ...updated[idx],
+      [field]: value.trim(),
+    };
     setForm((prev) => ({ ...prev, datasetSources: updated }));
   };
 
   const addSource = () => {
     setForm((prev) => ({
       ...prev,
-      datasetSources: [...prev.datasetSources, { name: "", url: "" }],
+      datasetSources: [...(prev.datasetSources || []), { name: "", url: "" }],
     }));
   };
 
@@ -88,7 +91,19 @@ export default function EditMetadataModal({
   };
 
   const handleSubmit = async () => {
-    await onSave(form);
+    // ✅ Clean datasetSources before save
+    const cleanedSources = (form.datasetSources || [])
+      .map((s) => ({
+        name: (s.name || "").trim(),
+        url: (s.url || "").trim(),
+      }))
+      .filter((s) => s.name && s.url); // drop incomplete rows
+
+    await onSave({
+      ...form,
+      datasetSources: cleanedSources,
+      extra: form.extra || {},
+    });
     onClose();
   };
 
@@ -111,7 +126,7 @@ export default function EditMetadataModal({
             <input
               type="text"
               value={form.iso}
-              onChange={(e) => handleFieldChange("iso", e.target.value)}
+              onChange={(e) => handleFieldChange("iso", e.target.value.toUpperCase())}
               className="w-full border rounded p-2 text-sm"
             />
           </div>
