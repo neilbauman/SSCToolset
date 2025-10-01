@@ -12,13 +12,15 @@ function SoftButton({
   children,
   color = "gray",
   onClick,
+  disabled,
 }: {
   children: React.ReactNode;
   color?: "gray" | "green" | "blue" | "red";
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   const base =
-    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors";
+    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const colors: Record<string, string> = {
     gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
     green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
@@ -26,7 +28,11 @@ function SoftButton({
     red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
   };
   return (
-    <button onClick={onClick} className={`${base} ${colors[color]}`}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${colors[color]}`}
+    >
       {children}
     </button>
   );
@@ -43,17 +49,34 @@ export default function CountryPage() {
   const [countries, setCountries] = useState<Country[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const fetchCountries = async () => {
     const { data } = await supabase
       .from("countries")
-      .select("iso_code, name, population, updated_at");
+      .select("iso_code, name, population, updated_at")
+      .order("name", { ascending: true });
     if (data) setCountries(data as Country[]);
   };
 
   useEffect(() => {
     fetchCountries();
   }, []);
+
+  const handleDelete = async (iso_code: string) => {
+    const confirm = window.confirm(
+      `Are you sure you want to delete ${iso_code}? This cannot be undone.`
+    );
+    if (!confirm) return;
+
+    setLoading(true);
+    try {
+      await supabase.from("countries").delete().eq("iso_code", iso_code);
+      await fetchCountries();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const totalPopulation = useMemo(() => {
     return countries.reduce((sum, c) => sum + (c.population ?? 0), 0);
@@ -164,7 +187,11 @@ export default function CountryPage() {
                     <SoftButton color="gray">
                       <Pencil className="w-4 h-4" />
                     </SoftButton>
-                    <SoftButton color="red">
+                    <SoftButton
+                      color="red"
+                      onClick={() => handleDelete(c.iso_code)}
+                      disabled={loading}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </SoftButton>
                   </td>
