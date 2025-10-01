@@ -8,6 +8,7 @@ import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal"
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import { Users, Database, Pencil } from "lucide-react";
+import { generatePopulationTemplate } from "@/lib/templates/populationTemplate";
 
 type Country = {
   iso: string;
@@ -119,12 +120,28 @@ export default function PopulationPage({ params }: any) {
                 <span className="italic text-gray-500">Empty</span>
               )}
             </p>
-            <button
-              onClick={() => setOpenSource(true)}
-              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
-            >
-              <Pencil className="w-4 h-4 mr-1" /> Edit
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOpenSource(true)}
+                className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </button>
+              <button
+                onClick={() => {
+                  const blob = generatePopulationTemplate();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "population_template.csv";
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                }}
+                className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+              >
+                Download Template
+              </button>
+            </div>
           </div>
         </div>
 
