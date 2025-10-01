@@ -5,11 +5,16 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
+import HealthCard from "@/components/common/HealthCard";
 import AdminUnitsTree from "@/components/country/AdminUnitsTree";
-import { Database, ShieldCheck, Pencil } from "lucide-react";
+import { Database, Pencil } from "lucide-react";
+
+interface PageProps {
+  params: { id: string };
+}
 
 type Country = {
-  iso_code: string;
+  iso: string;
   name: string;
   adm0_label: string;
   adm1_label: string;
@@ -25,74 +30,75 @@ type AdminUnit = {
   pcode: string;
   level: string;
   parent_pcode?: string | null;
-  source?: { name: string; url?: string };
 };
 
-export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+export default function AdminUnitsPage({ params }: PageProps) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
+  const [view, setView] = useState<"table" | "tree">("table");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
-  const [view, setView] = useState<"table" | "tree">("table");
 
-  // Fetch country metadata
   useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("*")
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    };
-    fetchCountry();
-  }, [countryIso]);
+    supabase
+      .from("countries")
+      .select("*")
+      .eq("iso", countryIso)
+      .single()
+      .then(({ data }) => data && setCountry(data as Country));
 
-  // Fetch admin units
-  useEffect(() => {
-    const fetchAdminUnits = async () => {
-      const { data } = await supabase
-        .from("admin_units")
-        .select("*")
-        .eq("country_iso", countryIso);
-      if (data) {
-        setAdminUnits(data as AdminUnit[]);
-        const grouped: Record<string, number> = {};
-        (data as AdminUnit[]).forEach((u) => {
-          grouped[u.level] = (grouped[u.level] || 0) + 1;
-        });
-        setCounts(grouped);
-      }
-    };
-    fetchAdminUnits();
-  }, [countryIso]);
+    supabase
+      .from("admin_units")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .then(({ data }) => {
+        if (data) {
+          setAdminUnits(data as AdminUnit[]);
+          const grouped: Record<string, number> = {};
+          (data as AdminUnit[]).forEach((u) => {
+            grouped[u.level] = (grouped[u.level] || 0) + 1;
+          });
+          setCounts(grouped);
+        }
+      });
 
-  // Fetch dataset source
-  useEffect(() => {
-    const fetchSource = async () => {
-      const { data } = await supabase
-        .from("admin_units")
-        .select("source")
-        .eq("country_iso", countryIso)
-        .limit(1)
-        .maybeSingle();
-      if (data?.source) setSource(data.source as any);
-    };
-    fetchSource();
+    supabase
+      .from("admin_units")
+      .select("source")
+      .eq("country_iso", countryIso)
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => data?.source && setSource(data.source as any));
   }, [countryIso]);
 
   // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
-  const hasGISLink = false; // placeholder until GIS integration
+  const hasGISLink = false;
 
-  // Pagination + search
+  const statusChecks = [
+    {
+      label: allHavePcodes
+        ? "All units have PCodes"
+        : `${missingPcodes} units missing PCodes`,
+      status: allHavePcodes ? "ok" : "error",
+    },
+    { label: "Population linkage not applied yet", status: "warning" },
+    {
+      label: hasGISLink ? "Aligned with GIS boundaries" : "GIS linkage not validated yet",
+      status: hasGISLink ? "ok" : "error",
+    },
+  ];
+
+  // Pagination
   const filtered = adminUnits.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -119,7 +125,7 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health Row */}
+      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
@@ -130,10 +136,10 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
               Core
             </span>
           </h2>
-          <p className="text-sm text-gray-700 mb-2">
+          <p className="text-sm mb-2">
             <strong>Total Units:</strong> {adminUnits.length}
           </p>
-          <ul className="text-sm text-gray-700 mb-2">
+          <ul className="text-sm mb-2">
             {Object.entries(counts).map(([lvl, cnt]) => {
               const label =
                 (lvl === "ADM0" && country?.adm0_label) ||
@@ -183,40 +189,10 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Data Health */}
-        <div className="border rounded-lg p-4 shadow-sm relative">
-          <div className="absolute top-2 right-2">
-            {allHavePcodes && hasGISLink ? (
-              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
-                uploaded
-              </span>
-            ) : adminUnits.length > 0 ? (
-              <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
-                partial
-              </span>
-            ) : (
-              <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
-                missing
-              </span>
-            )}
-          </div>
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
-            <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
-          </h2>
-          <ul className="text-sm list-disc pl-6">
-            <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
-              {allHavePcodes
-                ? "All units have PCodes"
-                : `${missingPcodes} units missing PCodes`}
-            </li>
-            <li className="text-yellow-700">Population linkage not applied yet</li>
-            <li className={hasGISLink ? "text-green-700" : "text-red-700"}>
-              {hasGISLink ? "Aligned with GIS boundaries" : "GIS linkage not validated yet"}
-            </li>
-          </ul>
-        </div>
+        <HealthCard title="Data Health" checks={statusChecks} />
       </div>
 
-      {/* View Toggle */}
+      {/* Toggle + View */}
       <div className="flex gap-2 mb-4">
         <button
           className={`px-3 py-1.5 text-sm rounded ${
@@ -236,24 +212,18 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
         </button>
       </div>
 
-      {/* Data Views */}
       {view === "table" && (
         <div className="border rounded-lg p-4 shadow-sm">
-          <div className="flex justify-between items-center mb-3">
-            <input
-              type="text"
-              placeholder="Search by name or PCode..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="border px-3 py-1 rounded w-1/3 text-sm"
-            />
-            <span className="text-sm text-gray-500">
-              Showing {paginated.length} of {filtered.length}
-            </span>
-          </div>
+          <input
+            type="text"
+            placeholder="Search by name or PCode..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="border px-3 py-1 rounded w-1/3 text-sm mb-3"
+          />
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
@@ -281,37 +251,20 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
               )}
             </tbody>
           </table>
-          <div className="flex justify-between items-center mt-3 text-sm">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-2 py-1 border rounded disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span>
-              Page {page} of {totalPages || 1}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
-              disabled={page >= (totalPages || 1)}
-              className="px-2 py-1 border rounded disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
         </div>
       )}
 
       {view === "tree" && <AdminUnitsTree units={adminUnits} />}
 
-      {/* Edit Source Modal */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase.from("admin_units").update({ source: newSource }).eq("country_iso", countryIso);
+          await supabase
+            .from("admin_units")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
