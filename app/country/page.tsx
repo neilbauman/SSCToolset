@@ -1,92 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import { Button } from "@/components/ui/Button";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddCountryModal from "@/components/country/AddCountryModal";
+import DeleteConfirmationModal from "@/components/common/DeleteConfirmationModal";
+import { Pencil, Trash2 } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Globe, Calendar, Pencil, Trash2 } from "lucide-react";
-
-function SoftButton({
-  children,
-  color = "gray",
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode;
-  color?: "gray" | "green" | "blue" | "red";
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  const base =
-    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const colors: Record<string, string> = {
-    gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
-    green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
-    blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
-    red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`${base} ${colors[color]}`}
-    >
-      {children}
-    </button>
-  );
-}
 
 type Country = {
   iso_code: string;
   name: string;
-  updated_at?: string | null;
+  last_updated?: string;
 };
 
 export default function CountryPage() {
-  const [countries, setCountries] = useState<Country[]>([]);
+  const [editMode, setEditMode] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [editCountry, setEditCountry] = useState<Country | null>(null);
+  const [deleteCountry, setDeleteCountry] = useState<Country | null>(null);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchCountries = async () => {
     const { data } = await supabase
       .from("countries")
-      .select("iso_code, name, updated_at")
-      .order("name", { ascending: true });
-    if (data) setCountries(data as Country[]);
+      .select("iso_code, name, updated_at");
+    if (data) {
+      setCountries(
+        data.map((c) => ({
+          iso_code: c.iso_code,
+          name: c.name,
+          last_updated: c.updated_at,
+        }))
+      );
+    }
   };
 
   useEffect(() => {
     fetchCountries();
   }, []);
 
-  const handleDelete = async (c: Country) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${c.name}" (${c.iso_code})? This cannot be undone.`
-    );
-    if (!confirmDelete) return;
-
+  const handleDelete = async (country: Country) => {
     setLoading(true);
     try {
-      await supabase.from("countries").delete().eq("iso_code", c.iso_code);
+      const { error } = await supabase
+        .from("countries")
+        .delete()
+        .eq("iso_code", country.iso_code);
+      if (error) throw error;
       await fetchCountries();
+    } catch (err) {
+      console.error("Error deleting country:", err);
     } finally {
       setLoading(false);
+      setDeleteCountry(null);
     }
   };
-
-  const lastUpdated = useMemo(() => {
-    if (countries.length === 0) return "N/A";
-    const dates = countries
-      .map((c) => c.updated_at)
-      .filter(Boolean)
-      .map((d) => new Date(d as string));
-    if (dates.length === 0) return "N/A";
-    const latest = new Date(Math.max(...dates.map((d) => d.getTime())));
-    return latest.toISOString().split("T")[0];
-  }, [countries]);
 
   const headerProps = {
     title: "Country Configuration",
@@ -104,40 +76,26 @@ export default function CountryPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="border rounded-lg p-4 shadow-sm flex items-center gap-3">
-          <Globe className="w-6 h-6 text-blue-600" />
-          <div>
-            <p className="text-sm text-gray-600">Countries</p>
-            <p className="text-lg font-semibold">{countries.length}</p>
-          </div>
-        </div>
-        <div className="border rounded-lg p-4 shadow-sm flex items-center gap-3">
-          <Calendar className="w-6 h-6 text-purple-600" />
-          <div>
-            <p className="text-sm text-gray-600">Last Updated</p>
-            <p className="text-lg font-semibold">{lastUpdated}</p>
-          </div>
-        </div>
+      {/* Action Buttons */}
+      <div className="flex justify-between items-center mb-4">
+        <Button onClick={() => setOpenAdd(true)}>+ Add Country</Button>
+        <Button
+          className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+          onClick={() => setEditMode(!editMode)}
+        >
+          {editMode ? "Exit Edit Mode" : "Edit Mode"}
+        </Button>
       </div>
 
-      {/* Actions */}
-      <div className="flex justify-end items-center mb-4">
-        <SoftButton color="green" onClick={() => setOpenAdd(true)}>
-          + Add Country
-        </SoftButton>
-      </div>
-
-      {/* Country table */}
+      {/* Countries Table */}
       <div className="overflow-x-auto border rounded-lg shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100 text-sm font-semibold text-gray-700">
+          <thead className="bg-gray-100 text-left">
             <tr>
-              <th className="px-4 py-2 w-[40%] text-left">Name</th>
-              <th className="px-4 py-2 w-[20%] text-left">ISO Code</th>
-              <th className="px-4 py-2 w-[20%] text-left">Last Updated</th>
-              <th className="px-4 py-2 w-[20%] text-left">Actions</th>
+              <th className="px-4 py-2 w-[35%]">Name</th>
+              <th className="px-4 py-2 w-[20%]">ISO Code</th>
+              <th className="px-4 py-2 w-[25%]">Last Updated</th>
+              <th className="px-4 py-2 w-[20%] text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -152,28 +110,23 @@ export default function CountryPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-2">{c.iso_code}</td>
-                <td className="px-4 py-2">
-                  {c.updated_at
-                    ? new Date(c.updated_at).toISOString().split("T")[0]
-                    : "—"}
-                </td>
-                <td className="px-4 py-2 flex gap-2">
-                  <SoftButton
-                    color="gray"
+                <td className="px-4 py-2">{c.last_updated ?? "—"}</td>
+                <td className="px-4 py-2 flex justify-end gap-2">
+                  <Button
+                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1"
                     onClick={() => {
                       setEditCountry(c);
                       setOpenAdd(true);
                     }}
                   >
                     <Pencil className="w-4 h-4" />
-                  </SoftButton>
-                  <SoftButton
-                    color="red"
-                    onClick={() => handleDelete(c)}
-                    disabled={loading}
+                  </Button>
+                  <Button
+                    className="bg-red-600 text-white hover:bg-red-700 px-2 py-1"
+                    onClick={() => setDeleteCountry(c)}
                   >
                     <Trash2 className="w-4 h-4" />
-                  </SoftButton>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -181,9 +134,9 @@ export default function CountryPage() {
               <tr>
                 <td
                   colSpan={4}
-                  className="text-center py-6 text-gray-500 italic"
+                  className="px-4 py-6 text-center text-gray-500 italic"
                 >
-                  No countries configured yet
+                  No countries configured yet.
                 </td>
               </tr>
             )}
@@ -198,9 +151,29 @@ export default function CountryPage() {
           setOpenAdd(false);
           setEditCountry(null);
         }}
-        onSave={() => fetchCountries()}
+        onSave={async () => {
+          await fetchCountries();
+        }}
         mode={editCountry ? "edit" : "add"}
         initialCountry={editCountry}
+      />
+
+      {/* Delete Confirmation */}
+      <DeleteConfirmationModal
+        open={!!deleteCountry}
+        title="Confirm Delete"
+        message={
+          deleteCountry
+            ? `Are you sure you want to delete "${deleteCountry.name}" (${deleteCountry.iso_code})? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loading={loading}
+        onConfirm={() => {
+          if (deleteCountry) handleDelete(deleteCountry);
+        }}
+        onCancel={() => setDeleteCountry(null)}
       />
     </SidebarLayout>
   );
