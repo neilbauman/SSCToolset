@@ -29,9 +29,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -41,7 +39,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
-        .select("iso, name")
+        .select("iso_code, name")
         .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
@@ -73,13 +71,10 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     fetchSource();
   }, [countryIso]);
 
-  const missingPop = population.filter(
-    (p) => !p.population || p.population <= 0
-  ).length;
+  const missingPop = population.filter((p) => !p.population || p.population <= 0).length;
   const hasPopulation = population.length > 0 && missingPop === 0;
   const hasGISLink = false;
-  const allHavePcodes =
-    population.length > 0 && population.every((p) => p.pcode);
+  const allHavePcodes = population.length > 0 && population.every((p) => p.pcode);
   const missingPcodes = population.filter((p) => !p.pcode).length;
 
   const filtered = population.filter(
@@ -187,4 +182,51 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
             {paginated.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50 text-sm">
                 <td className="border px-2 py-1">{row.name}</td>
-                <td className="border px-2 py-1">{row
+                <td className="border px-2 py-1">{row.pcode}</td>
+                <td className="border px-2 py-1">{row.level}</td>
+                <td className="border px-2 py-1">{row.population}</td>
+                <td className="border px-2 py-1">{row.last_updated}</td>
+              </tr>
+            ))}
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={5} className="text-center text-gray-500 py-6">
+                  No results
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div className="flex justify-between items-center mt-3 text-sm">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-2 py-1 border rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span>
+            Page {page} of {totalPages || 1}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
+            disabled={page >= (totalPages || 1)}
+            className="px-2 py-1 border rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <EditDatasetSourceModal
+        open={openSource}
+        onClose={() => setOpenSource(false)}
+        source={source || undefined}
+        onSave={async (newSource) => {
+          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
+          setSource(newSource);
+        }}
+      />
+    </SidebarLayout>
+  );
+}
