@@ -6,30 +6,10 @@ import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
-
-function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
-  const colors: Record<string, string> = {
-    uploaded: "bg-green-100 text-green-800",
-    partial: "bg-yellow-100 text-yellow-800",
-    missing: "bg-red-100 text-red-800",
-  };
-  return (
-    <span className={`px-2 py-1 text-xs rounded font-medium ${colors[status]}`}>
-      {status}
-    </span>
-  );
-}
-
-function CoreBadge() {
-  return (
-    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
-      Core
-    </span>
-  );
-}
 
 function SoftButton({
   children,
@@ -53,9 +33,9 @@ function SoftButton({
 
   if (href) {
     return (
-      <a href={href} className={`${base} ${colors[color]}`}>
+      <Link href={href} className={`${base} ${colors[color]}`}>
         {children}
-      </a>
+      </Link>
     );
   }
   return (
@@ -87,6 +67,12 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [adminStatus, setAdminStatus] = useState<
     "uploaded" | "partial" | "missing"
   >("missing");
+  const [popStatus, setPopStatus] = useState<
+    "uploaded" | "partial" | "missing"
+  >("missing");
+  const [gisStatus, setGisStatus] = useState<
+    "uploaded" | "partial" | "missing"
+  >("missing");
   const [openMeta, setOpenMeta] = useState(false);
 
   const center: LatLngExpression = [12.8797, 121.774];
@@ -96,7 +82,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", id) // ✅ correct field
+        .eq("iso", id)
         .single();
       if (data) setCountry(data);
     };
@@ -124,6 +110,30 @@ export default function CountryConfigLandingPage({ params }: any) {
     fetchAdminStats();
   }, [id]);
 
+  useEffect(() => {
+    const fetchPopulation = async () => {
+      const { data } = await supabase
+        .from("population_data")
+        .select("id")
+        .eq("country_iso", id);
+      if (!data || data.length === 0) {
+        setPopStatus("missing");
+      } else {
+        setPopStatus("uploaded"); // refine later for partial logic
+      }
+    };
+    fetchPopulation();
+  }, [id]);
+
+  // Placeholder for GIS
+  useEffect(() => {
+    const fetchGIS = async () => {
+      // Later: query GIS table
+      setGisStatus("missing");
+    };
+    fetchGIS();
+  }, [id]);
+
   const datasets = [
     {
       key: "admins",
@@ -141,7 +151,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "population",
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
-      status: "missing",
+      status: popStatus,
       stats: "",
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
@@ -151,8 +161,8 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "gis",
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
-      status: "partial",
-      stats: "ADM1 & ADM2 uploaded, ADM3 missing",
+      status: gisStatus,
+      stats: "",
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
       core: true,
@@ -172,6 +182,12 @@ export default function CountryConfigLandingPage({ params }: any) {
         ]}
       />
     ),
+  };
+
+  const statusColors: Record<string, string> = {
+    uploaded: "bg-green-100 text-green-700",
+    partial: "bg-yellow-100 text-yellow-700",
+    missing: "bg-red-100 text-red-700",
   };
 
   return (
@@ -203,7 +219,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
-                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
+                <p><strong>ISO:</strong> {renderMetaValue(country.iso)}</p>
                 <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
                 <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
                 <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
@@ -237,21 +253,9 @@ export default function CountryConfigLandingPage({ params }: any) {
                   Extra Metadata
                 </h3>
                 {country.extra_metadata &&
-                  Object.entries(country.extra_metadata).map(([k, v]: any) => (
+                  Object.entries(country.extra_metadata).map(([k, v]) => (
                     <p key={k}>
-                      <strong>{v.label}:</strong>{" "}
-                      {v.url ? (
-                        <a
-                          href={v.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {v.value}
-                        </a>
-                      ) : (
-                        v.value
-                      )}
+                      <strong>{k}:</strong> {String(v)}
                     </p>
                   ))}
               </>
@@ -268,26 +272,29 @@ export default function CountryConfigLandingPage({ params }: any) {
       {/* Dataset cards below */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
-          <div
-            key={d.key}
-            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
-          >
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
-                <h3 className="text-lg font-semibold">{d.title}</h3>
-                {d.core && <CoreBadge />}
+                <Link href={d.href}>
+                  <h3 className="text-lg font-semibold hover:underline">{d.title}</h3>
+                </Link>
+                {d.core && (
+                  <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
+                    Core
+                  </span>
+                )}
               </div>
-              <StatusBadge status={d.status as any} />
+              <span className={`px-2 py-1 text-xs rounded ${statusColors[d.status]}`}>
+                {d.status}
+              </span>
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
             {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>
-                View
-              </SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
             </div>
           </div>
         ))}
@@ -316,7 +323,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
-            iso_code: country.iso_code,
+            iso: country.iso,
             name: country.name,
             admLabels: {
               adm0: country.adm0_label,
@@ -331,7 +338,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
           onSave={async (updated) => {
             await supabase.from("countries").upsert({
-              iso_code: updated.iso_code,
+              iso: updated.iso,
               name: updated.name,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
