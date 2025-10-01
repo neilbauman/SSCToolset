@@ -24,8 +24,8 @@ type PopulationRow = {
   source?: { name: string; url?: string };
 };
 
-export default function PopulationPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
+export default function PopulationPage({ params }: any) {
+  const { id: countryIso } = params as CountryParams;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
