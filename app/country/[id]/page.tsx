@@ -1,370 +1,394 @@
 "use client";
 
-import SidebarLayout from "@/components/layout/SidebarLayout";
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
-import { MapContainer, TileLayer } from "react-leaflet";
-import { LatLngExpression } from "leaflet";
-import "leaflet/dist/leaflet.css";
-import Link from "next/link";
-import { useState, useEffect } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import EditMetadataModal from "@/components/country/EditMetadataModal";
+import { useEffect, useMemo, useState } from "react";
+import { X, Plus, Trash2 } from "lucide-react";
 
-function SoftButton({
-  children,
-  color = "gray",
-  href,
-  onClick,
-}: {
-  children: React.ReactNode;
-  color?: "gray" | "green" | "blue" | "red";
-  href?: string;
-  onClick?: () => void;
-}) {
-  const base =
-    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors";
-  const colors: Record<string, string> = {
-    gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
-    green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
-    blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
-    red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
+type ExtraEntry = {
+  label: string;
+  value: string;
+  url?: string;
+};
+
+interface EditMetadataModalProps {
+  open: boolean;
+  onClose: () => void;
+  metadata: {
+    iso: string;
+    name: string;
+    admLabels: {
+      adm0: string;
+      adm1: string;
+      adm2: string;
+      adm3: string;
+      adm4: string;
+      adm5: string;
+    };
+    datasetSources: { name: string; url: string }[];
+    extra: Record<string, ExtraEntry>;
   };
-
-  if (href) {
-    return (
-      <Link href={href} className={`${base} ${colors[color]}`}>
-        {children}
-      </Link>
-    );
-  }
-  return (
-    <button onClick={onClick} className={`${base} ${colors[color]}`}>
-      {children}
-    </button>
-  );
+  onSave: (
+    updated: EditMetadataModalProps["metadata"]
+  ) => Promise<void>;
 }
 
-function renderMetaValue(value: string) {
-  if (!value || value.trim() === "") {
-    return (
-      <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-        Empty
-      </span>
-    );
-  }
-  if (value === "N/A") {
-    return <span className="italic text-gray-400">Not applicable</span>;
-  }
-  return value;
+/** Normalize a label into a machine key */
+function normalizeKey(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
-export default function CountryConfigLandingPage({ params }: any) {
-  const id = params?.id ?? "unknown";
+function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
 
-  const [country, setCountry] = useState<any>(null);
-  const [adminStats, setAdminStats] = useState<Record<string, number>>({});
-  const [adminStatus, setAdminStatus] = useState<
-    "uploaded" | "partial" | "missing"
-  >("missing");
-  const [openMeta, setOpenMeta] = useState(false);
+export default function EditMetadataModal({
+  open,
+  onClose,
+  metadata,
+  onSave,
+}: EditMetadataModalProps) {
+  const [form, setForm] = useState(deepClone(metadata));
 
-  const center: LatLngExpression = [12.8797, 121.774];
-
+  // Keep local form in sync if metadata changes while modal is open
   useEffect(() => {
-    const fetchCountry = async () => {
-      const { data, error } = await supabase
-        .from("countries")
-        .select("*")
-        .eq("iso_code", id.toUpperCase())
-        .maybeSingle();
+    if (open) setForm(deepClone(metadata));
+  }, [open, metadata]);
 
-      if (error) {
-        console.error("Supabase error fetching country:", error);
-      }
+  const extraArray = useMemo(() => {
+    return Object.entries(form.extra || {}).map(([key, entry]) => ({
+      key,
+      ...entry,
+    }));
+  }, [form.extra]);
 
-      if (!data) {
-        console.warn("No country metadata found for", id);
-        setCountry({
-          iso_code: id.toUpperCase(),
-          name: "Unknown",
-          dataset_sources: [],
-          extra_metadata: {},
-        });
-        return;
-      }
+  const setExtraFromArray = (
+    rows: Array<{ key: string } & ExtraEntry>
+  ) => {
+    const record: Record<string, ExtraEntry> = {};
+    for (const row of rows) {
+      const safeKey = normalizeKey(row.label || row.key || "field");
+      record[safeKey] = {
+        label: row.label?.trim() || safeKey,
+        value: row.value ?? "",
+        url: row.url?.trim() || undefined,
+      };
+    }
+    setForm((prev) => ({ ...prev, extra: record }));
+  };
 
-      setCountry({
-        ...data,
-        dataset_sources: data.dataset_sources ?? [],
-        extra_metadata: data.extra_metadata ?? {},
-      });
+  if (!open) return null;
+
+  const handleFieldChange = (field: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAdmChange = (
+    level: keyof typeof form.admLabels,
+    value: string
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      admLabels: { ...prev.admLabels, [level]: value },
+    }));
+  };
+
+  const handleSourceChange = (
+    idx: number,
+    field: "name" | "url",
+    value: string
+  ) => {
+    const updated = [...form.datasetSources];
+    updated[idx] = {
+      ...updated[idx],
+      [field]: value,
     };
-    fetchCountry();
-  }, [id]);
+    setForm((prev) => ({ ...prev, datasetSources: updated }));
+  };
 
-  useEffect(() => {
-    const fetchAdminStats = async () => {
-      const { data } = await supabase
-        .from("admin_units")
-        .select("level, pcode")
-        .eq("country_iso", id.toUpperCase());
-      if (!data || data.length === 0) {
-        setAdminStatus("missing");
-        return;
-      }
-      const counts: Record<string, number> = {};
-      data.forEach((row) => {
-        counts[row.level] = (counts[row.level] || 0) + 1;
-      });
-      setAdminStats(counts);
-      if (Object.keys(counts).length >= 3) setAdminStatus("uploaded");
-      else setAdminStatus("partial");
-    };
-    fetchAdminStats();
-  }, [id]);
+  const addSource = () => {
+    setForm((prev) => ({
+      ...prev,
+      datasetSources: [...(prev.datasetSources || []), { name: "", url: "" }],
+    }));
+  };
 
-  const datasets = [
-    {
-      key: "admins",
-      title: "Places / Admin Units",
-      description: "Administrative boundaries and place codes.",
-      status: adminStatus,
-      stats: Object.entries(adminStats)
-        .map(([lvl, cnt]) => `${lvl}: ${cnt}`)
-        .join(", "),
-      icon: <Map className="w-6 h-6 text-green-600" />,
-      href: `/country/${id}/admins`,
-    },
-    {
-      key: "population",
-      title: "Populations / Demographics",
-      description: "Census population and demographic indicators.",
-      status: "missing",
-      stats: "",
-      icon: <Users className="w-6 h-6 text-gray-500" />,
-      href: `/country/${id}/population`,
-    },
-    {
-      key: "gis",
-      title: "GIS / Mapping",
-      description: "Geospatial boundary data and mapping layers.",
-      status: "partial",
-      stats: "ADM1 & ADM2 uploaded, ADM3 missing",
-      icon: <Database className="w-6 h-6 text-yellow-600" />,
-      href: `/country/${id}/gis`,
-    },
-  ];
+  const removeSource = (idx: number) => {
+    const updated = [...form.datasetSources];
+    updated.splice(idx, 1);
+    setForm((prev) => ({ ...prev, datasetSources: updated }));
+  };
 
-  const headerProps = {
-    title: `${country?.name ?? id} – Country Configuration`,
-    group: "country-config" as const,
-    description: "Manage baseline datasets and metadata for this country.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? id },
-        ]}
-      />
-    ),
+  // ------- Extra metadata -------
+  const updateExtraRow = (
+    rowIndex: number,
+    field: "label" | "value" | "url",
+    value: string
+  ) => {
+    const rows = deepClone(extraArray);
+    rows[rowIndex][field] = value;
+
+    // Auto-sync key from label always
+    if (field === "label") {
+      rows[rowIndex].key = normalizeKey(value);
+    }
+
+    setExtraFromArray(rows);
+  };
+
+  const addExtra = () => {
+    const rows = deepClone(extraArray);
+    rows.push({
+      key: `field_${rows.length + 1}`,
+      label: "New Field",
+      value: "",
+      url: "",
+    });
+    setExtraFromArray(rows);
+  };
+
+  const removeExtra = (rowIndex: number) => {
+    const rows = deepClone(extraArray);
+    rows.splice(rowIndex, 1);
+    setExtraFromArray(rows);
+  };
+
+  const handleSubmit = async () => {
+    const cleanedSources = (form.datasetSources || [])
+      .map((s) => ({
+        name: (s.name || "").trim(),
+        url: (s.url || "").trim(),
+      }))
+      .filter((s) => s.name && s.url);
+
+    const cleanedExtra = deepClone(form.extra || {});
+    for (const k of Object.keys(cleanedExtra)) {
+      const entry = cleanedExtra[k];
+      entry.label = (entry.label || "").trim();
+      entry.value = (entry.value || "").trim();
+      entry.url = entry.url?.trim() || undefined;
+    }
+
+    await onSave({
+      ...form,
+      iso: (form.iso || "").toUpperCase(),
+      datasetSources: cleanedSources,
+      extra: cleanedExtra,
+    });
+
+    onClose();
   };
 
   return (
-    <SidebarLayout headerProps={headerProps}>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Map */}
-        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
-          <MapContainer
-            center={center}
-            zoom={5}
-            style={{ height: "500px", width: "100%" }}
-            className="rounded-md z-0"
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; OpenStreetMap contributors"
-            />
-          </MapContainer>
-        </div>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+      <div className="bg-white rounded-lg w-full max-w-4xl shadow-lg p-6 relative">
+        {/* Header */}
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <h2 className="text-lg font-semibold mb-4">Edit Metadata</h2>
 
-        {/* Metadata */}
-        <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
+        {/* ISO + Name */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-            {country ? (
-              <>
-                {/* Core */}
-                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
-                  Core Metadata
-                </h3>
-                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
-                <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
-                <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
-                <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
-                <p><strong>ADM2 Label:</strong> {renderMetaValue(country.adm2_label)}</p>
-                <p><strong>ADM3 Label:</strong> {renderMetaValue(country.adm3_label)}</p>
-                <p><strong>ADM4 Label:</strong> {renderMetaValue(country.adm4_label)}</p>
-                <p><strong>ADM5 Label:</strong> {renderMetaValue(country.adm5_label)}</p>
-
-                <p className="mt-2 font-medium">Sources:</p>
-                {country.dataset_sources?.length > 0 ? (
-                  <ul className="list-disc pl-6 text-sm text-blue-700">
-                    {country.dataset_sources.map((src: any, idx: number) => (
-                      <li key={idx}>
-                        <a
-                          href={src.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                        >
-                          {src.name}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="italic text-gray-400">No sources provided</p>
-                )}
-
-                {/* Extra */}
-                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
-                  Extra Metadata
-                </h3>
-                {Object.keys(country.extra_metadata || {}).length > 0 ? (
-                  Object.entries(country.extra_metadata).map(([k, meta]: any) => (
-                    <p key={k}>
-                      <strong>{meta.label}:</strong>{" "}
-                      {meta.url ? (
-                        <a
-                          href={meta.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {meta.value}
-                        </a>
-                      ) : (
-                        meta.value
-                      )}
-                    </p>
-                  ))
-                ) : (
-                  <p className="italic text-gray-400">No extra metadata</p>
-                )}
-              </>
-            ) : (
-              <p className="text-gray-500">Loading metadata...</p>
-            )}
+            <label className="block text-sm font-medium text-gray-700">
+              Country ISO
+            </label>
+            <input
+              type="text"
+              value={form.iso}
+              onChange={(e) =>
+                handleFieldChange("iso", e.target.value.toUpperCase())
+              }
+              className="w-full border rounded p-2 text-sm"
+            />
           </div>
-          <SoftButton color="gray" onClick={() => setOpenMeta(true)}>
-            <Pencil className="inline w-4 h-4 mr-1" /> Edit Metadata
-          </SoftButton>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Country Name
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => handleFieldChange("name", e.target.value)}
+              className="w-full border rounded p-2 text-sm"
+            />
+          </div>
         </div>
-      </div>
 
-      {/* Dataset cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        {datasets.map((d) => (
-          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                {d.icon}
-                <h3 className="text-lg font-semibold">{d.title}</h3>
+        {/* ADM Labels */}
+        <div className="mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(
+              [
+                ["adm0", "ADM0 Label"],
+                ["adm1", "ADM1 Label"],
+                ["adm2", "ADM2 Label"],
+                ["adm3", "ADM3 Label"],
+                ["adm4", "ADM4 Label"],
+                ["adm5", "ADM5 Label"],
+              ] as Array<[keyof typeof form.admLabels, string]>
+            ).map(([lv, label]) => (
+              <div key={lv}>
+                <label className="block text-sm font-medium text-gray-700">
+                  {label}
+                </label>
+                <input
+                  type="text"
+                  value={form.admLabels[lv] || ""}
+                  onChange={(e) => handleAdmChange(lv, e.target.value)}
+                  className="w-full border rounded p-2 text-sm"
+                />
               </div>
-              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
-                {d.status}
-              </span>
-            </div>
-            <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-            {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
-            <div className="flex gap-2">
-              <SoftButton color="gray">Download Template</SoftButton>
-              <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>View</SoftButton>
-            </div>
+            ))}
           </div>
-        ))}
+        </div>
 
-        {/* Flexible datasets */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-6 h-6 text-blue-600" />
-              <h3 className="text-lg font-semibold">Other Datasets</h3>
+        {/* General Dataset Sources */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+            General Dataset Sources
+          </h3>
+          {(form.datasetSources || []).map((src, idx) => (
+            <div key={idx} className="flex flex-col md:flex-row gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="Name (e.g., HDX Portal)"
+                value={src.name}
+                onChange={(e) => handleSourceChange(idx, "name", e.target.value)}
+                className="flex-1 border rounded p-2 text-sm"
+              />
+              <input
+                type="url"
+                placeholder="URL (https://...)"
+                value={src.url}
+                onChange={(e) => handleSourceChange(idx, "url", e.target.value)}
+                className="flex-1 border rounded p-2 text-sm"
+              />
+              <button
+                onClick={() => removeSource(idx)}
+                className="shrink-0 text-red-500 hover:text-red-700 px-2 py-2 rounded self-start md:self-auto"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
-            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">
-              Flexible
-            </span>
+          ))}
+          <button
+            onClick={addSource}
+            className="flex items-center text-sm text-blue-600 hover:underline"
+          >
+            <Plus className="w-4 h-4 mr-1" /> Add Source
+          </button>
+        </div>
+
+        {/* Extra Metadata */}
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+            Extra Metadata
+          </h3>
+          <div className="rounded border border-gray-200 divide-y">
+            {extraArray.length === 0 && (
+              <div className="p-3 text-sm text-gray-500">
+                No extra metadata yet.
+              </div>
+            )}
+            {extraArray.map((row, idx) => (
+              <div key={`${row.key}-${idx}`} className="p-3">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                  {/* Readonly key */}
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Key (auto-generated)
+                    </label>
+                    <input
+                      type="text"
+                      value={row.key}
+                      readOnly
+                      className="w-full border rounded p-2 text-sm bg-gray-100 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
+                  {/* Editable label */}
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Label (human readable)
+                    </label>
+                    <input
+                      type="text"
+                      value={row.label}
+                      onChange={(e) => updateExtraRow(idx, "label", e.target.value)}
+                      className="w-full border rounded p-2 text-sm"
+                      placeholder="Official languages"
+                    />
+                  </div>
+                  {/* Value */}
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Value
+                    </label>
+                    <input
+                      type="text"
+                      value={row.value}
+                      onChange={(e) => updateExtraRow(idx, "value", e.target.value)}
+                      className="w-full border rounded p-2 text-sm"
+                    />
+                  </div>
+                  {/* Optional URL */}
+                  <div className="md:col-span-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      URL (optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={row.url || ""}
+                      onChange={(e) => updateExtraRow(idx, "url", e.target.value)}
+                      className="w-full border rounded p-2 text-sm"
+                    />
+                  </div>
+                  {/* Delete */}
+                  <div className="md:col-span-1 flex items-end">
+                    <button
+                      onClick={() => removeExtra(idx)}
+                      className="w-full text-red-500 hover:text-red-700 px-2 py-2 rounded"
+                    >
+                      <Trash2 className="w-4 h-4 mx-auto" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <p className="text-sm text-gray-600 mb-4">
-            Additional country-specific datasets that extend the baseline.
-          </p>
-          <p className="italic text-gray-500">🚧 To be implemented.</p>
+          <button
+            onClick={addExtra}
+            className="mt-2 flex items-center text-sm text-blue-600 hover:underline"
+          >
+            <Plus className="w-4 h-4 mr-1" /> Add Extra Field
+          </button>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 rounded text-sm font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-[color:var(--gsc-green)] text-white rounded text-sm font-medium hover:opacity-90"
+          >
+            Save
+          </button>
         </div>
       </div>
-
-      {/* Modal */}
-      {country && (
-        <EditMetadataModal
-          open={openMeta}
-          onClose={() => setOpenMeta(false)}
-          metadata={{
-            iso: country.iso_code,
-            name: country.name,
-            admLabels: {
-              adm0: country.adm0_label,
-              adm1: country.adm1_label,
-              adm2: country.adm2_label,
-              adm3: country.adm3_label,
-              adm4: country.adm4_label,
-              adm5: country.adm5_label,
-            },
-            datasetSources: country.dataset_sources || [],
-            extra: country.extra_metadata || {},
-          }}
-          onSave={async (updated) => {
-            // ✅ Clean dataset sources before saving
-            const cleanedSources = (updated.datasetSources || [])
-              .map((s) => ({
-                name: (s.name || "").trim(),
-                url: (s.url || "").trim(),
-              }))
-              .filter((s) => s.name && s.url);
-
-            const isoCode = (updated.iso || "").toUpperCase();
-
-            await supabase.from("countries").upsert({
-              iso_code: isoCode,
-              name: updated.name,
-              adm0_label: updated.admLabels.adm0,
-              adm1_label: updated.admLabels.adm1,
-              adm2_label: updated.admLabels.adm2,
-              adm3_label: updated.admLabels.adm3,
-              adm4_label: updated.admLabels.adm4,
-              adm5_label: updated.admLabels.adm5,
-              dataset_sources: cleanedSources,
-              extra_metadata: updated.extra ?? {},
-            });
-
-            setCountry({
-              ...country,
-              ...updated,
-              iso_code: isoCode,
-              adm0_label: updated.admLabels.adm0,
-              adm1_label: updated.admLabels.adm1,
-              adm2_label: updated.admLabels.adm2,
-              adm3_label: updated.admLabels.adm3,
-              adm4_label: updated.admLabels.adm4,
-              adm5_label: updated.admLabels.adm5,
-              dataset_sources: cleanedSources,
-              extra_metadata: updated.extra ?? {},
-            });
-          }}
-        />
-      )}
-    </SidebarLayout>
+    </div>
   );
 }
