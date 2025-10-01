@@ -55,87 +55,35 @@ function SoftButton({
   );
 }
 
-function renderMetaValue(value: string) {
-  if (!value || value.trim() === "") {
-    return (
-      <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-        Empty
-      </span>
-    );
-  }
-  if (value === "N/A") {
-    return <span className="italic text-gray-400">Not applicable</span>;
-  }
-  return value;
+// Extra metadata renderer
+function renderExtraEntry(entry: { label: string; value: string; url?: string }) {
+  return entry.url ? (
+    <a
+      href={entry.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-700 hover:underline"
+    >
+      {entry.value}
+    </a>
+  ) : (
+    <span>{entry.value}</span>
+  );
 }
 
-// --- Helpers for human-friendly extra metadata rendering ---
-const isPlainObject = (v: unknown): v is Record<string, any> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-
-const humanizeKey = (key: string) => {
-  // snake_case / kebab-case / camelCase -> Title Case
-  const spaced = key
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .toLowerCase();
-  return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
-};
-
-function renderExtraValue(v: unknown) {
-  // strings / numbers / booleans straight through
-  if (
-    typeof v === "string" ||
-    typeof v === "number" ||
-    typeof v === "boolean"
-  ) {
-    return String(v);
-  }
-
-  // arrays → bullet list
-  if (Array.isArray(v)) {
-    if (v.length === 0) return <span className="italic text-gray-400">Empty</span>;
-    return (
-      <ul className="list-disc pl-5">
-        {v.map((item, idx) => (
-          <li key={idx}>{renderExtraValue(item)}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  // objects with { label|value, url? } → linked label/value
-  if (isPlainObject(v)) {
-    const labelish = (v.label ?? v.value) as string | undefined;
-    if (labelish) {
-      const url = typeof v.url === "string" ? v.url : undefined;
-      return url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-700 hover:underline"
-        >
-          {labelish}
-        </a>
-      ) : (
-        <span>{labelish}</span>
-      );
-    }
-    // Otherwise pretty-print as compact JSON
-    try {
-      return (
-        <code className="text-xs bg-gray-50 px-1 py-0.5 rounded">
-          {JSON.stringify(v)}
-        </code>
-      );
-    } catch {
-      return <span className="italic text-gray-400">Unsupported value</span>;
-    }
-  }
-
-  // fallback
-  return <span className="italic text-gray-400">Unsupported value</span>;
+// Status badge component
+function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | "empty" }) {
+  const styles: Record<string, string> = {
+    uploaded: "bg-green-100 text-green-700",
+    partial: "bg-yellow-100 text-yellow-700",
+    missing: "bg-red-100 text-red-700",
+    empty: "bg-gray-100 text-gray-700",
+  };
+  return (
+    <span className={`px-2 py-1 text-xs rounded ${styles[status]}`}>
+      {status}
+    </span>
+  );
 }
 
 export default function CountryConfigLandingPage({ params }: any) {
@@ -188,6 +136,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
       count: adminCount,
+      status: adminCount > 0 ? "uploaded" : "missing",
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
     },
@@ -196,6 +145,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
       count: popCount,
+      status: popCount > 0 ? "uploaded" : "missing",
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
     },
@@ -204,10 +154,11 @@ export default function CountryConfigLandingPage({ params }: any) {
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
       count: gisCount,
+      status: gisCount > 0 ? "uploaded" : "missing",
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
     },
-  ];
+  ] as const;
 
   const headerProps = {
     title: `${country?.name ?? id} – Country Configuration`,
@@ -253,14 +204,14 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
-                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
-                <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
-                <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
-                <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
-                <p><strong>ADM2 Label:</strong> {renderMetaValue(country.adm2_label)}</p>
-                <p><strong>ADM3 Label:</strong> {renderMetaValue(country.adm3_label)}</p>
-                <p><strong>ADM4 Label:</strong> {renderMetaValue(country.adm4_label)}</p>
-                <p><strong>ADM5 Label:</strong> {renderMetaValue(country.adm5_label)}</p>
+                <p><strong>ISO:</strong> {country.iso_code}</p>
+                <p><strong>Name:</strong> {country.name}</p>
+                <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
+                <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
+                <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
+                <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
+                <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
+                <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
 
                 <p className="mt-2 font-medium">Sources:</p>
                 {country.dataset_sources?.length > 0 ? (
@@ -292,12 +243,15 @@ export default function CountryConfigLandingPage({ params }: any) {
                 </h3>
                 {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
                   <div className="space-y-1">
-                    {Object.entries(country.extra_metadata).map(([k, v]) => (
-                      <p key={k}>
-                        <strong>{humanizeKey(k)}:</strong>{" "}
-                        {renderExtraValue(v)}
-                      </p>
-                    ))}
+                    {Object.entries(country.extra_metadata).map(([k, v]) => {
+                      const entry = v as { label: string; value: string; url?: string };
+                      return (
+                        <p key={k}>
+                          <strong>{entry.label}:</strong>{" "}
+                          {renderExtraEntry(entry)}
+                        </p>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="italic text-gray-400">None</p>
@@ -313,18 +267,18 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Dataset cards below */}
+      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
           <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
-                <h3 className="text-lg font-semibold">{d.title}</h3>
+                <Link href={d.href}>
+                  <h3 className="text-lg font-semibold hover:underline">{d.title}</h3>
+                </Link>
               </div>
-              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
-                {d.count > 0 ? `${d.count} records` : "empty"}
-              </span>
+              <StatusBadge status={d.status} />
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
             {d.count > 0 ? (
@@ -340,6 +294,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           </div>
         ))}
 
+        {/* Other datasets */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -374,7 +329,6 @@ export default function CountryConfigLandingPage({ params }: any) {
               adm5: country.adm5_label,
             },
             datasetSources: country.dataset_sources || [],
-            // preserve any existing complex shapes in extra_metadata
             extra: country.extra_metadata || {},
           }}
           onSave={async (updated) => {
