@@ -4,45 +4,37 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
-import { Users, Pencil } from "lucide-react";
-
-type Country = {
-  iso: string;
-  name: string;
-};
+import { generatePopulationTemplate } from "@/lib/templates/populationTemplate";
+import { Users, Database, ShieldCheck, Pencil } from "lucide-react";
 
 type PopulationRow = {
   id: string;
   pcode: string;
   population: number;
-  last_updated: string;
-  source?: { name: string; url?: string };
+  last_updated: string | null;
 };
 
-export default function PopulationPage({ params }: any) {
-  const countryIso = params?.id as string;
+type Source = { name: string; url?: string };
 
-  const [country, setCountry] = useState<Country | null>(null);
+export default function PopulationPage({ params }: any) {
+  const countryIso = params.id;
+
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [source, setSource] = useState<Source | null>(null);
+  const [openUpload, setOpenUpload] = useState(false);
   const [openSource, setOpenSource] = useState(false);
 
   useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("iso, name").eq("iso", countryIso).single();
-      if (data) setCountry(data as Country);
-    };
-    fetchCountry();
-  }, [countryIso]);
-
-  useEffect(() => {
-    const fetchPopulation = async () => {
-      const { data } = await supabase.from("population_data").select("*").eq("country_iso", countryIso);
+    const fetchPop = async () => {
+      const { data } = await supabase
+        .from("population_data")
+        .select("*")
+        .eq("country_iso", countryIso);
       if (data) setPopulation(data as PopulationRow[]);
     };
-    fetchPopulation();
+    fetchPop();
   }, [countryIso]);
 
   useEffect(() => {
@@ -53,44 +45,57 @@ export default function PopulationPage({ params }: any) {
         .eq("country_iso", countryIso)
         .limit(1)
         .maybeSingle();
-      if (data?.source) setSource(data.source as any);
+      if (data?.source) setSource(data.source as Source);
     };
     fetchSource();
   }, [countryIso]);
 
-  const missingPcodes = population.filter((row) => !row.pcode).length;
-  const allHavePcodes = population.length > 0 && missingPcodes === 0;
-  const hasGISLink = false; // placeholder
-  const hasPopulation = population.length > 0;
+  const totalPop = population.reduce((sum, r) => sum + (r.population || 0), 0);
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Population`,
+    title: `Population – ${countryIso}`,
     group: "country-config" as const,
-    description: "Manage census and demographic population data.",
+    description: "Manage census population and demographic indicators.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: countryIso, href: `/country/${countryIso}` },
           { label: "Population" },
         ]}
       />
     ),
   };
 
+  const handleDownloadTemplate = () => {
+    const blob = generatePopulationTemplate();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `population_template_${countryIso}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health Row */}
+      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Users className="w-5 h-5 text-blue-600" />
             Population Summary
+            <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
+              Core
+            </span>
           </h2>
           <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Rows:</strong> {population.length}
+            <strong>Total Population:</strong> {totalPop.toLocaleString()}
+          </p>
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Records:</strong> {population.length}
           </p>
           <div className="flex items-center justify-between mt-2">
             <p className="text-sm">
@@ -116,19 +121,25 @@ export default function PopulationPage({ params }: any) {
           </div>
         </div>
 
-        {/* Data Health */}
-        <DatasetHealth
-          allHavePcodes={allHavePcodes}
-          missingPcodes={missingPcodes}
-          hasGISLink={hasGISLink}
-          hasPopulation={hasPopulation}
-          totalUnits={population.length}
-        />
+        {/* Health */}
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-5 h-5 text-blue-600" />
+            Data Health
+          </h2>
+          <ul className="text-sm list-disc pl-6">
+            <li className={population.length > 0 ? "text-green-700" : "text-red-700"}>
+              {population.length > 0 ? "Population data uploaded" : "No data uploaded"}
+            </li>
+            <li className="text-yellow-700">Projection not applied</li>
+            <li className="text-yellow-700">Households data not provided</li>
+          </ul>
+        </div>
       </div>
 
-      {/* Population Table */}
+      {/* Table */}
       <div className="border rounded-lg p-4 shadow-sm">
-        <h3 className="text-md font-semibold mb-3">Population Data</h3>
+        <h2 className="text-lg font-semibold mb-3">Population Data</h2>
         <table className="w-full text-sm border">
           <thead className="bg-gray-100">
             <tr>
@@ -141,8 +152,8 @@ export default function PopulationPage({ params }: any) {
             {population.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50">
                 <td className="border px-2 py-1">{row.pcode}</td>
-                <td className="border px-2 py-1">{row.population}</td>
-                <td className="border px-2 py-1">{row.last_updated}</td>
+                <td className="border px-2 py-1">{row.population?.toLocaleString()}</td>
+                <td className="border px-2 py-1">{row.last_updated || "-"}</td>
               </tr>
             ))}
             {population.length === 0 && (
@@ -156,7 +167,27 @@ export default function PopulationPage({ params }: any) {
         </table>
       </div>
 
-      {/* Edit Source Modal */}
+      {/* Action buttons */}
+      <div className="flex gap-2 mt-4">
+        <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200">
+          Download Template
+        </button>
+        <button onClick={() => setOpenUpload(true)} className="px-4 py-2 bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90">
+          Upload Data
+        </button>
+      </div>
+
+      {/* Modals */}
+      <UploadPopulationModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={async () => {
+          const { data } = await supabase.from("population_data").select("*").eq("country_iso", countryIso);
+          if (data) setPopulation(data as PopulationRow[]);
+        }}
+      />
+
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
