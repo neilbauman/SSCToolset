@@ -1,103 +1,105 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import {
-  Map,
-  ShieldCheck,
-  AlertTriangle,
-  Filter,
-  Search,
-} from "lucide-react";
+import AdminUnitsTree from "@/components/country/AdminUnitsTree";
+import { Database, ShieldCheck, Pencil } from "lucide-react";
 
-interface AdminUnit {
+type Country = {
+  iso: string;
+  name: string;
+  adm0_label: string;
+  adm1_label: string;
+  adm2_label: string;
+  adm3_label: string;
+  adm4_label: string;
+  adm5_label: string;
+};
+
+type AdminUnit = {
   id: string;
   name: string;
   pcode: string;
   level: string;
-  source?: { name: string; url?: string };
-}
+  parent_pcode?: string | null;
+};
 
 export default function AdminUnitsPage({ params }: any) {
   const countryIso = params?.id as string;
-  const [country, setCountry] = useState<any>(null);
+
+  const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [source, setSource] = useState<any>(null);
+  const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [openSource, setOpenSource] = useState(false);
-
-  const rowsPerPage = 25;
+  const pageSize = 25;
+  const [view, setView] = useState<"table" | "tree">("table");
 
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", countryIso)
+        .eq("iso", countryIso)
         .single();
-      setCountry(data);
+      if (data) setCountry(data as Country);
     };
     fetchCountry();
   }, [countryIso]);
 
   useEffect(() => {
-    const fetchUnits = async () => {
+    const fetchAdminUnits = async () => {
       const { data } = await supabase
         .from("admin_units")
         .select("*")
         .eq("country_iso", countryIso);
-      if (data) setAdminUnits(data as AdminUnit[]);
+      if (data) {
+        setAdminUnits(data as AdminUnit[]);
+        const grouped: Record<string, number> = {};
+        data.forEach((u: AdminUnit) => {
+          grouped[u.level] = (grouped[u.level] || 0) + 1;
+        });
+        setCounts(grouped);
+      }
     };
-    fetchUnits();
+    fetchAdminUnits();
   }, [countryIso]);
 
-  // Count per level
-  const levelCounts: Record<string, number> = {};
-  adminUnits.forEach((u) => {
-    levelCounts[u.level] = (levelCounts[u.level] || 0) + 1;
-  });
+  useEffect(() => {
+    const fetchSource = async () => {
+      const { data } = await supabase
+        .from("admin_units")
+        .select("source")
+        .eq("country_iso", countryIso)
+        .limit(1)
+        .single();
+      if (data) setSource(data.source);
+    };
+    fetchSource();
+  }, [countryIso]);
 
   // Health checks
-  const missingPcodes = adminUnits.filter((u) => !u.pcode || u.pcode.trim() === "")
-    .length;
-  const allHavePcodes = missingPcodes === 0;
+  const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
+  const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
 
-  // Filters
-  const filteredUnits = adminUnits.filter((u) => {
-    const matchesSearch =
+  // Pagination + search
+  const filtered = adminUnits.filter(
+    (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.pcode.toLowerCase().includes(search.toLowerCase());
-    const matchesLevel = levelFilter === "all" || u.level === levelFilter;
-    return matchesSearch && matchesLevel;
-  });
-
-  const paginatedUnits = filteredUnits.slice(
-    (page - 1) * rowsPerPage,
-    page * rowsPerPage
+      u.pcode.toLowerCase().includes(search.toLowerCase())
   );
-
-  const handleSaveSource = async (newSource: { name: string; url?: string }) => {
-    await supabase
-      .from("admin_units")
-      .update({ source: newSource })
-      .eq("country_iso", countryIso);
-
-    setAdminUnits((prev) =>
-      prev.map((u) => ({
-        ...u,
-        source: newSource,
-      }))
-    );
-  };
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Admin Units`,
     group: "country-config" as const,
-    description: "Manage administrative boundaries and place codes.",
+    description: "Manage and inspect uploaded administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -110,75 +112,53 @@ export default function AdminUnitsPage({ params }: any) {
     ),
   };
 
-  const source =
-    adminUnits.length > 0 && adminUnits[0].source ? adminUnits[0].source : null;
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      {/* Summary + Health Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+            <Database className="w-5 h-5 text-blue-600" /> Admin Units Summary
           </h2>
-
-          {country && (
-            <>
-              <p className="text-sm mb-2">
-                Total Units:{" "}
-                <span className="font-semibold">{adminUnits.length}</span>
-              </p>
-              <div className="text-sm mb-2">
-                {Object.entries(levelCounts).map(([lvl, count]) => {
-                  const label =
-                    (lvl === "ADM0" && country.adm0_label) ||
-                    (lvl === "ADM1" && country.adm1_label) ||
-                    (lvl === "ADM2" && country.adm2_label) ||
-                    (lvl === "ADM3" && country.adm3_label) ||
-                    (lvl === "ADM4" && country.adm4_label) ||
-                    (lvl === "ADM5" && country.adm5_label) ||
-                    lvl;
-                  return (
-                    <p key={lvl}>
-                      {lvl} ({label}):{" "}
-                      <span className="font-semibold">{count}</span>
-                    </p>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          <div className="flex items-center justify-between text-sm">
-            <p>
-              Dataset Source:{" "}
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Total Units:</strong> {adminUnits.length}
+          </p>
+          <ul className="text-sm text-gray-700 mb-2">
+            {Object.entries(counts).map(([lvl, cnt]) => {
+              const label = (country as any)?.[`${lvl.toLowerCase()}_label`] || lvl;
+              return (
+                <li key={lvl}>
+                  <strong>{lvl} ({label}):</strong> {cnt}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-sm">
+              <strong>Dataset Source:</strong>{" "}
               {source ? (
-                <span>
-                  {source.url ? (
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      {source.name}
-                    </a>
-                  ) : (
-                    source.name
-                  )}
-                </span>
+                source.url ? (
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    {source.name}
+                  </a>
+                ) : (
+                  source.name
+                )
               ) : (
-                <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-                  Empty
-                </span>
+                <span className="italic text-gray-500">Empty</span>
               )}
             </p>
             <button
               onClick={() => setOpenSource(true)}
-              className="px-2 py-1 rounded-md text-xs bg-gray-200 hover:bg-gray-300"
+              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
             >
-              Edit
+              <Pencil className="w-4 h-4 mr-1" /> Edit
             </button>
           </div>
         </div>
@@ -209,119 +189,105 @@ export default function AdminUnitsPage({ params }: any) {
                 ? "All units have PCodes"
                 : `${missingPcodes} units missing PCodes`}
             </li>
-            <li className="text-yellow-700">
-              Population linkage not applied yet
-            </li>
+            <li className="text-yellow-700">Population linkage not applied yet</li>
           </ul>
         </div>
       </div>
 
-      {/* Controls for Data View */}
-      <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
-        <div className="flex items-center gap-2">
-          <Search className="w-4 h-4 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search by name or PCode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border rounded-md px-3 py-1.5 text-sm w-64"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-500" />
-          <select
-            value={levelFilter}
-            onChange={(e) => setLevelFilter(e.target.value)}
-            className="border rounded-md px-2 py-1 text-sm"
-          >
-            <option value="all">All Levels</option>
-            {Object.keys(levelCounts).map((lvl) => {
-              const label =
-                (lvl === "ADM0" && country?.adm0_label) ||
-                (lvl === "ADM1" && country?.adm1_label) ||
-                (lvl === "ADM2" && country?.adm2_label) ||
-                (lvl === "ADM3" && country?.adm3_label) ||
-                (lvl === "ADM4" && country?.adm4_label) ||
-                (lvl === "ADM5" && country?.adm5_label) ||
-                lvl;
-              return (
-                <option key={lvl} value={lvl}>
-                  {lvl} ({label})
-                </option>
-              );
-            })}
-          </select>
-        </div>
+      {/* View Toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-3 py-1.5 text-sm rounded ${
+            view === "table" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+          }`}
+          onClick={() => setView("table")}
+        >
+          Table View
+        </button>
+        <button
+          className={`px-3 py-1.5 text-sm rounded ${
+            view === "tree" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+          }`}
+          onClick={() => setView("tree")}
+        >
+          Tree View
+        </button>
       </div>
 
-      {/* Data View */}
-      <div className="border rounded-lg shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                Name
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                PCode
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">
-                Level
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {paginatedUnits.map((u) => (
-              <tr key={u.id}>
-                <td className="px-3 py-2">{u.name}</td>
-                <td className="px-3 py-2">{u.pcode}</td>
-                <td className="px-3 py-2">{u.level}</td>
-              </tr>
-            ))}
-            {paginatedUnits.length === 0 && (
+      {/* Data Views */}
+      {view === "table" && (
+        <div className="border rounded-lg p-4 shadow-sm">
+          <div className="flex justify-between items-center mb-3">
+            <input
+              type="text"
+              placeholder="Search by name or PCode..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="border px-3 py-1 rounded w-1/3 text-sm"
+            />
+            <span className="text-sm text-gray-500">
+              Showing {paginated.length} of {filtered.length}
+            </span>
+          </div>
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
               <tr>
-                <td colSpan={3} className="px-3 py-2 text-center text-gray-500">
-                  No results
-                </td>
+                <th className="border px-2 py-1 text-left">Name</th>
+                <th className="border px-2 py-1 text-left">PCode</th>
+                <th className="border px-2 py-1 text-left">Level</th>
+                <th className="border px-2 py-1 text-left">Parent PCode</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {paginated.map((u) => (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{u.name}</td>
+                  <td className="border px-2 py-1">{u.pcode}</td>
+                  <td className="border px-2 py-1">{u.level}</td>
+                  <td className="border px-2 py-1">{u.parent_pcode ?? "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex justify-between items-center mt-3 text-sm">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-2 py-1 border rounded disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-2 py-1 border rounded disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Pagination */}
-      <div className="mt-3 flex justify-center gap-2">
-        <button
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page === 1}
-          className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
-        >
-          Prev
-        </button>
-        <span className="text-sm py-1">
-          Page {page} of {Math.ceil(filteredUnits.length / rowsPerPage) || 1}
-        </span>
-        <button
-          onClick={() =>
-            setPage((p) =>
-              p < Math.ceil(filteredUnits.length / rowsPerPage) ? p + 1 : p
-            )
-          }
-          disabled={page >= Math.ceil(filteredUnits.length / rowsPerPage)}
-          className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
-        >
-          Next
-        </button>
-      </div>
+      {view === "tree" && <AdminUnitsTree units={adminUnits} />}
 
-      {/* Edit Dataset Source Modal */}
+      {/* Edit Source Modal */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
-        datasetName="Admin Units"
-        currentSource={source}
-        onSave={handleSaveSource}
+        source={source}
+        onSave={async (newSource) => {
+          await supabase
+            .from("admin_units")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
+          setSource(newSource);
+        }}
       />
     </SidebarLayout>
   );
