@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 
 type Source = { name: string; url?: string };
+type ExtraValue = string | { label: string; url?: string };
+
 type Metadata = {
   iso_code: string;
   name: string;
@@ -15,7 +17,7 @@ type Metadata = {
     adm5: string;
   };
   datasetSources: Source[];
-  extra: Record<string, string>;
+  extra: Record<string, ExtraValue>;
 };
 
 export default function EditMetadataModal({
@@ -30,30 +32,43 @@ export default function EditMetadataModal({
   onSave: (m: Metadata) => Promise<void>;
 }) {
   const [form, setForm] = useState<Metadata>(metadata);
-  const [newExtraKey, setNewExtraKey] = useState("");
-  const [newExtraValue, setNewExtraValue] = useState("");
+
+  // For adding new extra metadata
+  const [newKey, setNewKey] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newUrl, setNewUrl] = useState("");
 
   useEffect(() => {
-    if (metadata) {
-      setForm(metadata);
-    }
+    if (metadata) setForm(metadata);
   }, [metadata, open]);
 
-  const handleChangeLabel = (level: keyof Metadata["admLabels"], value: string) => {
-    setForm({
-      ...form,
-      admLabels: { ...form.admLabels, [level]: value },
-    });
+  const handleSave = async () => {
+    await onSave(form);
+    onClose();
   };
 
-  const handleAddExtra = () => {
-    if (!newExtraKey.trim()) return;
+  const handleUpdateExtra = (
+    key: string,
+    field: "label" | "url" | "string",
+    value: string
+  ) => {
+    const current = form.extra[key];
+    let updated: ExtraValue;
+
+    if (field === "string") {
+      updated = value;
+    } else {
+      const base =
+        typeof current === "string"
+          ? { label: current }
+          : (current as { label: string; url?: string });
+      updated = { ...base, [field]: value || undefined };
+    }
+
     setForm({
       ...form,
-      extra: { ...form.extra, [newExtraKey]: newExtraValue },
+      extra: { ...form.extra, [key]: updated },
     });
-    setNewExtraKey("");
-    setNewExtraValue("");
   };
 
   const handleRemoveExtra = (key: string) => {
@@ -62,9 +77,18 @@ export default function EditMetadataModal({
     setForm({ ...form, extra: updated });
   };
 
-  const handleSave = async () => {
-    await onSave(form);
-    onClose();
+  const handleAddExtra = () => {
+    if (!newKey.trim()) return;
+    const newEntry: ExtraValue = newUrl
+      ? { label: newLabel || newKey, url: newUrl }
+      : newLabel || newKey;
+    setForm({
+      ...form,
+      extra: { ...form.extra, [newKey.trim()]: newEntry },
+    });
+    setNewKey("");
+    setNewLabel("");
+    setNewUrl("");
   };
 
   if (!open) return null;
@@ -74,6 +98,7 @@ export default function EditMetadataModal({
       <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl">
         <h2 className="text-lg font-semibold mb-4">Edit Metadata</h2>
 
+        {/* Country basics */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium">ISO Code</label>
@@ -108,7 +133,10 @@ export default function EditMetadataModal({
                 type="text"
                 value={val}
                 onChange={(e) =>
-                  handleChangeLabel(lvl as keyof Metadata["admLabels"], e.target.value)
+                  setForm({
+                    ...form,
+                    admLabels: { ...form.admLabels, [lvl]: e.target.value },
+                  })
                 }
                 className="mt-1 block w-full border rounded px-3 py-2 text-sm"
               />
@@ -149,7 +177,10 @@ export default function EditMetadataModal({
             onClick={() =>
               setForm({
                 ...form,
-                datasetSources: [...form.datasetSources, { name: "", url: "" }],
+                datasetSources: [
+                  ...form.datasetSources,
+                  { name: "", url: "" },
+                ],
               })
             }
             className="text-sm text-blue-600 hover:underline"
@@ -161,55 +192,72 @@ export default function EditMetadataModal({
         {/* Extra metadata */}
         <div className="mt-4">
           <h3 className="text-sm font-semibold mb-2">Extra Metadata</h3>
-          {Object.entries(form.extra).map(([k, v]) => (
-            <div key={k} className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={k}
-                readOnly
-                className="border px-3 py-1 rounded flex-1 text-sm bg-gray-100"
-              />
-              <input
-                type="text"
-                value={v}
-                onChange={(e) => {
-                  setForm({
-                    ...form,
-                    extra: { ...form.extra, [k]: e.target.value },
-                  });
-                }}
-                className="border px-3 py-1 rounded flex-1 text-sm"
-              />
-              <button
-                onClick={() => handleRemoveExtra(k)}
-                className="text-red-600 text-sm"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <div className="flex gap-2 mt-2">
+          {Object.entries(form.extra).map(([k, v]) => {
+            const isObj = typeof v === "object" && v !== null && !Array.isArray(v);
+            const label = isObj ? (v as any).label ?? "" : String(v);
+            const url = isObj ? (v as any).url ?? "" : "";
+            return (
+              <div key={k} className="grid grid-cols-3 gap-2 mb-2">
+                <input
+                  type="text"
+                  value={k}
+                  readOnly
+                  className="border px-3 py-1 rounded text-sm bg-gray-100"
+                />
+                <input
+                  type="text"
+                  placeholder="Label/Value"
+                  value={label}
+                  onChange={(e) => handleUpdateExtra(k, "label", e.target.value)}
+                  className="border px-3 py-1 rounded text-sm"
+                />
+                <input
+                  type="url"
+                  placeholder="URL (optional)"
+                  value={url}
+                  onChange={(e) => handleUpdateExtra(k, "url", e.target.value)}
+                  className="border px-3 py-1 rounded text-sm"
+                />
+                <button
+                  onClick={() => handleRemoveExtra(k)}
+                  className="col-span-3 text-red-600 text-xs mt-1"
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+
+          {/* Add new extra */}
+          <div className="grid grid-cols-3 gap-2 mt-3">
             <input
               type="text"
               placeholder="Key"
-              value={newExtraKey}
-              onChange={(e) => setNewExtraKey(e.target.value)}
-              className="border px-3 py-1 rounded flex-1 text-sm"
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              className="border px-3 py-1 rounded text-sm"
             />
             <input
               type="text"
-              placeholder="Value"
-              value={newExtraValue}
-              onChange={(e) => setNewExtraValue(e.target.value)}
-              className="border px-3 py-1 rounded flex-1 text-sm"
+              placeholder="Label/Value"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              className="border px-3 py-1 rounded text-sm"
             />
-            <button
-              onClick={handleAddExtra}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Add
-            </button>
+            <input
+              type="url"
+              placeholder="URL (optional)"
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+              className="border px-3 py-1 rounded text-sm"
+            />
           </div>
+          <button
+            onClick={handleAddExtra}
+            className="text-sm text-blue-600 hover:underline mt-2"
+          >
+            + Add Extra Metadata
+          </button>
         </div>
 
         {/* Actions */}
