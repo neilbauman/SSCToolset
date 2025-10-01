@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
+import { CountryPageProps } from "@/app/country/types";
 
 function SoftButton({
   children,
@@ -59,8 +60,8 @@ function renderMetaValue(value: string) {
   return value;
 }
 
-export default function CountryConfigLandingPage({ params }: any) {
-  const id = params?.id ?? "unknown";
+export default function CountryConfigLandingPage({ params }: CountryPageProps) {
+  const id = params.id;
 
   const [country, setCountry] = useState<any>(null);
   const [adminStats, setAdminStats] = useState<Record<string, number>>({});
