@@ -20,7 +20,8 @@ type PopulationRow = {
   name: string;
   level: string;
   population: number;
-  last_updated: string;
+  year: number;
+  dataset_date: string;
   source?: { name: string; url?: string };
 };
 
@@ -29,37 +30,38 @@ export default function PopulationPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
+  // Country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("iso_code, name")
-        .eq("iso_code", countryIso) // ✅
+        .eq("iso_code", countryIso) // ✅ countries
         .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
   }, [countryIso]);
 
+  // Population data
   useEffect(() => {
     const fetchPopulation = async () => {
       const { data } = await supabase
         .from("population_data")
         .select("*")
-        .eq("country_iso", countryIso); // ✅
+        .eq("country_iso", countryIso); // ✅ population_data
       if (data) setPopulation(data as PopulationRow[]);
     };
     fetchPopulation();
   }, [countryIso]);
 
+  // Dataset source
   useEffect(() => {
     const fetchSource = async () => {
       const { data } = await supabase
@@ -73,15 +75,14 @@ export default function PopulationPage({ params }: any) {
     fetchSource();
   }, [countryIso]);
 
-  const missingPop = population.filter(
-    (p) => !p.population || p.population <= 0
-  ).length;
+  // Health
+  const missingPop = population.filter((p) => !p.population || p.population <= 0).length;
   const hasPopulation = population.length > 0 && missingPop === 0;
   const hasGISLink = false;
-  const allHavePcodes =
-    population.length > 0 && population.every((p) => p.pcode);
+  const allHavePcodes = population.length > 0 && population.every((p) => p.pcode);
   const missingPcodes = population.filter((p) => !p.pcode).length;
 
+  // Pagination
   const filtered = population.filter(
     (row) =>
       row.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -108,7 +109,7 @@ export default function PopulationPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health + Table like before */}
+      {/* Summary + DatasetHealth + Table like before */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
