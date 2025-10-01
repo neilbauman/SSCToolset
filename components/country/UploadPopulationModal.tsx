@@ -1,23 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Papa, { ParseResult } from "papaparse";
+import { useState } from "react";
 import { X } from "lucide-react";
+import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface UploadPopulationModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void | Promise<void>;
+  onUploaded: () => void;
 }
-
-type Row = {
-  admin_pcode: string;
-  population?: string | number;
-  households?: string | number;
-  dataset_date?: string; // optional YYYY-MM-DD
-};
 
 export default function UploadPopulationModal({
   open,
@@ -26,102 +19,83 @@ export default function UploadPopulationModal({
   onUploaded,
 }: UploadPopulationModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setFile(null);
-      setBusy(false);
-      setError(null);
-    }
-  }, [open]);
 
   if (!open) return null;
 
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a CSV file.");
-      return;
-    }
-    setBusy(true);
+    if (!file) return;
+    setLoading(true);
     setError(null);
 
-    Papa.parse<Row>(file, {
+    Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results: ParseResult<Row>) => {
+      complete: async (results) => {
         try {
-          const cleaned = (results.data || []).map((r) => ({
+          const rows = results.data as any[];
+
+          // Basic validation
+          const required = ["pcode", "population"];
+          const missingCols = required.filter((c) => !(c in rows[0]));
+          if (missingCols.length > 0) {
+            setError(`Missing required columns: ${missingCols.join(", ")}`);
+            setLoading(false);
+            return;
+          }
+
+          // Clear existing data
+          await supabase.from("population_data").delete().eq("country_iso", countryIso);
+
+          // Insert new rows
+          const insertRows = rows.map((r) => ({
             country_iso: countryIso,
-            admin_pcode: String(r.admin_pcode || "").trim(),
-            population: r.population !== undefined && r.population !== null && String(r.population).trim() !== ""
-              ? Number(r.population)
-              : null,
-            households: r.households !== undefined && r.households !== null && String(r.households).trim() !== ""
-              ? Number(r.households)
-              : null,
-            dataset_date: r.dataset_date ? String(r.dataset_date) : null,
-            // optional: source added later via Edit Source modal
+            pcode: r.pcode,
+            population: Number(r.population) || null,
+            last_updated: r.last_updated ? new Date(r.last_updated) : null,
+            metadata: {},
+            source: null,
           }));
 
-          // Create table if not exists (no-op if already exists) – recommended to run SQL separately, but safe fallback:
-          // NOTE: Supabase client cannot DDL; this comment is informational.
+          const { error: insertError } = await supabase
+            .from("population_data")
+            .insert(insertRows);
 
-          const { error: upErr } = await supabase.from("population_data").insert(cleaned);
-          if (upErr) throw upErr;
+          if (insertError) throw insertError;
 
-          await onUploaded();
+          onUploaded();
           onClose();
-        } catch (e: any) {
-          setError(e.message || "Failed to process CSV.");
+        } catch (err: any) {
+          setError(err.message);
         } finally {
-          setBusy(false);
+          setLoading(false);
         }
-      },
-      error: (err) => {
-        setBusy(false);
-        setError(err.message);
       },
     });
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative">
-        <button
-          className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-          onClick={onClose}
-        >
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-500">
           <X className="w-5 h-5" />
         </button>
-
-        <h2 className="text-lg font-semibold mb-4">Upload Population CSV</h2>
-        <p className="text-sm text-gray-600 mb-3">
-          Expected columns: <code>admin_pcode, population</code> (optional: <code>households, dataset_date</code>).
-        </p>
-
+        <h2 className="text-lg font-semibold mb-4">Upload Population Data</h2>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="block w-full text-sm mb-4"
+          className="mb-4"
         />
-
-        {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-            onClick={handleUpload}
-            disabled={busy}
-          >
-            {busy ? "Uploading…" : "Upload"}
-          </button>
-        </div>
+        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+        <button
+          onClick={handleUpload}
+          disabled={loading}
+          className="px-4 py-2 bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90"
+        >
+          {loading ? "Uploading..." : "Upload"}
+        </button>
       </div>
     </div>
   );
