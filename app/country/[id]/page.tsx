@@ -4,16 +4,20 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Map, Users, Database, AlertCircle } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
+import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Link from "next/link";
 import { useState } from "react";
 
 // Reusable soft button (branded colors)
 function SoftButton({
   children,
   color = "gray",
+  href,
 }: {
   children: React.ReactNode;
   color?: "gray" | "green" | "blue" | "red";
+  href?: string;
 }) {
   const base =
     "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors";
@@ -23,6 +27,14 @@ function SoftButton({
     blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
     red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
   };
+
+  if (href) {
+    return (
+      <Link href={href} className={`${base} ${colors[color]}`}>
+        {children}
+      </Link>
+    );
+  }
   return <button className={`${base} ${colors[color]}`}>{children}</button>;
 }
 
@@ -38,8 +50,9 @@ export default function CountryConfigLandingPage({ params }: any) {
       boundaries: "HDX COD 2024",
       population: "Philippines 2020 Census",
     },
-    center: [12.8797, 121.774] as [number, number], // Philippines default
   };
+
+  const center: LatLngExpression = [12.8797, 121.774]; // Philippines
 
   // Mock dataset status
   const datasets = [
@@ -50,6 +63,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       status: "uploaded",
       stats: "4 levels, 38 units",
       icon: <Map className="w-6 h-6 text-green-600" />,
+      href: `/country/${id}/admins`,
     },
     {
       key: "population",
@@ -58,6 +72,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       status: "missing",
       stats: "",
       icon: <Users className="w-6 h-6 text-gray-500" />,
+      href: `/country/${id}/population`,
     },
     {
       key: "gis",
@@ -66,6 +81,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       status: "partial",
       stats: "ADM1 & ADM2 uploaded, ADM3 missing",
       icon: <Database className="w-6 h-6 text-yellow-600" />,
+      href: `/country/${id}/gis`,
     },
   ];
 
@@ -124,7 +140,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
         <MapContainer
-          center={country.center}
+          center={center}
           zoom={5}
           style={{ height: "300px", width: "100%" }}
           className="rounded-md"
@@ -177,7 +193,9 @@ export default function CountryConfigLandingPage({ params }: any) {
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue">View</SoftButton>
+              <SoftButton color="blue" href={d.href}>
+                View
+              </SoftButton>
             </div>
           </div>
         ))}
