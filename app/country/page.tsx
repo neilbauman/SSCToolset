@@ -44,13 +44,14 @@ export default function CountryPage() {
   const [editMode, setEditMode] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
 
+  const fetchCountries = async () => {
+    const { data } = await supabase
+      .from("countries")
+      .select("iso_code, name, population, updated_at");
+    if (data) setCountries(data as Country[]);
+  };
+
   useEffect(() => {
-    const fetchCountries = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("iso_code, name, population, updated_at");
-      if (data) setCountries(data as Country[]);
-    };
     fetchCountries();
   }, []);
 
@@ -188,7 +189,7 @@ export default function CountryPage() {
       <AddCountryModal
         open={openAdd}
         onClose={() => setOpenAdd(false)}
-        onSave={(country) => console.log("Saving:", country)}
+        onSave={() => fetchCountries()}
       />
     </SidebarLayout>
   );
