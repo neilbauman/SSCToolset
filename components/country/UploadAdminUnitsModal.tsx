@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import Papa from "papaparse";
+import Papa, { ParseResult } from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface UploadAdminUnitsModalProps {
@@ -12,7 +12,7 @@ interface UploadAdminUnitsModalProps {
   onUploaded: () => void; // callback to refresh table
 }
 
-interface ParsedRow {
+export interface ParsedRow {
   name: string;
   pcode: string;
   level: string;
@@ -40,16 +40,16 @@ export default function UploadAdminUnitsModal({
       const f = e.target.files[0];
       setFile(f);
 
-      Papa.parse(f, {
+      Papa.parse<ParsedRow>(f, {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => {
+        complete: (results: ParseResult<ParsedRow>) => {
           if (results.errors.length > 0) {
             setError("Failed to parse CSV. Please check formatting.");
             console.error(results.errors);
             return;
           }
-          setPreview(results.data.slice(0, 5) as ParsedRow[]);
+          setPreview(results.data.slice(0, 5));
         },
       });
     }
@@ -64,10 +64,10 @@ export default function UploadAdminUnitsModal({
     setLoading(true);
     setError(null);
 
-    Papa.parse(file, {
+    Papa.parse<ParsedRow>(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results) => {
+      complete: async (results: ParseResult<ParsedRow>) => {
         if (results.errors.length > 0) {
           setError("Error parsing CSV.");
           console.error(results.errors);
@@ -75,7 +75,7 @@ export default function UploadAdminUnitsModal({
           return;
         }
 
-        const rows = results.data as ParsedRow[];
+        const rows = results.data;
 
         const { error: uploadError } = await supabase.from("admin_units").upsert(
           rows.map((row) => ({
