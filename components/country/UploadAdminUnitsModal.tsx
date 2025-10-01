@@ -1,156 +1,120 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
-import Papa, { ParseResult } from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import Modal from "@/components/ui/Modal";
+import * as XLSX from "xlsx"; // make sure xlsx is installed
+import Papa from "papaparse"; // for CSV
 
-interface UploadAdminUnitsModalProps {
+type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void; // callback to refresh table
-}
-
-export interface ParsedRow {
-  name: string;
-  pcode: string;
-  level: string;
-  parent_pcode?: string;
-  population?: number;
-}
+  onUploaded: () => void;
+};
 
 export default function UploadAdminUnitsModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: UploadAdminUnitsModalProps) {
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<ParsedRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
+  const handleFile = async (f: File) => {
+    const ext = f.name.split(".").pop()?.toLowerCase();
+    let rows: any[] = [];
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    setPreview([]);
-    if (e.target.files && e.target.files[0]) {
-      const f = e.target.files[0];
-      setFile(f);
-
-      Papa.parse<ParsedRow>(f, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results: ParseResult<ParsedRow>) => {
-          if (results.errors.length > 0) {
-            setError("Failed to parse CSV. Please check formatting.");
-            console.error(results.errors);
-            return;
-          }
-          setPreview(results.data.slice(0, 5));
-        },
-      });
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a file first.");
+    if (ext === "xlsx" || ext === "xls") {
+      const buffer = await f.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws);
+    } else if (ext === "csv") {
+      const text = await f.text();
+      rows = Papa.parse(text, { header: true }).data as any[];
+    } else {
+      setError("Unsupported file format. Please upload CSV or XLSX.");
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    Papa.parse<ParsedRow>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results: ParseResult<ParsedRow>) => {
-        if (results.errors.length > 0) {
-          setError("Error parsing CSV.");
-          console.error(results.errors);
-          setLoading(false);
+    // Minimal validation
+    const required = ["pcode", "name", "level"];
+    for (const r of rows) {
+      for (const col of required) {
+        if (!r[col]) {
+          setError(`Missing required column: ${col}`);
           return;
         }
+      }
+    }
 
-        const rows = results.data;
+    setFile(f);
+    setPreview(rows.slice(0, 10)); // show first 10 rows
+    setError(null);
+  };
 
-        const { error: uploadError } = await supabase.from("admin_units").upsert(
-          rows.map((row) => ({
-            country_iso: countryIso,
-            name: row.name,
-            pcode: row.pcode,
-            level: row.level,
-            parent_pcode: row.parent_pcode || null,
-            population: row.population ? Number(row.population) : null,
-          }))
-        );
+  const handleUpload = async () => {
+    if (!file || preview.length === 0) return;
+    setLoading(true);
+    try {
+      // delete old records
+      await supabase.from("admin_units").delete().eq("country_iso", countryIso);
 
-        if (uploadError) {
-          console.error(uploadError);
-          setError("Upload failed. Please check your file structure.");
-        } else {
-          onUploaded();
-          onClose();
-        }
-        setLoading(false);
-      },
-    });
+      // prepare new rows
+      const rows = preview.map((r) => ({
+        country_iso: countryIso,
+        pcode: r.pcode,
+        name: r.name,
+        level: r.level,
+        parent_pcode: r.parent_pcode || null,
+        metadata: {}, // optional
+        source: {}, // optional
+      }));
+
+      // batch insert
+      const { error } = await supabase.from("admin_units").insert(rows);
+      if (error) throw error;
+
+      onUploaded();
+      onClose();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Upload Admin Units</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Instructions */}
-        <p className="text-sm text-gray-600 mb-3">
-          Please upload a <code>.csv</code> file using the{" "}
-          <strong>Admin Units Template</strong>. The file should include
-          <code> name, pcode, level, parent_pcode, population </code> columns.
-        </p>
-
-        {/* File Input */}
+    <Modal open={open} onClose={onClose} title="Upload Admin Units Dataset">
+      <div className="space-y-4">
         <input
           type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="mb-4"
+          accept=".csv,.xlsx"
+          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
+        {error && <p className="text-red-600 text-sm">{error}</p>}
 
-        {/* Preview */}
         {preview.length > 0 && (
-          <div className="mb-4">
-            <h3 className="font-medium text-sm mb-2">Preview (first 5 rows):</h3>
-            <table className="w-full text-sm border">
-              <thead>
-                <tr className="bg-gray-100 text-left">
-                  <th className="px-2 py-1 border">Name</th>
-                  <th className="px-2 py-1 border">PCode</th>
-                  <th className="px-2 py-1 border">Level</th>
-                  <th className="px-2 py-1 border">Parent PCode</th>
-                  <th className="px-2 py-1 border">Population</th>
+          <div>
+            <p className="text-sm font-semibold mb-2">Preview (first 10 rows)</p>
+            <table className="text-xs border w-full">
+              <thead className="bg-gray-100">
+                <tr>
+                  {Object.keys(preview[0]).map((h) => (
+                    <th key={h} className="border px-1 py-0.5">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {preview.map((row, i) => (
                   <tr key={i}>
-                    <td className="px-2 py-1 border">{row.name}</td>
-                    <td className="px-2 py-1 border">{row.pcode}</td>
-                    <td className="px-2 py-1 border">{row.level}</td>
-                    <td className="px-2 py-1 border">{row.parent_pcode || "-"}</td>
-                    <td className="px-2 py-1 border">{row.population || "-"}</td>
+                    {Object.values(row).map((v, j) => (
+                      <td key={j} className="border px-1 py-0.5">{String(v)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -158,26 +122,23 @@ export default function UploadAdminUnitsModal({
           </div>
         )}
 
-        {/* Error */}
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 mt-4">
+        <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+            className="px-3 py-1 border rounded text-sm"
+            disabled={loading}
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
-            disabled={loading}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+            disabled={!file || loading}
+            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm"
           >
-            {loading ? "Uploading..." : "Upload"}
+            {loading ? "Uploading…" : "Replace Dataset"}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
