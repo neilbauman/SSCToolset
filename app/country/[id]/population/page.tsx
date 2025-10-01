@@ -4,37 +4,58 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import { generatePopulationTemplate } from "@/lib/templates/populationTemplate";
-import { Users, Database, ShieldCheck, Pencil } from "lucide-react";
+import DatasetHealth from "@/components/country/DatasetHealth";
+import { Users, Database, Pencil } from "lucide-react";
+
+type Country = {
+  iso_code: string;
+  name: string;
+};
 
 type PopulationRow = {
   id: string;
+  country_iso: string;
   pcode: string;
-  population: number;
-  last_updated: string | null;
+  name: string;
+  level: string;
+  parent_pcode?: string | null;
+  population?: number | null;
+  last_updated?: string | null;
+  source?: { name: string; url?: string };
 };
 
-type Source = { name: string; url?: string };
-
-export default function PopulationPage({ params }: any) {
+export default function PopulationPage({ params }: { params: { id: string } }) {
   const countryIso = params.id;
 
+  const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<Source | null>(null);
-  const [openUpload, setOpenUpload] = useState(false);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
 
   useEffect(() => {
-    const fetchPop = async () => {
+    const fetchCountry = async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("iso_code, name")
+        .eq("iso_code", countryIso)
+        .single();
+      if (data) setCountry(data as Country);
+    };
+    fetchCountry();
+  }, [countryIso]);
+
+  useEffect(() => {
+    const fetchPopulation = async () => {
       const { data } = await supabase
         .from("population_data")
         .select("*")
         .eq("country_iso", countryIso);
       if (data) setPopulation(data as PopulationRow[]);
     };
-    fetchPop();
+    fetchPopulation();
   }, [countryIso]);
 
   useEffect(() => {
@@ -45,42 +66,34 @@ export default function PopulationPage({ params }: any) {
         .eq("country_iso", countryIso)
         .limit(1)
         .maybeSingle();
-      if (data?.source) setSource(data.source as Source);
+      if (data?.source) setSource(data.source as any);
     };
     fetchSource();
   }, [countryIso]);
 
-  const totalPop = population.reduce((sum, r) => sum + (r.population || 0), 0);
+  const totalPop = population.reduce(
+    (sum, row) => sum + (row.population ?? 0),
+    0
+  );
 
   const headerProps = {
-    title: `Population – ${countryIso}`,
+    title: `${country?.name ?? countryIso} – Population`,
     group: "country-config" as const,
-    description: "Manage census population and demographic indicators.",
+    description: "Manage and inspect uploaded population and demographic data.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
           { label: "Population" },
         ]}
       />
     ),
   };
 
-  const handleDownloadTemplate = () => {
-    const blob = generatePopulationTemplate();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `population_template_${countryIso}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
@@ -92,17 +105,23 @@ export default function PopulationPage({ params }: any) {
             </span>
           </h2>
           <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Population:</strong> {totalPop.toLocaleString()}
+            <strong>Total Rows:</strong> {population.length}
           </p>
           <p className="text-sm text-gray-700 mb-2">
-            <strong>Records:</strong> {population.length}
+            <strong>Total Population:</strong>{" "}
+            {totalPop > 0 ? totalPop.toLocaleString() : "N/A"}
           </p>
           <div className="flex items-center justify-between mt-2">
             <p className="text-sm">
               <strong>Dataset Source:</strong>{" "}
               {source ? (
                 source.url ? (
-                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
                     {source.name}
                   </a>
                 ) : (
@@ -121,45 +140,59 @@ export default function PopulationPage({ params }: any) {
           </div>
         </div>
 
-        {/* Health */}
-        <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
-            <ShieldCheck className="w-5 h-5 text-blue-600" />
-            Data Health
-          </h2>
-          <ul className="text-sm list-disc pl-6">
-            <li className={population.length > 0 ? "text-green-700" : "text-red-700"}>
-              {population.length > 0 ? "Population data uploaded" : "No data uploaded"}
-            </li>
-            <li className="text-yellow-700">Projection not applied</li>
-            <li className="text-yellow-700">Households data not provided</li>
-          </ul>
-        </div>
+        {/* Data Health */}
+        <DatasetHealth
+          checks={[
+            {
+              label: "All rows linked to valid PCodes",
+              status:
+                population.length > 0
+                  ? population.every((p) => p.pcode)
+                    ? "green"
+                    : "red"
+                  : "red",
+            },
+            {
+              label: "Population totals present",
+              status:
+                totalPop > 0
+                  ? "green"
+                  : population.length > 0
+                  ? "yellow"
+                  : "red",
+            },
+          ]}
+        />
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Population Data</h2>
+      <div className="border rounded-lg p-4 shadow-sm overflow-x-auto">
         <table className="w-full text-sm border">
           <thead className="bg-gray-100">
             <tr>
+              <th className="border px-2 py-1 text-left">Name</th>
               <th className="border px-2 py-1 text-left">PCode</th>
-              <th className="border px-2 py-1 text-left">Population</th>
-              <th className="border px-2 py-1 text-left">Last Updated</th>
+              <th className="border px-2 py-1 text-left">Level</th>
+              <th className="border px-2 py-1 text-right">Population</th>
+              <th className="border px-2 py-1 text-left">Parent PCode</th>
             </tr>
           </thead>
           <tbody>
             {population.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{row.name}</td>
                 <td className="border px-2 py-1">{row.pcode}</td>
-                <td className="border px-2 py-1">{row.population?.toLocaleString()}</td>
-                <td className="border px-2 py-1">{row.last_updated || "-"}</td>
+                <td className="border px-2 py-1">{row.level}</td>
+                <td className="border px-2 py-1 text-right">
+                  {row.population?.toLocaleString() ?? "-"}
+                </td>
+                <td className="border px-2 py-1">{row.parent_pcode ?? "-"}</td>
               </tr>
             ))}
             {population.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-center text-gray-500 py-6">
-                  No population data
+                <td colSpan={5} className="text-center text-gray-500 py-6">
+                  No population data uploaded
                 </td>
               </tr>
             )}
@@ -167,33 +200,16 @@ export default function PopulationPage({ params }: any) {
         </table>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex gap-2 mt-4">
-        <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200">
-          Download Template
-        </button>
-        <button onClick={() => setOpenUpload(true)} className="px-4 py-2 bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90">
-          Upload Data
-        </button>
-      </div>
-
-      {/* Modals */}
-      <UploadPopulationModal
-        open={openUpload}
-        onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
-        onUploaded={async () => {
-          const { data } = await supabase.from("population_data").select("*").eq("country_iso", countryIso);
-          if (data) setPopulation(data as PopulationRow[]);
-        }}
-      />
-
+      {/* Edit Source Modal */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
+          await supabase
+            .from("population_data")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
