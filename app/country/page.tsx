@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import { Button } from "@/components/ui/Button";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddCountryModal from "@/components/country/AddCountryModal";
 import DeleteConfirmationModal from "@/components/common/DeleteConfirmationModal";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Globe } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Country = {
@@ -17,7 +16,6 @@ type Country = {
 };
 
 export default function CountryPage() {
-  const [editMode, setEditMode] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [editCountry, setEditCountry] = useState<Country | null>(null);
   const [deleteCountry, setDeleteCountry] = useState<Country | null>(null);
@@ -76,26 +74,52 @@ export default function CountryPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Action Buttons */}
-      <div className="flex justify-between items-center mb-4">
-        <Button onClick={() => setOpenAdd(true)}>+ Add Country</Button>
-        <Button
-          className="bg-gray-200 text-gray-800 hover:bg-gray-300"
-          onClick={() => setEditMode(!editMode)}
-        >
-          {editMode ? "Exit Edit Mode" : "Edit Mode"}
-        </Button>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
+          <Globe className="w-6 h-6 text-[color:var(--gsc-blue)]" />
+          <div>
+            <p className="text-sm text-gray-500">Total Countries</p>
+            <p className="text-lg font-semibold">{countries.length}</p>
+          </div>
+        </div>
+        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
+          <Pencil className="w-6 h-6 text-[color:var(--gsc-green)]" />
+          <div>
+            <p className="text-sm text-gray-500">Last Updated</p>
+            <p className="text-lg font-semibold">
+              {countries.length > 0
+                ? new Date(
+                    countries
+                      .map((c) => c.last_updated || "")
+                      .filter(Boolean)
+                      .sort()
+                      .reverse()[0]
+                  ).toLocaleDateString()
+                : "—"}
+            </p>
+          </div>
+        </div>
+        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
+          <Trash2 className="w-6 h-6 text-[color:var(--gsc-red)]" />
+          <div>
+            <p className="text-sm text-gray-500">Deletions Pending</p>
+            <p className="text-lg font-semibold">
+              {deleteCountry ? 1 : 0}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Countries Table */}
+      {/* Table */}
       <div className="overflow-x-auto border rounded-lg shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-left">
             <tr>
-              <th className="px-4 py-2 w-[35%]">Name</th>
+              <th className="px-4 py-2 w-[40%]">Name</th>
               <th className="px-4 py-2 w-[20%]">ISO Code</th>
               <th className="px-4 py-2 w-[25%]">Last Updated</th>
-              <th className="px-4 py-2 w-[20%] text-right">Actions</th>
+              <th className="px-4 py-2 w-[15%] text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -110,23 +134,29 @@ export default function CountryPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-2">{c.iso_code}</td>
-                <td className="px-4 py-2">{c.last_updated ?? "—"}</td>
+                <td className="px-4 py-2">
+                  {c.last_updated
+                    ? new Date(c.last_updated).toLocaleDateString()
+                    : "—"}
+                </td>
                 <td className="px-4 py-2 flex justify-end gap-2">
-                  <Button
-                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1"
+                  <button
+                    className="p-1.5 rounded hover:bg-gray-100"
                     onClick={() => {
                       setEditCountry(c);
                       setOpenAdd(true);
                     }}
+                    title="Edit Country"
                   >
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    className="bg-red-600 text-white hover:bg-red-700 px-2 py-1"
+                    <Pencil className="w-4 h-4 text-gray-600" />
+                  </button>
+                  <button
+                    className="p-1.5 rounded hover:bg-red-50"
                     onClick={() => setDeleteCountry(c)}
+                    title="Delete Country"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                    <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -164,7 +194,7 @@ export default function CountryPage() {
         title="Confirm Delete"
         message={
           deleteCountry
-            ? `Are you sure you want to delete "${deleteCountry.name}" (${deleteCountry.iso_code})? This cannot be undone.`
+            ? `Are you sure you want to delete "${deleteCountry.name}" (${deleteCountry.iso_code})?`
             : ""
         }
         confirmLabel="Delete"
