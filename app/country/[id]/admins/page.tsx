@@ -28,12 +28,8 @@ type AdminUnit = {
   parent_pcode?: string | null;
 };
 
-export default function AdminUnitsPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const countryIso = params.id;
+export default function AdminUnitsPage(props: { params: { id: string } }) {
+  const { id: countryIso } = props.params;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
@@ -79,7 +75,6 @@ export default function AdminUnitsPage({
       .then(({ data }) => data?.source && setSource(data.source as any));
   }, [countryIso]);
 
-  // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
   const hasGISLink = false;
@@ -93,12 +88,13 @@ export default function AdminUnitsPage({
     },
     { label: "Population linkage not applied yet", status: "warning" },
     {
-      label: hasGISLink ? "Aligned with GIS boundaries" : "GIS linkage not validated yet",
+      label: hasGISLink
+        ? "Aligned with GIS boundaries"
+        : "GIS linkage not validated yet",
       status: hasGISLink ? "ok" : "error",
     },
   ];
 
-  // Pagination
   const filtered = adminUnits.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -125,9 +121,7 @@ export default function AdminUnitsPage({
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Database className="w-5 h-5 text-blue-600" />
@@ -187,11 +181,9 @@ export default function AdminUnitsPage({
             </button>
           </div>
         </div>
-
         <HealthCard title="Data Health" checks={statusChecks} />
       </div>
 
-      {/* Data Views */}
       {view === "table" && (
         <div className="border rounded-lg p-4 shadow-sm">
           <input
