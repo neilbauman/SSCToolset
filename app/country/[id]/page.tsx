@@ -76,21 +76,29 @@ export default function CountryConfigLandingPage({ params }: any) {
       const { data, error } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", id) // ✅ FIXED
+        .eq("iso_code", id.toUpperCase())
         .maybeSingle();
 
       if (error) {
-        console.error("Error fetching country:", error);
+        console.error("Supabase error fetching country:", error);
+      }
+
+      if (!data) {
+        console.warn("No country metadata found for", id);
+        setCountry({
+          iso_code: id.toUpperCase(),
+          name: "Unknown",
+          dataset_sources: [],
+          extra_metadata: {},
+        });
         return;
       }
 
-      if (data) {
-        setCountry({
-          ...data,
-          dataset_sources: data.dataset_sources ?? [], // ✅ fallback
-          extra_metadata: data.extra_metadata ?? {}, // ✅ fallback
-        });
-      }
+      setCountry({
+        ...data,
+        dataset_sources: data.dataset_sources ?? [],
+        extra_metadata: data.extra_metadata ?? {},
+      });
     };
     fetchCountry();
   }, [id]);
@@ -100,7 +108,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       const { data } = await supabase
         .from("admin_units")
         .select("level, pcode")
-        .eq("country_iso", id);
+        .eq("country_iso", id.toUpperCase());
       if (!data || data.length === 0) {
         setAdminStatus("missing");
         return;
@@ -269,7 +277,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         ))}
 
         {/* Flexible datasets */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:grid-cols-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-blue-600" />
@@ -306,8 +314,19 @@ export default function CountryConfigLandingPage({ params }: any) {
             extra: country.extra_metadata || {},
           }}
           onSave={async (updated) => {
+            // ✅ Clean dataset sources before saving
+            const cleanedSources = (updated.datasetSources || [])
+              .map((s) => ({
+                name: (s.name || "").trim(),
+                url: (s.url || "").trim(),
+              }))
+              .filter((s) => s.name && s.url);
+
+            // ✅ Ensure ISO is uppercase
+            const isoCode = (updated.iso || "").toUpperCase();
+
             await supabase.from("countries").upsert({
-              iso_code: updated.iso,
+              iso_code: isoCode,
               name: updated.name,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
@@ -315,20 +334,22 @@ export default function CountryConfigLandingPage({ params }: any) {
               adm3_label: updated.admLabels.adm3,
               adm4_label: updated.admLabels.adm4,
               adm5_label: updated.admLabels.adm5,
-              dataset_sources: updated.datasetSources,
+              dataset_sources: cleanedSources,
               extra_metadata: updated.extra ?? {},
             });
+
+            // ✅ Update local state cleanly
             setCountry({
               ...country,
               ...updated,
-              iso_code: updated.iso,
+              iso_code: isoCode,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
               adm2_label: updated.admLabels.adm2,
               adm3_label: updated.admLabels.adm3,
               adm4_label: updated.admLabels.adm4,
               adm5_label: updated.admLabels.adm5,
-              dataset_sources: updated.datasetSources,
+              dataset_sources: cleanedSources,
               extra_metadata: updated.extra ?? {},
             });
           }}
