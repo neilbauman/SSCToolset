@@ -30,8 +30,8 @@ type AdminUnit = {
   source?: { name: string; url?: string };
 };
 
-export default function AdminUnitsPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
+export default function AdminUnitsPage({ params }: any) {
+  const { id: countryIso } = params as CountryParams;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
