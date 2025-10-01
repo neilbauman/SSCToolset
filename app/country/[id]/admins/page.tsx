@@ -122,21 +122,9 @@ export default function AdminUnitsPage({ params }: any) {
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
           </h2>
+
           {country && (
             <>
-              <p className="text-sm text-gray-700 mb-2">
-                Levels:{" "}
-                {[
-                  country.adm0_label,
-                  country.adm1_label,
-                  country.adm2_label,
-                  country.adm3_label,
-                  country.adm4_label,
-                  country.adm5_label,
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
               <p className="text-sm mb-2">
                 Total Units:{" "}
                 <span className="font-semibold">{adminUnits.length}</span>
@@ -153,7 +141,7 @@ export default function AdminUnitsPage({ params }: any) {
                     lvl;
                   return (
                     <p key={lvl}>
-                      {label}:{" "}
+                      {lvl} ({label}):{" "}
                       <span className="font-semibold">{count}</span>
                     </p>
                   );
@@ -162,35 +150,37 @@ export default function AdminUnitsPage({ params }: any) {
             </>
           )}
 
-          <p className="text-sm">
-            Dataset Source:{" "}
-            {source ? (
-              <span>
-                {source.url ? (
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    {source.name}
-                  </a>
-                ) : (
-                  source.name
-                )}
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-                Empty
-              </span>
-            )}
-          </p>
-          <button
-            onClick={() => setOpenSource(true)}
-            className="mt-2 px-3 py-1.5 rounded-md text-sm bg-gray-200 hover:bg-gray-300"
-          >
-            Edit Source
-          </button>
+          <div className="flex items-center justify-between text-sm">
+            <p>
+              Dataset Source:{" "}
+              {source ? (
+                <span>
+                  {source.url ? (
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {source.name}
+                    </a>
+                  ) : (
+                    source.name
+                  )}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
+                  Empty
+                </span>
+              )}
+            </p>
+            <button
+              onClick={() => setOpenSource(true)}
+              className="px-2 py-1 rounded-md text-xs bg-gray-200 hover:bg-gray-300"
+            >
+              Edit
+            </button>
+          </div>
         </div>
 
         {/* Data Health */}
@@ -257,7 +247,7 @@ export default function AdminUnitsPage({ params }: any) {
                 lvl;
               return (
                 <option key={lvl} value={lvl}>
-                  {label}
+                  {lvl} ({label})
                 </option>
               );
             })}
