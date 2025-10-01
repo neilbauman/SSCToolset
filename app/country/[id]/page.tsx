@@ -45,6 +45,27 @@ function SoftButton({
   );
 }
 
+function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
+  const styles: Record<typeof status, string> = {
+    uploaded: "bg-green-100 text-green-700",
+    partial: "bg-yellow-100 text-yellow-700",
+    missing: "bg-red-100 text-red-700",
+  };
+  return (
+    <span className={`px-2 py-1 text-xs rounded ${styles[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function CoreBadge() {
+  return (
+    <span className="ml-2 px-2 py-0.5 text-[10px] rounded bg-[color:var(--gsc-red)] text-white uppercase">
+      Core
+    </span>
+  );
+}
+
 function renderMetaValue(value: string) {
   if (!value || value.trim() === "") {
     return (
@@ -69,14 +90,14 @@ export default function CountryConfigLandingPage({ params }: any) {
   >("missing");
   const [openMeta, setOpenMeta] = useState(false);
 
-  const center: LatLngExpression = [12.8797, 121.774]; // Philippines fallback
+  const center: LatLngExpression = [12.8797, 121.774];
 
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso", id)
+        .eq("iso_code", id) // ✅ FIXED
         .single();
       if (data) setCountry(data);
     };
@@ -115,6 +136,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         .join(", "),
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
+      core: true,
     },
     {
       key: "population",
@@ -124,6 +146,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       stats: "",
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
+      core: true,
     },
     {
       key: "gis",
@@ -133,6 +156,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       stats: "ADM1 & ADM2 uploaded, ADM3 missing",
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
+      core: true,
     },
   ];
 
@@ -180,7 +204,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
-                <p><strong>ISO:</strong> {renderMetaValue(country.iso)}</p>
+                <p><strong>ISO:</strong> {renderMetaValue(country.iso_code)}</p>
                 <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
                 <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
                 <p><strong>ADM1 Label:</strong> {renderMetaValue(country.adm1_label)}</p>
@@ -214,20 +238,20 @@ export default function CountryConfigLandingPage({ params }: any) {
                   Extra Metadata
                 </h3>
                 {country.extra_metadata &&
-                  Object.entries(country.extra_metadata).map(([key, entry]: any) => (
-                    <p key={key}>
-                      <strong>{entry.label}:</strong>{" "}
-                      {entry.url ? (
+                  Object.entries(country.extra_metadata).map(([k, v]: any) => (
+                    <p key={k}>
+                      <strong>{v.label ?? k}:</strong>{" "}
+                      {v.url ? (
                         <a
-                          href={entry.url}
+                          href={v.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
-                          {entry.value}
+                          {String(v.value)}
                         </a>
                       ) : (
-                        entry.value
+                        String(v.value)
                       )}
                     </p>
                   ))}
@@ -249,11 +273,12 @@ export default function CountryConfigLandingPage({ params }: any) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
-                <h3 className="text-lg font-semibold">{d.title}</h3>
+                <h3 className="text-lg font-semibold flex items-center">
+                  {d.title}
+                  {d.core && <CoreBadge />}
+                </h3>
               </div>
-              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
-                {d.status}
-              </span>
+              <StatusBadge status={d.status as any} />
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
             {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
@@ -289,7 +314,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
-            iso: country.iso,
+            iso_code: country.iso_code,
             name: country.name,
             admLabels: {
               adm0: country.adm0_label,
@@ -304,7 +329,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
           onSave={async (updated) => {
             await supabase.from("countries").upsert({
-              iso: updated.iso,
+              iso_code: updated.iso_code,
               name: updated.name,
               adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
