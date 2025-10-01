@@ -5,7 +5,13 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import { Map, ShieldCheck, AlertTriangle } from "lucide-react";
+import {
+  Map,
+  ShieldCheck,
+  AlertTriangle,
+  Filter,
+  Search,
+} from "lucide-react";
 
 interface AdminUnit {
   id: string;
@@ -21,6 +27,7 @@ export default function AdminUnitsPage({ params }: any) {
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [levelFilter, setLevelFilter] = useState<string>("all");
   const [openSource, setOpenSource] = useState(false);
 
   const rowsPerPage = 25;
@@ -54,11 +61,19 @@ export default function AdminUnitsPage({ params }: any) {
     levelCounts[u.level] = (levelCounts[u.level] || 0) + 1;
   });
 
-  const filteredUnits = adminUnits.filter(
-    (u) =>
+  // Health checks
+  const missingPcodes = adminUnits.filter((u) => !u.pcode || u.pcode.trim() === "")
+    .length;
+  const allHavePcodes = missingPcodes === 0;
+
+  // Filters
+  const filteredUnits = adminUnits.filter((u) => {
+    const matchesSearch =
       u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.pcode.toLowerCase().includes(search.toLowerCase())
-  );
+      u.pcode.toLowerCase().includes(search.toLowerCase());
+    const matchesLevel = levelFilter === "all" || u.level === levelFilter;
+    return matchesSearch && matchesLevel;
+  });
 
   const paginatedUnits = filteredUnits.slice(
     (page - 1) * rowsPerPage,
@@ -71,7 +86,6 @@ export default function AdminUnitsPage({ params }: any) {
       .update({ source: newSource })
       .eq("country_iso", countryIso);
 
-    // Update locally
     setAdminUnits((prev) =>
       prev.map((u) => ({
         ...u,
@@ -99,120 +113,172 @@ export default function AdminUnitsPage({ params }: any) {
   const source =
     adminUnits.length > 0 && adminUnits[0].source ? adminUnits[0].source : null;
 
-  // Data health checks
-  const missingPcodes = adminUnits.filter((u) => !u.pcode || u.pcode.trim() === "").length;
-  const allHavePcodes = missingPcodes === 0;
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary */}
-      <div className="border rounded-lg p-4 mb-6 shadow-sm">
-        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
-          <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
-        </h2>
-
-        {country && (
-          <>
-            <p className="text-sm text-gray-700 mb-2">
-              Levels:{" "}
-              {[
-                country.adm0_label,
-                country.adm1_label,
-                country.adm2_label,
-                country.adm3_label,
-                country.adm4_label,
-                country.adm5_label,
-              ]
-                .filter(Boolean)
-                .join(", ")}
-            </p>
-            <p className="text-sm mb-2">
-              Total Units: <span className="font-semibold">{adminUnits.length}</span>
-            </p>
-            <div className="text-sm mb-2">
-              {Object.entries(levelCounts).map(([lvl, count]) => {
-                // map "ADM1" -> "Region" etc using country metadata
-                const label =
-                  (lvl === "ADM0" && country.adm0_label) ||
-                  (lvl === "ADM1" && country.adm1_label) ||
-                  (lvl === "ADM2" && country.adm2_label) ||
-                  (lvl === "ADM3" && country.adm3_label) ||
-                  (lvl === "ADM4" && country.adm4_label) ||
-                  (lvl === "ADM5" && country.adm5_label) ||
-                  lvl;
-                return (
-                  <p key={lvl}>
-                    {label}: <span className="font-semibold">{count}</span>
-                  </p>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        <p className="text-sm">
-          Dataset Source:{" "}
-          {source ? (
-            <span>
-              {source.url ? (
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                >
-                  {source.name}
-                </a>
-              ) : (
-                source.name
-              )}
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-              Empty
-            </span>
+      {/* Summary + Health Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Summary */}
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
+          </h2>
+          {country && (
+            <>
+              <p className="text-sm text-gray-700 mb-2">
+                Levels:{" "}
+                {[
+                  country.adm0_label,
+                  country.adm1_label,
+                  country.adm2_label,
+                  country.adm3_label,
+                  country.adm4_label,
+                  country.adm5_label,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
+              <p className="text-sm mb-2">
+                Total Units:{" "}
+                <span className="font-semibold">{adminUnits.length}</span>
+              </p>
+              <div className="text-sm mb-2">
+                {Object.entries(levelCounts).map(([lvl, count]) => {
+                  const label =
+                    (lvl === "ADM0" && country.adm0_label) ||
+                    (lvl === "ADM1" && country.adm1_label) ||
+                    (lvl === "ADM2" && country.adm2_label) ||
+                    (lvl === "ADM3" && country.adm3_label) ||
+                    (lvl === "ADM4" && country.adm4_label) ||
+                    (lvl === "ADM5" && country.adm5_label) ||
+                    lvl;
+                  return (
+                    <p key={lvl}>
+                      {label}:{" "}
+                      <span className="font-semibold">{count}</span>
+                    </p>
+                  );
+                })}
+              </div>
+            </>
           )}
-        </p>
-        <button
-          onClick={() => setOpenSource(true)}
-          className="mt-2 px-3 py-1.5 rounded-md text-sm bg-gray-200 hover:bg-gray-300"
-        >
-          Edit Source
-        </button>
+
+          <p className="text-sm">
+            Dataset Source:{" "}
+            {source ? (
+              <span>
+                {source.url ? (
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    {source.name}
+                  </a>
+                ) : (
+                  source.name
+                )}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
+                Empty
+              </span>
+            )}
+          </p>
+          <button
+            onClick={() => setOpenSource(true)}
+            className="mt-2 px-3 py-1.5 rounded-md text-sm bg-gray-200 hover:bg-gray-300"
+          >
+            Edit Source
+          </button>
+        </div>
+
+        {/* Data Health */}
+        <div className="border rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
+            </h2>
+            {allHavePcodes ? (
+              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
+                Healthy
+              </span>
+            ) : adminUnits.length > 0 ? (
+              <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
+                Partial
+              </span>
+            ) : (
+              <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
+                Needs Attention
+              </span>
+            )}
+          </div>
+          <ul className="text-sm list-disc pl-6">
+            <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
+              {allHavePcodes
+                ? "All units have PCodes"
+                : `${missingPcodes} units missing PCodes`}
+            </li>
+            <li className="text-yellow-700">
+              Population linkage not applied yet
+            </li>
+          </ul>
+        </div>
       </div>
 
-      {/* Data Health */}
-      <div className="border rounded-lg p-4 mb-6 shadow-sm">
-        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
-        </h2>
-        <ul className="text-sm list-disc pl-6">
-          <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
-            {allHavePcodes ? "All units have PCodes" : `${missingPcodes} units missing PCodes`}
-          </li>
-          <li className="text-yellow-700">
-            Population linkage not applied yet
-          </li>
-        </ul>
+      {/* Controls for Data View */}
+      <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-2">
+          <Search className="w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search by name or PCode..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border rounded-md px-3 py-1.5 text-sm w-64"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-500" />
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            className="border rounded-md px-2 py-1 text-sm"
+          >
+            <option value="all">All Levels</option>
+            {Object.keys(levelCounts).map((lvl) => {
+              const label =
+                (lvl === "ADM0" && country?.adm0_label) ||
+                (lvl === "ADM1" && country?.adm1_label) ||
+                (lvl === "ADM2" && country?.adm2_label) ||
+                (lvl === "ADM3" && country?.adm3_label) ||
+                (lvl === "ADM4" && country?.adm4_label) ||
+                (lvl === "ADM5" && country?.adm5_label) ||
+                lvl;
+              return (
+                <option key={lvl} value={lvl}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+        </div>
       </div>
 
-      {/* Search + Table */}
-      <div className="mb-3 flex justify-between items-center">
-        <input
-          type="text"
-          placeholder="Search by name or PCode..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border rounded-md px-3 py-1.5 text-sm w-1/3"
-        />
-      </div>
+      {/* Data View */}
       <div className="border rounded-lg shadow-sm overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">Name</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">PCode</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-700">Level</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                Name
+              </th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                PCode
+              </th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                Level
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
