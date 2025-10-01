@@ -6,10 +6,30 @@ import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
-import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
+
+function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
+  const colors: Record<string, string> = {
+    uploaded: "bg-green-100 text-green-800",
+    partial: "bg-yellow-100 text-yellow-800",
+    missing: "bg-red-100 text-red-800",
+  };
+  return (
+    <span className={`px-2 py-1 text-xs rounded font-medium ${colors[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function CoreBadge() {
+  return (
+    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
+      Core
+    </span>
+  );
+}
 
 function SoftButton({
   children,
@@ -33,36 +53,15 @@ function SoftButton({
 
   if (href) {
     return (
-      <Link href={href} className={`${base} ${colors[color]}`}>
+      <a href={href} className={`${base} ${colors[color]}`}>
         {children}
-      </Link>
+      </a>
     );
   }
   return (
     <button onClick={onClick} className={`${base} ${colors[color]}`}>
       {children}
     </button>
-  );
-}
-
-function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
-  const styles: Record<typeof status, string> = {
-    uploaded: "bg-green-100 text-green-700",
-    partial: "bg-yellow-100 text-yellow-700",
-    missing: "bg-red-100 text-red-700",
-  };
-  return (
-    <span className={`px-2 py-1 text-xs rounded ${styles[status]}`}>
-      {status}
-    </span>
-  );
-}
-
-function CoreBadge() {
-  return (
-    <span className="ml-2 px-2 py-0.5 text-[10px] rounded bg-[color:var(--gsc-red)] text-white uppercase">
-      Core
-    </span>
   );
 }
 
@@ -97,7 +96,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", id) // ✅ FIXED
+        .eq("iso_code", id) // ✅ correct field
         .single();
       if (data) setCountry(data);
     };
@@ -240,7 +239,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 {country.extra_metadata &&
                   Object.entries(country.extra_metadata).map(([k, v]: any) => (
                     <p key={k}>
-                      <strong>{v.label ?? k}:</strong>{" "}
+                      <strong>{v.label}:</strong>{" "}
                       {v.url ? (
                         <a
                           href={v.url}
@@ -248,10 +247,10 @@ export default function CountryConfigLandingPage({ params }: any) {
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
-                          {String(v.value)}
+                          {v.value}
                         </a>
                       ) : (
-                        String(v.value)
+                        v.value
                       )}
                     </p>
                   ))}
@@ -269,14 +268,15 @@ export default function CountryConfigLandingPage({ params }: any) {
       {/* Dataset cards below */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
-          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+          <div
+            key={d.key}
+            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
-                <h3 className="text-lg font-semibold flex items-center">
-                  {d.title}
-                  {d.core && <CoreBadge />}
-                </h3>
+                <h3 className="text-lg font-semibold">{d.title}</h3>
+                {d.core && <CoreBadge />}
               </div>
               <StatusBadge status={d.status as any} />
             </div>
@@ -285,7 +285,9 @@ export default function CountryConfigLandingPage({ params }: any) {
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>View</SoftButton>
+              <SoftButton color="blue" href={d.href}>
+                View
+              </SoftButton>
             </div>
           </div>
         ))}
