@@ -5,9 +5,10 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
+import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import AdminUnitsTree from "@/components/country/AdminUnitsTree";
 import DatasetHealth from "@/components/country/DatasetHealth";
-import { Database, Pencil } from "lucide-react";
+import { Database, Pencil, Upload } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -22,7 +23,7 @@ type Country = {
 };
 
 type AdminUnit = {
-  id: string; // uuid
+  id: string;
   name: string;
   pcode: string;
   level: string;
@@ -36,10 +37,9 @@ export default function AdminUnitsPage({ params }: any) {
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
+  const [openUpload, setOpenUpload] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [view, setView] = useState<"table" | "tree">("table");
@@ -59,38 +59,39 @@ export default function AdminUnitsPage({ params }: any) {
   }, [countryIso]);
 
   // Fetch admin units
+  const fetchAdminUnits = async () => {
+    const { data, error } = await supabase
+      .from("admin_units")
+      .select("*")
+      .eq("country_iso", countryIso);
+
+    if (error) {
+      console.error("Error fetching admin_units:", error);
+      return;
+    }
+
+    if (data) {
+      setAdminUnits(data as AdminUnit[]);
+      const grouped: Record<string, number> = {};
+      (data as AdminUnit[]).forEach((u) => {
+        grouped[u.level] = (grouped[u.level] || 0) + 1;
+      });
+      setCounts(grouped);
+
+      if (data.length > 0 && data[0].source) {
+        setSource(data[0].source as { name: string; url?: string });
+      }
+    }
+  };
+
   useEffect(() => {
-    const fetchAdminUnits = async () => {
-      const { data, error } = await supabase
-        .from("admin_units")
-        .select("*")
-        .eq("country_iso", countryIso);
-
-      if (error) {
-        console.error("Error fetching admin_units:", error);
-        return;
-      }
-
-      if (data) {
-        setAdminUnits(data as AdminUnit[]);
-        const grouped: Record<string, number> = {};
-        (data as AdminUnit[]).forEach((u) => {
-          grouped[u.level] = (grouped[u.level] || 0) + 1;
-        });
-        setCounts(grouped);
-
-        if (data.length > 0 && data[0].source) {
-          setSource(data[0].source as { name: string; url?: string });
-        }
-      }
-    };
     fetchAdminUnits();
   }, [countryIso]);
 
   // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
-  const hasGISLink = false; // placeholder for future
+  const hasGISLink = false; // placeholder
 
   // Pagination + search
   const filtered = adminUnits.filter(
@@ -171,16 +172,24 @@ export default function AdminUnitsPage({ params }: any) {
               <li className="italic text-gray-400">No levels found</li>
             )}
           </ul>
-          <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center justify-between mt-2 gap-2">
             <p className="text-sm">
               <strong>Dataset Source:</strong> {renderSource(source)}
             </p>
-            <button
-              onClick={() => setOpenSource(true)}
-              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
-            >
-              <Pencil className="w-4 h-4 mr-1" /> Edit
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOpenSource(true)}
+                className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </button>
+              <button
+                onClick={() => setOpenUpload(true)}
+                className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-2 py-1 rounded hover:opacity-90"
+              >
+                <Upload className="w-4 h-4 mr-1" /> Replace Dataset
+              </button>
+            </div>
           </div>
         </div>
 
@@ -255,10 +264,7 @@ export default function AdminUnitsPage({ params }: any) {
               ))}
               {paginated.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={4}
-                    className="text-center text-gray-500 py-6"
-                  >
+                  <td colSpan={4} className="text-center text-gray-500 py-6">
                     No results
                   </td>
                 </tr>
@@ -289,6 +295,7 @@ export default function AdminUnitsPage({ params }: any) {
 
       {view === "tree" && <AdminUnitsTree units={adminUnits} />}
 
+      {/* Modals */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
@@ -300,6 +307,13 @@ export default function AdminUnitsPage({ params }: any) {
             .eq("country_iso", countryIso);
           setSource(newSource);
         }}
+      />
+
+      <UploadAdminUnitsModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={fetchAdminUnits}
       />
     </SidebarLayout>
   );
