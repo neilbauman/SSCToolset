@@ -1,24 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
 import Papa, { ParseResult } from "papaparse";
+import { X } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface UploadPopulationModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void;
+  onUploaded: () => void | Promise<void>;
 }
 
-export interface PopulationRow {
-  pcode?: string;
-  name: string;
-  population: number;
-  year?: number;
-  source?: string;
-}
+type Row = {
+  admin_pcode: string;
+  population?: string | number;
+  households?: string | number;
+  dataset_date?: string; // optional YYYY-MM-DD
+};
 
 export default function UploadPopulationModal({
   open,
@@ -27,154 +26,100 @@ export default function UploadPopulationModal({
   onUploaded,
 }: UploadPopulationModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<PopulationRow[]>([]);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setFile(null);
+      setBusy(false);
+      setError(null);
+    }
+  }, [open]);
 
   if (!open) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    setPreview([]);
-    if (e.target.files && e.target.files[0]) {
-      const f = e.target.files[0];
-      setFile(f);
-
-      Papa.parse<PopulationRow>(f, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results: ParseResult<PopulationRow>) => {
-          if (results.errors.length > 0) {
-            setError("Failed to parse CSV. Please check formatting.");
-            console.error(results.errors);
-            return;
-          }
-          setPreview(results.data.slice(0, 5));
-        },
-      });
-    }
-  };
-
   const handleUpload = async () => {
     if (!file) {
-      setError("Please select a file first.");
+      setError("Please select a CSV file.");
       return;
     }
-
-    setLoading(true);
+    setBusy(true);
     setError(null);
 
-    Papa.parse<PopulationRow>(file, {
+    Papa.parse<Row>(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results: ParseResult<PopulationRow>) => {
-        if (results.errors.length > 0) {
-          setError("Error parsing CSV.");
-          console.error(results.errors);
-          setLoading(false);
-          return;
-        }
-
-        const rows = results.data;
-
-        const { error: uploadError } = await supabase.from("population_data").upsert(
-          rows.map((row) => ({
+      complete: async (results: ParseResult<Row>) => {
+        try {
+          const cleaned = (results.data || []).map((r) => ({
             country_iso: countryIso,
-            pcode: row.pcode || null,
-            name: row.name,
-            population: Number(row.population),
-            year: row.year ? Number(row.year) : null,
-            source: row.source || null,
-          }))
-        );
+            admin_pcode: String(r.admin_pcode || "").trim(),
+            population: r.population !== undefined && r.population !== null && String(r.population).trim() !== ""
+              ? Number(r.population)
+              : null,
+            households: r.households !== undefined && r.households !== null && String(r.households).trim() !== ""
+              ? Number(r.households)
+              : null,
+            dataset_date: r.dataset_date ? String(r.dataset_date) : null,
+            // optional: source added later via Edit Source modal
+          }));
 
-        if (uploadError) {
-          console.error(uploadError);
-          setError("Upload failed. Please check your file structure.");
-        } else {
-          onUploaded();
+          // Create table if not exists (no-op if already exists) – recommended to run SQL separately, but safe fallback:
+          // NOTE: Supabase client cannot DDL; this comment is informational.
+
+          const { error: upErr } = await supabase.from("population_data").insert(cleaned);
+          if (upErr) throw upErr;
+
+          await onUploaded();
           onClose();
+        } catch (e: any) {
+          setError(e.message || "Failed to process CSV.");
+        } finally {
+          setBusy(false);
         }
-        setLoading(false);
+      },
+      error: (err) => {
+        setBusy(false);
+        setError(err.message);
       },
     });
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Upload Population Data</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative">
+        <button
+          className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+          onClick={onClose}
+        >
+          <X className="w-5 h-5" />
+        </button>
 
-        {/* Instructions */}
+        <h2 className="text-lg font-semibold mb-4">Upload Population CSV</h2>
         <p className="text-sm text-gray-600 mb-3">
-          Please upload a <code>.csv</code> file using the{" "}
-          <strong>Population Template</strong>. Required columns:{" "}
-          <code>name, population</code>. Optional: <code>pcode, year, source</code>.
+          Expected columns: <code>admin_pcode, population</code> (optional: <code>households, dataset_date</code>).
         </p>
 
-        {/* File Input */}
         <input
           type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="mb-4"
+          accept=".csv,text/csv"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="block w-full text-sm mb-4"
         />
 
-        {/* Preview */}
-        {preview.length > 0 && (
-          <div className="mb-4">
-            <h3 className="font-medium text-sm mb-2">Preview (first 5 rows):</h3>
-            <table className="w-full text-sm border">
-              <thead>
-                <tr className="bg-gray-100 text-left">
-                  <th className="px-2 py-1 border">PCode</th>
-                  <th className="px-2 py-1 border">Name</th>
-                  <th className="px-2 py-1 border">Population</th>
-                  <th className="px-2 py-1 border">Year</th>
-                  <th className="px-2 py-1 border">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((row, i) => (
-                  <tr key={i}>
-                    <td className="px-2 py-1 border">{row.pcode || "-"}</td>
-                    <td className="px-2 py-1 border">{row.name}</td>
-                    <td className="px-2 py-1 border">{row.population}</td>
-                    <td className="px-2 py-1 border">{row.year || "-"}</td>
-                    <td className="px-2 py-1 border">{row.source || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
 
-        {/* Error */}
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 mt-4">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
-          >
+        <div className="flex justify-end gap-2">
+          <button className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200" onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button
+            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
             onClick={handleUpload}
-            disabled={loading}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+            disabled={busy}
           >
-            {loading ? "Uploading..." : "Upload"}
+            {busy ? "Uploading…" : "Upload"}
           </button>
         </div>
       </div>
