@@ -9,10 +9,6 @@ import HealthCard from "@/components/common/HealthCard";
 import AdminUnitsTree from "@/components/country/AdminUnitsTree";
 import { Database, Pencil } from "lucide-react";
 
-interface PageProps {
-  params: { id: string };
-}
-
 type Country = {
   iso: string;
   name: string;
@@ -32,7 +28,11 @@ type AdminUnit = {
   parent_pcode?: string | null;
 };
 
-export default function AdminUnitsPage({ params }: PageProps) {
+export default function AdminUnitsPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
@@ -188,30 +188,10 @@ export default function AdminUnitsPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Data Health */}
         <HealthCard title="Data Health" checks={statusChecks} />
       </div>
 
-      {/* Toggle + View */}
-      <div className="flex gap-2 mb-4">
-        <button
-          className={`px-3 py-1.5 text-sm rounded ${
-            view === "table" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
-          }`}
-          onClick={() => setView("table")}
-        >
-          Table View
-        </button>
-        <button
-          className={`px-3 py-1.5 text-sm rounded ${
-            view === "tree" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
-          }`}
-          onClick={() => setView("tree")}
-        >
-          Tree View
-        </button>
-      </div>
-
+      {/* Data Views */}
       {view === "table" && (
         <div className="border rounded-lg p-4 shadow-sm">
           <input
