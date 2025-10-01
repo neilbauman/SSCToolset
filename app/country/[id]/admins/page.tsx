@@ -35,12 +35,12 @@ export default function AdminUnitsPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
+  const [hasData, setHasData] = useState(true);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const pageSize = 25;
   const [view, setView] = useState<"table" | "tree">("table");
 
   // Country metadata
@@ -49,7 +49,7 @@ export default function AdminUnitsPage({ params }: any) {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", countryIso) // ✅ countries
+        .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
     };
@@ -62,14 +62,18 @@ export default function AdminUnitsPage({ params }: any) {
       const { data } = await supabase
         .from("admin_units")
         .select("*")
-        .eq("country_iso", countryIso); // ✅ admin_units
+        .eq("country_iso", countryIso);
+      console.log("AdminUnits sample:", data?.slice(0, 5));
       if (data) {
         setAdminUnits(data as AdminUnit[]);
+        setHasData(data.length > 0);
         const grouped: Record<string, number> = {};
         (data as AdminUnit[]).forEach((u) => {
           grouped[u.level] = (grouped[u.level] || 0) + 1;
         });
         setCounts(grouped);
+      } else {
+        setHasData(false);
       }
     };
     fetchAdminUnits();
@@ -89,20 +93,6 @@ export default function AdminUnitsPage({ params }: any) {
     fetchSource();
   }, [countryIso]);
 
-  // Health
-  const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
-  const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
-  const hasGISLink = false;
-
-  // Pagination
-  const filtered = adminUnits.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.pcode.toLowerCase().includes(search.toLowerCase())
-  );
-  const totalPages = Math.ceil((filtered.length || 1) / pageSize);
-  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
-
   const headerProps = {
     title: `${country?.name ?? countryIso} – Admin Units`,
     group: "country-config" as const,
@@ -121,7 +111,17 @@ export default function AdminUnitsPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + DatasetHealth + Views like before */}
+      {!hasData ? (
+        <div className="border rounded-lg p-6 text-center text-gray-500 italic">
+          🚫 No admin units uploaded yet for this country.
+        </div>
+      ) : (
+        <>
+          {/* Summary + DatasetHealth + Views (unchanged) */}
+          {view === "tree" && <AdminUnitsTree units={adminUnits} />}
+        </>
+      )}
+
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
