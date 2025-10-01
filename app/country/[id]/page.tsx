@@ -228,49 +228,53 @@ export default function CountryConfigLandingPage({ params }: any) {
             {country ? (
               <>
                 {/* Core */}
-                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
-                <p><strong>ISO:</strong> {country.iso_code}</p>
-                <p><strong>Name:</strong> {country.name}</p>
-                <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
-                <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
-                <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
-                <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
-                <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
-                <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
+                <div className="pl-2 text-sm space-y-1">
+                  <p><strong>ISO:</strong> {country.iso_code}</p>
+                  <p><strong>Name:</strong> {country.name}</p>
+                  <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
+                  <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
+                  <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
+                  <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
+                  <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
+                  <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
 
-                <p className="mt-2 font-medium">Sources:</p>
-                {country.dataset_sources?.length > 0 ? (
-                  <ul className="list-disc pl-6 text-sm text-blue-700">
-                    {country.dataset_sources.map((src: any, idx: number) => (
-                      <li key={idx}>
-                        {src?.url ? (
-                          <a
-                            href={src.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline"
-                          >
-                            {src.name}
-                          </a>
-                        ) : (
-                          <span>{src?.name ?? "Unknown source"}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="italic text-gray-400">No sources provided</p>
-                )}
+                  <div className="mt-2">
+                    <p className="font-medium">Sources:</p>
+                    {country.dataset_sources?.length > 0 ? (
+                      <ul className="list-disc pl-6 text-blue-700">
+                        {country.dataset_sources.map((src: any, idx: number) => (
+                          <li key={idx}>
+                            {src?.url ? (
+                              <a
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline"
+                              >
+                                {src.name}
+                              </a>
+                            ) : (
+                              <span>{src?.name ?? "Unknown source"}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="italic text-gray-400">No sources provided</p>
+                    )}
+                  </div>
+                </div>
 
                 {/* Extra */}
-                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
+                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
                   Extra Metadata
                 </h3>
-                {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
-                  <div className="space-y-1">
-                    {Object.entries(country.extra_metadata).map(([k, v]) => {
+                <div className="pl-2 text-sm space-y-1">
+                  {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
+                    Object.entries(country.extra_metadata).map(([k, v]) => {
                       const entry = v as { label: string; value: string; url?: string };
                       return (
                         <p key={k}>
@@ -278,11 +282,11 @@ export default function CountryConfigLandingPage({ params }: any) {
                           {renderExtraEntry(entry)}
                         </p>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <p className="italic text-gray-400">None</p>
-                )}
+                    })
+                  ) : (
+                    <p className="italic text-gray-400">None</p>
+                  )}
+                </div>
               </>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
