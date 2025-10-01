@@ -5,7 +5,8 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
-import { Plus } from "lucide-react";
+import { Plus, Download } from "lucide-react";
+import { generateAdminUnitsTemplate } from "@/lib/templates/adminUnitsTemplate";
 
 interface AdminUnit {
   id: string;
@@ -16,7 +17,7 @@ interface AdminUnit {
   population?: number;
 }
 
-export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+export default function AdminUnitsPage({ params }: any) {
   const countryIso = params.id;
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,16 +59,34 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
     ),
   };
 
+  const handleDownloadTemplate = () => {
+    const blob = generateAdminUnitsTemplate();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `admin_units_template_${countryIso}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Administrative Units</h2>
-        <button
-          onClick={() => setOpenUpload(true)}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
-        >
-          <Plus className="w-4 h-4" /> Upload Data
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDownloadTemplate}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+          >
+            <Download className="w-4 h-4" /> Download Template
+          </button>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Upload Data
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -75,7 +94,8 @@ export default function AdminUnitsPage({ params }: { params: { id: string } }) {
         <p className="text-gray-500">Loading...</p>
       ) : units.length === 0 ? (
         <p className="text-gray-500 italic">
-          No admin units uploaded yet. Use the <strong>Upload Data</strong> button above.
+          No admin units uploaded yet. Use the{" "}
+          <strong>Upload Data</strong> button above.
         </p>
       ) : (
         <div className="overflow-x-auto border rounded">
