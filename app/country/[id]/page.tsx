@@ -234,9 +234,21 @@ export default function CountryConfigLandingPage({ params }: any) {
                   Extra Metadata
                 </h3>
                 {Object.keys(country.extra_metadata || {}).length > 0 ? (
-                  Object.entries(country.extra_metadata).map(([k, v]) => (
+                  Object.entries(country.extra_metadata).map(([k, meta]: any) => (
                     <p key={k}>
-                      <strong>{k}:</strong> {String(v)}
+                      <strong>{meta.label}:</strong>{" "}
+                      {meta.url ? (
+                        <a
+                          href={meta.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {meta.value}
+                        </a>
+                      ) : (
+                        meta.value
+                      )}
                     </p>
                   ))
                 ) : (
@@ -277,7 +289,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         ))}
 
         {/* Flexible datasets */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:grid-cols-2">
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-blue-600" />
@@ -322,7 +334,6 @@ export default function CountryConfigLandingPage({ params }: any) {
               }))
               .filter((s) => s.name && s.url);
 
-            // ✅ Ensure ISO is uppercase
             const isoCode = (updated.iso || "").toUpperCase();
 
             await supabase.from("countries").upsert({
@@ -338,7 +349,6 @@ export default function CountryConfigLandingPage({ params }: any) {
               extra_metadata: updated.extra ?? {},
             });
 
-            // ✅ Update local state cleanly
             setCountry({
               ...country,
               ...updated,
