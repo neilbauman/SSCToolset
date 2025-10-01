@@ -15,18 +15,17 @@ type Country = {
 };
 
 type GISRow = {
-  id: string; // uuid
+  id: string;
   layer_name: string;
   format: string;
   feature_count: number;
   crs: string;
-  created_at: string;
-  updated_at: string;
   source?: { name: string; url?: string };
+  created_at: string;
 };
 
-export default function GISPage({ params }: any) {
-  const { id: countryIso } = params as CountryParams;
+export default function GISPage({ params }: { params: CountryParams }) {
+  const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [gisData, setGisData] = useState<GISRow[]>([]);
@@ -38,7 +37,6 @@ export default function GISPage({ params }: any) {
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
-  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -51,31 +49,34 @@ export default function GISPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch GIS layers
   useEffect(() => {
     const fetchGIS = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("gis_layers")
         .select("*")
         .eq("country_iso", countryIso);
-
-      if (error) {
-        console.error("Error fetching gis_layers:", error);
-        return;
-      }
-
-      if (data) {
-        setGisData(data as GISRow[]);
-        if (data.length > 0 && data[0].source) {
-          setSource(data[0].source as { name: string; url?: string });
-        }
-      }
+      if (data) setGisData(data as GISRow[]);
     };
     fetchGIS();
   }, [countryIso]);
 
+  useEffect(() => {
+    const fetchSource = async () => {
+      const { data } = await supabase
+        .from("gis_layers")
+        .select("source")
+        .eq("country_iso", countryIso)
+        .limit(1)
+        .maybeSingle();
+      if (data?.source) setSource(data.source as any);
+    };
+    fetchSource();
+  }, [countryIso]);
+
   // Health checks
-  const hasLayers = gisData.length > 0;
+  const allHaveFeatures =
+    gisData.length > 0 && gisData.every((g) => g.feature_count > 0);
+  const missingFeatures = gisData.filter((g) => !g.feature_count).length;
   const allHaveCRS = gisData.length > 0 && gisData.every((g) => g.crs);
   const missingCRS = gisData.filter((g) => !g.crs).length;
 
@@ -89,9 +90,9 @@ export default function GISPage({ params }: any) {
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – GIS Layers`,
+    title: `${country?.name ?? countryIso} – GIS Data`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded GIS layers.",
+    description: "Manage and inspect uploaded GIS / boundary datasets.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -104,59 +105,56 @@ export default function GISPage({ params }: any) {
     ),
   };
 
-  const renderSource = (src: { name: string; url?: string } | null) => {
-    if (!src) return <span className="italic text-gray-500">Empty</span>;
-    return src.url ? (
-      <a
-        href={src.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-600 hover:underline"
-      >
-        {src.name}
-      </a>
-    ) : (
-      src.name
-    );
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+          <h2 className="text-base font-semibold flex items-center gap-2 mb-3">
             <Map className="w-5 h-5 text-blue-600" />
-            GIS Layers Summary
+            GIS Summary
             <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
               Core
             </span>
           </h2>
-          <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Layers:</strong> {gisData.length}
-          </p>
-          <p className="text-sm text-gray-700 mb-2">
-            <strong>Last Updated:</strong>{" "}
-            {gisData.length > 0 ? gisData[0].updated_at : "N/A"}
-          </p>
-          <div className="flex items-center justify-between mt-2">
-            <p className="text-sm">
-              <strong>Dataset Source:</strong> {renderSource(source)}
-            </p>
-            <button
-              onClick={() => setOpenSource(true)}
-              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
-            >
-              <Pencil className="w-4 h-4 mr-1" /> Edit
-            </button>
+          <div className="pl-2 text-sm space-y-1">
+            <p><strong>Total Layers:</strong> {gisData.length}</p>
+            <p><strong>Last Updated:</strong> {gisData.length > 0 ? gisData[0].created_at : "N/A"}</p>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-sm">
+                <strong>Dataset Source:</strong>{" "}
+                {source ? (
+                  source.url ? (
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {source.name}
+                    </a>
+                  ) : (
+                    source.name
+                  )
+                ) : (
+                  <span className="italic text-gray-500">Empty</span>
+                )}
+              </p>
+              <button
+                onClick={() => setOpenSource(true)}
+                className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Data Health */}
         <DatasetHealth
-          allHavePcodes={true} // GIS layers don’t use Pcodes
-          missingPcodes={0}
-          hasGISLink={hasLayers}
+          allHavePcodes={allHaveCRS}
+          missingPcodes={missingCRS}
+          hasGISLink={allHaveFeatures}
           hasPopulation={false}
           totalUnits={gisData.length}
         />
@@ -167,7 +165,7 @@ export default function GISPage({ params }: any) {
         <div className="flex justify-between items-center mb-3">
           <input
             type="text"
-            placeholder="Search by layer name or format..."
+            placeholder="Search by name or format..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -180,30 +178,28 @@ export default function GISPage({ params }: any) {
           </span>
         </div>
         <table className="w-full text-sm border">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 text-sm font-semibold text-gray-700">
             <tr>
               <th className="border px-2 py-1 text-left">Layer Name</th>
               <th className="border px-2 py-1 text-left">Format</th>
               <th className="border px-2 py-1 text-left">Features</th>
               <th className="border px-2 py-1 text-left">CRS</th>
-              <th className="border px-2 py-1 text-left">Created</th>
-              <th className="border px-2 py-1 text-left">Updated</th>
+              <th className="border px-2 py-1 text-left">Created At</th>
             </tr>
           </thead>
           <tbody>
             {paginated.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
+              <tr key={row.id} className="hover:bg-gray-50 text-sm">
                 <td className="border px-2 py-1">{row.layer_name}</td>
                 <td className="border px-2 py-1">{row.format}</td>
                 <td className="border px-2 py-1">{row.feature_count}</td>
-                <td className="border px-2 py-1">{row.crs}</td>
+                <td className="border px-2 py-1">{row.crs || "N/A"}</td>
                 <td className="border px-2 py-1">{row.created_at}</td>
-                <td className="border px-2 py-1">{row.updated_at}</td>
               </tr>
             ))}
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center text-gray-500 py-6">
+                <td colSpan={5} className="text-center text-gray-500 py-6">
                   No results
                 </td>
               </tr>
