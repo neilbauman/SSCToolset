@@ -7,8 +7,8 @@ interface EditDatasetSourceModalProps {
   open: boolean;
   onClose: () => void;
   datasetName: string;
-  currentSource: string;
-  onSave: (newSource: string) => Promise<void> | void;
+  currentSource: { name: string; url?: string } | null;
+  onSave: (source: { name: string; url?: string }) => void;
 }
 
 export default function EditDatasetSourceModal({
@@ -18,70 +18,66 @@ export default function EditDatasetSourceModal({
   currentSource,
   onSave,
 }: EditDatasetSourceModalProps) {
-  const [source, setSource] = useState(currentSource || "");
-  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState(currentSource?.name || "");
+  const [url, setUrl] = useState(currentSource?.url || "");
 
   if (!open) return null;
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await onSave(source);
-      onClose();
-    } catch (err) {
-      console.error("Failed to save dataset source:", err);
-    } finally {
-      setLoading(false);
-    }
+  const handleSubmit = () => {
+    if (!name.trim()) return; // require name
+    onSave({
+      name: name.trim(),
+      url: url.trim() || undefined,
+    });
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">
-            Edit Source – {datasetName}
-          </h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <h2 className="text-lg font-semibold mb-4">
+          Edit Source for {datasetName}
+        </h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium">Source Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 block w-full border rounded-md px-3 py-2 text-sm"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Source URL</label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.org/dataset"
+              className="mt-1 block w-full border rounded-md px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Input */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">
-            Dataset Source
-          </label>
-          <input
-            type="text"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="w-full border rounded px-3 py-2 text-sm"
-            placeholder="e.g. OCHA COD – HDX"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Provide a descriptive source or URL for this dataset.
-          </p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+            className="px-3 py-1.5 rounded-md text-sm bg-gray-200 hover:bg-gray-300"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={loading}
-            className="px-4 py-2 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
+            onClick={handleSubmit}
+            className="px-3 py-1.5 rounded-md text-sm bg-[color:var(--gsc-green)] text-white hover:opacity-90"
           >
-            {loading ? "Saving..." : "Save"}
+            Save
           </button>
         </div>
       </div>
