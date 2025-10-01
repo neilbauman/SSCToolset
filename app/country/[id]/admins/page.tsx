@@ -36,33 +36,33 @@ export default function AdminUnitsPage({ params }: any) {
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const [view, setView] = useState<"table" | "tree">("table");
 
+  // Country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", countryIso) // ✅
+        .eq("iso_code", countryIso) // ✅ countries
         .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
   }, [countryIso]);
 
+  // Admin units
   useEffect(() => {
     const fetchAdminUnits = async () => {
       const { data } = await supabase
         .from("admin_units")
         .select("*")
-        .eq("country_iso", countryIso); // ✅
+        .eq("country_iso", countryIso); // ✅ admin_units
       if (data) {
         setAdminUnits(data as AdminUnit[]);
         const grouped: Record<string, number> = {};
@@ -75,6 +75,7 @@ export default function AdminUnitsPage({ params }: any) {
     fetchAdminUnits();
   }, [countryIso]);
 
+  // Dataset source
   useEffect(() => {
     const fetchSource = async () => {
       const { data } = await supabase
@@ -88,10 +89,12 @@ export default function AdminUnitsPage({ params }: any) {
     fetchSource();
   }, [countryIso]);
 
+  // Health
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
   const hasGISLink = false;
 
+  // Pagination
   const filtered = adminUnits.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -118,9 +121,7 @@ export default function AdminUnitsPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health */}
-      {/* ... unchanged UI ... */}
-      {/* Make sure all content inside like before */}
+      {/* Summary + DatasetHealth + Views like before */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
