@@ -1,271 +1,232 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Table, Upload, FileDown, Pencil, CheckCircle, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
+import { Map } from "lucide-react";
 
-function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" }) {
-  const colors: Record<string, string> = {
-    uploaded: "bg-green-100 text-green-800",
-    partial: "bg-yellow-100 text-yellow-800",
-    missing: "bg-red-100 text-red-800",
-  };
-  return (
-    <span className={`px-2 py-1 text-xs rounded font-medium ${colors[status]}`}>
-      {status}
-    </span>
-  );
+interface AdminUnit {
+  id: string;
+  name: string;
+  pcode: string;
+  level: string;
 }
 
-function CoreBadge() {
-  return (
-    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
-      Core
-    </span>
-  );
-}
-
-export default function AdminUnitsPage({ params }: any) {
-  const id = params?.id ?? "unknown";
-
-  const [units, setUnits] = useState<any[]>([]);
-  const [status, setStatus] = useState<"uploaded" | "partial" | "missing">("missing");
-  const [openUpload, setOpenUpload] = useState(false);
+export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+  const countryIso = params.id;
+  const [country, setCountry] = useState<any>(null);
+  const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [openSource, setOpenSource] = useState(false);
-  const [datasetSource, setDatasetSource] = useState<string | null>(null);
-  const [filterLevel, setFilterLevel] = useState<string>("");
 
-  const fetchUnits = async () => {
-    const { data } = await supabase
-      .from("admin_units")
-      .select("*")
-      .eq("country_iso", id);
-
-    if (!data || data.length === 0) {
-      setStatus("missing");
-      setUnits([]);
-      setDatasetSource(null);
-      return;
-    }
-
-    setUnits(data);
-    setDatasetSource(data[0]?.source || null);
-
-    const levels = new Set(data.map((u) => u.level));
-    if (levels.size >= 3) setStatus("uploaded");
-    else setStatus("partial");
-  };
+  const rowsPerPage = 25;
 
   useEffect(() => {
-    fetchUnits();
-  }, [id]);
+    const fetchCountry = async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("*")
+        .eq("iso_code", countryIso)
+        .single();
+      setCountry(data);
+    };
+    fetchCountry();
+  }, [countryIso]);
 
-  // health checks
-  const allPcoded = units.every((u) => u.pcode && u.pcode.trim() !== "");
-  const populationCoverage =
-    units.length > 0
-      ? Math.round(
-          (units.filter((u) => u.population && u.population > 0).length /
-            units.length) *
-            100
-        )
-      : 0;
-  const hasLevels = Array.from(new Set(units.map((u) => u.level)));
+  useEffect(() => {
+    const fetchUnits = async () => {
+      const { data } = await supabase
+        .from("admin_units")
+        .select("*")
+        .eq("country_iso", countryIso);
+      if (data) setAdminUnits(data as AdminUnit[]);
+    };
+    fetchUnits();
+  }, [countryIso]);
+
+  const filteredUnits = adminUnits.filter(
+    (u) =>
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.pcode.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const paginatedUnits = filteredUnits.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage
+  );
+
+  const handleSaveSource = async (newSource: { name: string; url?: string }) => {
+    await supabase
+      .from("admin_units")
+      .update({ source: newSource })
+      .eq("country_iso", countryIso);
+    // Update locally
+    setAdminUnits((prev) =>
+      prev.map((u) => ({
+        ...u,
+        source: newSource,
+      }))
+    );
+  };
 
   const headerProps = {
-    title: "Administrative Units",
+    title: `${country?.name ?? countryIso} – Admin Units`,
     group: "country-config" as const,
-    description: "Upload and manage administrative boundaries for this country.",
+    description: "Manage administrative boundaries and place codes.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: id, href: `/country/${id}` },
+          { label: country?.name ?? countryIso },
           { label: "Admin Units" },
         ]}
       />
     ),
   };
 
+  const source =
+    adminUnits.length > 0 && (adminUnits[0] as any).source
+      ? (adminUnits[0] as any).source
+      : null;
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Dataset Health */}
-        <div className="border rounded-lg p-4 shadow-sm">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            Dataset Health <CoreBadge />
-          </h3>
-          <ul className="space-y-2 text-sm">
-            <li className="flex items-center gap-2">
-              {allPcoded ? (
-                <CheckCircle className="w-4 h-4 text-green-600" />
+      {/* Summary */}
+      <div className="border rounded-lg p-4 mb-6 shadow-sm">
+        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+          <Map className="w-5 h-5 text-green-600" /> Admin Units Summary
+        </h2>
+        {country && (
+          <p className="text-sm text-gray-700 mb-2">
+            Levels:{" "}
+            {[
+              country.adm0_label,
+              country.adm1_label,
+              country.adm2_label,
+              country.adm3_label,
+              country.adm4_label,
+              country.adm5_label,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+          </p>
+        )}
+        <p className="text-sm mb-2">
+          Total Units:{" "}
+          <span className="font-semibold">{adminUnits.length}</span>
+        </p>
+        <p className="text-sm">
+          Dataset Source:{" "}
+          {source ? (
+            <span>
+              {source.url ? (
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  {source.name}
+                </a>
               ) : (
-                <XCircle className="w-4 h-4 text-red-600" />
+                source.name
               )}
-              All units have PCodes
-            </li>
-            <li className="flex items-center gap-2">
-              {populationCoverage > 0 ? (
-                <CheckCircle className="w-4 h-4 text-green-600" />
-              ) : (
-                <XCircle className="w-4 h-4 text-red-600" />
-              )}
-              Population coverage: {populationCoverage}%
-            </li>
-            <li className="flex items-center gap-2">
-              {hasLevels.length >= 3 ? (
-                <CheckCircle className="w-4 h-4 text-green-600" />
-              ) : (
-                <XCircle className="w-4 h-4 text-red-600" />
-              )}
-              Levels present: {hasLevels.join(", ") || "None"}
-            </li>
-          </ul>
-        </div>
-
-        {/* Counts per level */}
-        <div className="border rounded-lg p-4 shadow-sm">
-          <h3 className="font-semibold mb-3">Counts per Level</h3>
-          {units.length > 0 ? (
-            <ul className="space-y-1 text-sm">
-              {Object.entries(
-                units.reduce((acc: Record<string, number>, u) => {
-                  acc[u.level] = (acc[u.level] || 0) + 1;
-                  return acc;
-                }, {})
-              ).map(([lvl, cnt]) => (
-                <li key={lvl}>
-                  {lvl}: <span className="font-medium">{cnt}</span>
-                </li>
-              ))}
-            </ul>
+            </span>
           ) : (
-            <p className="text-gray-500 text-sm">No data yet</p>
+            <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
+              Empty
+            </span>
           )}
-        </div>
-
-        {/* Dataset Source */}
-        <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="font-semibold mb-3">Dataset Source</h3>
-            {datasetSource ? (
-              <p className="text-sm">{datasetSource}</p>
-            ) : (
-              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs">
-                Empty
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => setOpenSource(true)}
-            className="mt-3 flex items-center gap-1 px-3 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm"
-          >
-            <Pencil className="w-4 h-4" /> Edit Source
-          </button>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-3 mb-6">
+        </p>
         <button
-          onClick={() => {
-            window.location.href = `/api/templates/admin-units?country=${id}`;
-          }}
-          className="flex items-center gap-1 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 text-sm"
+          onClick={() => setOpenSource(true)}
+          className="mt-2 px-3 py-1.5 rounded-md text-sm bg-gray-200 hover:bg-gray-300"
         >
-          <FileDown className="w-4 h-4" /> Download Template
-        </button>
-        <button
-          onClick={() => setOpenUpload(true)}
-          className="flex items-center gap-1 px-3 py-2 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90"
-        >
-          <Upload className="w-4 h-4" /> Upload Data
+          Edit Source
         </button>
       </div>
 
-      {/* Filter */}
-      {units.length > 0 && (
-        <div className="mb-4">
-          <label className="text-sm font-medium mr-2">Filter by level:</label>
-          <select
-            value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value)}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value="">All</option>
-            {hasLevels.map((lvl) => (
-              <option key={lvl} value={lvl}>
-                {lvl}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Table */}
-      {units.length > 0 ? (
-        <div className="border rounded-lg shadow-sm overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">Name</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">PCode</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">Level</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-600">Population</th>
+      {/* Search + Table */}
+      <div className="mb-3 flex justify-between items-center">
+        <input
+          type="text"
+          placeholder="Search by name or PCode..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="border rounded-md px-3 py-1.5 text-sm w-1/3"
+        />
+      </div>
+      <div className="border rounded-lg shadow-sm overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                Name
+              </th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                PCode
+              </th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">
+                Level
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {paginatedUnits.map((u) => (
+              <tr key={u.id}>
+                <td className="px-3 py-2">{u.name}</td>
+                <td className="px-3 py-2">{u.pcode}</td>
+                <td className="px-3 py-2">{u.level}</td>
               </tr>
-            </thead>
-            <tbody>
-              {units
-                .filter((u) => !filterLevel || u.level === filterLevel)
-                .map((u, idx) => (
-                  <tr key={idx} className="border-t">
-                    <td className="px-4 py-2 text-sm">{u.name}</td>
-                    <td className="px-4 py-2 text-sm">{u.pcode}</td>
-                    <td className="px-4 py-2 text-sm">{u.level}</td>
-                    <td className="px-4 py-2 text-sm">
-                      {u.population ? u.population.toLocaleString() : "—"}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="text-gray-500">No admin units uploaded yet.</p>
-      )}
+            ))}
+            {paginatedUnits.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-3 py-2 text-center text-gray-500">
+                  No results
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {/* Upload modal */}
-      {openUpload && (
-        <UploadAdminUnitsModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
-          countryIso={id}
-          onUploaded={fetchUnits}
-        />
-      )}
+      {/* Pagination */}
+      <div className="mt-3 flex justify-center gap-2">
+        <button
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+        >
+          Prev
+        </button>
+        <span className="text-sm py-1">
+          Page {page} of {Math.ceil(filteredUnits.length / rowsPerPage) || 1}
+        </span>
+        <button
+          onClick={() =>
+            setPage((p) =>
+              p < Math.ceil(filteredUnits.length / rowsPerPage) ? p + 1 : p
+            )
+          }
+          disabled={page >= Math.ceil(filteredUnits.length / rowsPerPage)}
+          className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
 
-      {/* Edit Source modal */}
-      {openSource && (
-        <EditDatasetSourceModal
-          open={openSource}
-          onClose={() => setOpenSource(false)}
-          datasetName="Admin Units"
-          currentSource={datasetSource || ""}
-          onSave={async (newSource) => {
-            await supabase
-              .from("admin_units")
-              .update({ source: newSource })
-              .eq("country_iso", id);
-            setDatasetSource(newSource);
-          }}
-        />
-      )}
+      {/* Edit Dataset Source Modal */}
+      <EditDatasetSourceModal
+        open={openSource}
+        onClose={() => setOpenSource(false)}
+        datasetName="Admin Units"
+        currentSource={source}
+        onSave={handleSaveSource}
+      />
     </SidebarLayout>
   );
 }
