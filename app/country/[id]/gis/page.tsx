@@ -24,8 +24,8 @@ type GISRow = {
   source?: { name: string; url?: string };
 };
 
-export default function GISPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
+export default function GISPage({ params }: any) {
+  const { id: countryIso } = params as CountryParams;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [gisData, setGisData] = useState<GISRow[]>([]);
