@@ -16,6 +16,7 @@ type Country = {
 };
 
 export default function CountryPage() {
+  const [editMode, setEditMode] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [editCountry, setEditCountry] = useState<Country | null>(null);
   const [deleteCountry, setDeleteCountry] = useState<Country | null>(null);
@@ -111,7 +112,25 @@ export default function CountryPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Controls */}
+      <div className="flex justify-between items-center mb-4">
+        {editMode && (
+          <button
+            onClick={() => setOpenAdd(true)}
+            className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90"
+          >
+            + Add Country
+          </button>
+        )}
+        <button
+          className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm hover:bg-gray-300 ml-auto"
+          onClick={() => setEditMode(!editMode)}
+        >
+          {editMode ? "Exit Edit Mode" : "Edit Mode"}
+        </button>
+      </div>
+
+      {/* Countries Table */}
       <div className="overflow-x-auto border rounded-lg shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-left">
@@ -119,7 +138,7 @@ export default function CountryPage() {
               <th className="px-4 py-2 w-[40%]">Name</th>
               <th className="px-4 py-2 w-[20%]">ISO Code</th>
               <th className="px-4 py-2 w-[25%]">Last Updated</th>
-              <th className="px-4 py-2 w-[15%] text-right">Actions</th>
+              {editMode && <th className="px-4 py-2 w-[15%] text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -139,31 +158,33 @@ export default function CountryPage() {
                     ? new Date(c.last_updated).toLocaleDateString()
                     : "—"}
                 </td>
-                <td className="px-4 py-2 flex justify-end gap-2">
-                  <button
-                    className="p-1.5 rounded hover:bg-gray-100"
-                    onClick={() => {
-                      setEditCountry(c);
-                      setOpenAdd(true);
-                    }}
-                    title="Edit Country"
-                  >
-                    <Pencil className="w-4 h-4 text-gray-600" />
-                  </button>
-                  <button
-                    className="p-1.5 rounded hover:bg-red-50"
-                    onClick={() => setDeleteCountry(c)}
-                    title="Delete Country"
-                  >
-                    <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
-                  </button>
-                </td>
+                {editMode && (
+                  <td className="px-4 py-2 flex justify-end gap-2">
+                    <button
+                      className="p-1.5 rounded hover:bg-gray-100"
+                      onClick={() => {
+                        setEditCountry(c);
+                        setOpenAdd(true);
+                      }}
+                      title="Edit Country"
+                    >
+                      <Pencil className="w-4 h-4 text-gray-600" />
+                    </button>
+                    <button
+                      className="p-1.5 rounded hover:bg-red-50"
+                      onClick={() => setDeleteCountry(c)}
+                      title="Delete Country"
+                    >
+                      <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {countries.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={editMode ? 4 : 3}
                   className="px-4 py-6 text-center text-gray-500 italic"
                 >
                   No countries configured yet.
