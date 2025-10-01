@@ -2,98 +2,61 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Button } from "@/components/ui/Button";
-import { useState, useEffect } from "react";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import EditMetadataModal from "@/components/country/EditMetadataModal";
-import UploadAdminUnits from "@/components/country/UploadAdminUnits";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Pencil, Trash2 } from "lucide-react";
+import { Map, Users, Database, AlertCircle } from "lucide-react";
+import { useState } from "react";
 
-export default function CountryDetailPage({ params }: any) {
-  const id = params?.id ?? "unknown"; // ISO code (PHL, NPL, etc.)
+export default function CountryConfigLandingPage({ params }: any) {
+  const id = params?.id ?? "unknown";
 
-  // Country metadata (mock for now — can later come from Supabase "countries")
+  // Mock metadata (replace with Supabase later)
   const country = {
     iso: id,
     name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
-    population: id === "PHL" ? 113900000 : id === "NPL" ? 30000000 : null,
-    lastUpdated: id === "PHL" ? "2024-01-01" : id === "NPL" ? "2023-08-10" : "2023-11-15",
-    admLabels: { adm1: "Province", adm2: "Municipality", adm3: "Barangay" },
-    sources: { boundaries: "HDX COD 2024", population: "NSO Census 2020" },
   };
 
-  const [openMeta, setOpenMeta] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [adminUnits, setAdminUnits] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
-  const pageSize = 50;
+  // Mock dataset status (will later query Supabase)
+  const datasets = [
+    {
+      key: "admins",
+      title: "Places / Admin Units",
+      description: "Administrative boundaries and place codes.",
+      status: "uploaded", // "uploaded" | "partial" | "missing"
+      stats: "4 levels, 38 units",
+      icon: <Map className="w-6 h-6 text-green-600" />,
+    },
+    {
+      key: "population",
+      title: "Populations / Demographics",
+      description: "Census population and demographic indicators.",
+      status: "missing",
+      stats: "",
+      icon: <Users className="w-6 h-6 text-gray-500" />,
+    },
+    {
+      key: "gis",
+      title: "GIS / Mapping",
+      description: "Geospatial boundary data and mapping layers.",
+      status: "partial",
+      stats: "ADM1 & ADM2 uploaded, ADM3 missing",
+      icon: <Database className="w-6 h-6 text-yellow-600" />,
+    },
+  ];
 
-  // Fetch admin units with parent name resolution
-  const fetchUnits = async () => {
-    setLoading(true);
-
-    // Count total rows
-    const { count } = await supabase
-      .from("admin_units")
-      .select("*", { count: "exact", head: true })
-      .eq("country_iso", id);
-
-    if (count) setTotal(count);
-
-    // Paginated slice
-    const from = page * pageSize;
-    const to = from + pageSize - 1;
-
-    const { data, error } = await supabase
-      .from("admin_units")
-      .select("*")
-      .eq("country_iso", id)
-      .order("level", { ascending: true })
-      .range(from, to);
-
-    if (error) {
-      console.error("Error fetching admin units:", error);
-      setAdminUnits([]);
-    } else {
-      // Enrich with parent names
-      const parentCodes = data.map((u) => u.parent_pcode).filter(Boolean);
-      let parents: Record<string, string> = {};
-
-      if (parentCodes.length > 0) {
-        const { data: parentRows } = await supabase
-          .from("admin_units")
-          .select("pcode, name")
-          .in("pcode", parentCodes);
-
-        if (parentRows) {
-          parents = parentRows.reduce(
-            (acc, row) => ({ ...acc, [row.pcode]: row.name }),
-            {}
-          );
-        }
-      }
-
-      const enriched = data.map((u) => ({
-        ...u,
-        parent_name: u.parent_pcode ? parents[u.parent_pcode] || "" : "",
-      }));
-
-      setAdminUnits(enriched);
-    }
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchUnits();
-  }, [id, page]);
+  const [otherDatasets] = useState([
+    {
+      key: "housing",
+      title: "Housing Conditions",
+      description: "Shelter type, damage, and habitability data.",
+      status: "uploaded",
+      stats: "Census 2020 dataset",
+    },
+  ]);
 
   const headerProps = {
-    title: country.name,
+    title: `${country.name} – Country Configuration`,
     group: "country-config" as const,
-    description: "Baseline datasets and metadata for this country.",
+    description: "Manage baseline datasets and metadata for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -105,129 +68,94 @@ export default function CountryDetailPage({ params }: any) {
     ),
   };
 
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case "uploaded":
+        return (
+          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
+            ✅ Uploaded
+          </span>
+        );
+      case "partial":
+        return (
+          <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
+            ⚠️ Partial
+          </span>
+        );
+      case "missing":
+      default:
+        return (
+          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
+            ❌ Missing
+          </span>
+        );
+    }
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Metadata Section */}
-      <div className="border rounded-lg p-4 mb-6 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-        <p>ADM1 = {country.admLabels.adm1}</p>
-        <p>ADM2 = {country.admLabels.adm2}</p>
-        <p>ADM3 = {country.admLabels.adm3}</p>
-        <p>Boundaries Source: {country.sources.boundaries}</p>
-        <p>Population Source: {country.sources.population}</p>
-
-        <Button
-          className="bg-gray-200 text-gray-800 hover:bg-gray-300 mt-4"
-          onClick={() => setOpenMeta(true)}
-        >
-          Edit Metadata
-        </Button>
-      </div>
-
-      {/* Edit Metadata Modal */}
-      <EditMetadataModal
-        open={openMeta}
-        onClose={() => setOpenMeta(false)}
-        metadata={{
-          adm1: country.admLabels.adm1,
-          adm2: country.admLabels.adm2,
-          adm3: country.admLabels.adm3,
-          boundariesSource: country.sources.boundaries,
-          populationSource: country.sources.population,
-        }}
-        onSave={(updated) => console.log("Updated metadata:", updated)}
-      />
-
-      {/* Admin Units Table */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold">Administrative Units</h2>
-          <Button
-            className="bg-gray-200 text-gray-800 hover:bg-gray-300"
-            onClick={() => setEditMode(!editMode)}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {datasets.map((d) => (
+          <div
+            key={d.key}
+            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
           >
-            {editMode ? "Exit Edit Mode" : "Edit Mode"}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {d.icon}
+                <h3 className="text-lg font-semibold">{d.title}</h3>
+              </div>
+              {statusBadge(d.status)}
+            </div>
+            <p className="text-sm text-gray-600 mb-2">{d.description}</p>
+            {d.stats && (
+              <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>
+            )}
+            <div className="flex gap-2">
+              <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300">
+                Download Template
+              </Button>
+              <Button className="bg-green-600 text-white hover:bg-green-700">
+                Upload Data
+              </Button>
+              <Button className="bg-blue-600 text-white hover:bg-blue-700">
+                View
+              </Button>
+            </div>
+          </div>
+        ))}
+
+        {/* Other datasets card */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-blue-600" />
+              <h3 className="text-lg font-semibold">Other Datasets</h3>
+            </div>
+            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">
+              Flexible
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Additional country-specific datasets that extend the baseline.
+          </p>
+          {otherDatasets.length === 0 ? (
+            <p className="italic text-gray-500">No extra datasets added yet.</p>
+          ) : (
+            <ul className="list-disc pl-6 text-sm text-gray-700 mb-4">
+              {otherDatasets.map((ds) => (
+                <li key={ds.key}>
+                  <strong>{ds.title}</strong> – {ds.description} (
+                  {statusBadge(ds.status)})
+                </li>
+              ))}
+            </ul>
+          )}
+          <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300">
+            Add Dataset
           </Button>
         </div>
-
-        {loading ? (
-          <p>Loading admin units...</p>
-        ) : adminUnits.length === 0 ? (
-          <p className="text-gray-500 italic">No admin units uploaded yet.</p>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100 text-left">
-                  <tr>
-                    <th className="px-4 py-2">Name</th>
-                    <th className="px-4 py-2">PCode</th>
-                    <th className="px-4 py-2">Level</th>
-                    <th className="px-4 py-2">Parent</th>
-                    <th className="px-4 py-2">Population</th>
-                    {editMode && <th className="px-4 py-2">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminUnits.map((u) => (
-                    <tr key={u.pcode} className="border-t hover:bg-gray-50">
-                      <td className="px-4 py-2">{u.name}</td>
-                      <td className="px-4 py-2">{u.pcode}</td>
-                      <td className="px-4 py-2">{u.level}</td>
-                      <td className="px-4 py-2">
-                        {u.parent_name || (
-                          <span className="italic text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        {u.population ? (
-                          u.population.toLocaleString()
-                        ) : (
-                          <span className="italic text-gray-400">—</span>
-                        )}
-                      </td>
-                      {editMode && (
-                        <td className="px-4 py-2 flex gap-2">
-                          <Button className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-2 py-1">
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button className="bg-red-600 text-white hover:bg-red-700 px-2 py-1">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex justify-between items-center mt-4">
-              <Button
-                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                Previous
-              </Button>
-              <p className="text-sm text-gray-600">
-                Page {page + 1} of {Math.ceil(total / pageSize) || 1}
-              </p>
-              <Button
-                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
-                disabled={(page + 1) * pageSize >= total}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </>
-        )}
       </div>
-
-      {/* Upload + Preview Admin Units */}
-      <UploadAdminUnits countryIso={country.iso} onSaved={fetchUnits} />
     </SidebarLayout>
   );
 }
