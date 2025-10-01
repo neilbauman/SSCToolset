@@ -19,10 +19,6 @@ interface Metadata {
     adm4: string;
     adm5: string;
   };
-  sources: {
-    boundaries: string;
-    population: string;
-  };
   datasetSources: DatasetSource[];
   extra?: Record<string, string>;
 }
@@ -46,19 +42,13 @@ export default function EditMetadataModal({
 
   if (!open) return null;
 
-  // Core change handler
-  const handleCoreChange = (
-    section: "admLabels" | "sources",
-    field: string,
-    value: string
-  ) => {
+  const handleAdmChange = (field: string, value: string) => {
     setLocalMeta((prev) => ({
       ...prev,
-      [section]: { ...prev[section], [field]: value },
+      admLabels: { ...prev.admLabels, [field]: value },
     }));
   };
 
-  // Dataset sources handlers
   const handleDatasetChange = (idx: number, field: "name" | "url", value: string) => {
     const updated = [...localMeta.datasetSources];
     updated[idx] = { ...updated[idx], [field]: value };
@@ -77,11 +67,10 @@ export default function EditMetadataModal({
     setLocalMeta((prev) => ({ ...prev, datasetSources: updated }));
   };
 
-  // Extra metadata handlers
   const handleExtraChange = (key: string, newKey: string, value: string) => {
     const updated = { ...localMeta.extra };
-    delete updated[key]; // remove old key
-    updated[newKey || key] = value; // insert new key or fallback to old
+    delete updated[key];
+    updated[newKey || key] = value;
     setLocalMeta((prev) => ({ ...prev, extra: updated }));
   };
 
@@ -107,18 +96,15 @@ export default function EditMetadataModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 overflow-y-auto max-h-[90vh]">
-        {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Edit Metadata</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* ISO and Country Name */}
+        {/* Core */}
+        <h3 className="font-medium mb-2">Core Metadata</h3>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="text-sm text-gray-600">Country ISO</label>
@@ -142,40 +128,24 @@ export default function EditMetadataModal({
           </div>
         </div>
 
-        {/* ADM0–ADM5 */}
+        {/* ADM Labels */}
         <h3 className="font-medium mb-2">Administrative Labels</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
           {(["adm0", "adm1", "adm2", "adm3", "adm4", "adm5"] as const).map((lvl) => (
-            <input
-              key={lvl}
-              type="text"
-              value={localMeta.admLabels[lvl]}
-              onChange={(e) => handleCoreChange("admLabels", lvl, e.target.value)}
-              placeholder={`${lvl.toUpperCase()} name`}
-              className="border rounded px-3 py-2 text-sm w-full"
-            />
+            <div key={lvl}>
+              <label className="text-xs text-gray-500">{lvl.toUpperCase()} Label</label>
+              <input
+                type="text"
+                value={localMeta.admLabels[lvl]}
+                onChange={(e) => handleAdmChange(lvl, e.target.value)}
+                className="border rounded px-3 py-2 text-sm w-full"
+              />
+            </div>
           ))}
         </div>
 
-        {/* Data Sources */}
-        <h3 className="font-medium mb-2">Data Sources</h3>
-        <input
-          type="text"
-          value={localMeta.sources.boundaries}
-          onChange={(e) => handleCoreChange("sources", "boundaries", e.target.value)}
-          placeholder="Boundaries source"
-          className="border rounded px-3 py-2 text-sm w-full mb-2"
-        />
-        <input
-          type="text"
-          value={localMeta.sources.population}
-          onChange={(e) => handleCoreChange("sources", "population", e.target.value)}
-          placeholder="Population source"
-          className="border rounded px-3 py-2 text-sm w-full mb-4"
-        />
-
-        {/* Dataset Sources */}
-        <h3 className="font-medium mb-2">Dataset Sources (links)</h3>
+        {/* Sources */}
+        <h3 className="font-medium mb-2">Sources</h3>
         <div className="space-y-2 mb-4">
           {localMeta.datasetSources.map((ds, idx) => (
             <div key={idx} className="flex gap-2 items-center">
@@ -206,7 +176,7 @@ export default function EditMetadataModal({
           onClick={handleAddDataset}
           className="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:underline"
         >
-          <Plus className="w-4 h-4" /> Add Dataset Source
+          <Plus className="w-4 h-4" /> Add Source
         </button>
 
         {/* Extra Metadata */}
@@ -226,9 +196,7 @@ export default function EditMetadataModal({
               <input
                 type="text"
                 value={val}
-                onChange={(e) =>
-                  handleExtraChange(key, key, e.target.value)
-                }
+                onChange={(e) => handleExtraChange(key, key, e.target.value)}
                 placeholder="Value"
                 className="border rounded px-3 py-2 text-sm w-2/3"
               />
@@ -248,7 +216,6 @@ export default function EditMetadataModal({
           <Plus className="w-4 h-4" /> Add Extra Field
         </button>
 
-        {/* Footer */}
         <div className="mt-6 flex justify-end gap-3">
           <button
             onClick={onClose}
