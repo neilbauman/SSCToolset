@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 
 type Source = { name: string; url?: string };
-type ExtraValue = string | { label: string; url?: string };
+type ExtraEntry = { label: string; value: string; url?: string };
 
 type Metadata = {
   iso_code: string;
@@ -17,7 +17,7 @@ type Metadata = {
     adm5: string;
   };
   datasetSources: Source[];
-  extra: Record<string, ExtraValue>;
+  extra: Record<string, ExtraEntry>;
 };
 
 export default function EditMetadataModal({
@@ -33,9 +33,8 @@ export default function EditMetadataModal({
 }) {
   const [form, setForm] = useState<Metadata>(metadata);
 
-  // For adding new extra metadata
-  const [newKey, setNewKey] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  const [newValue, setNewValue] = useState("");
   const [newUrl, setNewUrl] = useState("");
 
   useEffect(() => {
@@ -49,26 +48,12 @@ export default function EditMetadataModal({
 
   const handleUpdateExtra = (
     key: string,
-    field: "label" | "url" | "string",
+    field: keyof ExtraEntry,
     value: string
   ) => {
-    const current = form.extra[key];
-    let updated: ExtraValue;
-
-    if (field === "string") {
-      updated = value;
-    } else {
-      const base =
-        typeof current === "string"
-          ? { label: current }
-          : (current as { label: string; url?: string });
-      updated = { ...base, [field]: value || undefined };
-    }
-
-    setForm({
-      ...form,
-      extra: { ...form.extra, [key]: updated },
-    });
+    const current = form.extra[key] || { label: "", value: "" };
+    const updated: ExtraEntry = { ...current, [field]: value };
+    setForm({ ...form, extra: { ...form.extra, [key]: updated } });
   };
 
   const handleRemoveExtra = (key: string) => {
@@ -78,16 +63,17 @@ export default function EditMetadataModal({
   };
 
   const handleAddExtra = () => {
-    if (!newKey.trim()) return;
-    const newEntry: ExtraValue = newUrl
-      ? { label: newLabel || newKey, url: newUrl }
-      : newLabel || newKey;
+    if (!newLabel.trim()) return;
+    const newKey = newLabel.toLowerCase().replace(/\s+/g, "_");
     setForm({
       ...form,
-      extra: { ...form.extra, [newKey.trim()]: newEntry },
+      extra: {
+        ...form.extra,
+        [newKey]: { label: newLabel.trim(), value: newValue, url: newUrl || undefined },
+      },
     });
-    setNewKey("");
     setNewLabel("");
+    setNewValue("");
     setNewUrl("");
   };
 
@@ -95,7 +81,7 @@ export default function EditMetadataModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-3xl overflow-y-auto max-h-[90vh]">
         <h2 className="text-lg font-semibold mb-4">Edit Metadata</h2>
 
         {/* Country basics */}
@@ -192,65 +178,85 @@ export default function EditMetadataModal({
         {/* Extra metadata */}
         <div className="mt-4">
           <h3 className="text-sm font-semibold mb-2">Extra Metadata</h3>
-          {Object.entries(form.extra).map(([k, v]) => {
-            const isObj = typeof v === "object" && v !== null && !Array.isArray(v);
-            const label = isObj ? (v as any).label ?? "" : String(v);
-            const url = isObj ? (v as any).url ?? "" : "";
-            return (
-              <div key={k} className="grid grid-cols-3 gap-2 mb-2">
+          {Object.entries(form.extra).map(([k, v]) => (
+            <div key={k} className="grid grid-cols-4 gap-2 mb-2">
+              <div>
+                <label className="block text-xs text-gray-500">Key</label>
                 <input
                   type="text"
                   value={k}
                   readOnly
                   className="border px-3 py-1 rounded text-sm bg-gray-100"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500">Label</label>
                 <input
                   type="text"
-                  placeholder="Label/Value"
-                  value={label}
+                  value={v.label}
                   onChange={(e) => handleUpdateExtra(k, "label", e.target.value)}
                   className="border px-3 py-1 rounded text-sm"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500">Value</label>
+                <input
+                  type="text"
+                  value={v.value}
+                  onChange={(e) => handleUpdateExtra(k, "value", e.target.value)}
+                  className="border px-3 py-1 rounded text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500">URL (optional)</label>
                 <input
                   type="url"
-                  placeholder="URL (optional)"
-                  value={url}
+                  value={v.url || ""}
                   onChange={(e) => handleUpdateExtra(k, "url", e.target.value)}
                   className="border px-3 py-1 rounded text-sm"
                 />
-                <button
-                  onClick={() => handleRemoveExtra(k)}
-                  className="col-span-3 text-red-600 text-xs mt-1"
-                >
-                  Remove
-                </button>
               </div>
-            );
-          })}
+              <button
+                onClick={() => handleRemoveExtra(k)}
+                className="col-span-4 text-red-600 text-xs mt-1"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
 
           {/* Add new extra */}
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            <input
-              type="text"
-              placeholder="Key"
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-              className="border px-3 py-1 rounded text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Label/Value"
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              className="border px-3 py-1 rounded text-sm"
-            />
-            <input
-              type="url"
-              placeholder="URL (optional)"
-              value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-              className="border px-3 py-1 rounded text-sm"
-            />
+          <div className="grid grid-cols-4 gap-2 mt-3">
+            <div>
+              <label className="block text-xs text-gray-500">Label</label>
+              <input
+                type="text"
+                placeholder="Label"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                className="border px-3 py-1 rounded text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500">Value</label>
+              <input
+                type="text"
+                placeholder="Value"
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                className="border px-3 py-1 rounded text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500">URL (optional)</label>
+              <input
+                type="url"
+                placeholder="URL"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                className="border px-3 py-1 rounded text-sm"
+              />
+            </div>
           </div>
           <button
             onClick={handleAddExtra}
