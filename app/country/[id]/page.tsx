@@ -207,6 +207,12 @@ export default function CountryConfigLandingPage({ params }: any) {
             {country ? (
               <>
                 <p>
+                  <strong>ISO:</strong> {country.iso}
+                </p>
+                <p>
+                  <strong>Name:</strong> {country.name}
+                </p>
+                <p>
                   <strong>ADM1:</strong> {country.adm1_label}
                 </p>
                 <p>
@@ -219,7 +225,8 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <strong>Boundaries Source:</strong> {country.boundaries_source}
                 </p>
                 <p>
-                  <strong>Population Source:</strong> {country.population_source}
+                  <strong>Population Source:</strong>{" "}
+                  {country.population_source}
                 </p>
                 {country.extra_metadata &&
                   Object.entries(country.extra_metadata).map(([k, v]) => (
@@ -290,6 +297,8 @@ export default function CountryConfigLandingPage({ params }: any) {
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
+            iso: country.iso,
+            name: country.name,
             admLabels: {
               adm1: country.adm1_label,
               adm2: country.adm2_label,
@@ -303,8 +312,8 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
           onSave={async (updated) => {
             const { error } = await supabase.from("countries").upsert({
-              iso: id,
-              name: country.name,
+              iso: updated.iso,
+              name: updated.name,
               adm1_label: updated.admLabels.adm1,
               adm2_label: updated.admLabels.adm2,
               adm3_label: updated.admLabels.adm3,
@@ -316,10 +325,16 @@ export default function CountryConfigLandingPage({ params }: any) {
             if (error) {
               console.error("Error saving metadata:", error);
             } else {
-              setCountry((prev: any) => ({
-                ...prev,
-                ...updated,
-              }));
+              setCountry({
+                iso: updated.iso,
+                name: updated.name,
+                adm1_label: updated.admLabels.adm1,
+                adm2_label: updated.admLabels.adm2,
+                adm3_label: updated.admLabels.adm3,
+                boundaries_source: updated.sources.boundaries,
+                population_source: updated.sources.population,
+                extra_metadata: updated.extra,
+              });
             }
           }}
         />
