@@ -15,11 +15,11 @@ interface AdminUnit {
   source?: { name: string; url?: string };
 }
 
-interface AdminUnitsPageProps {
+export default function AdminUnitsPage({
+  params,
+}: {
   params: { id: string };
-}
-
-export default function AdminUnitsPage({ params }: AdminUnitsPageProps) {
+}) {
   const countryIso = params.id;
   const [country, setCountry] = useState<any>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
