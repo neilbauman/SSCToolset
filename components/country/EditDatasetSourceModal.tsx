@@ -7,15 +7,10 @@ export interface EditDatasetSourceModalProps {
   open: boolean;
   onClose: () => void;
   source?: { name: string; url?: string };
-  onSave: (newSource: { name: string; url?: string }) => Promise<void>;
+  onSave: (newSource: { name: string; url?: string }) => void | Promise<void>;
 }
 
-export default function EditDatasetSourceModal({
-  open,
-  onClose,
-  source,
-  onSave,
-}: EditDatasetSourceModalProps) {
+export default function EditDatasetSourceModal({ open, onClose, source, onSave }: EditDatasetSourceModalProps) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
 
@@ -23,73 +18,29 @@ export default function EditDatasetSourceModal({
     if (source) {
       setName(source.name || "");
       setUrl(source.url || "");
-    } else {
-      setName("");
-      setUrl("");
     }
   }, [source, open]);
 
   if (!open) return null;
 
-  const handleSave = async () => {
-    await onSave({ name, url: url.trim() === "" ? undefined : url });
-    onClose();
-  };
-
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
-        {/* Close button */}
-        <button
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-          onClick={onClose}
-        >
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-500 hover:text-gray-700">
           <X className="w-5 h-5" />
         </button>
-
-        {/* Title */}
         <h2 className="text-lg font-semibold mb-4">Edit Dataset Source</h2>
-
-        {/* Form */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Source Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm"
-              placeholder="e.g., National Statistics Office"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Source URL (optional)
-            </label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm"
-              placeholder="https://example.com/dataset"
-            />
-          </div>
+        <div className="mb-3">
+          <label className="block text-sm font-medium">Source Name</label>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="border rounded px-3 py-2 w-full text-sm" />
         </div>
-
-        {/* Actions */}
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 text-sm rounded bg-[color:var(--gsc-blue)] text-white hover:opacity-90"
-          >
-            Save
-          </button>
+        <div className="mb-3">
+          <label className="block text-sm font-medium">Source URL (optional)</label>
+          <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} className="border rounded px-3 py-2 w-full text-sm" />
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded">Cancel</button>
+          <button onClick={() => { onSave({ name, url: url || undefined }); onClose(); }} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
         </div>
       </div>
     </div>
