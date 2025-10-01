@@ -26,7 +26,7 @@ export default function UploadAdminUnitsModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // fetch available levels for this country
+  // fetch available levels
   useEffect(() => {
     if (!open) return;
     const fetchLevels = async () => {
@@ -39,16 +39,16 @@ export default function UploadAdminUnitsModal({
         .single();
       if (data) {
         const lvls = Object.entries(data)
-          .filter(([_, v]) => v) // only non-null
-          .map(([k, v]) => k.replace("_label", "").toUpperCase());
-        setLevels(lvls); // ["ADM0","ADM1","ADM2",…]
-        setSelectedLevels(lvls.filter((l) => l !== "ADM0")); // default skip ADM0
+          .filter(([_, v]) => v)
+          .map(([k]) => k.replace("_label", "").toUpperCase());
+        setLevels(lvls);
+        setSelectedLevels(lvls.filter((l) => l !== "ADM0"));
       }
     };
     fetchLevels();
   }, [open, countryIso]);
 
-  // handle file upload
+  // handle file parsing
   const handleFile = async (f: File) => {
     const ext = f.name.split(".").pop()?.toLowerCase();
     let rows: any[] = [];
@@ -66,7 +66,6 @@ export default function UploadAdminUnitsModal({
       return;
     }
 
-    // validate levels
     const allowed = new Set(selectedLevels);
     for (const r of rows) {
       if (!allowed.has(r.level)) {
@@ -89,10 +88,8 @@ export default function UploadAdminUnitsModal({
     if (!file || preview.length === 0) return;
     setLoading(true);
     try {
-      // delete existing
       await supabase.from("admin_units").delete().eq("country_iso", countryIso);
 
-      // insert new
       const { error } = await supabase.from("admin_units").insert(
         preview.map((r) => ({
           country_iso: countryIso,
@@ -131,8 +128,12 @@ export default function UploadAdminUnitsModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Upload Admin Units Dataset">
+    <Modal open={open} onClose={onClose}>
       <div className="space-y-4">
+        <h2 className="text-lg font-semibold mb-2">
+          Upload Admin Units Dataset
+        </h2>
+
         <p className="text-sm text-gray-600">
           Select which admin levels you want to upload:
         </p>
@@ -177,9 +178,7 @@ export default function UploadAdminUnitsModal({
               <thead className="bg-gray-100">
                 <tr>
                   {Object.keys(preview[0]).map((h) => (
-                    <th key={h} className="border px-1 py-0.5">
-                      {h}
-                    </th>
+                    <th key={h} className="border px-1 py-0.5">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -187,9 +186,7 @@ export default function UploadAdminUnitsModal({
                 {preview.map((row, i) => (
                   <tr key={i}>
                     {Object.values(row).map((v, j) => (
-                      <td key={j} className="border px-1 py-0.5">
-                        {String(v)}
-                      </td>
+                      <td key={j} className="border px-1 py-0.5">{String(v)}</td>
                     ))}
                   </tr>
                 ))}
