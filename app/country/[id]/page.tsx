@@ -340,29 +340,33 @@ export default function CountryConfigLandingPage({ params }: any) {
             iso: country.iso,
             name: country.name,
             admLabels: {
+              adm0: country.adm0_label,
               adm1: country.adm1_label,
               adm2: country.adm2_label,
               adm3: country.adm3_label,
+              adm4: country.adm4_label,
+              adm5: country.adm5_label,
             },
             sources: {
               boundaries: country.boundaries_source,
               population: country.population_source,
             },
+            datasetSources: country.dataset_sources || [],
             extra: country.extra_metadata || {},
           }}
           onSave={async (updated) => {
             const { error } = await supabase.from("countries").upsert({
               iso: updated.iso,
               name: updated.name,
-              adm0_label: "Country",
+              adm0_label: updated.admLabels.adm0,
               adm1_label: updated.admLabels.adm1,
               adm2_label: updated.admLabels.adm2,
               adm3_label: updated.admLabels.adm3,
-              adm4_label: country.adm4_label,
-              adm5_label: country.adm5_label,
+              adm4_label: updated.admLabels.adm4,
+              adm5_label: updated.admLabels.adm5,
               boundaries_source: updated.sources.boundaries,
               population_source: updated.sources.population,
-              dataset_sources: country.dataset_sources,
+              dataset_sources: updated.datasetSources,
               extra_metadata: updated.extra,
             });
 
@@ -372,6 +376,16 @@ export default function CountryConfigLandingPage({ params }: any) {
               setCountry({
                 ...country,
                 ...updated,
+                adm0_label: updated.admLabels.adm0,
+                adm1_label: updated.admLabels.adm1,
+                adm2_label: updated.admLabels.adm2,
+                adm3_label: updated.admLabels.adm3,
+                adm4_label: updated.admLabels.adm4,
+                adm5_label: updated.admLabels.adm5,
+                boundaries_source: updated.sources.boundaries,
+                population_source: updated.sources.population,
+                dataset_sources: updated.datasetSources,
+                extra_metadata: updated.extra,
               });
             }
           }}
