@@ -1,12 +1,12 @@
 "use client";
 
-import type { PageProps } from "next";
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
-import { Users, ShieldCheck, Pencil } from "lucide-react";
+import DatasetHealth from "@/components/country/DatasetHealth";
+import { Users, Pencil } from "lucide-react";
 
 type Country = {
   iso: string;
@@ -16,19 +16,19 @@ type Country = {
 type PopulationRow = {
   id: string;
   pcode: string;
+  name: string;
+  level: string;
   population: number;
   last_updated: string;
   source?: { name: string; url?: string };
 };
 
-export default function PopulationPage({ params }: PageProps<{ id: string }>) {
+export default function PopulationPage({ params }: { params: { id: string } }) {
   const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -36,11 +36,7 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("iso, name")
-        .eq("iso", countryIso)
-        .single();
+      const { data } = await supabase.from("countries").select("iso, name").eq("iso", countryIso).single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
@@ -48,10 +44,7 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
 
   useEffect(() => {
     const fetchPopulation = async () => {
-      const { data } = await supabase
-        .from("population_data")
-        .select("*")
-        .eq("country_iso", countryIso);
+      const { data } = await supabase.from("population_data").select("*").eq("country_iso", countryIso);
       if (data) setPopulation(data as PopulationRow[]);
     };
     fetchPopulation();
@@ -59,30 +52,24 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
 
   useEffect(() => {
     const fetchSource = async () => {
-      const { data } = await supabase
-        .from("population_data")
-        .select("source")
-        .eq("country_iso", countryIso)
-        .limit(1)
-        .maybeSingle();
+      const { data } = await supabase.from("population_data").select("source").eq("country_iso", countryIso).limit(1).maybeSingle();
       if (data?.source) setSource(data.source as any);
     };
     fetchSource();
   }, [countryIso]);
 
   // Health checks
-  const totalPopulation = population.reduce(
-    (acc, row) => acc + (row.population || 0),
-    0
-  );
-  const allLinkedToPCodes =
-    population.length > 0 && population.every((p) => !!p.pcode);
+  const missingPop = population.filter((p) => !p.population || p.population <= 0).length;
+  const hasPopulation = population.length > 0 && missingPop === 0;
+  const hasGISLink = false; // placeholder until GIS alignment
+  const allHavePcodes = population.length > 0 && population.every((p) => p.pcode);
+  const missingPcodes = population.filter((p) => !p.pcode).length;
 
   // Pagination + search
   const filtered = population.filter(
-    (p) =>
-      p.pcode.toLowerCase().includes(search.toLowerCase()) ||
-      (p.population ?? "").toString().includes(search)
+    (row) =>
+      row.name.toLowerCase().includes(search.toLowerCase()) ||
+      row.pcode.toLowerCase().includes(search.toLowerCase())
   );
   const totalPages = Math.ceil((filtered.length || 1) / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -105,7 +92,6 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary + Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
@@ -120,20 +106,15 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
             <strong>Total Rows:</strong> {population.length}
           </p>
           <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Population:</strong>{" "}
-            {totalPopulation.toLocaleString()}
+            <strong>Last Updated:</strong>{" "}
+            {population.length > 0 ? population[0].last_updated : "N/A"}
           </p>
           <div className="flex items-center justify-between mt-2">
             <p className="text-sm">
               <strong>Dataset Source:</strong>{" "}
               {source ? (
                 source.url ? (
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
+                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     {source.name}
                   </a>
                 ) : (
@@ -153,47 +134,21 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
         </div>
 
         {/* Data Health */}
-        <div className="border rounded-lg p-4 shadow-sm relative">
-          <div className="absolute top-2 right-2">
-            {allLinkedToPCodes ? (
-              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
-                uploaded
-              </span>
-            ) : population.length > 0 ? (
-              <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
-                partial
-              </span>
-            ) : (
-              <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
-                missing
-              </span>
-            )}
-          </div>
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
-            <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
-          </h2>
-          <ul className="text-sm list-disc pl-6">
-            <li
-              className={allLinkedToPCodes ? "text-green-700" : "text-red-700"}
-            >
-              {allLinkedToPCodes
-                ? "All rows linked to valid PCodes"
-                : "Some rows missing PCodes"}
-            </li>
-            <li className="text-yellow-700">
-              Projection to current year not applied yet
-            </li>
-            <li className="text-yellow-700">Household linkage not defined</li>
-          </ul>
-        </div>
+        <DatasetHealth
+          allHavePcodes={allHavePcodes}
+          missingPcodes={missingPcodes}
+          hasGISLink={hasGISLink}
+          hasPopulation={hasPopulation}
+          totalUnits={population.length}
+        />
       </div>
 
-      {/* Data Table */}
+      {/* Table */}
       <div className="border rounded-lg p-4 shadow-sm">
         <div className="flex justify-between items-center mb-3">
           <input
             type="text"
-            placeholder="Search by PCode or Population..."
+            placeholder="Search by name or PCode..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -208,7 +163,9 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
         <table className="w-full text-sm border">
           <thead className="bg-gray-100">
             <tr>
+              <th className="border px-2 py-1 text-left">Name</th>
               <th className="border px-2 py-1 text-left">PCode</th>
+              <th className="border px-2 py-1 text-left">Level</th>
               <th className="border px-2 py-1 text-left">Population</th>
               <th className="border px-2 py-1 text-left">Last Updated</th>
             </tr>
@@ -216,16 +173,16 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
           <tbody>
             {paginated.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{row.name}</td>
                 <td className="border px-2 py-1">{row.pcode}</td>
-                <td className="border px-2 py-1">
-                  {row.population.toLocaleString()}
-                </td>
+                <td className="border px-2 py-1">{row.level}</td>
+                <td className="border px-2 py-1">{row.population}</td>
                 <td className="border px-2 py-1">{row.last_updated}</td>
               </tr>
             ))}
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-center text-gray-500 py-6">
+                <td colSpan={5} className="text-center text-gray-500 py-6">
                   No results
                 </td>
               </tr>
@@ -253,16 +210,12 @@ export default function PopulationPage({ params }: PageProps<{ id: string }>) {
         </div>
       </div>
 
-      {/* Edit Source Modal */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase
-            .from("population_data")
-            .update({ source: newSource })
-            .eq("country_iso", countryIso);
+          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
