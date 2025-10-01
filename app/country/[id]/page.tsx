@@ -73,15 +73,12 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("countries")
         .select("*")
         .eq("iso", id)
         .single();
-
-      if (!error && data) {
-        setCountry(data);
-      }
+      if (data) setCountry(data);
     };
     fetchCountry();
   }, [id]);
@@ -92,20 +89,16 @@ export default function CountryConfigLandingPage({ params }: any) {
         .from("admin_units")
         .select("level, pcode")
         .eq("country_iso", id);
-
       if (!data || data.length === 0) {
         setAdminStatus("missing");
         return;
       }
-
       const counts: Record<string, number> = {};
       data.forEach((row) => {
         counts[row.level] = (counts[row.level] || 0) + 1;
       });
       setAdminStats(counts);
-
-      const levels = Object.keys(counts);
-      if (levels.length >= 3) setAdminStatus("uploaded");
+      if (Object.keys(counts).length >= 3) setAdminStatus("uploaded");
       else setAdminStatus("partial");
     };
     fetchAdminStats();
@@ -184,7 +177,9 @@ export default function CountryConfigLandingPage({ params }: any) {
             {country ? (
               <>
                 {/* Core */}
-                <h3 className="text-md font-medium mb-2">Core Metadata</h3>
+                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
+                  Core Metadata
+                </h3>
                 <p><strong>ISO:</strong> {renderMetaValue(country.iso)}</p>
                 <p><strong>Name:</strong> {renderMetaValue(country.name)}</p>
                 <p><strong>ADM0 Label:</strong> {renderMetaValue(country.adm0_label)}</p>
@@ -195,7 +190,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <p><strong>ADM5 Label:</strong> {renderMetaValue(country.adm5_label)}</p>
 
                 <p className="mt-2 font-medium">Sources:</p>
-                {country.dataset_sources && country.dataset_sources.length > 0 ? (
+                {country.dataset_sources?.length > 0 ? (
                   <ul className="list-disc pl-6 text-sm text-blue-700">
                     {country.dataset_sources.map((src: any, idx: number) => (
                       <li key={idx}>
@@ -215,7 +210,9 @@ export default function CountryConfigLandingPage({ params }: any) {
                 )}
 
                 {/* Extra */}
-                <h3 className="text-md font-medium mt-4 mb-2">Extra Metadata</h3>
+                <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
+                  Extra Metadata
+                </h3>
                 {country.extra_metadata &&
                   Object.entries(country.extra_metadata).map(([k, v]) => (
                     <p key={k}>
@@ -232,6 +229,95 @@ export default function CountryConfigLandingPage({ params }: any) {
           </SoftButton>
         </div>
       </div>
+
+      {/* Dataset cards below */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        {datasets.map((d) => (
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {d.icon}
+                <h3 className="text-lg font-semibold">{d.title}</h3>
+              </div>
+              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
+                {d.status}
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">{d.description}</p>
+            {d.stats && <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>}
+            <div className="flex gap-2">
+              <SoftButton color="gray">Download Template</SoftButton>
+              <SoftButton color="green">Upload Data</SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
+            </div>
+          </div>
+        ))}
+
+        {/* Other datasets */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-blue-600" />
+              <h3 className="text-lg font-semibold">Other Datasets</h3>
+            </div>
+            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">
+              Flexible
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Additional country-specific datasets that extend the baseline.
+          </p>
+          <p className="italic text-gray-500">🚧 To be implemented.</p>
+        </div>
+      </div>
+
+      {/* Edit Metadata Modal */}
+      {country && (
+        <EditMetadataModal
+          open={openMeta}
+          onClose={() => setOpenMeta(false)}
+          metadata={{
+            iso: country.iso,
+            name: country.name,
+            admLabels: {
+              adm0: country.adm0_label,
+              adm1: country.adm1_label,
+              adm2: country.adm2_label,
+              adm3: country.adm3_label,
+              adm4: country.adm4_label,
+              adm5: country.adm5_label,
+            },
+            datasetSources: country.dataset_sources || [],
+            extra: country.extra_metadata || {},
+          }}
+          onSave={async (updated) => {
+            await supabase.from("countries").upsert({
+              iso: updated.iso,
+              name: updated.name,
+              adm0_label: updated.admLabels.adm0,
+              adm1_label: updated.admLabels.adm1,
+              adm2_label: updated.admLabels.adm2,
+              adm3_label: updated.admLabels.adm3,
+              adm4_label: updated.admLabels.adm4,
+              adm5_label: updated.admLabels.adm5,
+              dataset_sources: updated.datasetSources,
+              extra_metadata: updated.extra ?? {},
+            });
+            setCountry({
+              ...country,
+              ...updated,
+              adm0_label: updated.admLabels.adm0,
+              adm1_label: updated.admLabels.adm1,
+              adm2_label: updated.admLabels.adm2,
+              adm3_label: updated.admLabels.adm3,
+              adm4_label: updated.admLabels.adm4,
+              adm5_label: updated.admLabels.adm5,
+              dataset_sources: updated.datasetSources,
+              extra_metadata: updated.extra ?? {},
+            });
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
