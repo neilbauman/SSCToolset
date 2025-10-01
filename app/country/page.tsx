@@ -1,223 +1,129 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import SidebarLayout from "@/components/layout/SidebarLayout";
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import AddCountryModal from "@/components/country/AddCountryModal";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Users, Globe, Calendar, Pencil, Trash2 } from "lucide-react";
 
-function SoftButton({
-  children,
-  color = "gray",
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode;
-  color?: "gray" | "green" | "blue" | "red";
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  const base =
-    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const colors: Record<string, string> = {
-    gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
-    green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
-    blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
-    red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`${base} ${colors[color]}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-type Country = {
+type CountryInput = {
   iso_code: string;
   name: string;
-  population?: number | null;
-  updated_at?: string | null;
 };
 
-export default function CountryPage() {
-  const [countries, setCountries] = useState<Country[]>([]);
-  const [editMode, setEditMode] = useState(false);
-  const [openAdd, setOpenAdd] = useState(false);
+export default function AddCountryModal({
+  open,
+  onClose,
+  onSave,
+  mode = "add",
+  initialCountry,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: () => void; // refresh in parent
+  mode?: "add" | "edit";
+  initialCountry?: CountryInput | null;
+}) {
+  const [isoCode, setIsoCode] = useState("");
+  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const fetchCountries = async () => {
-    const { data } = await supabase
-      .from("countries")
-      .select("iso_code, name, population, updated_at")
-      .order("name", { ascending: true });
-    if (data) setCountries(data as Country[]);
-  };
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCountries();
-  }, []);
+    if (open && mode === "edit" && initialCountry) {
+      setIsoCode(initialCountry.iso_code);
+      setName(initialCountry.name);
+    } else if (open && mode === "add") {
+      setIsoCode("");
+      setName("");
+    }
+  }, [open, mode, initialCountry]);
 
-  const handleDelete = async (iso_code: string) => {
-    const confirm = window.confirm(
-      `Are you sure you want to delete ${iso_code}? This cannot be undone.`
-    );
-    if (!confirm) return;
+  if (!open) return null;
 
+  const handleSave = async () => {
+    if (!isoCode || !name) {
+      setError("ISO code and name are required");
+      return;
+    }
     setLoading(true);
+    setError(null);
+
     try {
-      await supabase.from("countries").delete().eq("iso_code", iso_code);
-      await fetchCountries();
+      if (mode === "add") {
+        const { error: insertError } = await supabase.from("countries").insert([
+          {
+            iso_code: isoCode.trim().toUpperCase(),
+            name: name.trim(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+        if (insertError) throw insertError;
+      } else {
+        const { error: updateError } = await supabase
+          .from("countries")
+          .update({
+            iso_code: isoCode.trim().toUpperCase(),
+            name: name.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("iso_code", initialCountry?.iso_code);
+        if (updateError) throw updateError;
+      }
+
+      onSave();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Unexpected error");
     } finally {
       setLoading(false);
     }
   };
 
-  const totalPopulation = useMemo(() => {
-    return countries.reduce((sum, c) => sum + (c.population ?? 0), 0);
-  }, [countries]);
-
-  const lastUpdated = useMemo(() => {
-    if (countries.length === 0) return "N/A";
-    const dates = countries
-      .map((c) => c.updated_at)
-      .filter(Boolean)
-      .map((d) => new Date(d as string));
-    if (dates.length === 0) return "N/A";
-    const latest = new Date(Math.max(...dates.map((d) => d.getTime())));
-    return latest.toISOString().split("T")[0];
-  }, [countries]);
-
-  const headerProps = {
-    title: "Country Configuration",
-    group: "country-config" as const,
-    description: "Manage baseline country data for SSC analysis.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration" },
-        ]}
-      />
-    ),
-  };
-
   return (
-    <SidebarLayout headerProps={headerProps}>
-      {/* Top cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="border rounded-lg p-4 shadow-sm flex items-center gap-3">
-          <Globe className="w-6 h-6 text-blue-600" />
-          <div>
-            <p className="text-sm text-gray-600">Countries</p>
-            <p className="text-lg font-semibold">{countries.length}</p>
-          </div>
-        </div>
-        <div className="border rounded-lg p-4 shadow-sm flex items-center gap-3">
-          <Users className="w-6 h-6 text-green-600" />
-          <div>
-            <p className="text-sm text-gray-600">Total Population</p>
-            <p className="text-lg font-semibold">
-              {totalPopulation > 0 ? totalPopulation.toLocaleString() : "—"}
-            </p>
-          </div>
-        </div>
-        <div className="border rounded-lg p-4 shadow-sm flex items-center gap-3">
-          <Calendar className="w-6 h-6 text-purple-600" />
-          <div>
-            <p className="text-sm text-gray-600">Last Updated</p>
-            <p className="text-lg font-semibold">{lastUpdated}</p>
-          </div>
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold mb-4">
+          {mode === "add" ? "Add Country" : "Edit Country"}
+        </h2>
+
+        <label className="block text-sm font-medium mb-1">ISO Code</label>
+        <input
+          value={isoCode}
+          onChange={(e) => setIsoCode(e.target.value)}
+          className="w-full border rounded px-3 py-2 text-sm mb-3"
+          placeholder="e.g. PHL"
+          disabled={mode === "edit"} // lock ISO when editing
+        />
+
+        <label className="block text-sm font-medium mb-1">Name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full border rounded px-3 py-2 text-sm mb-3"
+          placeholder="e.g. Philippines"
+        />
+
+        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {loading
+              ? "Saving..."
+              : mode === "add"
+              ? "Add Country"
+              : "Save Changes"}
+          </button>
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="flex justify-between items-center mb-4">
-        <SoftButton color="green" onClick={() => setOpenAdd(true)}>
-          + Add Country
-        </SoftButton>
-        <SoftButton color="gray" onClick={() => setEditMode(!editMode)}>
-          {editMode ? "Exit Edit Mode" : "Edit Mode"}
-        </SoftButton>
-      </div>
-
-      {/* Country table */}
-      <div className="overflow-x-auto border rounded-lg shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100 text-left text-sm font-semibold text-gray-700">
-            <tr>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">ISO Code</th>
-              <th className="px-4 py-2">Population</th>
-              <th className="px-4 py-2">Last Updated</th>
-              {editMode && <th className="px-4 py-2">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {countries.map((c) => (
-              <tr key={c.iso_code} className="border-t hover:bg-gray-50">
-                <td className="px-4 py-2">
-                  <Link
-                    href={`/country/${c.iso_code}`}
-                    className="text-blue-700 hover:underline"
-                  >
-                    {c.name}
-                  </Link>
-                </td>
-                <td className="px-4 py-2">{c.iso_code}</td>
-                <td className="px-4 py-2">
-                  {c.population ? (
-                    c.population.toLocaleString()
-                  ) : (
-                    <span className="italic text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-2">
-                  {c.updated_at
-                    ? new Date(c.updated_at).toISOString().split("T")[0]
-                    : "—"}
-                </td>
-                {editMode && (
-                  <td className="px-4 py-2 flex gap-2">
-                    <SoftButton color="gray">
-                      <Pencil className="w-4 h-4" />
-                    </SoftButton>
-                    <SoftButton
-                      color="red"
-                      onClick={() => handleDelete(c.iso_code)}
-                      disabled={loading}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </SoftButton>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {countries.length === 0 && (
-              <tr>
-                <td
-                  colSpan={editMode ? 5 : 4}
-                  className="text-center py-6 text-gray-500 italic"
-                >
-                  No countries configured yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add Country Modal */}
-      <AddCountryModal
-        open={openAdd}
-        onClose={() => setOpenAdd(false)}
-        onSave={() => fetchCountries()}
-      />
-    </SidebarLayout>
+    </div>
   );
 }
