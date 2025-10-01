@@ -9,7 +9,7 @@ import AdminUnitsTree from "@/components/country/AdminUnitsTree";
 import { Database, ShieldCheck, Pencil } from "lucide-react";
 
 type Country = {
-  iso: string;
+  iso_code: string;
   name: string;
   adm0_label: string;
   adm1_label: string;
@@ -28,8 +28,8 @@ type AdminUnit = {
   source?: { name: string; url?: string };
 };
 
-export default function AdminUnitsPage({ params }: any) {
-  const countryIso = params?.id as string;
+export default function AdminUnitsPage({ params }: { params: { id: string } }) {
+  const countryIso = params.id;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
@@ -41,18 +41,20 @@ export default function AdminUnitsPage({ params }: any) {
   const pageSize = 25;
   const [view, setView] = useState<"table" | "tree">("table");
 
+  // Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso", countryIso)
+        .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
   }, [countryIso]);
 
+  // Fetch admin units
   useEffect(() => {
     const fetchAdminUnits = async () => {
       const { data } = await supabase
@@ -71,6 +73,7 @@ export default function AdminUnitsPage({ params }: any) {
     fetchAdminUnits();
   }, [countryIso]);
 
+  // Fetch dataset source
   useEffect(() => {
     const fetchSource = async () => {
       const { data } = await supabase
@@ -107,7 +110,7 @@ export default function AdminUnitsPage({ params }: any) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
           { label: "Admin Units" },
         ]}
       />
