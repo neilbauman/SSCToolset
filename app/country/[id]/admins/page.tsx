@@ -33,7 +33,7 @@ export default function AdminUnitsPage({ params }: any) {
   const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [source, setSource] = useState<any>(null);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -78,7 +78,7 @@ export default function AdminUnitsPage({ params }: any) {
         .eq("country_iso", countryIso)
         .limit(1)
         .single();
-      if (data) setSource(data.source);
+      if (data?.source) setSource(data.source);
     };
     fetchSource();
   }, [countryIso]);
@@ -86,6 +86,7 @@ export default function AdminUnitsPage({ params }: any) {
   // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
+  const hasGISLink = false; // placeholder until GIS integration is added
 
   // Pagination + search
   const filtered = adminUnits.filter(
@@ -117,7 +118,12 @@ export default function AdminUnitsPage({ params }: any) {
       {/* Summary + Health Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        <div className="border rounded-lg p-4 shadow-sm relative">
+          <div className="absolute top-2 right-2">
+            <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">
+              Core
+            </span>
+          </div>
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Database className="w-5 h-5 text-blue-600" /> Admin Units Summary
           </h2>
@@ -164,12 +170,17 @@ export default function AdminUnitsPage({ params }: any) {
         </div>
 
         {/* Data Health */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        <div className="border rounded-lg p-4 shadow-sm relative">
+          <div className="absolute top-2 right-2">
+            <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">
+              Core
+            </span>
+          </div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
             </h2>
-            {allHavePcodes ? (
+            {allHavePcodes && hasGISLink ? (
               <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
                 Healthy
               </span>
@@ -190,6 +201,11 @@ export default function AdminUnitsPage({ params }: any) {
                 : `${missingPcodes} units missing PCodes`}
             </li>
             <li className="text-yellow-700">Population linkage not applied yet</li>
+            <li className={hasGISLink ? "text-green-700" : "text-red-700"}>
+              {hasGISLink
+                ? "Aligned with GIS boundaries"
+                : "GIS linkage not validated yet"}
+            </li>
           </ul>
         </div>
       </div>
