@@ -25,6 +25,7 @@ type AdminUnit = {
   pcode: string;
   level: string;
   parent_pcode?: string | null;
+  source?: { name: string; url?: string };
 };
 
 export default function AdminUnitsPage({ params }: any) {
@@ -61,7 +62,7 @@ export default function AdminUnitsPage({ params }: any) {
       if (data) {
         setAdminUnits(data as AdminUnit[]);
         const grouped: Record<string, number> = {};
-        data.forEach((u: AdminUnit) => {
+        (data as AdminUnit[]).forEach((u) => {
           grouped[u.level] = (grouped[u.level] || 0) + 1;
         });
         setCounts(grouped);
@@ -77,8 +78,8 @@ export default function AdminUnitsPage({ params }: any) {
         .select("source")
         .eq("country_iso", countryIso)
         .limit(1)
-        .single();
-      if (data?.source) setSource(data.source);
+        .maybeSingle();
+      if (data?.source) setSource(data.source as any);
     };
     fetchSource();
   }, [countryIso]);
@@ -86,7 +87,7 @@ export default function AdminUnitsPage({ params }: any) {
   // Health checks
   const missingPcodes = adminUnits.filter((u) => !u.pcode).length;
   const allHavePcodes = adminUnits.length > 0 && missingPcodes === 0;
-  const hasGISLink = false; // placeholder until GIS integration is added
+  const hasGISLink = false; // placeholder until GIS integration
 
   // Pagination + search
   const filtered = adminUnits.filter(
@@ -94,7 +95,7 @@ export default function AdminUnitsPage({ params }: any) {
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.pcode.toLowerCase().includes(search.toLowerCase())
   );
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const totalPages = Math.ceil((filtered.length || 1) / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const headerProps = {
@@ -118,24 +119,33 @@ export default function AdminUnitsPage({ params }: any) {
       {/* Summary + Health Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
-        <div className="border rounded-lg p-4 shadow-sm relative">
-          <div className="absolute top-2 right-2">
-            <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+            <Database className="w-5 h-5 text-blue-600" />
+            Admin Units Summary
+            <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
               Core
             </span>
-          </div>
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-            <Database className="w-5 h-5 text-blue-600" /> Admin Units Summary
           </h2>
           <p className="text-sm text-gray-700 mb-2">
             <strong>Total Units:</strong> {adminUnits.length}
           </p>
           <ul className="text-sm text-gray-700 mb-2">
             {Object.entries(counts).map(([lvl, cnt]) => {
-              const label = (country as any)?.[`${lvl.toLowerCase()}_label`] || lvl;
+              const label =
+                (lvl === "ADM0" && country?.adm0_label) ||
+                (lvl === "ADM1" && country?.adm1_label) ||
+                (lvl === "ADM2" && country?.adm2_label) ||
+                (lvl === "ADM3" && country?.adm3_label) ||
+                (lvl === "ADM4" && country?.adm4_label) ||
+                (lvl === "ADM5" && country?.adm5_label) ||
+                lvl;
               return (
                 <li key={lvl}>
-                  <strong>{lvl} ({label}):</strong> {cnt}
+                  <strong>
+                    {lvl} ({label}):
+                  </strong>{" "}
+                  {cnt}
                 </li>
               );
             })}
@@ -172,28 +182,23 @@ export default function AdminUnitsPage({ params }: any) {
         {/* Data Health */}
         <div className="border rounded-lg p-4 shadow-sm relative">
           <div className="absolute top-2 right-2">
-            <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">
-              Core
-            </span>
-          </div>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
-            </h2>
             {allHavePcodes && hasGISLink ? (
               <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
-                Healthy
+                uploaded
               </span>
             ) : adminUnits.length > 0 ? (
               <span className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-700">
-                Partial
+                partial
               </span>
             ) : (
               <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">
-                Needs Attention
+                missing
               </span>
             )}
           </div>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-5 h-5 text-blue-600" /> Data Health
+          </h2>
           <ul className="text-sm list-disc pl-6">
             <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
               {allHavePcodes
@@ -202,9 +207,7 @@ export default function AdminUnitsPage({ params }: any) {
             </li>
             <li className="text-yellow-700">Population linkage not applied yet</li>
             <li className={hasGISLink ? "text-green-700" : "text-red-700"}>
-              {hasGISLink
-                ? "Aligned with GIS boundaries"
-                : "GIS linkage not validated yet"}
+              {hasGISLink ? "Aligned with GIS boundaries" : "GIS linkage not validated yet"}
             </li>
           </ul>
         </div>
@@ -266,6 +269,13 @@ export default function AdminUnitsPage({ params }: any) {
                   <td className="border px-2 py-1">{u.parent_pcode ?? "-"}</td>
                 </tr>
               ))}
+              {paginated.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="text-center text-gray-500 py-6">
+                    No results
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
           <div className="flex justify-between items-center mt-3 text-sm">
@@ -277,11 +287,11 @@ export default function AdminUnitsPage({ params }: any) {
               Previous
             </button>
             <span>
-              Page {page} of {totalPages}
+              Page {page} of {totalPages || 1}
             </span>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
+              disabled={page >= (totalPages || 1)}
               className="px-2 py-1 border rounded disabled:opacity-50"
             >
               Next
@@ -296,12 +306,9 @@ export default function AdminUnitsPage({ params }: any) {
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
-        source={source}
+        source={source || undefined}
         onSave={async (newSource) => {
-          await supabase
-            .from("admin_units")
-            .update({ source: newSource })
-            .eq("country_iso", countryIso);
+          await supabase.from("admin_units").update({ source: newSource }).eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
