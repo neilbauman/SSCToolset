@@ -1,24 +1,84 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
-import { Map } from "lucide-react";
+import { Map, Pencil } from "lucide-react";
 
-export default function GISPage(props: any) {
-  const countryIso = props.params?.id as string;
+type Country = {
+  iso_code: string;
+  name: string;
+};
+
+type GISRow = {
+  id: string;
+  country_iso: string;
+  level: string;
+  file_type: string;
+  last_updated?: string | null;
+  source?: { name: string; url?: string };
+};
+
+export default function GISPage({ params }: { params: { id: string } }) {
+  const countryIso = params.id;
+
+  const [country, setCountry] = useState<Country | null>(null);
+  const [layers, setLayers] = useState<GISRow[]>([]);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
+  const [openSource, setOpenSource] = useState(false);
+
+  useEffect(() => {
+    const fetchCountry = async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("iso_code, name")
+        .eq("iso_code", countryIso)
+        .single();
+      if (data) setCountry(data as Country);
+    };
+    fetchCountry();
+  }, [countryIso]);
+
+  useEffect(() => {
+    const fetchGIS = async () => {
+      const { data } = await supabase
+        .from("gis_data")
+        .select("*")
+        .eq("country_iso", countryIso);
+      if (data) setLayers(data as GISRow[]);
+    };
+    fetchGIS();
+  }, [countryIso]);
+
+  useEffect(() => {
+    const fetchSource = async () => {
+      const { data } = await supabase
+        .from("gis_data")
+        .select("source")
+        .eq("country_iso", countryIso)
+        .limit(1)
+        .maybeSingle();
+      if (data?.source) setSource(data.source as any);
+    };
+    fetchSource();
+  }, [countryIso]);
 
   const headerProps = {
-    title: `${countryIso} – GIS / Mapping`,
+    title: `${country?.name ?? countryIso} – GIS Data`,
     group: "country-config" as const,
-    description: "Manage and validate GIS datasets for this country.",
+    description: "Manage and inspect uploaded GIS boundary data.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "GIS / Mapping" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "GIS Data" },
         ]}
       />
     ),
@@ -27,19 +87,106 @@ export default function GISPage(props: any) {
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-            <Map className="w-5 h-5 text-blue-600" /> GIS Summary
+            <Map className="w-5 h-5 text-blue-600" />
+            GIS Summary
+            <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
+              Core
+            </span>
           </h2>
-          <p className="text-sm text-gray-600">🚧 Placeholder: GIS dataset summary will appear here.</p>
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Total Layers:</strong> {layers.length}
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-sm">
+              <strong>Dataset Source:</strong>{" "}
+              {source ? (
+                source.url ? (
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    {source.name}
+                  </a>
+                ) : (
+                  source.name
+                )
+              ) : (
+                <span className="italic text-gray-500">Empty</span>
+              )}
+            </p>
+            <button
+              onClick={() => setOpenSource(true)}
+              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+            >
+              <Pencil className="w-4 h-4 mr-1" /> Edit
+            </button>
+          </div>
         </div>
 
-        <DatasetHealth allHavePcodes={false} missingPcodes={0} hasGISLink={false} hasPopulation={false} totalUnits={0} />
+        {/* Data Health */}
+        <DatasetHealth
+          checks={[
+            {
+              label: "GIS layers uploaded",
+              status: layers.length > 0 ? "green" : "red",
+            },
+            {
+              label: "Metadata includes file type",
+              status: layers.every((l) => l.file_type) ? "green" : "yellow",
+            },
+          ]}
+        />
       </div>
 
-      <div className="border rounded-lg p-4 shadow-sm">
-        <p className="text-sm text-gray-600">🚧 Data view placeholder (map preview, shape validation).</p>
+      {/* Table */}
+      <div className="border rounded-lg p-4 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm border">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border px-2 py-1 text-left">Level</th>
+              <th className="border px-2 py-1 text-left">File Type</th>
+              <th className="border px-2 py-1 text-left">Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {layers.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{row.level}</td>
+                <td className="border px-2 py-1">{row.file_type}</td>
+                <td className="border px-2 py-1">
+                  {row.last_updated ?? "-"}
+                </td>
+              </tr>
+            ))}
+            {layers.length === 0 && (
+              <tr>
+                <td colSpan={3} className="text-center text-gray-500 py-6">
+                  No GIS data uploaded
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
+
+      {/* Edit Source Modal */}
+      <EditDatasetSourceModal
+        open={openSource}
+        onClose={() => setOpenSource(false)}
+        source={source || undefined}
+        onSave={async (newSource) => {
+          await supabase
+            .from("gis_data")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
+          setSource(newSource);
+        }}
+      />
     </SidebarLayout>
   );
 }
