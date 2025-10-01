@@ -49,22 +49,35 @@ function SoftButton({
 export default function CountryConfigLandingPage({ params }: any) {
   const id = params?.id ?? "unknown";
 
-  const country = {
-    iso: id,
-    name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
-    admLabels: { adm1: "Region", adm2: "Province", adm3: "Municipality" },
-    sources: {
-      boundaries: "HDX COD 2024",
-      population: "Philippines 2020 Census",
-    },
-  };
+  const [country, setCountry] = useState<any>(null);
+  const [adminStats, setAdminStats] = useState<Record<string, number>>({});
+  const [adminStatus, setAdminStatus] = useState<
+    "uploaded" | "partial" | "missing"
+  >("missing");
+  const [openMeta, setOpenMeta] = useState(false);
 
   const center: LatLngExpression = [12.8797, 121.774];
 
-  const [adminStats, setAdminStats] = useState<Record<string, number>>({});
-  const [adminStatus, setAdminStatus] = useState<"uploaded" | "partial" | "missing">("missing");
-  const [openMeta, setOpenMeta] = useState(false);
+  // Load country metadata
+  useEffect(() => {
+    const fetchCountry = async () => {
+      const { data, error } = await supabase
+        .from("countries")
+        .select("*")
+        .eq("iso", id)
+        .single();
 
+      if (!error && data) {
+        setCountry(data);
+      } else {
+        console.error("Failed to load country metadata:", error);
+      }
+    };
+
+    fetchCountry();
+  }, [id]);
+
+  // Load admin stats
   useEffect(() => {
     const fetchAdminStats = async () => {
       const { data, error } = await supabase
@@ -83,16 +96,14 @@ export default function CountryConfigLandingPage({ params }: any) {
         return;
       }
 
-      // Count by level
       const counts: Record<string, number> = {};
       data.forEach((row) => {
         counts[row.level] = (counts[row.level] || 0) + 1;
       });
       setAdminStats(counts);
 
-      // Determine status
       const levels = Object.keys(counts);
-      if (levels.length === 4) setAdminStatus("uploaded");
+      if (levels.length >= 3) setAdminStatus("uploaded");
       else setAdminStatus("partial");
     };
 
@@ -132,7 +143,7 @@ export default function CountryConfigLandingPage({ params }: any) {
   ];
 
   const headerProps = {
-    title: `${country.name} – Country Configuration`,
+    title: `${country?.name ?? id} – Country Configuration`,
     group: "country-config" as const,
     description: "Manage baseline datasets and metadata for this country.",
     breadcrumbs: (
@@ -140,7 +151,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country.name },
+          { label: country?.name ?? id },
         ]}
       />
     ),
@@ -193,26 +204,35 @@ export default function CountryConfigLandingPage({ params }: any) {
         <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
           <div>
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-            <p>
-              <strong>ADM1:</strong> {country.admLabels.adm1}
-            </p>
-            <p>
-              <strong>ADM2:</strong> {country.admLabels.adm2}
-            </p>
-            <p>
-              <strong>ADM3:</strong> {country.admLabels.adm3}
-            </p>
-            <p>
-              <strong>Boundaries Source:</strong> {country.sources.boundaries}
-            </p>
-            <p>
-              <strong>Population Source:</strong> {country.sources.population}
-            </p>
+            {country ? (
+              <>
+                <p>
+                  <strong>ADM1:</strong> {country.adm1_label}
+                </p>
+                <p>
+                  <strong>ADM2:</strong> {country.adm2_label}
+                </p>
+                <p>
+                  <strong>ADM3:</strong> {country.adm3_label}
+                </p>
+                <p>
+                  <strong>Boundaries Source:</strong> {country.boundaries_source}
+                </p>
+                <p>
+                  <strong>Population Source:</strong> {country.population_source}
+                </p>
+                {country.extra_metadata &&
+                  Object.entries(country.extra_metadata).map(([k, v]) => (
+                    <p key={k}>
+                      <strong>{k}:</strong> {String(v)}
+                    </p>
+                  ))}
+              </>
+            ) : (
+              <p className="text-gray-500">Loading metadata...</p>
+            )}
           </div>
-          <SoftButton
-            color="gray"
-            onClick={() => setOpenMeta(true)}
-          >
+          <SoftButton color="gray" onClick={() => setOpenMeta(true)}>
             <Pencil className="inline w-4 h-4 mr-1" /> Edit Metadata
           </SoftButton>
         </div>
@@ -245,15 +265,65 @@ export default function CountryConfigLandingPage({ params }: any) {
             </div>
           </div>
         ))}
+
+        {/* Other datasets */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-blue-600" />
+              <h3 className="text-lg font-semibold">Other Datasets</h3>
+            </div>
+            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">
+              Flexible
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Additional country-specific datasets that extend the baseline.
+          </p>
+          <p className="italic text-gray-500">🚧 To be implemented.</p>
+        </div>
       </div>
 
       {/* Edit Metadata Modal */}
-      <EditMetadataModal
-        open={openMeta}
-        onClose={() => setOpenMeta(false)}
-        metadata={country}
-        onSave={(updated) => console.log("Updated metadata:", updated)}
-      />
+      {country && (
+        <EditMetadataModal
+          open={openMeta}
+          onClose={() => setOpenMeta(false)}
+          metadata={{
+            admLabels: {
+              adm1: country.adm1_label,
+              adm2: country.adm2_label,
+              adm3: country.adm3_label,
+            },
+            sources: {
+              boundaries: country.boundaries_source,
+              population: country.population_source,
+            },
+            extra: country.extra_metadata || {},
+          }}
+          onSave={async (updated) => {
+            const { error } = await supabase.from("countries").upsert({
+              iso: id,
+              name: country.name,
+              adm1_label: updated.admLabels.adm1,
+              adm2_label: updated.admLabels.adm2,
+              adm3_label: updated.admLabels.adm3,
+              boundaries_source: updated.sources.boundaries,
+              population_source: updated.sources.population,
+              extra_metadata: updated.extra,
+            });
+
+            if (error) {
+              console.error("Error saving metadata:", error);
+            } else {
+              setCountry((prev: any) => ({
+                ...prev,
+                ...updated,
+              }));
+            }
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
