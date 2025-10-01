@@ -3,14 +3,23 @@
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
-import { MapContainer, TileLayer } from "react-leaflet";
-import { LatLngExpression } from "leaflet";
+import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import type { CountryParams } from "@/app/country/types";
+
+// Dynamically import Leaflet to avoid SSR "window is not defined"
+const MapContainer = dynamic(
+  () => import("react-leaflet").then((mod) => mod.MapContainer),
+  { ssr: false }
+);
+const TileLayer = dynamic(
+  () => import("react-leaflet").then((mod) => mod.TileLayer),
+  { ssr: false }
+);
 
 function SoftButton({
   children,
@@ -64,20 +73,17 @@ export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
 
   const [country, setCountry] = useState<any>(null);
-  const [adminStats, setAdminStats] = useState<Record<string, number>>({});
-  const [adminStatus, setAdminStatus] = useState<
-    "uploaded" | "partial" | "missing"
-  >("missing");
+  const [adminCount, setAdminCount] = useState(0);
+  const [popCount, setPopCount] = useState(0);
+  const [gisCount, setGisCount] = useState(0);
   const [openMeta, setOpenMeta] = useState(false);
-
-  const center: LatLngExpression = [12.8797, 121.774];
 
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
         .select("*")
-        .eq("iso_code", id) // ✅ use iso_code
+        .eq("iso_code", id)
         .single();
       if (data) setCountry(data);
     };
@@ -85,24 +91,29 @@ export default function CountryConfigLandingPage({ params }: any) {
   }, [id]);
 
   useEffect(() => {
-    const fetchAdminStats = async () => {
-      const { data } = await supabase
+    const fetchCounts = async () => {
+      // Admins
+      const { count: adminCnt } = await supabase
         .from("admin_units")
-        .select("level, pcode")
+        .select("*", { count: "exact", head: true })
         .eq("country_iso", id);
-      if (!data || data.length === 0) {
-        setAdminStatus("missing");
-        return;
-      }
-      const counts: Record<string, number> = {};
-      data.forEach((row) => {
-        counts[row.level] = (counts[row.level] || 0) + 1;
-      });
-      setAdminStats(counts);
-      if (Object.keys(counts).length >= 3) setAdminStatus("uploaded");
-      else setAdminStatus("partial");
+      setAdminCount(adminCnt || 0);
+
+      // Population
+      const { count: popCnt } = await supabase
+        .from("population_data")
+        .select("*", { count: "exact", head: true })
+        .eq("country_iso", id);
+      setPopCount(popCnt || 0);
+
+      // GIS
+      const { count: gisCnt } = await supabase
+        .from("gis_layers")
+        .select("*", { count: "exact", head: true })
+        .eq("country_iso", id);
+      setGisCount(gisCnt || 0);
     };
-    fetchAdminStats();
+    fetchCounts();
   }, [id]);
 
   const datasets = [
@@ -110,10 +121,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "admins",
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
-      status: adminStatus,
-      stats: Object.entries(adminStats)
-        .map(([lvl, cnt]) => `${lvl}: ${cnt}`)
-        .join(", "),
+      count: adminCount,
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
     },
@@ -121,8 +129,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "population",
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
-      status: "missing",
-      stats: "",
+      count: popCount,
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
     },
@@ -130,8 +137,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "gis",
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
-      status: "partial",
-      stats: "ADM1 & ADM2 uploaded, ADM3 missing",
+      count: gisCount,
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
     },
@@ -154,12 +160,12 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Map */}
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
           <MapContainer
-            center={center}
+            center={[12.8797, 121.774]}
             zoom={5}
             style={{ height: "500px", width: "100%" }}
             className="rounded-md z-0"
@@ -171,11 +177,13 @@ export default function CountryConfigLandingPage({ params }: any) {
           </MapContainer>
         </div>
 
+        {/* Metadata */}
         <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
           <div>
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
             {country ? (
               <>
+                {/* Core */}
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mb-2">
                   Core Metadata
                 </h3>
@@ -208,6 +216,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <p className="italic text-gray-400">No sources provided</p>
                 )}
 
+                {/* Extra */}
                 <h3 className="text-sm font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
                   Extra Metadata
                 </h3>
@@ -228,7 +237,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Dataset cards */}
+      {/* Dataset cards below */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
           <div
@@ -241,12 +250,14 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <h3 className="text-lg font-semibold">{d.title}</h3>
               </div>
               <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
-                {d.status}
+                {d.count > 0 ? `${d.count} records` : "empty"}
               </span>
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-            {d.stats && (
-              <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>
+            {d.count > 0 ? (
+              <p className="text-sm text-gray-500 mb-3">📊 Total: {d.count}</p>
+            ) : (
+              <p className="italic text-gray-400 mb-3">No data uploaded yet</p>
             )}
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
@@ -258,6 +269,7 @@ export default function CountryConfigLandingPage({ params }: any) {
           </div>
         ))}
 
+        {/* Other datasets */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -275,13 +287,13 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Metadata Modal */}
+      {/* Edit Metadata Modal */}
       {country && (
         <EditMetadataModal
           open={openMeta}
           onClose={() => setOpenMeta(false)}
           metadata={{
-            iso_code: country.iso_code, // ✅ back to iso_code
+            iso_code: country.iso_code,
             name: country.name,
             admLabels: {
               adm0: country.adm0_label,
