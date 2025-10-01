@@ -11,7 +11,7 @@ type CountryInput = {
 type AddCountryModalProps = {
   open: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   mode?: "add" | "edit";
   initialCountry?: CountryInput | null;
 };
@@ -28,6 +28,7 @@ export default function AddCountryModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Initialize form fields when modal opens
   useEffect(() => {
     if (open && mode === "edit" && initialCountry) {
       setIsoCode(initialCountry.iso_code);
@@ -42,7 +43,7 @@ export default function AddCountryModal({
 
   const handleSave = async () => {
     if (!isoCode || !name) {
-      setError("ISO code and name are required");
+      setError("ISO code and name are required.");
       return;
     }
     setLoading(true);
@@ -59,21 +60,21 @@ export default function AddCountryModal({
           },
         ]);
         if (insertError) throw insertError;
-      } else {
+      } else if (mode === "edit" && initialCountry) {
         const { error: updateError } = await supabase
           .from("countries")
           .update({
             name: name.trim(),
             updated_at: new Date().toISOString(),
           })
-          .eq("iso_code", initialCountry?.iso_code);
+          .eq("iso_code", initialCountry.iso_code);
         if (updateError) throw updateError;
       }
 
-      onSave();
+      await onSave();
       onClose();
     } catch (err: any) {
-      setError(err.message || "Unexpected error");
+      setError(err.message || "Unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -86,22 +87,26 @@ export default function AddCountryModal({
           {mode === "add" ? "Add Country" : "Edit Country"}
         </h2>
 
-        <label className="block text-sm font-medium mb-1">ISO Code</label>
-        <input
-          value={isoCode}
-          onChange={(e) => setIsoCode(e.target.value)}
-          className="w-full border rounded px-3 py-2 text-sm mb-3"
-          placeholder="e.g. PHL"
-          disabled={mode === "edit"} // ISO locked when editing
-        />
+        <div className="mb-3">
+          <label className="block text-sm font-medium mb-1">ISO Code</label>
+          <input
+            value={isoCode}
+            onChange={(e) => setIsoCode(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-sm"
+            placeholder="e.g. PHL"
+            disabled={mode === "edit"} // lock ISO in edit mode
+          />
+        </div>
 
-        <label className="block text-sm font-medium mb-1">Name</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full border rounded px-3 py-2 text-sm mb-3"
-          placeholder="e.g. Philippines"
-        />
+        <div className="mb-3">
+          <label className="block text-sm font-medium mb-1">Country Name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-sm"
+            placeholder="e.g. Philippines"
+          />
+        </div>
 
         {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
 
