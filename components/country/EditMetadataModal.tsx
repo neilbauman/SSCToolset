@@ -4,6 +4,8 @@ import { useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 
 interface Metadata {
+  iso: string;
+  name: string;
   admLabels: {
     adm1: string;
     adm2: string;
@@ -85,8 +87,32 @@ export default function EditMetadataModal({
           </button>
         </div>
 
-        {/* Core fields */}
         <div className="space-y-4">
+          {/* ISO & Country Name */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-gray-600">Country ISO</label>
+              <input
+                type="text"
+                value={localMeta.iso}
+                disabled
+                className="border rounded px-3 py-2 text-sm w-full bg-gray-100"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-gray-600">Country Name</label>
+              <input
+                type="text"
+                value={localMeta.name}
+                onChange={(e) =>
+                  setLocalMeta((prev) => ({ ...prev, name: e.target.value }))
+                }
+                className="border rounded px-3 py-2 text-sm w-full"
+              />
+            </div>
+          </div>
+
+          {/* Core fields */}
           <h3 className="font-medium">Administrative Labels</h3>
           <div className="grid grid-cols-3 gap-4">
             <input
