@@ -6,35 +6,39 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditDatasetSourceModal from "@/components/country/EditDatasetSourceModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
-import { Users, Pencil } from "lucide-react";
+import { Map, Pencil } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
-  iso: string;
+  iso_code: string;
   name: string;
 };
 
-type PopulationRow = {
-  id: string;
-  pcode: string;
-  name: string;
-  level: string;
-  population: number;
-  last_updated: string;
+type GISRow = {
+  id: string; // uuid
+  layer_name: string;
+  format: string;
+  feature_count: number;
+  crs: string;
+  created_at: string;
+  updated_at: string;
   source?: { name: string; url?: string };
 };
 
-export default function PopulationPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
+export default function GISPage({ params }: any) {
+  const { id: countryIso } = params as CountryParams;
 
   const [country, setCountry] = useState<Country | null>(null);
-  const [population, setPopulation] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
+  const [gisData, setGisData] = useState<GISRow[]>([]);
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(
+    null
+  );
   const [openSource, setOpenSource] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
+  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -47,58 +51,73 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
+  // Fetch GIS layers
   useEffect(() => {
-    const fetchPopulation = async () => {
-      const { data } = await supabase
-        .from("population_data")
+    const fetchGIS = async () => {
+      const { data, error } = await supabase
+        .from("gis_layers")
         .select("*")
         .eq("country_iso", countryIso);
-      if (data) setPopulation(data as PopulationRow[]);
+
+      if (error) {
+        console.error("Error fetching gis_layers:", error);
+        return;
+      }
+
+      if (data) {
+        setGisData(data as GISRow[]);
+        if (data.length > 0 && data[0].source) {
+          setSource(data[0].source as { name: string; url?: string });
+        }
+      }
     };
-    fetchPopulation();
+    fetchGIS();
   }, [countryIso]);
 
-  useEffect(() => {
-    const fetchSource = async () => {
-      const { data } = await supabase
-        .from("population_data")
-        .select("source")
-        .eq("country_iso", countryIso)
-        .limit(1)
-        .maybeSingle();
-      if (data?.source) setSource(data.source as any);
-    };
-    fetchSource();
-  }, [countryIso]);
+  // Health checks
+  const hasLayers = gisData.length > 0;
+  const allHaveCRS = gisData.length > 0 && gisData.every((g) => g.crs);
+  const missingCRS = gisData.filter((g) => !g.crs).length;
 
-  const missingPop = population.filter((p) => !p.population || p.population <= 0).length;
-  const hasPopulation = population.length > 0 && missingPop === 0;
-  const hasGISLink = false;
-  const allHavePcodes = population.length > 0 && population.every((p) => p.pcode);
-  const missingPcodes = population.filter((p) => !p.pcode).length;
-
-  const filtered = population.filter(
+  // Pagination + search
+  const filtered = gisData.filter(
     (row) =>
-      row.name.toLowerCase().includes(search.toLowerCase()) ||
-      row.pcode.toLowerCase().includes(search.toLowerCase())
+      row.layer_name.toLowerCase().includes(search.toLowerCase()) ||
+      row.format.toLowerCase().includes(search.toLowerCase())
   );
   const totalPages = Math.ceil((filtered.length || 1) / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Population`,
+    title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded population datasets.",
+    description: "Manage and inspect uploaded GIS layers.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
           { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "Population" },
+          { label: "GIS" },
         ]}
       />
     ),
+  };
+
+  const renderSource = (src: { name: string; url?: string } | null) => {
+    if (!src) return <span className="italic text-gray-500">Empty</span>;
+    return src.url ? (
+      <a
+        href={src.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:underline"
+      >
+        {src.name}
+      </a>
+    ) : (
+      src.name
+    );
   };
 
   return (
@@ -106,48 +125,40 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-base font-semibold flex items-center gap-2 mb-3">
-            <Users className="w-5 h-5 text-blue-600" />
-            Population Summary
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+            <Map className="w-5 h-5 text-blue-600" />
+            GIS Layers Summary
             <span className="ml-2 px-2 py-0.5 text-xs rounded bg-[color:var(--gsc-red)] text-white">
               Core
             </span>
           </h2>
-          <div className="pl-2 text-sm space-y-1">
-            <p><strong>Total Rows:</strong> {population.length}</p>
-            <p><strong>Last Updated:</strong> {population.length > 0 ? population[0].last_updated : "N/A"}</p>
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-sm">
-                <strong>Dataset Source:</strong>{" "}
-                {source ? (
-                  source.url ? (
-                    <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      {source.name}
-                    </a>
-                  ) : (
-                    source.name
-                  )
-                ) : (
-                  <span className="italic text-gray-500">Empty</span>
-                )}
-              </p>
-              <button
-                onClick={() => setOpenSource(true)}
-                className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
-              >
-                <Pencil className="w-4 h-4 mr-1" /> Edit
-              </button>
-            </div>
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Total Layers:</strong> {gisData.length}
+          </p>
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Last Updated:</strong>{" "}
+            {gisData.length > 0 ? gisData[0].updated_at : "N/A"}
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-sm">
+              <strong>Dataset Source:</strong> {renderSource(source)}
+            </p>
+            <button
+              onClick={() => setOpenSource(true)}
+              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+            >
+              <Pencil className="w-4 h-4 mr-1" /> Edit
+            </button>
           </div>
         </div>
 
         {/* Data Health */}
         <DatasetHealth
-          allHavePcodes={allHavePcodes}
-          missingPcodes={missingPcodes}
-          hasGISLink={hasGISLink}
-          hasPopulation={hasPopulation}
-          totalUnits={population.length}
+          allHavePcodes={true} // GIS layers don’t use Pcodes
+          missingPcodes={0}
+          hasGISLink={hasLayers}
+          hasPopulation={false}
+          totalUnits={gisData.length}
         />
       </div>
 
@@ -156,7 +167,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         <div className="flex justify-between items-center mb-3">
           <input
             type="text"
-            placeholder="Search by name or PCode..."
+            placeholder="Search by layer name or format..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -169,28 +180,30 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
           </span>
         </div>
         <table className="w-full text-sm border">
-          <thead className="bg-gray-100 text-sm font-semibold text-gray-700">
+          <thead className="bg-gray-100">
             <tr>
-              <th className="border px-2 py-1 text-left">Name</th>
-              <th className="border px-2 py-1 text-left">PCode</th>
-              <th className="border px-2 py-1 text-left">Level</th>
-              <th className="border px-2 py-1 text-left">Population</th>
-              <th className="border px-2 py-1 text-left">Last Updated</th>
+              <th className="border px-2 py-1 text-left">Layer Name</th>
+              <th className="border px-2 py-1 text-left">Format</th>
+              <th className="border px-2 py-1 text-left">Features</th>
+              <th className="border px-2 py-1 text-left">CRS</th>
+              <th className="border px-2 py-1 text-left">Created</th>
+              <th className="border px-2 py-1 text-left">Updated</th>
             </tr>
           </thead>
           <tbody>
             {paginated.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50 text-sm">
-                <td className="border px-2 py-1">{row.name}</td>
-                <td className="border px-2 py-1">{row.pcode}</td>
-                <td className="border px-2 py-1">{row.level}</td>
-                <td className="border px-2 py-1">{row.population}</td>
-                <td className="border px-2 py-1">{row.last_updated}</td>
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{row.layer_name}</td>
+                <td className="border px-2 py-1">{row.format}</td>
+                <td className="border px-2 py-1">{row.feature_count}</td>
+                <td className="border px-2 py-1">{row.crs}</td>
+                <td className="border px-2 py-1">{row.created_at}</td>
+                <td className="border px-2 py-1">{row.updated_at}</td>
               </tr>
             ))}
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center text-gray-500 py-6">
+                <td colSpan={6} className="text-center text-gray-500 py-6">
                   No results
                 </td>
               </tr>
@@ -223,7 +236,10 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
+          await supabase
+            .from("gis_layers")
+            .update({ source: newSource })
+            .eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
