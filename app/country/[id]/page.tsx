@@ -1,10 +1,30 @@
 "use client";
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import { Button } from "@/components/ui/Button";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Map, Users, Database, AlertCircle } from "lucide-react";
+import { MapContainer, TileLayer } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { useState } from "react";
+
+// Reusable soft button (branded colors)
+function SoftButton({
+  children,
+  color = "gray",
+}: {
+  children: React.ReactNode;
+  color?: "gray" | "green" | "blue" | "red";
+}) {
+  const base =
+    "px-3 py-1.5 text-sm rounded-md font-medium shadow-sm transition-colors";
+  const colors: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-800 hover:bg-gray-200",
+    green: "bg-[color:var(--gsc-green)] text-white hover:opacity-90",
+    blue: "bg-[color:var(--gsc-blue)] text-white hover:opacity-90",
+    red: "bg-[color:var(--gsc-red)] text-white hover:opacity-90",
+  };
+  return <button className={`${base} ${colors[color]}`}>{children}</button>;
+}
 
 export default function CountryConfigLandingPage({ params }: any) {
   const id = params?.id ?? "unknown";
@@ -13,15 +33,21 @@ export default function CountryConfigLandingPage({ params }: any) {
   const country = {
     iso: id,
     name: id === "PHL" ? "Philippines" : id === "NPL" ? "Nepal" : "Honduras",
+    admLabels: { adm1: "Region", adm2: "Province", adm3: "Municipality" },
+    sources: {
+      boundaries: "HDX COD 2024",
+      population: "Philippines 2020 Census",
+    },
+    center: [12.8797, 121.774] as [number, number], // Philippines default
   };
 
-  // Mock dataset status (will later query Supabase)
+  // Mock dataset status
   const datasets = [
     {
       key: "admins",
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
-      status: "uploaded", // "uploaded" | "partial" | "missing"
+      status: "uploaded",
       stats: "4 levels, 38 units",
       icon: <Map className="w-6 h-6 text-green-600" />,
     },
@@ -94,6 +120,43 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Map */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
+        <MapContainer
+          center={country.center}
+          zoom={5}
+          style={{ height: "300px", width: "100%" }}
+          className="rounded-md"
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
+          />
+        </MapContainer>
+      </div>
+
+      {/* Metadata */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
+        <p>
+          <strong>ADM1:</strong> {country.admLabels.adm1}
+        </p>
+        <p>
+          <strong>ADM2:</strong> {country.admLabels.adm2}
+        </p>
+        <p>
+          <strong>ADM3:</strong> {country.admLabels.adm3}
+        </p>
+        <p>
+          <strong>Boundaries Source:</strong> {country.sources.boundaries}
+        </p>
+        <p>
+          <strong>Population Source:</strong> {country.sources.population}
+        </p>
+      </div>
+
+      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {datasets.map((d) => (
           <div
@@ -112,20 +175,14 @@ export default function CountryConfigLandingPage({ params }: any) {
               <p className="text-sm text-gray-500 mb-3">📊 {d.stats}</p>
             )}
             <div className="flex gap-2">
-              <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300">
-                Download Template
-              </Button>
-              <Button className="bg-green-600 text-white hover:bg-green-700">
-                Upload Data
-              </Button>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700">
-                View
-              </Button>
+              <SoftButton color="gray">Download Template</SoftButton>
+              <SoftButton color="green">Upload Data</SoftButton>
+              <SoftButton color="blue">View</SoftButton>
             </div>
           </div>
         ))}
 
-        {/* Other datasets card */}
+        {/* Other datasets */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -151,9 +208,7 @@ export default function CountryConfigLandingPage({ params }: any) {
               ))}
             </ul>
           )}
-          <Button className="bg-gray-200 text-gray-800 hover:bg-gray-300">
-            Add Dataset
-          </Button>
+          <SoftButton color="gray">Add Dataset</SoftButton>
         </div>
       </div>
     </SidebarLayout>
