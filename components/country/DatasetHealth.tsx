@@ -1,13 +1,16 @@
 "use client";
 
-import React from "react";
+import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 
-export type DatasetHealthProps = {
-  allHavePcodes: boolean;
-  missingPcodes: number;
-  hasGISLink: boolean;
-  hasPopulation: boolean;
+type Props = {
+  allHavePcodes?: boolean;
+  missingPcodes?: number;
+  hasGISLink?: boolean;
+  hasPopulation?: boolean;
   totalUnits: number;
+  // NEW for GIS
+  allHaveCRS?: boolean;
+  allHaveFeatures?: boolean;
 };
 
 export default function DatasetHealth({
@@ -16,48 +19,70 @@ export default function DatasetHealth({
   hasGISLink,
   hasPopulation,
   totalUnits,
-}: DatasetHealthProps) {
-  // Determine overall status
-  let status: "uploaded" | "partial" | "missing" = "missing";
-  if (hasPopulation && allHavePcodes && hasGISLink) {
-    status = "uploaded";
-  } else if (totalUnits > 0) {
-    status = "partial";
+  allHaveCRS,
+  allHaveFeatures,
+}: Props) {
+  const items: { label: string; ok: boolean; warn?: boolean; detail?: string }[] = [];
+
+  if (allHavePcodes !== undefined) {
+    items.push({
+      label: "All rows have PCodes",
+      ok: allHavePcodes,
+      detail: missingPcodes && missingPcodes > 0 ? `${missingPcodes} missing` : undefined,
+    });
   }
 
-  const badgeColors: Record<typeof status, string> = {
-    uploaded: "bg-green-100 text-green-700",
-    partial: "bg-yellow-100 text-yellow-700",
-    missing: "bg-red-100 text-red-700",
-  };
+  if (hasPopulation !== undefined) {
+    items.push({
+      label: "Population values present",
+      ok: hasPopulation,
+    });
+  }
+
+  if (hasGISLink !== undefined) {
+    items.push({
+      label: "Linked to GIS layers",
+      ok: hasGISLink,
+    });
+  }
+
+  if (allHaveCRS !== undefined) {
+    items.push({
+      label: "All GIS layers have CRS",
+      ok: allHaveCRS,
+    });
+  }
+
+  if (allHaveFeatures !== undefined) {
+    items.push({
+      label: "All GIS layers have features (>0)",
+      ok: allHaveFeatures,
+    });
+  }
 
   return (
-    <div className="border rounded-lg p-4 shadow-sm relative">
-      <div className="absolute top-2 right-2">
-        <span
-          className={`px-2 py-1 text-xs rounded ${badgeColors[status]}`}
-        >
-          {status}
-        </span>
-      </div>
-      <h2 className="text-lg font-semibold mb-2">Data Health</h2>
-      <ul className="text-sm list-disc pl-6">
-        <li className={allHavePcodes ? "text-green-700" : "text-red-700"}>
-          {allHavePcodes
-            ? "All units have PCodes"
-            : `${missingPcodes} units missing PCodes`}
-        </li>
-        <li className={hasPopulation ? "text-green-700" : "text-red-700"}>
-          {hasPopulation
-            ? "Population data available"
-            : "Population not yet linked"}
-        </li>
-        <li className={hasGISLink ? "text-green-700" : "text-red-700"}>
-          {hasGISLink
-            ? "Aligned with GIS boundaries"
-            : "GIS linkage not validated yet"}
-        </li>
-      </ul>
+    <div className="border rounded-lg p-4 shadow-sm">
+      <h2 className="text-lg font-semibold mb-3">Dataset Health</h2>
+      {totalUnits === 0 && (
+        <p className="italic text-gray-500">No data uploaded yet</p>
+      )}
+      {totalUnits > 0 && (
+        <ul className="space-y-2">
+          {items.map((i, idx) => (
+            <li key={idx} className="flex items-center gap-2 text-sm">
+              {i.ok ? (
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              ) : (
+                <XCircle className="w-4 h-4 text-red-600" />
+              )}
+              <span>
+                {i.label}{" "}
+                {i.detail && <span className="text-gray-500">({i.detail})</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
