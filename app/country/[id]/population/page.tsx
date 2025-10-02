@@ -13,12 +13,6 @@ import type { CountryParams } from "@/app/country/types";
 type Country = {
   iso_code: string;
   name: string;
-  adm0_label: string;
-  adm1_label: string;
-  adm2_label: string;
-  adm3_label: string;
-  adm4_label: string;
-  adm5_label: string;
 };
 
 type PopulationRow = {
@@ -36,21 +30,18 @@ export default function PopulationPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [populationRows, setPopulationRows] = useState<PopulationRow[]>([]);
-  const [source, setSource] = useState<{ name: string; url?: string } | null>(
-    null
-  );
+  const [source, setSource] = useState<{ name: string; url?: string } | null>(null);
   const [openSource, setOpenSource] = useState(false);
   const [openUpload, setOpenUpload] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
-  // Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
-        .select("*")
+        .select("iso_code, name")
         .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
@@ -58,7 +49,6 @@ export default function PopulationPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch population data
   const fetchPopulation = async () => {
     const { data, error } = await supabase
       .from("population_data")
@@ -82,7 +72,6 @@ export default function PopulationPage({ params }: any) {
     fetchPopulation();
   }, [countryIso]);
 
-  // Pagination + search
   const filtered = populationRows.filter(
     (r) =>
       r.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -110,12 +99,7 @@ export default function PopulationPage({ params }: any) {
   const renderSource = (src: { name: string; url?: string } | null) => {
     if (!src) return <span className="italic text-gray-500">Empty</span>;
     return src.url ? (
-      <a
-        href={src.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-600 hover:underline"
-      >
+      <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
         {src.name}
       </a>
     ) : (
@@ -123,15 +107,12 @@ export default function PopulationPage({ params }: any) {
     );
   };
 
-  // Health checks (stubbed for now, expand later)
-  const hasPopulation = populationRows.length > 0;
+  const validPopulationCount = populationRows.filter((r) => r.population && r.year).length;
   const hasYear = populationRows.every((r) => r.year);
-  const allLinkedToAdmin = populationRows.every((r) => r.pcode);
 
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Summary */}
         <div className="border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Database className="w-5 h-5 text-blue-600" />
@@ -170,17 +151,13 @@ export default function PopulationPage({ params }: any) {
           </div>
         </div>
 
-        {/* Data Health */}
         <DatasetHealth
-          allHavePcodes={allLinkedToAdmin}
-          missingPcodes={populationRows.filter((r) => !r.pcode).length}
-          hasGISLink={false}
-          hasPopulation={hasPopulation}
           totalUnits={populationRows.length}
+          validPopulationCount={validPopulationCount}
+          hasYear={hasYear}
         />
       </div>
 
-      {/* Table */}
       <div className="border rounded-lg p-4 shadow-sm">
         <div className="flex justify-between items-center mb-3">
           <input
@@ -219,47 +196,21 @@ export default function PopulationPage({ params }: any) {
             ))}
             {paginated.length === 0 && (
               <tr>
-                <td
-                  colSpan={5}
-                  className="text-center text-gray-500 py-6"
-                >
+                <td colSpan={5} className="text-center text-gray-500 py-6">
                   No results
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-        <div className="flex justify-between items-center mt-3 text-sm">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="px-2 py-1 border rounded disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span>
-            Page {page} of {totalPages || 1}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
-            disabled={page >= (totalPages || 1)}
-            className="px-2 py-1 border rounded disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
       </div>
 
-      {/* Modals */}
       <EditDatasetSourceModal
         open={openSource}
         onClose={() => setOpenSource(false)}
         source={source || undefined}
         onSave={async (newSource) => {
-          await supabase
-            .from("population_data")
-            .update({ source: newSource })
-            .eq("country_iso", countryIso);
+          await supabase.from("population_data").update({ source: newSource }).eq("country_iso", countryIso);
           setSource(newSource);
         }}
       />
