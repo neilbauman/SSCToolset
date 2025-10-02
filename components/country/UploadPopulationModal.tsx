@@ -13,6 +13,15 @@ type Props = {
   onUploaded?: () => void;
 };
 
+function excelDateToJSDate(serial: number): string {
+  if (!serial || isNaN(serial)) return "";
+  // Excel serial dates are offset from 1899-12-30
+  const utc_days = Math.floor(serial - 25569);
+  const utc_value = utc_days * 86400;
+  const date_info = new Date(utc_value * 1000);
+  return date_info.toISOString().split("T")[0]; // YYYY-MM-DD
+}
+
 export default function UploadPopulationModal({
   open,
   onClose,
@@ -58,14 +67,14 @@ export default function UploadPopulationModal({
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-        // Check for required columns
+        // Required columns check
         const required = ["pcode", "name", "year", "population", "dataset_date", "source"];
         if (!required.every((col) => col in rows[0])) {
           setError("Missing required columns in file.");
           return;
         }
 
-        // Check admin_units for mismatches
+        // Check for admin_units mismatches
         const { data: admins } = await supabase
           .from("admin_units")
           .select("pcode")
@@ -73,29 +82,33 @@ export default function UploadPopulationModal({
         const adminSet = new Set(admins?.map((a) => a.pcode));
 
         const mismatches = rows.filter((r) => !adminSet.has(String(r.pcode).trim()));
-        const gaps = admins?.filter((a) => !rows.some((r) => r.pcode === a.pcode));
-
         if (mismatches.length > 0) {
           setError(`⚠ Found ${mismatches.length} population rows with invalid PCodes.`);
           return;
         }
 
-        if (gaps && gaps.length > 0) {
-          console.warn(`⚠ Missing population data for ${gaps.length} admin units.`);
-        }
-
-        // Replace population dataset
+        // Replace old dataset
         await supabase.from("population_data").delete().eq("country_iso", countryIso);
 
-        const popData = rows.map((r) => ({
-          country_iso: countryIso,
-          pcode: String(r.pcode).trim(),
-          name: r.name,
-          year: Number(r.year),
-          population: Number(r.population),
-          dataset_date: r.dataset_date,
-          source: typeof r.source === "string" ? { name: r.source } : r.source,
-        }));
+        const popData = rows.map((r) => {
+          let dsDate: string;
+          if (typeof r.dataset_date === "number") {
+            dsDate = excelDateToJSDate(r.dataset_date);
+          } else {
+            dsDate = String(r.dataset_date).slice(0, 10); // trim to YYYY-MM-DD
+          }
+
+          return {
+            country_iso: countryIso,
+            pcode: String(r.pcode).trim(),
+            name: r.name,
+            year: Number(r.year),
+            population: Number(r.population),
+            dataset_date: dsDate,
+            source:
+              typeof r.source === "string" ? { name: r.source } : r.source,
+          };
+        });
 
         const { error: insertErr } = await supabase
           .from("population_data")
