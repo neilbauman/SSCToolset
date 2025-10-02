@@ -20,7 +20,7 @@ type GISLayer = {
   layer_name: string;
   format: string;
   feature_count: number;
-  crs: string;
+  crs: string | null;
   source?: { name: string; url?: string };
 };
 
@@ -106,8 +106,10 @@ export default function GISPage({ params }: any) {
     );
   };
 
-  const validCRSCount = gisLayers.filter((r) => r.crs && r.crs.startsWith("EPSG:")).length;
-  const validFeatureCount = gisLayers.filter((r) => r.feature_count > 0).length;
+  // Health checks
+  const missingCRS = gisLayers.filter((r) => !r.crs || !r.crs.startsWith("EPSG:")).length;
+  const missingFeatures = gisLayers.filter((r) => !r.feature_count || r.feature_count <= 0).length;
+  const hasGISLink = gisLayers.length > 0 && missingCRS === 0 && missingFeatures === 0;
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -144,10 +146,10 @@ export default function GISPage({ params }: any) {
           </div>
         </div>
 
+        {/* New DatasetHealth API */}
         <DatasetHealth
           totalUnits={gisLayers.length}
-          validCRSCount={validCRSCount}
-          validFeatureCount={validFeatureCount}
+          hasGISLink={hasGISLink}
         />
       </div>
 
