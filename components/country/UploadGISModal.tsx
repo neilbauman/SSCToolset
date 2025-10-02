@@ -1,21 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Papa, { ParseResult } from "papaparse";
-import { X } from "lucide-react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import Modal from "@/components/ui/Modal";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
 
-interface UploadGISModalProps {
+type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void | Promise<void>;
-}
-
-type CSVRow = {
-  layer_name: string;
-  feature_count?: string | number;
-  crs?: string;
+  onUploaded: () => void;
 };
 
 export default function UploadGISModal({
@@ -23,170 +18,147 @@ export default function UploadGISModal({
   onClose,
   countryIso,
   onUploaded,
-}: UploadGISModalProps) {
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [geojsonText, setGeojsonText] = useState<string>("");
-  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) {
-      setFile(null);
-      setGeojsonText("");
-      setBusy(false);
-      setError(null);
-    }
-  }, [open]);
+  const handleFile = async (f: File) => {
+    const ext = f.name.split(".").pop()?.toLowerCase();
+    let rows: any[] = [];
 
-  if (!open) return null;
-
-  const handleUploadCSV = async () => {
-    if (!file) {
-      setError("Please select a CSV file.");
+    if (ext === "xlsx" || ext === "xls") {
+      const buffer = await f.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws);
+    } else if (ext === "csv") {
+      const text = await f.text();
+      rows = Papa.parse(text, { header: true }).data as any[];
+    } else {
+      setError("Please upload a CSV or XLSX file.");
       return;
     }
-    setBusy(true);
+
+    rows = rows.map((r) => ({
+      layer_name: r.layer_name?.toString().trim(),
+      format: r.format?.toString().trim(),
+      feature_count: Number(r.feature_count || 0),
+      crs: r.crs?.toString().trim(),
+    }));
+
+    setFile(f);
+    setPreview(rows.slice(0, 10));
     setError(null);
-
-    Papa.parse<CSVRow>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results: ParseResult<CSVRow>) => {
-        try {
-          const cleaned =
-            (results.data || []).map((r) => ({
-              country_iso: countryIso,
-              layer_name: String(r.layer_name || "").trim(),
-              format: "csv",
-              feature_count:
-                r.feature_count !== undefined &&
-                r.feature_count !== null &&
-                String(r.feature_count).trim() !== ""
-                  ? Number(r.feature_count)
-                  : null,
-              crs: r.crs ? String(r.crs) : null,
-              // geometry would be loaded via GeoJSON flow; CSV is metadata-only here
-            })) || [];
-
-          const { error: upErr } = await supabase.from("gis_layers").insert(cleaned);
-          if (upErr) throw upErr;
-
-          await onUploaded();
-          onClose();
-        } catch (e: any) {
-          setError(e.message || "Failed to process CSV.");
-        } finally {
-          setBusy(false);
-        }
-      },
-      error: (err) => {
-        setBusy(false);
-        setError(err.message);
-      },
-    });
   };
 
-  const handleUploadGeoJSON = async () => {
-    if (!geojsonText.trim()) {
-      setError("Please paste valid GeoJSON.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-
+  const handleUpload = async () => {
+    if (!file || preview.length === 0) return;
+    setLoading(true);
     try {
-      const parsed = JSON.parse(geojsonText);
-      // Minimal validation
-      if (!parsed || parsed.type !== "FeatureCollection" || !Array.isArray(parsed.features)) {
-        throw new Error("GeoJSON must be a FeatureCollection.");
-      }
+      await supabase.from("gis_layers").delete().eq("country_iso", countryIso);
 
-      const layerName = parsed.name || "geojson_layer";
-      const featureCount = parsed.features?.length || 0;
-      const crs =
-        parsed.crs?.properties?.name ||
-        parsed.crs?.name ||
-        null;
+      const { error } = await supabase.from("gis_layers").insert(
+        preview.map((r) => ({
+          country_iso: countryIso,
+          layer_name: r.layer_name,
+          format: r.format,
+          feature_count: r.feature_count,
+          crs: r.crs,
+          source: {},
+        }))
+      );
+      if (error) throw error;
 
-      const payload = {
-        country_iso: countryIso,
-        layer_name: String(layerName),
-        format: "geojson",
-        feature_count: featureCount,
-        crs,
-        // You may store full geometry as jsonb in a separate column later (e.g., geometry_geojson)
-      };
-
-      const { error: upErr } = await supabase.from("gis_layers").insert([payload]);
-      if (upErr) throw upErr;
-
-      await onUploaded();
+      onUploaded();
       onClose();
     } catch (e: any) {
-      setError(e.message || "Invalid GeoJSON.");
+      setError(e.message);
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
+  };
+
+  const downloadTemplate = () => {
+    const sample = [
+      {
+        layer_name: "Admin Boundaries",
+        format: "GeoJSON",
+        feature_count: 120,
+        crs: "EPSG:4326",
+      },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "gis_template.xlsx");
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6 relative">
-        <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700" onClick={onClose}>
-          <X className="w-5 h-5" />
-        </button>
-
-        <h2 className="text-lg font-semibold mb-4">Upload GIS</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Currently supports <strong>CSV</strong> (layer metadata) and <strong>GeoJSON</strong> (direct paste).
-          Support for Shapefile / GPKG / KML can be added later.
+    <Modal open={open} onClose={onClose}>
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold mb-2">Upload GIS Dataset</h2>
+        <p className="text-sm text-gray-600">
+          File must include: <code>layer_name, format, feature_count, crs</code>
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* CSV */}
-          <div>
-            <h3 className="font-medium mb-2">CSV (layer metadata)</h3>
-            <p className="text-xs text-gray-600 mb-2">
-              Expected columns: <code>layer_name</code>, optional: <code>feature_count</code>, <code>crs</code>.
-            </p>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="block w-full text-sm mb-3"
-            />
-            <button
-              onClick={handleUploadCSV}
-              disabled={busy}
-              className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {busy ? "Uploading…" : "Upload CSV"}
-            </button>
-          </div>
+        <button
+          onClick={downloadTemplate}
+          className="px-2 py-1 text-sm border rounded bg-gray-100 hover:bg-gray-200"
+        >
+          Download Template
+        </button>
 
-          {/* GeoJSON */}
+        <input
+          type="file"
+          accept=".csv,.xlsx"
+          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+        />
+
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+
+        {preview.length > 0 && (
           <div>
-            <h3 className="font-medium mb-2">GeoJSON (paste)</h3>
-            <textarea
-              className="w-full h-40 border rounded p-2 text-sm"
-              placeholder='{"type":"FeatureCollection","features":[...]}'
-              value={geojsonText}
-              onChange={(e) => setGeojsonText(e.target.value)}
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                onClick={handleUploadGeoJSON}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Uploading…" : "Upload GeoJSON"}
-              </button>
-            </div>
+            <p className="text-sm font-semibold mb-2">Preview (first 10 rows)</p>
+            <table className="text-xs border w-full">
+              <thead className="bg-gray-100">
+                <tr>
+                  {Object.keys(preview[0]).map((h) => (
+                    <th key={h} className="border px-1 py-0.5">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((row, i) => (
+                  <tr key={i}>
+                    {Object.values(row).map((v, j) => (
+                      <td key={j} className="border px-1 py-0.5">{String(v)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 border rounded text-sm"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || loading}
+            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm"
+          >
+            {loading ? "Uploading…" : "Replace Dataset"}
+          </button>
         </div>
-
-        {error && <p className="text-sm text-red-600 mt-4">{error}</p>}
       </div>
-    </div>
+    </Modal>
   );
 }
