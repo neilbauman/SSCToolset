@@ -7,11 +7,10 @@ type Props = {
 
   // Admin units
   validPcodeCount?: number;
-  missingPcodes?: number;
 
   // Population
   validPopulationCount?: number;
-  hasYear?: boolean; // true if all rows have a year
+  hasYear?: boolean;
 
   // GIS
   validCRSCount?: number;
@@ -21,29 +20,38 @@ type Props = {
 export default function DatasetHealth({
   totalUnits,
   validPcodeCount,
-  missingPcodes,
   validPopulationCount,
   hasYear,
   validCRSCount,
   validFeatureCount,
 }: Props) {
-  const items: { label: string; ok: boolean; detail?: string }[] = [];
+  const items: {
+    label: string;
+    ok: boolean;
+    value?: number;
+    total?: number;
+    showRatio?: boolean;
+  }[] = [];
 
-  // Admin units health
+  // Admin units
   if (validPcodeCount !== undefined) {
     items.push({
       label: "Admin units with PCodes",
       ok: validPcodeCount === totalUnits && totalUnits > 0,
-      detail: `${validPcodeCount}/${totalUnits}`,
+      value: validPcodeCount,
+      total: totalUnits,
+      showRatio: true,
     });
   }
 
-  // Population health
+  // Population
   if (validPopulationCount !== undefined) {
     items.push({
       label: "Population values present",
       ok: validPopulationCount === totalUnits && totalUnits > 0,
-      detail: `${validPopulationCount}/${totalUnits}`,
+      value: validPopulationCount,
+      total: totalUnits,
+      showRatio: true,
     });
   }
 
@@ -54,12 +62,14 @@ export default function DatasetHealth({
     });
   }
 
-  // GIS health
+  // GIS
   if (validCRSCount !== undefined) {
     items.push({
       label: "GIS layers with CRS",
       ok: validCRSCount === totalUnits && totalUnits > 0,
-      detail: `${validCRSCount}/${totalUnits}`,
+      value: validCRSCount,
+      total: totalUnits,
+      showRatio: true,
     });
   }
 
@@ -67,9 +77,26 @@ export default function DatasetHealth({
     items.push({
       label: "GIS layers with features (>0)",
       ok: validFeatureCount === totalUnits && totalUnits > 0,
-      detail: `${validFeatureCount}/${totalUnits}`,
+      value: validFeatureCount,
+      total: totalUnits,
+      showRatio: true,
     });
   }
+
+  const badge = (ok: boolean, value?: number, total?: number, showRatio?: boolean) => {
+    if (total === undefined || total === 0) return null;
+    const ratio = value !== undefined && total !== undefined ? `${value}/${total}` : "";
+    const isPartial = value !== undefined && total !== undefined && value > 0 && value < total;
+
+    let color = ok ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300";
+    if (isPartial) color = "bg-amber-100 text-amber-800 border-amber-300";
+
+    return (
+      <span className={`ml-2 px-2 py-0.5 text-xs rounded border ${color}`}>
+        {showRatio && ratio ? ratio : ok ? "OK" : "Fail"}
+      </span>
+    );
+  };
 
   return (
     <div className="border rounded-lg p-4 shadow-sm">
@@ -86,12 +113,8 @@ export default function DatasetHealth({
               ) : (
                 <XCircle className="w-4 h-4 text-red-600" />
               )}
-              <span>
-                {i.label}{" "}
-                {i.detail && (
-                  <span className="text-gray-500">({i.detail})</span>
-                )}
-              </span>
+              <span>{i.label}</span>
+              {badge(i.ok, i.value, i.total, i.showRatio)}
             </li>
           ))}
         </ul>
