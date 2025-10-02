@@ -1,22 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { Dialog } from "@headlessui/react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import Modal from "@/components/ui/Modal";
+import { Download, Upload, X, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
-import Papa from "papaparse";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void;
-};
-
-type AdminUnit = {
-  pcode: string;
-  name: string;
-  level: string;
+  onUploaded?: () => void;
 };
 
 export default function UploadPopulationModal({
@@ -26,206 +20,174 @@ export default function UploadPopulationModal({
   onUploaded,
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [invalidRows, setInvalidRows] = useState<any[]>([]);
-  const [adminPcodes, setAdminPcodes] = useState<Set<string>>(new Set());
+  const [hasAdmins, setHasAdmins] = useState(false);
 
-  // fetch valid admin unit PCodes for this country
   useEffect(() => {
-    if (!open) return;
-    const fetchAdminUnits = async () => {
-      const { data, error } = await supabase
+    const checkAdmins = async () => {
+      const { data } = await supabase
         .from("admin_units")
         .select("pcode")
         .eq("country_iso", countryIso);
-      if (error) {
-        console.error("Error fetching admin units:", error);
-        return;
-      }
-      setAdminPcodes(new Set(data.map((u) => u.pcode)));
+      setHasAdmins(!!data && data.length > 0);
     };
-    fetchAdminUnits();
-  }, [open, countryIso]);
+    checkAdmins();
+  }, [countryIso]);
 
-  // handle file
-  const handleFile = async (f: File) => {
-    const ext = f.name.split(".").pop()?.toLowerCase();
-    let rows: any[] = [];
-
-    if (ext === "xlsx" || ext === "xls") {
-      const buffer = await f.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(ws);
-    } else if (ext === "csv") {
-      const text = await f.text();
-      rows = Papa.parse(text, { header: true }).data as any[];
-    } else {
-      setError("Please upload a CSV or XLSX file.");
-      return;
-    }
-
-    // normalize & clean
-    rows = rows
-      .map((r) => ({
-        pcode: r.pcode?.toString().trim(),
-        name: r.name?.toString().trim(),
-        year: r.year ? Number(r.year) : null,
-        population: r.population ? Number(r.population) : null,
-        dataset_date: r.dataset_date || null,
-        source: r.source || null,
-      }))
-      .filter((r) => r.pcode && r.year && r.population);
-
-    // split valid vs invalid
-    const valid: any[] = [];
-    const invalid: any[] = [];
-
-    for (const row of rows) {
-      if (adminPcodes.has(row.pcode)) {
-        valid.push(row);
-      } else {
-        invalid.push(row);
-      }
-    }
-
-    setFile(f);
-    setPreview(valid.slice(0, 10));
-    setInvalidRows(invalid);
-    setError(null);
-  };
-
-  // upload
-  const handleUpload = async () => {
-    if (!file || preview.length === 0) return;
-    setLoading(true);
-    try {
-      // delete existing population dataset for this country
-      await supabase.from("population_data").delete().eq("country_iso", countryIso);
-
-      const { error } = await supabase.from("population_data").insert(
-        preview.map((r) => ({
-          country_iso: countryIso,
-          pcode: r.pcode,
-          name: r.name,
-          population: r.population,
-          year: r.year,
-          dataset_date: r.dataset_date,
-          source: r.source,
-        }))
-      );
-      if (error) throw error;
-
-      onUploaded();
-      onClose();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // download template
-  const downloadTemplate = () => {
-    const sample = [
-      {
-        pcode: "PH175100000",
-        name: "Occidental Mindoro",
-        year: 2020,
-        population: 525354,
-        dataset_date: "2020-05-01",
-        source: "Philippines 2020 Census",
-      },
-    ];
-    const ws = XLSX.utils.json_to_sheet(sample);
+  const handleDownloadTemplate = (format: "csv" | "xlsx") => {
+    const headers = ["pcode", "name", "year", "population", "dataset_date", "source"];
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "population_template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Population");
+
+    if (format === "csv") {
+      XLSX.writeFile(wb, "population_template.csv");
+    } else {
+      XLSX.writeFile(wb, "population_template.xlsx");
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+
+        // Check for required columns
+        const required = ["pcode", "name", "year", "population", "dataset_date", "source"];
+        if (!required.every((col) => col in rows[0])) {
+          setError("Missing required columns in file.");
+          return;
+        }
+
+        // Check admin_units for mismatches
+        const { data: admins } = await supabase
+          .from("admin_units")
+          .select("pcode")
+          .eq("country_iso", countryIso);
+        const adminSet = new Set(admins?.map((a) => a.pcode));
+
+        const mismatches = rows.filter((r) => !adminSet.has(String(r.pcode).trim()));
+        const gaps = admins?.filter((a) => !rows.some((r) => r.pcode === a.pcode));
+
+        if (mismatches.length > 0) {
+          setError(`⚠ Found ${mismatches.length} population rows with invalid PCodes.`);
+          return;
+        }
+
+        if (gaps && gaps.length > 0) {
+          console.warn(`⚠ Missing population data for ${gaps.length} admin units.`);
+        }
+
+        // Replace population dataset
+        await supabase.from("population_data").delete().eq("country_iso", countryIso);
+
+        const popData = rows.map((r) => ({
+          country_iso: countryIso,
+          pcode: String(r.pcode).trim(),
+          name: r.name,
+          year: Number(r.year),
+          population: Number(r.population),
+          dataset_date: r.dataset_date,
+          source: typeof r.source === "string" ? { name: r.source } : r.source,
+        }));
+
+        const { error: insertErr } = await supabase
+          .from("population_data")
+          .insert(popData);
+
+        if (insertErr) {
+          setError(insertErr.message);
+          return;
+        }
+
+        if (onUploaded) onUploaded();
+        setFile(null);
+        setError(null);
+        onClose();
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold mb-2">
-          Upload Population Dataset
-        </h2>
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center">
+        <Dialog.Panel className="bg-white rounded-lg shadow-lg p-6 w-[500px]">
+          <div className="flex items-center justify-between mb-4">
+            <Dialog.Title className="text-lg font-semibold">
+              Upload Population Dataset
+            </Dialog.Title>
+            <button onClick={onClose}>
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
 
-        <p className="text-sm text-gray-600">
-          File must include: <code>pcode, name, year, population, dataset_date, source</code>
-          <br />
-          Only rows matching Admin Unit PCodes will be accepted.
-        </p>
+          {hasAdmins && (
+            <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 p-2 rounded mb-4 text-sm">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5" />
+              <p>
+                Admin Units already exist. For consistency, consider uploading 
+                population via the <strong>Admin Units modal</strong> with the 
+                population column enabled.
+              </p>
+            </div>
+          )}
 
-        <button
-          onClick={downloadTemplate}
-          className="px-2 py-1 text-sm border rounded bg-gray-100 hover:bg-gray-200"
-        >
-          Download Template
-        </button>
-
-        <input
-          type="file"
-          accept=".csv,.xlsx"
-          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-        />
-
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-
-        {preview.length > 0 && (
-          <div>
-            <p className="text-sm font-semibold mb-2">
-              Preview (first {preview.length} valid rows)
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              File must include: <code>pcode, name, year, population, dataset_date, source</code>
             </p>
-            <table className="text-xs border w-full">
-              <thead className="bg-gray-100">
-                <tr>
-                  {Object.keys(preview[0]).map((h) => (
-                    <th key={h} className="border px-1 py-0.5">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((row, i) => (
-                  <tr key={i}>
-                    {Object.values(row).map((v, j) => (
-                      <td key={j} className="border px-1 py-0.5">
-                        {String(v)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
 
-        {invalidRows.length > 0 && (
-          <div className="bg-yellow-50 border border-yellow-300 p-2 rounded text-sm">
-            ⚠ {invalidRows.length} row(s) were skipped because their PCodes do not exist in Admin Units.
-          </div>
-        )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDownloadTemplate("csv")}
+                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              >
+                <Download className="w-4 h-4" /> Download CSV Template
+              </button>
+              <button
+                onClick={() => handleDownloadTemplate("xlsx")}
+                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              >
+                <Download className="w-4 h-4" /> Download Excel Template
+              </button>
+            </div>
 
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 border rounded text-sm"
-            disabled={loading}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={!file || loading}
-            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm"
-          >
-            {loading ? "Uploading…" : "Replace Dataset"}
-          </button>
-        </div>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={onClose}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={!file}
+              className="px-3 py-1 text-sm rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <Upload className="w-4 h-4 inline mr-1" />
+              Replace Dataset
+            </button>
+          </div>
+        </Dialog.Panel>
       </div>
-    </Modal>
+    </Dialog>
   );
 }
