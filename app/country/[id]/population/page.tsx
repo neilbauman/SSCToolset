@@ -5,7 +5,8 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import DatasetHealth from "@/components/country/DatasetHealth";
-import { Users, Database, Trash2, CheckCircle } from "lucide-react";
+import UploadPopulationModal from "@/components/country/UploadPopulationModal";
+import { Users, Database, Trash2, CheckCircle, Plus } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type DatasetVersion = {
@@ -32,7 +33,9 @@ export default function PopulationPage({ params }: any) {
   const [datasets, setDatasets] = useState<DatasetVersion[]>([]);
   const [activeDataset, setActiveDataset] = useState<DatasetVersion | null>(null);
   const [populationRows, setPopulationRows] = useState<PopulationRow[]>([]);
+  const [adminCount, setAdminCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [openUpload, setOpenUpload] = useState(false);
 
   const fetchDatasets = async () => {
     const { data } = await supabase
@@ -65,10 +68,19 @@ export default function PopulationPage({ params }: any) {
     }
   };
 
+  const fetchAdminUnits = async () => {
+    const { data } = await supabase
+      .from("admin_units")
+      .select("id")
+      .eq("country_iso", countryIso);
+    setAdminCount(data?.length || 0);
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       await fetchDatasets();
+      await fetchAdminUnits();
       setLoading(false);
     };
     load();
@@ -86,13 +98,11 @@ export default function PopulationPage({ params }: any) {
   };
 
   const handleSetActive = async (datasetId: string) => {
-    // set all to false
     await supabase
       .from("population_datasets")
       .update({ is_active: false })
       .eq("country_iso", countryIso);
 
-    // set one to true
     await supabase
       .from("population_datasets")
       .update({ is_active: true })
@@ -101,9 +111,11 @@ export default function PopulationPage({ params }: any) {
     await fetchDatasets();
   };
 
-  // Simple dataset health check
+  // Health metrics
+  const totalUnits = populationRows.length;
   const validPopulationCount = populationRows.filter((r) => r.population > 0).length;
-  const hasYear = activeDataset?.year != null;
+  const hasYear = !!activeDataset?.year;
+  const coverage = adminCount > 0 ? (populationRows.length / adminCount) * 100 : 0;
 
   const headerProps = {
     title: `${countryIso} – Population`,
@@ -125,10 +137,19 @@ export default function PopulationPage({ params }: any) {
     <SidebarLayout headerProps={headerProps}>
       {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-          <Database className="w-5 h-5 text-blue-600" />
-          Dataset Versions
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Database className="w-5 h-5 text-blue-600" />
+            Dataset Versions
+          </h2>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center gap-2 text-sm text-white bg-[color:var(--gsc-green)] px-3 py-1.5 rounded hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Add Population Dataset
+          </button>
+        </div>
+
         {loading ? (
           <p className="text-gray-500">Loading versions…</p>
         ) : datasets.length === 0 ? (
@@ -186,9 +207,10 @@ export default function PopulationPage({ params }: any) {
 
       {/* Dataset Health */}
       <DatasetHealth
-        totalUnits={populationRows.length}
+        totalUnits={totalUnits}
         validPopulationCount={validPopulationCount}
-        hasYear={!!hasYear}
+        coverage={coverage}
+        hasYear={hasYear}
       />
 
       {/* Population Table */}
@@ -220,6 +242,13 @@ export default function PopulationPage({ params }: any) {
           </table>
         )}
       </div>
+
+      <UploadPopulationModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={fetchDatasets}
+      />
     </SidebarLayout>
   );
 }
