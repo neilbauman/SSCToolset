@@ -8,9 +8,11 @@ type Props = {
   hasGISLink?: boolean;
   hasPopulation?: boolean;
   totalUnits: number;
-  // NEW for GIS
+  // GIS-specific
   allHaveCRS?: boolean;
+  validCRSCount?: number;
   allHaveFeatures?: boolean;
+  validFeatureCount?: number;
 };
 
 export default function DatasetHealth({
@@ -20,9 +22,11 @@ export default function DatasetHealth({
   hasPopulation,
   totalUnits,
   allHaveCRS,
+  validCRSCount,
   allHaveFeatures,
+  validFeatureCount,
 }: Props) {
-  const items: { label: string; ok: boolean; warn?: boolean; detail?: string }[] = [];
+  const items: { label: string; ok: boolean; detail?: string }[] = [];
 
   if (allHavePcodes !== undefined) {
     items.push({
@@ -46,17 +50,19 @@ export default function DatasetHealth({
     });
   }
 
-  if (allHaveCRS !== undefined) {
+  if (allHaveCRS !== undefined && validCRSCount !== undefined) {
     items.push({
-      label: "All GIS layers have CRS",
+      label: "GIS layers with CRS",
       ok: allHaveCRS,
+      detail: `${validCRSCount}/${totalUnits}`,
     });
   }
 
-  if (allHaveFeatures !== undefined) {
+  if (allHaveFeatures !== undefined && validFeatureCount !== undefined) {
     items.push({
-      label: "All GIS layers have features (>0)",
+      label: "GIS layers with features (>0)",
       ok: allHaveFeatures,
+      detail: `${validFeatureCount}/${totalUnits}`,
     });
   }
 
