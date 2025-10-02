@@ -1,101 +1,86 @@
 "use client";
 
-import { AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 
 type Props = {
   totalUnits: number;
-  validPopulationCount?: number;
-  coverage?: number; // percentage of admin units covered
-  hasYear?: boolean;
   allHavePcodes?: boolean;
   missingPcodes?: number;
   hasGISLink?: boolean;
+  hasPopulation?: boolean;
 };
 
 export default function DatasetHealth({
   totalUnits,
-  validPopulationCount,
-  coverage,
-  hasYear,
   allHavePcodes,
   missingPcodes,
   hasGISLink,
+  hasPopulation,
 }: Props) {
-  const checks: { label: string; passed: boolean; detail?: string }[] = [];
+  const items: { label: string; ok: boolean; detail?: string }[] = [];
 
-  // Generic admin unit checks
+  // Always include total units
+  items.push({
+    label: "Total Records",
+    ok: totalUnits > 0,
+    detail: `${totalUnits}`,
+  });
+
+  // PCode checks (Admins + Population)
   if (allHavePcodes !== undefined) {
-    checks.push({
-      label: "All rows have valid PCodes",
-      passed: allHavePcodes,
-      detail: missingPcodes && missingPcodes > 0 ? `${missingPcodes} missing` : undefined,
-    });
-  }
-
-  if (hasGISLink !== undefined) {
-    checks.push({
-      label: "Linked to GIS layers",
-      passed: hasGISLink,
-    });
-  }
-
-  // Population-specific checks
-  if (validPopulationCount !== undefined) {
-    checks.push({
-      label: "Population values valid (> 0)",
-      passed: validPopulationCount === totalUnits && totalUnits > 0,
+    items.push({
+      label: "All records have PCodes",
+      ok: allHavePcodes,
       detail:
-        totalUnits > 0
-          ? `${validPopulationCount}/${totalUnits} valid`
-          : "No population data",
+        missingPcodes && missingPcodes > 0
+          ? `${missingPcodes} missing`
+          : undefined,
     });
   }
 
-  if (coverage !== undefined) {
-    checks.push({
-      label: "Coverage of admin units",
-      passed: coverage >= 95, // arbitrary threshold for "good"
-      detail: `${coverage.toFixed(1)}%`,
+  // Population-specific health
+  if (hasPopulation !== undefined) {
+    items.push({
+      label: "All records have Population",
+      ok: hasPopulation,
     });
   }
 
-  if (hasYear !== undefined) {
-    checks.push({
-      label: "Dataset has year assigned",
-      passed: hasYear,
+  // GIS-specific health
+  if (hasGISLink !== undefined) {
+    items.push({
+      label: "All GIS layers valid",
+      ok: hasGISLink,
     });
   }
 
-  // Overall badge
-  const allPassed = checks.length > 0 && checks.every((c) => c.passed);
+  // Compute overall health
+  const allOk = items.every((i) => i.ok);
 
   return (
     <div className="border rounded-lg p-4 shadow-sm">
-      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        Dataset Health
-        {allPassed ? (
-          <span className="px-2 py-0.5 text-xs rounded bg-green-100 text-green-700">Passing</span>
+      <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+        {allOk ? (
+          <CheckCircle className="w-5 h-5 text-green-600" />
         ) : (
-          <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">Failing</span>
+          <AlertTriangle className="w-5 h-5 text-yellow-600" />
         )}
+        Dataset Health
       </h2>
-      <ul className="space-y-1 text-sm">
-        {checks.map((c, i) => (
-          <li key={i} className="flex items-center gap-2">
-            {c.passed ? (
+      <ul className="text-sm text-gray-700 space-y-1">
+        {items.map((i, idx) => (
+          <li key={idx} className="flex items-center gap-2">
+            {i.ok ? (
               <CheckCircle className="w-4 h-4 text-green-600" />
             ) : (
               <XCircle className="w-4 h-4 text-red-600" />
             )}
             <span>
-              {c.label}
-              {c.detail && <span className="ml-1 text-gray-500">({c.detail})</span>}
+              {i.label}
+              {i.detail ? ` – ${i.detail}` : ""}
             </span>
           </li>
         ))}
-        {checks.length === 0 && (
-          <li className="italic text-gray-400">No checks available</li>
-        )}
       </ul>
     </div>
   );
