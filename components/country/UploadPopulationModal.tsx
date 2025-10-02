@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Dialog } from "@headlessui/react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Download, Upload, X, AlertTriangle } from "lucide-react";
+import { Download, Upload, X } from "lucide-react";
 import * as XLSX from "xlsx";
 
 type Props = {
@@ -15,11 +15,10 @@ type Props = {
 
 function excelDateToJSDate(serial: number): string {
   if (!serial || isNaN(serial)) return "";
-  // Excel serial dates are offset from 1899-12-30
   const utc_days = Math.floor(serial - 25569);
   const utc_value = utc_days * 86400;
   const date_info = new Date(utc_value * 1000);
-  return date_info.toISOString().split("T")[0]; // YYYY-MM-DD
+  return date_info.toISOString().split("T")[0];
 }
 
 export default function UploadPopulationModal({
@@ -30,18 +29,6 @@ export default function UploadPopulationModal({
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasAdmins, setHasAdmins] = useState(false);
-
-  useEffect(() => {
-    const checkAdmins = async () => {
-      const { data } = await supabase
-        .from("admin_units")
-        .select("pcode")
-        .eq("country_iso", countryIso);
-      setHasAdmins(!!data && data.length > 0);
-    };
-    checkAdmins();
-  }, [countryIso]);
 
   const handleDownloadTemplate = (format: "csv" | "xlsx") => {
     const headers = ["pcode", "name", "year", "population", "dataset_date", "source"];
@@ -67,49 +54,65 @@ export default function UploadPopulationModal({
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-        // Required columns check
-        const required = ["pcode", "name", "year", "population", "dataset_date", "source"];
-        if (!required.every((col) => col in rows[0])) {
-          setError("Missing required columns in file.");
+        if (!rows || rows.length === 0) {
+          setError("No rows found in file.");
           return;
         }
 
-        // Check for admin_units mismatches
-        const { data: admins } = await supabase
-          .from("admin_units")
-          .select("pcode")
-          .eq("country_iso", countryIso);
-        const adminSet = new Set(admins?.map((a) => a.pcode));
+        // Parse dataset-level metadata
+        const first = rows[0];
+        const year = Number(first.year);
+        const dataset_date =
+          typeof first.dataset_date === "number"
+            ? excelDateToJSDate(first.dataset_date)
+            : String(first.dataset_date).slice(0, 10);
+        const source =
+          typeof first.source === "string"
+            ? { name: first.source }
+            : first.source || { name: "Unknown" };
 
-        const mismatches = rows.filter((r) => !adminSet.has(String(r.pcode).trim()));
-        if (mismatches.length > 0) {
-          setError(`⚠ Found ${mismatches.length} population rows with invalid PCodes.`);
+        // Insert new dataset record
+        const { data: dataset, error: dsError } = await supabase
+          .from("population_datasets")
+          .insert({
+            country_iso: countryIso,
+            year,
+            dataset_date,
+            source,
+            is_active: true,
+          })
+          .select()
+          .single();
+
+        if (dsError || !dataset) {
+          setError("Could not create dataset version.");
           return;
         }
 
-        // Replace old dataset
-        await supabase.from("population_data").delete().eq("country_iso", countryIso);
+        // Deactivate other datasets
+        await supabase
+          .from("population_datasets")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso)
+          .neq("id", dataset.id);
 
+        // Prepare population rows
         const popData = rows.map((r) => {
-          let dsDate: string;
-          if (typeof r.dataset_date === "number") {
-            dsDate = excelDateToJSDate(r.dataset_date);
-          } else {
-            dsDate = String(r.dataset_date).slice(0, 10); // trim to YYYY-MM-DD
-          }
+          const dsDate =
+            typeof r.dataset_date === "number"
+              ? excelDateToJSDate(r.dataset_date)
+              : String(r.dataset_date).slice(0, 10);
 
           return {
+            dataset_id: dataset.id,
             country_iso: countryIso,
             pcode: String(r.pcode).trim(),
             name: r.name,
-            year: Number(r.year),
             population: Number(r.population),
-            dataset_date: dsDate,
-            source:
-              typeof r.source === "string" ? { name: r.source } : r.source,
           };
         });
 
+        // Insert rows
         const { error: insertErr } = await supabase
           .from("population_data")
           .insert(popData);
@@ -144,44 +147,31 @@ export default function UploadPopulationModal({
             </button>
           </div>
 
-          {hasAdmins && (
-            <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 p-2 rounded mb-4 text-sm">
-              <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5" />
-              <p>
-                Admin Units already exist. For consistency, consider uploading 
-                population via the <strong>Admin Units modal</strong> with the 
-                population column enabled.
-              </p>
-            </div>
-          )}
+          <p className="text-sm text-gray-600 mb-3">
+            File must include: <code>pcode, name, year, population, dataset_date, source</code>
+          </p>
 
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              File must include: <code>pcode, name, year, population, dataset_date, source</code>
-            </p>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDownloadTemplate("csv")}
-                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" /> Download CSV Template
-              </button>
-              <button
-                onClick={() => handleDownloadTemplate("xlsx")}
-                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" /> Download Excel Template
-              </button>
-            </div>
-
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => handleDownloadTemplate("csv")}
+              className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4" /> Download CSV Template
+            </button>
+            <button
+              onClick={() => handleDownloadTemplate("xlsx")}
+              className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4" /> Download Excel Template
+            </button>
           </div>
+
+          <input
+            type="file"
+            accept=".csv,.xlsx"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
 
           <div className="flex justify-end gap-2 mt-6">
             <button
