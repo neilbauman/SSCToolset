@@ -1,67 +1,72 @@
 "use client";
 
-import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle } from "lucide-react";
 
 type Props = {
-  allHavePcodes?: boolean;
-  missingPcodes?: number;
-  hasGISLink?: boolean;
-  hasPopulation?: boolean;
   totalUnits: number;
-  // GIS-specific
-  allHaveCRS?: boolean;
+
+  // Admin units
+  validPcodeCount?: number;
+  missingPcodes?: number;
+
+  // Population
+  validPopulationCount?: number;
+  hasYear?: boolean; // true if all rows have a year
+
+  // GIS
   validCRSCount?: number;
-  allHaveFeatures?: boolean;
   validFeatureCount?: number;
 };
 
 export default function DatasetHealth({
-  allHavePcodes,
-  missingPcodes,
-  hasGISLink,
-  hasPopulation,
   totalUnits,
-  allHaveCRS,
+  validPcodeCount,
+  missingPcodes,
+  validPopulationCount,
+  hasYear,
   validCRSCount,
-  allHaveFeatures,
   validFeatureCount,
 }: Props) {
   const items: { label: string; ok: boolean; detail?: string }[] = [];
 
-  if (allHavePcodes !== undefined) {
+  // Admin units health
+  if (validPcodeCount !== undefined) {
     items.push({
-      label: "All rows have PCodes",
-      ok: allHavePcodes,
-      detail: missingPcodes && missingPcodes > 0 ? `${missingPcodes} missing` : undefined,
+      label: "Admin units with PCodes",
+      ok: validPcodeCount === totalUnits && totalUnits > 0,
+      detail: `${validPcodeCount}/${totalUnits}`,
     });
   }
 
-  if (hasPopulation !== undefined) {
+  // Population health
+  if (validPopulationCount !== undefined) {
     items.push({
       label: "Population values present",
-      ok: hasPopulation,
+      ok: validPopulationCount === totalUnits && totalUnits > 0,
+      detail: `${validPopulationCount}/${totalUnits}`,
     });
   }
 
-  if (hasGISLink !== undefined) {
+  if (hasYear !== undefined) {
     items.push({
-      label: "Linked to GIS layers",
-      ok: hasGISLink,
+      label: "Year values present",
+      ok: hasYear,
     });
   }
 
-  if (allHaveCRS !== undefined && validCRSCount !== undefined) {
+  // GIS health
+  if (validCRSCount !== undefined) {
     items.push({
       label: "GIS layers with CRS",
-      ok: allHaveCRS,
+      ok: validCRSCount === totalUnits && totalUnits > 0,
       detail: `${validCRSCount}/${totalUnits}`,
     });
   }
 
-  if (allHaveFeatures !== undefined && validFeatureCount !== undefined) {
+  if (validFeatureCount !== undefined) {
     items.push({
       label: "GIS layers with features (>0)",
-      ok: allHaveFeatures,
+      ok: validFeatureCount === totalUnits && totalUnits > 0,
       detail: `${validFeatureCount}/${totalUnits}`,
     });
   }
@@ -83,7 +88,9 @@ export default function DatasetHealth({
               )}
               <span>
                 {i.label}{" "}
-                {i.detail && <span className="text-gray-500">({i.detail})</span>}
+                {i.detail && (
+                  <span className="text-gray-500">({i.detail})</span>
+                )}
               </span>
             </li>
           ))}
