@@ -21,6 +21,7 @@ export default function UploadGISModal({
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<any[]>([]);
+  const [invalidRows, setInvalidRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,15 +42,35 @@ export default function UploadGISModal({
       return;
     }
 
-    rows = rows.map((r) => ({
-      layer_name: r.layer_name?.toString().trim(),
-      format: r.format?.toString().trim(),
-      feature_count: Number(r.feature_count || 0),
-      crs: r.crs?.toString().trim(),
-    }));
+    const valid: any[] = [];
+    const invalid: any[] = [];
+
+    rows.forEach((r) => {
+      const row = {
+        layer_name: r.layer_name?.toString().trim(),
+        format: r.format?.toString().trim(),
+        feature_count: Number(r.feature_count || 0),
+        crs: r.crs?.toString().trim(),
+      };
+
+      const isValid =
+        row.layer_name &&
+        row.format &&
+        row.crs &&
+        row.feature_count > 0 &&
+        row.crs.startsWith("EPSG:");
+
+      if (isValid) {
+        valid.push(row);
+      } else if (row.layer_name || row.format || row.crs) {
+        // only count rows that aren’t completely blank
+        invalid.push(row);
+      }
+    });
 
     setFile(f);
-    setPreview(rows.slice(0, 10));
+    setPreview(valid.slice(0, 10));
+    setInvalidRows(invalid);
     setError(null);
   };
 
@@ -88,6 +109,12 @@ export default function UploadGISModal({
         feature_count: 120,
         crs: "EPSG:4326",
       },
+      {
+        layer_name: "Settlements",
+        format: "Shapefile",
+        feature_count: 450,
+        crs: "EPSG:3857",
+      },
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
     const wb = XLSX.utils.book_new();
@@ -100,7 +127,10 @@ export default function UploadGISModal({
       <div className="space-y-4">
         <h2 className="text-lg font-semibold mb-2">Upload GIS Dataset</h2>
         <p className="text-sm text-gray-600">
-          File must include: <code>layer_name, format, feature_count, crs</code>
+          File must include:{" "}
+          <code>layer_name, format, feature_count, crs</code>. <br />
+          CRS must start with <code>EPSG:</code>. Feature count must be greater
+          than 0.
         </p>
 
         <button
@@ -120,12 +150,16 @@ export default function UploadGISModal({
 
         {preview.length > 0 && (
           <div>
-            <p className="text-sm font-semibold mb-2">Preview (first 10 rows)</p>
+            <p className="text-sm font-semibold mb-2">
+              Preview (first {preview.length} valid rows)
+            </p>
             <table className="text-xs border w-full">
               <thead className="bg-gray-100">
                 <tr>
                   {Object.keys(preview[0]).map((h) => (
-                    <th key={h} className="border px-1 py-0.5">{h}</th>
+                    <th key={h} className="border px-1 py-0.5">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -133,12 +167,21 @@ export default function UploadGISModal({
                 {preview.map((row, i) => (
                   <tr key={i}>
                     {Object.values(row).map((v, j) => (
-                      <td key={j} className="border px-1 py-0.5">{String(v)}</td>
+                      <td key={j} className="border px-1 py-0.5">
+                        {String(v)}
+                      </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {invalidRows.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-300 p-2 rounded text-sm">
+            ⚠ {invalidRows.length} row(s) were skipped due to missing or invalid
+            values.
           </div>
         )}
 
