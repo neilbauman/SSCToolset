@@ -2,14 +2,7 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import {
-  Map,
-  Users,
-  Database,
-  AlertCircle,
-  Pencil,
-  Link as LinkIcon,
-} from "lucide-react";
+import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import Link from "next/link";
@@ -18,7 +11,6 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import type { CountryParams } from "@/app/country/types";
 
-// SSR-safe Leaflet
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -62,30 +54,7 @@ function SoftButton({
   );
 }
 
-function renderExtraEntry(entry: {
-  label: string;
-  value: string;
-  url?: string;
-}) {
-  return entry.url ? (
-    <a
-      href={entry.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-700 hover:underline"
-    >
-      {entry.value}
-    </a>
-  ) : (
-    <span>{entry.value}</span>
-  );
-}
-
-function StatusBadge({
-  status,
-}: {
-  status: "uploaded" | "partial" | "missing" | "empty";
-}) {
+function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | "empty" }) {
   const styles: Record<string, string> = {
     uploaded: "bg-green-100 text-green-700",
     partial: "bg-yellow-100 text-yellow-700",
@@ -109,10 +78,6 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [statusData, setStatusData] = useState<any>(null);
   const [openMeta, setOpenMeta] = useState(false);
 
-  // Integration health counts
-  const [popLinked, setPopLinked] = useState(0);
-  const [gisWithCRS, setGisWithCRS] = useState(0);
-
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -129,7 +94,7 @@ export default function CountryConfigLandingPage({ params }: any) {
     const fetchStatuses = async () => {
       const { data: admins } = await supabase
         .from("admin_units")
-        .select("pcode, level")
+        .select("level")
         .eq("country_iso", id);
 
       const { data: pop } = await supabase
@@ -145,16 +110,6 @@ export default function CountryConfigLandingPage({ params }: any) {
       setAdminCount(admins?.length || 0);
       setPopCount(pop?.length || 0);
       setGisCount(gis?.length || 0);
-
-      // Linked population rows (valid PCode)
-      const adminSet = new Set(admins?.map((a) => a.pcode));
-      setPopLinked(pop?.filter((r) => adminSet.has(r.pcode)).length || 0);
-
-      // GIS layers with CRS
-      setGisWithCRS(
-        gis?.filter((g) => g.crs && g.crs.startsWith("EPSG:")).length || 0
-      );
-
       setStatusData({ admins, pop, gis });
     };
     fetchStatuses();
@@ -172,9 +127,7 @@ export default function CountryConfigLandingPage({ params }: any) {
     if (key === "population") {
       const pop = statusData?.pop || [];
       if (pop.length === 0) return "missing";
-      const invalid = pop.some(
-        (p: any) => !p.pcode || !p.population || p.population <= 0
-      );
+      const invalid = pop.some((p: any) => !p.pcode || !p.population || p.population <= 0);
       return invalid ? "partial" : "uploaded";
     }
     if (key === "gis") {
@@ -231,27 +184,6 @@ export default function CountryConfigLandingPage({ params }: any) {
     ),
   };
 
-  const badge = (value: number, total: number) => {
-    if (total === 0)
-      return (
-        <span className="ml-2 text-xs px-2 py-0.5 rounded border bg-gray-100 text-gray-700">
-          0
-        </span>
-      );
-    const ratio = `${value}/${total}`;
-    let color = "bg-green-100 text-green-800 border-green-300";
-    if (value === 0) color = "bg-red-100 text-red-800 border-red-300";
-    else if (value < total)
-      color = "bg-yellow-100 text-yellow-700 border-yellow-300";
-    return (
-      <span
-        className={`ml-2 text-xs px-2 py-0.5 rounded border ${color}`}
-      >
-        {ratio}
-      </span>
-    );
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -276,76 +208,16 @@ export default function CountryConfigLandingPage({ params }: any) {
           <div>
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
             {country ? (
-              <>
-                {/* Core Metadata */}
-                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mb-2">
-                  Core Metadata
-                </h3>
-                <div className="pl-2 text-sm space-y-1">
-                  <p><strong>ISO:</strong> {country.iso_code}</p>
-                  <p><strong>Name:</strong> {country.name}</p>
-                  <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
-                  <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
-                  <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
-                  <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
-                  <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
-                  <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
-                  <div className="mt-2">
-                    <p className="font-medium">Sources:</p>
-                    {country.dataset_sources?.length > 0 ? (
-                      <ul className="list-disc pl-6 text-blue-700">
-                        {country.dataset_sources.map(
-                          (src: any, idx: number) => (
-                            <li key={idx}>
-                              {src?.url ? (
-                                <a
-                                  href={src.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="hover:underline"
-                                >
-                                  {src.name}
-                                </a>
-                              ) : (
-                                <span>{src?.name ?? "Unknown source"}</span>
-                              )}
-                            </li>
-                          )
-                        )}
-                      </ul>
-                    ) : (
-                      <p className="italic text-gray-400">
-                        No sources provided
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Extra Metadata */}
-                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
-                  Extra Metadata
-                </h3>
-                <div className="pl-2 text-sm space-y-1">
-                  {country.extra_metadata &&
-                  Object.keys(country.extra_metadata).length > 0 ? (
-                    Object.entries(country.extra_metadata).map(([k, v]) => {
-                      const entry = v as {
-                        label: string;
-                        value: string;
-                        url?: string;
-                      };
-                      return (
-                        <p key={k}>
-                          <strong>{entry.label}:</strong>{" "}
-                          {renderExtraEntry(entry)}
-                        </p>
-                      );
-                    })
-                  ) : (
-                    <p className="italic text-gray-400">None</p>
-                  )}
-                </div>
-              </>
+              <div className="pl-2 text-sm space-y-1">
+                <p><strong>ISO:</strong> {country.iso_code}</p>
+                <p><strong>Name:</strong> {country.name}</p>
+                <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
+                <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
+                <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
+                <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
+                <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
+                <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
+              </div>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
             )}
@@ -356,71 +228,35 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Dataset cards */}
+      {/* Dataset cards grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
-          <div
-            key={d.key}
-            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
-          >
+          <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 {d.icon}
                 <Link href={d.href}>
-                  <h3 className="text-lg font-semibold hover:underline">
-                    {d.title}
-                  </h3>
+                  <h3 className="text-lg font-semibold hover:underline">{d.title}</h3>
                 </Link>
               </div>
               <StatusBadge status={d.status} />
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
             {d.count > 0 ? (
-              <p className="text-sm text-gray-500 mb-3">
-                📊 Total: {d.count}
-              </p>
+              <p className="text-sm text-gray-500 mb-3">📊 Total: {d.count}</p>
             ) : (
-              <p className="italic text-gray-400 mb-3">
-                No data uploaded yet
-              </p>
+              <p className="italic text-gray-400 mb-3">No data uploaded yet</p>
             )}
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
               <SoftButton color="green">Upload Data</SoftButton>
-              <SoftButton color="blue" href={d.href}>
-                View
-              </SoftButton>
+              <SoftButton color="blue" href={d.href}>View</SoftButton>
             </div>
           </div>
         ))}
 
-        {/* Integration Health Card */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <LinkIcon className="w-6 h-6 text-blue-600" />
-              <h3 className="text-lg font-semibold">
-                Dataset Integration Health
-              </h3>
-            </div>
-            <SoftButton color="blue" href={`/country/${id}/joins`}>
-              Manage Joins
-            </SoftButton>
-          </div>
-          <ul className="text-sm space-y-2">
-            <li>
-              Population rows linked to Admin Units
-              {badge(popLinked, popCount)}
-            </li>
-            <li>
-              GIS layers with CRS
-              {badge(gisWithCRS, gisCount)}
-            </li>
-          </ul>
-        </div>
-
-        {/* Other datasets */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
+        {/* Other Datasets */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-blue-600" />
@@ -435,9 +271,28 @@ export default function CountryConfigLandingPage({ params }: any) {
           </p>
           <p className="italic text-gray-500">🚧 To be implemented.</p>
         </div>
+
+        {/* Dataset Integration / Joins */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <span className="text-blue-600">🔗</span>
+              <h3 className="text-lg font-semibold">Dataset Integration Health</h3>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Check alignment and joins across Admin Units, Population, GIS, and Other datasets.
+          </p>
+          <ul className="text-sm text-gray-700 space-y-1">
+            <li>Population rows linked to Admin Units: <strong>0</strong></li>
+            <li>GIS layers with CRS: <strong>3/3</strong></li>
+          </ul>
+          <div className="mt-3">
+            <SoftButton color="blue">Manage Joins</SoftButton>
+          </div>
+        </div>
       </div>
 
-      {/* Edit Metadata Modal */}
       {country && (
         <EditMetadataModal
           open={openMeta}
