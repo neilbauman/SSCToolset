@@ -98,9 +98,35 @@ export default function DatasetHealth({
     );
   };
 
+  // Overall health badge
+  const totalChecks = items.length;
+  const passedChecks = items.filter((i) => i.ok).length;
+
+  let overallColor = "bg-gray-100 text-gray-800 border-gray-300";
+  let overallLabel = "No Checks";
+
+  if (totalChecks > 0) {
+    if (passedChecks === totalChecks) {
+      overallColor = "bg-green-100 text-green-800 border-green-300";
+      overallLabel = "Healthy";
+    } else if (passedChecks > 0) {
+      overallColor = "bg-amber-100 text-amber-800 border-amber-300";
+      overallLabel = "Partial";
+    } else {
+      overallColor = "bg-red-100 text-red-800 border-red-300";
+      overallLabel = "Failing";
+    }
+  }
+
   return (
     <div className="border rounded-lg p-4 shadow-sm">
-      <h2 className="text-lg font-semibold mb-3">Dataset Health</h2>
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-lg font-semibold">Dataset Health</h2>
+        <span className={`px-2 py-0.5 text-xs rounded border ${overallColor}`}>
+          {overallLabel}
+        </span>
+      </div>
+
       {totalUnits === 0 && (
         <p className="italic text-gray-500">No data uploaded yet</p>
       )}
