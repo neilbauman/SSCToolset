@@ -217,6 +217,62 @@ export default function CountryConfigLandingPage({ params }: any) {
                 <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
                 <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
                 <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
+
+                {/* Dataset Sources */}
+                <div className="mt-3">
+                  <p className="font-medium">Sources:</p>
+                  {country.dataset_sources?.length > 0 ? (
+                    <ul className="list-disc pl-6 text-blue-700">
+                      {country.dataset_sources.map((src: any, idx: number) => (
+                        <li key={idx}>
+                          {src?.url ? (
+                            <a
+                              href={src.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline"
+                            >
+                              {src.name}
+                            </a>
+                          ) : (
+                            <span>{src?.name ?? "Unknown source"}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="italic text-gray-400">No sources provided</p>
+                  )}
+                </div>
+
+                {/* Extra Metadata */}
+                <div className="mt-3">
+                  <p className="font-medium">Extra Metadata:</p>
+                  {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
+                    Object.entries(country.extra_metadata).map(([k, v]) => {
+                      const entry = v as { label: string; value: string; url?: string };
+                      return (
+                        <p key={k}>
+                          <strong>{entry.label}:</strong>{" "}
+                          {entry.url ? (
+                            <a
+                              href={entry.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              {entry.value}
+                            </a>
+                          ) : (
+                            <span>{entry.value}</span>
+                          )}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p className="italic text-gray-400">None</p>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
