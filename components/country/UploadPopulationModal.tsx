@@ -1,213 +1,143 @@
 "use client";
 
-import { useState } from "react";
-import Papa from "papaparse";
 import { Dialog } from "@headlessui/react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  countryIso: string;
-  onUploaded: () => void;
-};
 
 export default function UploadPopulationModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: Props) {
+}: {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  onUploaded: () => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [year, setYear] = useState<number | "">("");
   const [datasetDate, setDatasetDate] = useState<string>("");
   const [source, setSource] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
-
-  const handleFile = (f: File) => {
-    setFile(f);
-    Papa.parse(f, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        setPreview(results.data);
-      },
-    });
-  };
+  const [title, setTitle] = useState<string>("");
 
   const handleUpload = async () => {
-    if (!file || !year) {
-      setError("Please select a file and enter a Year.");
+    if (!file || !year) return;
+
+    // deactivate previous active datasets
+    await supabase
+      .from("population_datasets")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+
+    // create new dataset version
+    const { data: dataset, error: dsError } = await supabase
+      .from("population_datasets")
+      .insert([
+        {
+          country_iso: countryIso,
+          year,
+          dataset_date: datasetDate || null,
+          source: source || null,
+          title: title || `Dataset ${year}`,
+          is_active: true,
+        },
+      ])
+      .select()
+      .single();
+
+    if (dsError || !dataset) {
+      console.error("Error inserting dataset:", dsError);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const rows = results.data as any[];
-
-        // Insert dataset metadata
-        const { data: dataset, error: dsError } = await supabase
-          .from("population_datasets")
-          .insert([
-            {
-              country_iso: countryIso,
-              year,
-              dataset_date: datasetDate || null,
-              source: source || null,
-            },
-          ])
-          .select()
-          .single();
-
-        if (dsError) {
-          console.error(dsError);
-          setError("Failed to save dataset metadata.");
-          setLoading(false);
-          return;
-        }
-
-        const datasetId = dataset.id;
-
-        // Prepare row inserts
-        const inserts = rows.map((r) => ({
-          dataset_id: datasetId,
+    // parse CSV
+    const text = await file.text();
+    const rows = text
+      .split("\n")
+      .slice(1) // skip header
+      .map((line) => {
+        const [pcode, name, populationStr] = line.split(",");
+        return {
+          dataset_id: dataset.id,
           country_iso: countryIso,
-          pcode: r.pcode,
-          name: r.name,
-          population: parseInt(r.population, 10) || 0,
-        }));
+          pcode: pcode?.trim(),
+          name: name?.trim(),
+          population: parseInt(populationStr || "0", 10),
+          year,
+        };
+      })
+      .filter((r) => r.pcode && r.name);
 
-        const { error: rowError } = await supabase
-          .from("population_data")
-          .insert(inserts);
+    if (rows.length > 0) {
+      const { error: insertErr } = await supabase.from("population_data").insert(rows);
+      if (insertErr) {
+        console.error("Error inserting rows:", insertErr);
+      }
+    }
 
-        if (rowError) {
-          console.error(rowError);
-          setError("Failed to upload rows.");
-          setLoading(false);
-          return;
-        }
-
-        setLoading(false);
-        onUploaded();
-        onClose();
-      },
-    });
+    onUploaded();
+    onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} className="fixed z-50 inset-0 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen">
-        <Dialog.Panel className="bg-white rounded-lg shadow-lg max-w-lg w-full p-6">
-          <Dialog.Title className="text-lg font-semibold mb-4">
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white rounded-lg p-6 max-w-lg w-full space-y-4 shadow">
+          <Dialog.Title className="text-lg font-semibold">
             Upload Population Dataset
           </Dialog.Title>
-
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600">
-              File must include columns: <code>pcode, name, population</code>.
-            </p>
-
-            {/* Year (required) */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">Title (optional)</label>
             <input
-              type="number"
-              placeholder="Year (e.g. 2020)"
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="border px-3 py-2 rounded w-full text-sm"
-              required
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="border rounded w-full px-2 py-1 text-sm"
+              placeholder="e.g. 2020 Census – PSA"
             />
 
-            {/* Dataset Date (optional) */}
-            <label className="block text-sm font-medium text-gray-700 mt-2">
-              Dataset Date (source date, optional)
-            </label>
+            <label className="block text-sm font-medium">Year *</label>
+            <input
+              type="number"
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="border rounded w-full px-2 py-1 text-sm"
+            />
+
+            <label className="block text-sm font-medium">Dataset Date</label>
             <input
               type="date"
               value={datasetDate}
               onChange={(e) => setDatasetDate(e.target.value)}
-              className="border px-3 py-2 rounded w-full text-sm"
+              className="border rounded w-full px-2 py-1 text-sm"
             />
 
-            {/* Source (optional) */}
-            <label className="block text-sm font-medium text-gray-700 mt-2">
-              Source (optional, e.g. PSA Census 2020)
-            </label>
+            <label className="block text-sm font-medium">Source</label>
             <input
               type="text"
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              className="border px-3 py-2 rounded w-full text-sm"
+              className="border rounded w-full px-2 py-1 text-sm"
             />
 
-            {/* File upload */}
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={(e) => e.target.files && handleFile(e.target.files[0])}
-              className="block w-full text-sm text-gray-600"
-            />
-
-            {/* Preview table */}
-            {preview.length > 0 && (
-              <div className="mt-3">
-                <p className="text-sm font-medium">Preview:</p>
-                <table className="w-full text-xs border mt-1">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="border px-1 py-0.5">PCode</th>
-                      <th className="border px-1 py-0.5">Name</th>
-                      <th className="border px-1 py-0.5">Population</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(showMore ? preview.slice(0, 20) : preview.slice(0, 5)).map(
-                      (r, idx) => (
-                        <tr key={idx}>
-                          <td className="border px-1 py-0.5">{r.pcode}</td>
-                          <td className="border px-1 py-0.5">{r.name}</td>
-                          <td className="border px-1 py-0.5">{r.population}</td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
-                {preview.length > 5 && (
-                  <button
-                    className="mt-2 text-xs text-blue-600 hover:underline"
-                    onClick={() => setShowMore(!showMore)}
-                  >
-                    {showMore ? "Show Less" : `Show More (${preview.length - 5} more)`}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {error && <p className="text-red-600 text-sm">{error}</p>}
+            <label className="block text-sm font-medium">Upload CSV File</label>
+            <input type="file" accept=".csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </div>
 
-          {/* Actions */}
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="flex justify-end gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm"
             >
               Cancel
             </button>
             <button
               onClick={handleUpload}
-              disabled={loading}
-              className="px-4 py-2 text-sm rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90"
+              className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
             >
-              {loading ? "Uploading..." : "Upload"}
+              Upload
             </button>
           </div>
         </Dialog.Panel>
