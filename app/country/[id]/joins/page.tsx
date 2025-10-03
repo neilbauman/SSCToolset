@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { CountryParams } from "@/app/country/types";
 import { Plus } from "lucide-react";
+import Link from "next/link";
 
 export default function ManageJoinsPage({ params }: any) {
   const { id } = params as CountryParams;
@@ -85,13 +86,40 @@ export default function ManageJoinsPage({ params }: any) {
               {joins.map((j) => (
                 <tr key={j.id} className="hover:bg-gray-50">
                   <td className="border px-2 py-1">
-                    {j.admin_datasets?.[0]?.title || "—"}
+                    {j.admin_datasets?.[0]?.title ? (
+                      <Link
+                        href={`/country/${id}/admins`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {j.admin_datasets[0].title} ({j.admin_datasets[0].year})
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="border px-2 py-1">
-                    {j.population_datasets?.[0]?.title || "—"}
+                    {j.population_datasets?.[0]?.title ? (
+                      <Link
+                        href={`/country/${id}/population`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {j.population_datasets[0].title} ({j.population_datasets[0].year})
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="border px-2 py-1">
-                    {j.gis_datasets?.[0]?.title || "—"}
+                    {j.gis_datasets?.[0]?.title ? (
+                      <Link
+                        href={`/country/${id}/gis`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {j.gis_datasets[0].title} ({j.gis_datasets[0].year})
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="border px-2 py-1">{j.notes || "—"}</td>
                   <td className="border px-2 py-1">
