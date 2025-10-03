@@ -2,54 +2,85 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Link as LinkIcon } from "lucide-react";
+import { Link2 } from "lucide-react";
 
-type Props = { countryIso: string; className?: string };
+type ManageJoinsCardProps = {
+  countryIso: string;
+};
 
-export default function ManageJoinsCard({ countryIso, className }: Props) {
-  const [join, setJoin] = useState<any>(null);
+type DatasetJoin = {
+  id: string;
+  country_iso: string;
+  notes?: string;
+  admin_datasets?: { title: string; year: number }[];
+  population_datasets?: { title: string; year: number }[];
+  gis_datasets?: { title: string; year: number }[];
+};
+
+export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
+  const [join, setJoin] = useState<DatasetJoin | null>(null);
 
   useEffect(() => {
     const fetchJoin = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("dataset_joins")
         .select(
-          "id, admin_datasets(title), population_datasets(title), gis_datasets(title)"
+          `
+          id,
+          country_iso,
+          notes,
+          admin_datasets ( title, year ),
+          population_datasets ( title, year ),
+          gis_datasets ( title, year )
+        `
         )
         .eq("country_iso", countryIso)
         .limit(1)
         .single();
-      setJoin(data);
+
+      if (error) {
+        console.error("Error fetching dataset join:", error);
+      } else {
+        setJoin(data as unknown as DatasetJoin);
+      }
     };
     fetchJoin();
   }, [countryIso]);
 
   return (
-    <section className={`border rounded-lg p-5 shadow-sm ${className || ""}`}>
+    <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <LinkIcon className="w-6 h-6 text-purple-600" />
+          <Link2 className="w-6 h-6 text-purple-600" />
           <h3 className="text-lg font-semibold">Manage Joins</h3>
         </div>
       </div>
-      <p className="text-sm text-gray-600 mb-3">
+      <p className="text-sm text-gray-600 mb-4">
         Link Admin, Population, and GIS datasets together for consistency in analysis.
       </p>
-      {join ? (
-        <div className="text-sm text-gray-600 mb-3 space-y-1">
-          <p><strong>Admin:</strong> {join.admin_datasets?.[0]?.title || "—"}</p>
-          <p><strong>Population:</strong> {join.population_datasets?.[0]?.title || "—"}</p>
-          <p><strong>GIS:</strong> {join.gis_datasets?.[0]?.title || "—"}</p>
-        </div>
-      ) : (
-        <p className="italic text-gray-400 mb-3">No join configured</p>
-      )}
-      <a
-        href={`/country/${countryIso}/joins`}
-        className="bg-blue-700 text-white px-3 py-1.5 text-sm rounded hover:opacity-90"
-      >
+      <div className="text-sm space-y-1">
+        <p>
+          <strong>Admin:</strong>{" "}
+          {join?.admin_datasets?.[0]?.title
+            ? `${join.admin_datasets[0].title} (${join.admin_datasets[0].year})`
+            : "—"}
+        </p>
+        <p>
+          <strong>Population:</strong>{" "}
+          {join?.population_datasets?.[0]?.title
+            ? `${join.population_datasets[0].title} (${join.population_datasets[0].year})`
+            : "—"}
+        </p>
+        <p>
+          <strong>GIS:</strong>{" "}
+          {join?.gis_datasets?.[0]?.title
+            ? `${join.gis_datasets[0].title} (${join.gis_datasets[0].year})`
+            : "—"}
+        </p>
+      </div>
+      <button className="mt-4 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:opacity-90">
         Manage
-      </a>
-    </section>
+      </button>
+    </div>
   );
 }
