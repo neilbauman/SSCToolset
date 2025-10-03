@@ -14,34 +14,36 @@ export default function ManageJoinsPage({ params }: any) {
   const [joins, setJoins] = useState<any[]>([]);
   const [openModal, setOpenModal] = useState(false);
 
-  // dataset options
   const [adminOptions, setAdminOptions] = useState<any[]>([]);
   const [popOptions, setPopOptions] = useState<any[]>([]);
   const [gisOptions, setGisOptions] = useState<any[]>([]);
 
-  // selected IDs
   const [selectedAdmin, setSelectedAdmin] = useState<string>("");
   const [selectedPop, setSelectedPop] = useState<string>("");
   const [selectedGIS, setSelectedGIS] = useState<string>("");
 
-  useEffect(() => {
-    const fetchJoins = async () => {
-      const { data, error } = await supabase
-        .from("dataset_joins")
-        .select(
-          `
-          id,
-          notes,
-          created_at,
-          admin_datasets ( id, title, year ),
-          population_datasets ( id, title, year ),
-          gis_datasets ( id, title, year )
+  const fetchJoins = async () => {
+    const { data, error } = await supabase
+      .from("dataset_joins")
+      .select(
         `
-        )
-        .eq("country_iso", id);
+        id,
+        notes,
+        created_at,
+        is_active,
+        admin_datasets ( id, title, year ),
+        population_datasets ( id, title, year ),
+        gis_datasets ( id, title, year )
+      `
+      )
+      .eq("country_iso", id)
+      .order("created_at", { ascending: false });
 
-      if (!error) setJoins(data || []);
-    };
+    if (!error) setJoins(data || []);
+  };
+
+  useEffect(() => {
+    fetchJoins();
 
     const fetchOptions = async () => {
       const { data: admins } = await supabase
@@ -62,7 +64,6 @@ export default function ManageJoinsPage({ params }: any) {
       setGisOptions(gis || []);
     };
 
-    fetchJoins();
     fetchOptions();
   }, [id]);
 
@@ -75,29 +76,31 @@ export default function ManageJoinsPage({ params }: any) {
       notes: "Created manually",
     });
 
-    if (error) {
-      console.error("Error creating join:", error);
-    } else {
+    if (!error) {
       setOpenModal(false);
       setSelectedAdmin("");
       setSelectedPop("");
       setSelectedGIS("");
-      // refresh joins
-      const { data } = await supabase
-        .from("dataset_joins")
-        .select(
-          `
-          id,
-          notes,
-          created_at,
-          admin_datasets ( id, title, year ),
-          population_datasets ( id, title, year ),
-          gis_datasets ( id, title, year )
-        `
-        )
-        .eq("country_iso", id);
-      setJoins(data || []);
+      fetchJoins();
+    } else {
+      console.error("Error creating join:", error);
     }
+  };
+
+  const handleSetActive = async (joinId: string) => {
+    // deactivate others
+    await supabase
+      .from("dataset_joins")
+      .update({ is_active: false })
+      .eq("country_iso", id);
+
+    // activate selected
+    await supabase
+      .from("dataset_joins")
+      .update({ is_active: true })
+      .eq("id", joinId);
+
+    fetchJoins();
   };
 
   const headerProps = {
@@ -140,6 +143,7 @@ export default function ManageJoinsPage({ params }: any) {
                 <th className="border px-2 py-1 text-left">GIS</th>
                 <th className="border px-2 py-1 text-left">Notes</th>
                 <th className="border px-2 py-1 text-left">Created At</th>
+                <th className="border px-2 py-1 text-left">Active</th>
               </tr>
             </thead>
             <tbody>
@@ -184,6 +188,20 @@ export default function ManageJoinsPage({ params }: any) {
                   <td className="border px-2 py-1">{j.notes || "—"}</td>
                   <td className="border px-2 py-1">
                     {new Date(j.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="border px-2 py-1">
+                    {j.is_active ? (
+                      <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+                        Active
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleSetActive(j.id)}
+                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:opacity-90"
+                      >
+                        Make Active
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
