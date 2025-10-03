@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Link2 } from "lucide-react";
+import Link from "next/link";
 
 type ManageJoinsCardProps = {
   countryIso: string;
@@ -78,9 +79,12 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
             : "—"}
         </p>
       </div>
-      <button className="mt-4 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:opacity-90">
+      <Link
+        href={`/country/${countryIso}/joins`}
+        className="mt-4 inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:opacity-90"
+      >
         Manage
-      </button>
+      </Link>
     </div>
   );
 }
