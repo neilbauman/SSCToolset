@@ -13,13 +13,14 @@ type DatasetJoin = {
   id: string;
   country_iso: string;
   notes?: string;
+  is_active?: boolean;
   admin_datasets?: { title: string; year: number }[];
   population_datasets?: { title: string; year: number }[];
   gis_datasets?: { title: string; year: number }[];
 };
 
 export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
-  const [join, setJoin] = useState<DatasetJoin | null>(null);
+  const [activeJoin, setActiveJoin] = useState<DatasetJoin | null>(null);
 
   useEffect(() => {
     const fetchJoin = async () => {
@@ -30,19 +31,21 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
           id,
           country_iso,
           notes,
+          is_active,
           admin_datasets ( title, year ),
           population_datasets ( title, year ),
           gis_datasets ( title, year )
         `
         )
         .eq("country_iso", countryIso)
+        .eq("is_active", true) // fetch only active
         .limit(1)
         .single();
 
       if (error) {
-        console.error("Error fetching dataset join:", error);
+        console.error("Error fetching active join:", error);
       } else {
-        setJoin(data as unknown as DatasetJoin);
+        setActiveJoin(data as unknown as DatasetJoin);
       }
     };
     fetchJoin();
@@ -53,7 +56,9 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <Link2 className="w-6 h-6 text-purple-600" />
-          <h3 className="text-lg font-semibold">Manage Joins</h3>
+          <Link href={`/country/${countryIso}/joins`}>
+            <h3 className="text-lg font-semibold hover:underline">Manage Joins</h3>
+          </Link>
         </div>
       </div>
       <p className="text-sm text-gray-600 mb-4">
@@ -62,12 +67,12 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
       <div className="text-sm space-y-1">
         <p>
           <strong>Admin:</strong>{" "}
-          {join?.admin_datasets?.[0]?.title ? (
+          {activeJoin?.admin_datasets?.[0]?.title ? (
             <Link
               href={`/country/${countryIso}/admins`}
               className="text-blue-600 hover:underline"
             >
-              {join.admin_datasets[0].title} ({join.admin_datasets[0].year})
+              {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
             </Link>
           ) : (
             "—"
@@ -75,12 +80,12 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
         </p>
         <p>
           <strong>Population:</strong>{" "}
-          {join?.population_datasets?.[0]?.title ? (
+          {activeJoin?.population_datasets?.[0]?.title ? (
             <Link
               href={`/country/${countryIso}/population`}
               className="text-blue-600 hover:underline"
             >
-              {join.population_datasets[0].title} ({join.population_datasets[0].year})
+              {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
             </Link>
           ) : (
             "—"
@@ -88,12 +93,12 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
         </p>
         <p>
           <strong>GIS:</strong>{" "}
-          {join?.gis_datasets?.[0]?.title ? (
+          {activeJoin?.gis_datasets?.[0]?.title ? (
             <Link
               href={`/country/${countryIso}/gis`}
               className="text-blue-600 hover:underline"
             >
-              {join.gis_datasets[0].title} ({join.gis_datasets[0].year})
+              {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
             </Link>
           ) : (
             "—"
