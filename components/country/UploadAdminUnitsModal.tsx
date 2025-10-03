@@ -1,186 +1,118 @@
 "use client";
 
-import { useState } from "react";
 import { Dialog } from "@headlessui/react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Download, Upload, X } from "lucide-react";
-import * as XLSX from "xlsx";
+import { Upload } from "lucide-react";
 
-type Props = {
+interface UploadAdminUnitsModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded?: () => void;
-};
+  onUploaded: () => void;
+}
 
 export default function UploadAdminUnitsModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: Props) {
+}: UploadAdminUnitsModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [includePopulation, setIncludePopulation] = useState(false);
-
-  const allowedLevels = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
-
-  const handleDownloadTemplate = (format: "csv" | "xlsx") => {
-    const headers = ["pcode", "name", "level", "parent_pcode"];
-    if (includePopulation) headers.push("population");
-
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "AdminUnits");
-
-    if (format === "csv") {
-      XLSX.writeFile(wb, "admin_units_template.csv");
-    } else {
-      XLSX.writeFile(wb, "admin_units_template.xlsx");
-    }
-  };
 
   const handleUpload = async () => {
     if (!file) return;
+    setLoading(true);
+    setError(null);
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      const text = await file.text();
+      const rows = text.split("\n").slice(1).map((line) => {
+        const [pcode, name, level, parent_pcode] = line.split(",");
+        return {
+          pcode: pcode?.trim(),
+          name: name?.trim(),
+          level: level?.trim(),
+          parent_pcode: parent_pcode?.trim() || null,
+        };
+      });
 
-        const validRows = rows.filter((row) => allowedLevels.includes(row.level));
-        if (validRows.length === 0) {
-          setError(`No valid rows found. Allowed levels: ${allowedLevels.join(", ")}`);
-          return;
-        }
+      // 1. Insert dataset version metadata
+      const { data: version, error: versionError } = await supabase
+        .from("admin_dataset_versions")
+        .insert([
+          {
+            country_iso: countryIso,
+            title: `Admin Upload ${new Date().toISOString().slice(0, 10)}`,
+            year: new Date().getFullYear(),
+            dataset_date: new Date().toISOString(),
+            source: "Uploaded CSV",
+          },
+        ])
+        .select()
+        .single();
 
-        // Insert into admin_units
-        const adminData = validRows.map((row) => ({
+      if (versionError) throw versionError;
+
+      // 2. Insert uploaded rows with dataset_version_id
+      const { error: insertError } = await supabase.from("admin_units").insert(
+        rows.map((r) => ({
+          ...r,
           country_iso: countryIso,
-          pcode: String(row.pcode).trim(),
-          name: row.name,
-          level: row.level,
-          parent_pcode: row.parent_pcode || null,
-        }));
+          dataset_version_id: version.id,
+        }))
+      );
 
-        const { error: adminErr } = await supabase
-          .from("admin_units")
-          .delete()
-          .eq("country_iso", countryIso);
-        if (adminErr) console.error(adminErr);
+      if (insertError) throw insertError;
 
-        const { error: insertErr } = await supabase
-          .from("admin_units")
-          .insert(adminData);
-
-        if (insertErr) {
-          setError(insertErr.message);
-          return;
-        }
-
-        // Optionally insert into population_data
-        if (includePopulation && rows.some((r) => r.population)) {
-          const popData = validRows
-            .filter((r) => r.population && Number(r.population) > 0)
-            .map((r) => ({
-              country_iso: countryIso,
-              pcode: String(r.pcode).trim(),
-              name: r.name,
-              population: Number(r.population),
-              year: 2020, // default
-              dataset_date: "2020-05-01",
-              source: { name: "Uploaded with Admin Units" },
-            }));
-
-          if (popData.length > 0) {
-            await supabase.from("population_data").delete().eq("country_iso", countryIso);
-            await supabase.from("population_data").insert(popData);
-          }
-        }
-
-        if (onUploaded) onUploaded();
-        setFile(null);
-        setError(null);
-        onClose();
-      };
-      reader.readAsArrayBuffer(file);
+      onUploaded();
+      onClose();
     } catch (err: any) {
-      setError(err.message);
+      console.error("Upload error:", err);
+      setError(err.message || "Upload failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-      <div className="fixed inset-0 flex items-center justify-center">
-        <Dialog.Panel className="bg-white rounded-lg shadow-lg p-6 w-[500px]">
-          <div className="flex items-center justify-between mb-4">
-            <Dialog.Title className="text-lg font-semibold">
-              Upload Admin Units Dataset
-            </Dialog.Title>
-            <button onClick={onClose}>
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          </div>
+    <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
+      <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              File must include: <code>pcode, name, level, parent_pcode</code>
-              {includePopulation && ", population"}
-            </p>
+      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
+        <Dialog.Title className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
+          Upload Admin Units Dataset
+        </Dialog.Title>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={includePopulation}
-                onChange={(e) => setIncludePopulation(e.target.checked)}
-              />
-              Include population column
-            </label>
+        <p className="text-sm text-gray-600 mb-3">
+          File must include: <code>pcode</code>, <code>name</code>, <code>level</code>,{" "}
+          <code>parent_pcode</code>. Only levels ADM1–ADM5 are supported here.
+        </p>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDownloadTemplate("csv")}
-                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" /> Download CSV Template
-              </button>
-              <button
-                onClick={() => handleDownloadTemplate("xlsx")}
-                className="flex items-center gap-2 px-3 py-1 text-sm border rounded hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" /> Download Excel Template
-              </button>
-            </div>
+        <input
+          type="file"
+          accept=".csv"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="mb-4"
+        />
 
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-            {error && <p className="text-sm text-red-600">{error}</p>}
-          </div>
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={onClose}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleUpload}
-              disabled={!file}
-              className="px-3 py-1 text-sm rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 disabled:opacity-50"
-            >
-              <Upload className="w-4 h-4 inline mr-1" />
-              Replace Dataset
-            </button>
-          </div>
-        </Dialog.Panel>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || loading}
+            className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
+          >
+            {loading ? "Uploading..." : "Upload & Save"}
+          </button>
+        </div>
       </div>
     </Dialog>
   );
