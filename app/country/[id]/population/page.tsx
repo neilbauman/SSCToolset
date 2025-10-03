@@ -20,7 +20,6 @@ type PopulationDataset = {
   dataset_date: string | null;
   source: string | null;
   title?: string;
-  description?: string;
   is_active?: boolean;
 };
 
@@ -39,7 +38,7 @@ export default function PopulationPage({ params }: any) {
   const [country, setCountry] = useState<Country | null>(null);
   const [datasets, setDatasets] = useState<PopulationDataset[]>([]);
   const [rows, setRows] = useState<PopulationRow[]>([]);
-  const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
+  const [selectedDataset, setSelectedDataset] = useState<PopulationDataset | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
 
   // Fetch country
@@ -68,10 +67,12 @@ export default function PopulationPage({ params }: any) {
       return;
     }
     if (data) {
-      setDatasets(data as PopulationDataset[]);
-      const active = data.find((d: any) => d.is_active);
+      const all = data as PopulationDataset[];
+      setDatasets(all);
+      const active = all.find((d) => d.is_active);
       if (active) {
-        setSelectedDataset(active.id);
+        setSelectedDataset(active);
+        fetchRows(active.id);
       }
     }
   };
@@ -94,10 +95,6 @@ export default function PopulationPage({ params }: any) {
     if (data) setRows(data as PopulationRow[]);
   };
 
-  useEffect(() => {
-    if (selectedDataset) fetchRows(selectedDataset);
-  }, [selectedDataset]);
-
   // Set dataset active
   const makeActive = async (datasetId: string) => {
     await supabase
@@ -111,7 +108,6 @@ export default function PopulationPage({ params }: any) {
       .eq("id", datasetId);
 
     fetchDatasets();
-    setSelectedDataset(datasetId);
   };
 
   // Health checks
@@ -121,7 +117,7 @@ export default function PopulationPage({ params }: any) {
   const missingPopulation = rows.filter((r) => !r.population || r.population <= 0).length;
   const hasPopulation = totalUnits > 0 && missingPopulation === 0;
 
-  // Compute lowest admin level present in dataset (ADM0 → ADM5)
+  // Compute lowest admin level present in dataset
   const computeLowestLevel = () => {
     if (!rows || rows.length === 0) return "None";
     const levels = new Set(rows.map((r) => r.level || "ADM0"));
@@ -131,13 +127,6 @@ export default function PopulationPage({ params }: any) {
     if (levels.has("ADM2")) return "ADM2";
     if (levels.has("ADM1")) return "ADM1";
     return "ADM0";
-  };
-
-  // Compute completeness
-  const computeCompleteness = () => {
-    if (rows.length === 0) return "Missing";
-    if (allHavePcodes && hasPopulation) return "Complete";
-    return "Partial";
   };
 
   const headerProps = {
@@ -175,21 +164,17 @@ export default function PopulationPage({ params }: any) {
                   <th className="border px-2 py-1">Year</th>
                   <th className="border px-2 py-1">Dataset Date</th>
                   <th className="border px-2 py-1">Source</th>
-                  <th className="border px-2 py-1">Rows</th>
-                  <th className="border px-2 py-1">Lowest Level</th>
-                  <th className="border px-2 py-1">Status</th>
                   <th className="border px-2 py-1">Active</th>
                   <th className="border px-2 py-1">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {datasets.map((ds) => {
-                  const isSelected = selectedDataset === ds.id;
                   const isActive = ds.is_active;
                   return (
                     <tr
                       key={ds.id}
-                      className={`${isSelected ? "bg-blue-50" : ""} ${
+                      className={`${selectedDataset?.id === ds.id ? "bg-blue-50" : ""} ${
                         isActive ? "font-semibold" : ""
                       } hover:bg-gray-50`}
                     >
@@ -197,22 +182,16 @@ export default function PopulationPage({ params }: any) {
                       <td className="border px-2 py-1">{ds.year}</td>
                       <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
                       <td className="border px-2 py-1">{ds.source || "-"}</td>
-                      <td className="border px-2 py-1">
-                        {isSelected ? rows.length : "—"}
-                      </td>
-                      <td className="border px-2 py-1">
-                        {isSelected ? computeLowestLevel() : "—"}
-                      </td>
-                      <td className="border px-2 py-1">
-                        {isSelected ? computeCompleteness() : "—"}
-                      </td>
                       <td className="border px-2 py-1 text-center">
                         {isActive ? "✓" : ""}
                       </td>
                       <td className="border px-2 py-1 space-x-2">
                         <button
                           className="text-blue-600 hover:underline text-xs"
-                          onClick={() => setSelectedDataset(ds.id)}
+                          onClick={() => {
+                            setSelectedDataset(ds);
+                            fetchRows(ds.id);
+                          }}
                         >
                           Select
                         </button>
@@ -239,7 +218,7 @@ export default function PopulationPage({ params }: any) {
           </button>
         </div>
 
-        {/* Data Health */}
+        {/* Data Health (for selected dataset) */}
         <DatasetHealth
           totalUnits={totalUnits}
           allHavePcodes={allHavePcodes}
@@ -250,7 +229,10 @@ export default function PopulationPage({ params }: any) {
 
       {/* Population Data Table */}
       <div className="border rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Population Data</h2>
+        <h2 className="text-lg font-semibold mb-3">
+          Population Data{" "}
+          {selectedDataset ? `– ${selectedDataset.title || selectedDataset.year}` : ""}
+        </h2>
         {rows.length === 0 ? (
           <p className="italic text-gray-400">No population data uploaded</p>
         ) : (
@@ -275,6 +257,7 @@ export default function PopulationPage({ params }: any) {
         )}
       </div>
 
+      {/* Upload Modal */}
       <UploadPopulationModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
