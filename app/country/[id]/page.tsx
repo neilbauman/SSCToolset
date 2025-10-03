@@ -11,6 +11,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import type { CountryParams } from "@/app/country/types";
 
+// SSR-safe Leaflet
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -68,16 +69,54 @@ function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | 
   );
 }
 
+function CompletenessBadge({ completeness }: { completeness: number | null }) {
+  if (completeness === null || completeness === undefined) {
+    return <span className="italic text-gray-400">—</span>;
+  }
+  const styles =
+    completeness >= 90
+      ? "bg-green-100 text-green-700"
+      : completeness >= 50
+      ? "bg-yellow-100 text-yellow-700"
+      : "bg-red-100 text-red-700";
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs ${styles}`}>
+      {completeness}%
+    </span>
+  );
+}
+
+type DatasetBase = {
+  id: string;
+  country_iso: string;
+  title: string | null;
+  year: number | null;
+  dataset_date: string | null;
+  source: string | null;
+  lowest_level: "ADM0" | "ADM1" | "ADM2" | "ADM3" | "ADM4" | "ADM5" | null;
+  completeness: number | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+type DatasetJoin = {
+  id: string;
+  country_iso: string;
+  notes: string | null;
+  created_at: string;
+  admin_datasets: DatasetBase | null;
+  population_datasets: DatasetBase | null;
+  gis_datasets: DatasetBase | null;
+};
+
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
 
   const [country, setCountry] = useState<any>(null);
-  const [adminCount, setAdminCount] = useState(0);
-  const [popCount, setPopCount] = useState(0);
-  const [gisCount, setGisCount] = useState(0);
-  const [statusData, setStatusData] = useState<any>(null);
+  const [join, setJoin] = useState<DatasetJoin | null>(null);
   const [openMeta, setOpenMeta] = useState(false);
 
+  // fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -90,53 +129,39 @@ export default function CountryConfigLandingPage({ params }: any) {
     fetchCountry();
   }, [id]);
 
+  // fetch dataset join
   useEffect(() => {
-    const fetchStatuses = async () => {
-      const { data: admins } = await supabase
-        .from("admin_units")
-        .select("level")
-        .eq("country_iso", id);
+    const fetchJoin = async () => {
+      const { data, error } = await supabase
+        .from("dataset_joins")
+        .select(`
+          id,
+          country_iso,
+          notes,
+          created_at,
+          admin_datasets (*),
+          population_datasets (*),
+          gis_datasets (*)
+        `)
+        .eq("country_iso", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
 
-      const { data: pop } = await supabase
-        .from("population_data")
-        .select("pcode, population")
-        .eq("country_iso", id);
-
-      const { data: gis } = await supabase
-        .from("gis_layers")
-        .select("crs")
-        .eq("country_iso", id);
-
-      setAdminCount(admins?.length || 0);
-      setPopCount(pop?.length || 0);
-      setGisCount(gis?.length || 0);
-      setStatusData({ admins, pop, gis });
+      if (error) {
+        console.error("Error fetching dataset join:", error);
+      } else {
+        setJoin(data as DatasetJoin);
+      }
     };
-    fetchStatuses();
+    fetchJoin();
   }, [id]);
 
-  const computeStatus = (key: string) => {
-    if (key === "admins") {
-      const admins = statusData?.admins || [];
-      if (admins.length === 0) return "missing";
-      const levels = new Set(admins.map((a: any) => a.level));
-      const required = ["ADM0", "ADM1", "ADM2"];
-      const hasAll = required.every((lvl) => levels.has(lvl));
-      return hasAll ? "uploaded" : "partial";
-    }
-    if (key === "population") {
-      const pop = statusData?.pop || [];
-      if (pop.length === 0) return "missing";
-      const invalid = pop.some((p: any) => !p.pcode || !p.population || p.population <= 0);
-      return invalid ? "partial" : "uploaded";
-    }
-    if (key === "gis") {
-      const gis = statusData?.gis || [];
-      if (gis.length === 0) return "missing";
-      const invalid = gis.some((g: any) => !g.crs || !g.crs.startsWith("EPSG:"));
-      return invalid ? "partial" : "uploaded";
-    }
-    return "empty";
+  const computeStatus = (ds: DatasetBase | null) => {
+    if (!ds) return "missing";
+    if (!ds.lowest_level || ds.completeness === null) return "partial";
+    if (ds.completeness >= 90) return "uploaded";
+    return "partial";
   };
 
   const datasets = [
@@ -144,8 +169,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "admins",
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
-      count: adminCount,
-      status: computeStatus("admins"),
+      dataset: join?.admin_datasets,
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
     },
@@ -153,8 +177,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "population",
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
-      count: popCount,
-      status: computeStatus("population"),
+      dataset: join?.population_datasets,
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
     },
@@ -162,8 +185,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "gis",
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
-      count: gisCount,
-      status: computeStatus("gis"),
+      dataset: join?.gis_datasets,
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
     },
@@ -208,46 +230,24 @@ export default function CountryConfigLandingPage({ params }: any) {
           <div>
             <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
             {country ? (
-              <div className="pl-2 text-sm space-y-1">
-                <p><strong>ISO:</strong> {country.iso_code}</p>
-                <p><strong>Name:</strong> {country.name}</p>
-                <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
-                <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
-                <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
-                <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
-                <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
-                <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
-
-                {/* Dataset Sources */}
-                <div className="mt-3">
-                  <p className="font-medium">Sources:</p>
-                  {country.dataset_sources?.length > 0 ? (
-                    <ul className="list-disc pl-6 text-blue-700">
-                      {country.dataset_sources.map((src: any, idx: number) => (
-                        <li key={idx}>
-                          {src?.url ? (
-                            <a
-                              href={src.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline"
-                            >
-                              {src.name}
-                            </a>
-                          ) : (
-                            <span>{src?.name ?? "Unknown source"}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="italic text-gray-400">No sources provided</p>
-                  )}
+              <>
+                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mb-2">
+                  Core Metadata
+                </h3>
+                <div className="pl-2 text-sm space-y-1">
+                  <p><strong>ISO:</strong> {country.iso_code}</p>
+                  <p><strong>Name:</strong> {country.name}</p>
+                  <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
+                  <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
+                  <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
+                  <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
+                  <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
+                  <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
                 </div>
-
-                {/* Extra Metadata */}
-                <div className="mt-3">
-                  <p className="font-medium">Extra Metadata:</p>
+                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
+                  Extra Metadata
+                </h3>
+                <div className="pl-2 text-sm space-y-1">
                   {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
                     Object.entries(country.extra_metadata).map(([k, v]) => {
                       const entry = v as { label: string; value: string; url?: string };
@@ -255,12 +255,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                         <p key={k}>
                           <strong>{entry.label}:</strong>{" "}
                           {entry.url ? (
-                            <a
-                              href={entry.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline"
-                            >
+                            <a href={entry.url} className="text-blue-700 hover:underline" target="_blank" rel="noreferrer">
                               {entry.value}
                             </a>
                           ) : (
@@ -273,7 +268,7 @@ export default function CountryConfigLandingPage({ params }: any) {
                     <p className="italic text-gray-400">None</p>
                   )}
                 </div>
-              </div>
+              </>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
             )}
@@ -284,7 +279,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Dataset cards grid */}
+      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
           <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
@@ -295,11 +290,16 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <h3 className="text-lg font-semibold hover:underline">{d.title}</h3>
                 </Link>
               </div>
-              <StatusBadge status={d.status} />
+              <StatusBadge status={computeStatus(d.dataset)} />
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-            {d.count > 0 ? (
-              <p className="text-sm text-gray-500 mb-3">📊 Total: {d.count}</p>
+            {d.dataset ? (
+              <div className="text-sm text-gray-600 mb-3 space-y-1">
+                <p><strong>Title:</strong> {d.dataset.title || "Untitled"}</p>
+                <p><strong>Year:</strong> {d.dataset.year || "—"}</p>
+                <p><strong>Lowest Level:</strong> {d.dataset.lowest_level || "—"}</p>
+                <p><strong>Completeness:</strong> <CompletenessBadge completeness={d.dataset.completeness} /></p>
+              </div>
             ) : (
               <p className="italic text-gray-400 mb-3">No data uploaded yet</p>
             )}
@@ -311,8 +311,8 @@ export default function CountryConfigLandingPage({ params }: any) {
           </div>
         ))}
 
-        {/* Other Datasets */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+        {/* Other datasets */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-blue-600" />
@@ -327,28 +327,9 @@ export default function CountryConfigLandingPage({ params }: any) {
           </p>
           <p className="italic text-gray-500">🚧 To be implemented.</p>
         </div>
-
-        {/* Dataset Integration / Joins */}
-        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <span className="text-blue-600">🔗</span>
-              <h3 className="text-lg font-semibold">Dataset Integration Health</h3>
-            </div>
-          </div>
-          <p className="text-sm text-gray-600 mb-4">
-            Check alignment and joins across Admin Units, Population, GIS, and Other datasets.
-          </p>
-          <ul className="text-sm text-gray-700 space-y-1">
-            <li>Population rows linked to Admin Units: <strong>0</strong></li>
-            <li>GIS layers with CRS: <strong>3/3</strong></li>
-          </ul>
-          <div className="mt-3">
-            <SoftButton color="blue">Manage Joins</SoftButton>
-          </div>
-        </div>
       </div>
 
+      {/* Edit Metadata Modal */}
       {country && (
         <EditMetadataModal
           open={openMeta}
