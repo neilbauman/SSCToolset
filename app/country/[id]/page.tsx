@@ -49,7 +49,9 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [popCount, setPopCount] = useState(0);
   const [gisCount, setGisCount] = useState(0);
   const [statusData, setStatusData] = useState<any>(null);
+
   const [activeJoin, setActiveJoin] = useState<any>(null);
+  const [allJoins, setAllJoins] = useState<any[]>([]);
 
   const [openMeta, setOpenMeta] = useState(false);
   const [openAdminUpload, setOpenAdminUpload] = useState(false);
@@ -95,28 +97,21 @@ export default function CountryConfigLandingPage({ params }: any) {
     fetchStatuses();
   }, [id]);
 
-  // Fetch active join
+  // Fetch joins (all + active)
   useEffect(() => {
-    const fetchActiveJoin = async () => {
+    const fetchJoins = async () => {
       const { data, error } = await supabase
         .from("dataset_joins")
-        .select(
-          `
-          id,
-          is_active,
-          admin_datasets ( title, year ),
-          population_datasets ( title, year ),
-          gis_datasets ( title, year )
-        `
-        )
-        .eq("country_iso", id)
-        .eq("is_active", true)
-        .limit(1)
-        .single();
+        .select("*")
+        .eq("country_iso", id);
 
-      if (!error) setActiveJoin(data);
+      if (!error && data) {
+        setAllJoins(data);
+        const active = data.find((j: any) => j.is_active);
+        setActiveJoin(active || null);
+      }
     };
-    fetchActiveJoin();
+    fetchJoins();
   }, [id]);
 
   const computeStatus = (key: string) => {
@@ -225,20 +220,32 @@ export default function CountryConfigLandingPage({ params }: any) {
       </div>
 
       {/* Active Join summary card */}
-      <ActiveJoinSummaryCard countryIso={id} activeJoin={activeJoin} />
+      <ActiveJoinSummaryCard
+        countryIso={id}
+        activeJoin={activeJoin}
+        statusData={statusData}
+      />
 
       {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => {
           let activeInfo: string | null = null;
-          if (d.key === "admins" && activeJoin?.admin_datasets?.[0]) {
-            activeInfo = `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`;
-          }
-          if (d.key === "population" && activeJoin?.population_datasets?.[0]) {
-            activeInfo = `${activeJoin.population_datasets[0].title} (${activeJoin.population_datasets[0].year})`;
-          }
-          if (d.key === "gis" && activeJoin?.gis_datasets?.[0]) {
-            activeInfo = `${activeJoin.gis_datasets[0].title} (${activeJoin.gis_datasets[0].year})`;
+
+          // If using new JSON
+          if (activeJoin?.datasets) {
+            const found = activeJoin.datasets.find((x: any) => x.type === d.key);
+            if (found) activeInfo = `${found.title ?? d.key} ${found.year ? `(${found.year})` : ""}`;
+          } else {
+            // Fallback to old columns
+            if (d.key === "admins" && activeJoin?.admin_datasets?.[0]) {
+              activeInfo = `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`;
+            }
+            if (d.key === "population" && activeJoin?.population_datasets?.[0]) {
+              activeInfo = `${activeJoin.population_datasets[0].title} (${activeJoin.population_datasets[0].year})`;
+            }
+            if (d.key === "gis" && activeJoin?.gis_datasets?.[0]) {
+              activeInfo = `${activeJoin.gis_datasets[0].title} (${activeJoin.gis_datasets[0].year})`;
+            }
           }
 
           return (
@@ -289,7 +296,7 @@ export default function CountryConfigLandingPage({ params }: any) {
 
       {/* Manage Joins card */}
       <div className="mt-6">
-        <ManageJoinsCard countryIso={id} />
+        <ManageJoinsCard countryIso={id} joins={allJoins} />
       </div>
 
       {/* Modals */}
