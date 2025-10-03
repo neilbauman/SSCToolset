@@ -3,144 +3,130 @@
 import { Dialog } from "@headlessui/react";
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Upload } from "lucide-react";
+
+interface UploadPopulationModalProps {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  onUploaded: () => void;
+}
 
 export default function UploadPopulationModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: {
-  open: boolean;
-  onClose: () => void;
-  countryIso: string;
-  onUploaded: () => void;
-}) {
+}: UploadPopulationModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [year, setYear] = useState<number | "">("");
-  const [datasetDate, setDatasetDate] = useState<string>("");
-  const [source, setSource] = useState<string>("");
-  const [title, setTitle] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleUpload = async () => {
-    if (!file || !year) return;
+    if (!file) return;
+    setLoading(true);
+    setError(null);
 
-    // deactivate previous active datasets
-    await supabase
-      .from("population_datasets")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
+    try {
+      const text = await file.text();
+      const rows = text
+        .split("\n")
+        .slice(1)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => {
+          const [pcode, name, population, year, dataset_date, source] = line.split(",");
+          return {
+            pcode: pcode?.trim(),
+            name: name?.trim(),
+            population: population ? parseInt(population.trim(), 10) : null,
+            year: year ? parseInt(year.trim(), 10) : null,
+            dataset_date: dataset_date?.trim() || null,
+            source: source?.trim() || null,
+          };
+        });
 
-    // create new dataset version
-    const { data: dataset, error: dsError } = await supabase
-      .from("population_datasets")
-      .insert([
-        {
+      // 1. Create a dataset version
+      const { data: version, error: versionError } = await supabase
+        .from("population_dataset_versions")
+        .insert([
+          {
+            country_iso: countryIso,
+            title: `Population Upload ${new Date().toISOString().slice(0, 10)}`,
+            year: rows[0]?.year || new Date().getFullYear(),
+            dataset_date: rows[0]?.dataset_date || new Date().toISOString(),
+            source: rows[0]?.source || "Uploaded CSV",
+          },
+        ])
+        .select()
+        .single();
+
+      if (versionError) throw versionError;
+
+      // 2. Insert population rows linked to dataset_version_id
+      const { error: insertError } = await supabase.from("population_data").insert(
+        rows.map((r) => ({
+          ...r,
           country_iso: countryIso,
-          year,
-          dataset_date: datasetDate || null,
-          source: source || null,
-          title: title || `Dataset ${year}`,
-          is_active: true,
-        },
-      ])
-      .select()
-      .single();
+          dataset_version_id: version.id,
+        }))
+      );
 
-    if (dsError || !dataset) {
-      console.error("Error inserting dataset:", dsError);
-      return;
+      if (insertError) throw insertError;
+
+      onUploaded();
+      onClose();
+    } catch (err: any) {
+      console.error("Population upload error:", err);
+      setError(err.message || "Upload failed");
+    } finally {
+      setLoading(false);
     }
-
-    // parse CSV
-    const text = await file.text();
-    const rows = text
-      .split("\n")
-      .slice(1) // skip header
-      .map((line) => {
-        const [pcode, name, populationStr] = line.split(",");
-        return {
-          dataset_id: dataset.id,
-          country_iso: countryIso,
-          pcode: pcode?.trim(),
-          name: name?.trim(),
-          population: parseInt(populationStr || "0", 10),
-          year,
-        };
-      })
-      .filter((r) => r.pcode && r.name);
-
-    if (rows.length > 0) {
-      const { error: insertErr } = await supabase.from("population_data").insert(rows);
-      if (insertErr) {
-        console.error("Error inserting rows:", insertErr);
-      }
-    }
-
-    onUploaded();
-    onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="bg-white rounded-lg p-6 max-w-lg w-full space-y-4 shadow">
-          <Dialog.Title className="text-lg font-semibold">
-            Upload Population Dataset
-          </Dialog.Title>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Title (optional)</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="border rounded w-full px-2 py-1 text-sm"
-              placeholder="e.g. 2020 Census – PSA"
-            />
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
-            <label className="block text-sm font-medium">Year *</label>
-            <input
-              type="number"
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="border rounded w-full px-2 py-1 text-sm"
-            />
+      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
+        <Dialog.Title className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
+          Upload Population Dataset
+        </Dialog.Title>
 
-            <label className="block text-sm font-medium">Dataset Date</label>
-            <input
-              type="date"
-              value={datasetDate}
-              onChange={(e) => setDatasetDate(e.target.value)}
-              className="border rounded w-full px-2 py-1 text-sm"
-            />
+        <p className="text-sm text-gray-600 mb-3">
+          File must include: <code>pcode</code>, <code>name</code>,{" "}
+          <code>population</code>, <code>year</code>,{" "}
+          <code>dataset_date</code>, <code>source</code>.
+        </p>
 
-            <label className="block text-sm font-medium">Source</label>
-            <input
-              type="text"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              className="border rounded w-full px-2 py-1 text-sm"
-            />
+        <input
+          type="file"
+          accept=".csv"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="mb-4"
+        />
 
-            <label className="block text-sm font-medium">Upload CSV File</label>
-            <input type="file" accept=".csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          </div>
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={onClose}
-              className="px-3 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleUpload}
-              className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
-            >
-              Upload
-            </button>
-          </div>
-        </Dialog.Panel>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || loading}
+            className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
+          >
+            {loading ? "Uploading..." : "Upload & Save"}
+          </button>
+        </div>
       </div>
     </Dialog>
   );
