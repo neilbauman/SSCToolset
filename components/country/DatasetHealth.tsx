@@ -1,87 +1,48 @@
 "use client";
 
-import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
-
-type Props = {
+type DatasetHealthProps = {
   totalUnits: number;
-  allHavePcodes?: boolean;
-  missingPcodes?: number;
-  hasGISLink?: boolean;
-  hasPopulation?: boolean;
+  validPcodeCount?: number;   // Admins: # of units with pcodes
+  validPopulationCount?: number; // Population: # of rows with population values
+  validCRSCount?: number;     // GIS: # of layers with valid CRS
+  validFeatureCount?: number; // GIS: # of layers with valid feature counts
 };
 
 export default function DatasetHealth({
   totalUnits,
-  allHavePcodes,
-  missingPcodes,
-  hasGISLink,
-  hasPopulation,
-}: Props) {
-  const items: { label: string; ok: boolean; detail?: string }[] = [];
-
-  // Always include total units
-  items.push({
-    label: "Total Records",
-    ok: totalUnits > 0,
-    detail: `${totalUnits}`,
-  });
-
-  // PCode checks (Admins + Population)
-  if (allHavePcodes !== undefined) {
-    items.push({
-      label: "All records have PCodes",
-      ok: allHavePcodes,
-      detail:
-        missingPcodes && missingPcodes > 0
-          ? `${missingPcodes} missing`
-          : undefined,
-    });
-  }
-
-  // Population-specific health
-  if (hasPopulation !== undefined) {
-    items.push({
-      label: "All records have Population",
-      ok: hasPopulation,
-    });
-  }
-
-  // GIS-specific health
-  if (hasGISLink !== undefined) {
-    items.push({
-      label: "All GIS layers valid",
-      ok: hasGISLink,
-    });
-  }
-
-  // Compute overall health
-  const allOk = items.every((i) => i.ok);
-
+  validPcodeCount,
+  validPopulationCount,
+  validCRSCount,
+  validFeatureCount,
+}: DatasetHealthProps) {
   return (
     <div className="border rounded-lg p-4 shadow-sm">
-      <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-        {allOk ? (
-          <CheckCircle className="w-5 h-5 text-green-600" />
-        ) : (
-          <AlertTriangle className="w-5 h-5 text-yellow-600" />
-        )}
-        Dataset Health
-      </h2>
-      <ul className="text-sm text-gray-700 space-y-1">
-        {items.map((i, idx) => (
-          <li key={idx} className="flex items-center gap-2">
-            {i.ok ? (
-              <CheckCircle className="w-4 h-4 text-green-600" />
-            ) : (
-              <XCircle className="w-4 h-4 text-red-600" />
-            )}
-            <span>
-              {i.label}
-              {i.detail ? ` – ${i.detail}` : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <h3 className="text-sm font-semibold mb-2">Dataset Health</h3>
+      <p className="text-sm">Total Records – {totalUnits}</p>
+
+      {validPcodeCount !== undefined && (
+        <p className="text-sm">
+          Records with valid Pcodes – {validPcodeCount} / {totalUnits}
+        </p>
+      )}
+
+      {validPopulationCount !== undefined && (
+        <p className="text-sm">
+          Records with population values – {validPopulationCount} / {totalUnits}
+        </p>
+      )}
+
+      {validCRSCount !== undefined && (
+        <p className="text-sm">
+          Layers with valid CRS – {validCRSCount} / {totalUnits}
+        </p>
+      )}
+
+      {validFeatureCount !== undefined && (
+        <p className="text-sm">
+          Layers with features – {validFeatureCount} / {totalUnits}
+        </p>
+      )}
     </div>
   );
 }
