@@ -14,6 +14,7 @@ import ManageJoinsCard from "@/components/country/ManageJoinsCard";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
+import ActiveJoinSummaryCard from "@/components/country/ActiveJoinSummaryCard";
 import type { CountryParams } from "@/app/country/types";
 
 // SSR-safe Leaflet
@@ -222,6 +223,9 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
         <CountryMetadataCard country={country} onEdit={() => setOpenMeta(true)} />
       </div>
+
+      {/* Active Join summary card */}
+      <ActiveJoinSummaryCard countryIso={id} activeJoin={activeJoin} />
 
       {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mt-6">
