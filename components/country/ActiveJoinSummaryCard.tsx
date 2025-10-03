@@ -57,7 +57,29 @@ function computeStatus(key: "admins" | "population" | "gis", statusData?: any) {
   return "empty";
 }
 
-export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusData }: ActiveJoinSummaryCardProps) {
+export default function ActiveJoinSummaryCard({
+  countryIso,
+  activeJoin,
+  statusData,
+}: ActiveJoinSummaryCardProps) {
+  // Try to read datasets from JSON first
+  const datasets = activeJoin?.datasets ?? null;
+
+  // Helper to get dataset info from JSON or fallback
+  const getDataset = (type: string, fallback: any) => {
+    if (datasets) {
+      const found = datasets.find((d: any) => d.type === type);
+      return found
+        ? { title: found.title ?? type, year: found.year ?? "", completeness: found.completeness ?? null }
+        : null;
+    }
+    return fallback;
+  };
+
+  const admin = getDataset("admin", activeJoin?.admin_datasets?.[0]);
+  const population = getDataset("population", activeJoin?.population_datasets?.[0]);
+  const gis = getDataset("gis", activeJoin?.gis_datasets?.[0]);
+
   return (
     <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -76,12 +98,12 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
           <div>
             <p className="flex items-center gap-2">
               <strong>Admin:</strong>{" "}
-              {activeJoin.admin_datasets?.[0]?.title ? (
+              {admin ? (
                 <Link
                   href={`/country/${countryIso}/admins`}
                   className="text-blue-700 hover:underline"
                 >
-                  {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
+                  {admin.title} {admin.year && `(${admin.year})`}
                 </Link>
               ) : (
                 "—"
@@ -89,7 +111,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
               <StatusBadge status={computeStatus("admins", statusData)} />
             </p>
             <p className="text-xs text-gray-500 ml-6">
-              Completeness: {activeJoin.admin_datasets?.[0]?.completeness ?? "—"}%
+              Completeness: {admin?.completeness ?? "—"}%
             </p>
           </div>
 
@@ -97,12 +119,12 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
           <div>
             <p className="flex items-center gap-2">
               <strong>Population:</strong>{" "}
-              {activeJoin.population_datasets?.[0]?.title ? (
+              {population ? (
                 <Link
                   href={`/country/${countryIso}/population`}
                   className="text-blue-700 hover:underline"
                 >
-                  {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
+                  {population.title} {population.year && `(${population.year})`}
                 </Link>
               ) : (
                 "—"
@@ -110,7 +132,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
               <StatusBadge status={computeStatus("population", statusData)} />
             </p>
             <p className="text-xs text-gray-500 ml-6">
-              Completeness: {activeJoin.population_datasets?.[0]?.completeness ?? "—"}%
+              Completeness: {population?.completeness ?? "—"}%
             </p>
           </div>
 
@@ -118,12 +140,12 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
           <div>
             <p className="flex items-center gap-2">
               <strong>GIS:</strong>{" "}
-              {activeJoin.gis_datasets?.[0]?.title ? (
+              {gis ? (
                 <Link
                   href={`/country/${countryIso}/gis`}
                   className="text-blue-700 hover:underline"
                 >
-                  {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
+                  {gis.title} {gis.year && `(${gis.year})`}
                 </Link>
               ) : (
                 "—"
@@ -131,7 +153,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
               <StatusBadge status={computeStatus("gis", statusData)} />
             </p>
             <p className="text-xs text-gray-500 ml-6">
-              Completeness: {activeJoin.gis_datasets?.[0]?.completeness ?? "—"}%
+              Completeness: {gis?.completeness ?? "—"}%
             </p>
           </div>
         </div>
