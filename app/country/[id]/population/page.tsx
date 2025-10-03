@@ -17,9 +17,10 @@ type Country = {
 type PopulationDataset = {
   id: string;
   year: number;
-  dataset_date: string;
-  source: string;
+  dataset_date: string | null;
+  source: string | null;
   description?: string;
+  is_active?: boolean;
 };
 
 type PopulationRow = {
@@ -28,6 +29,7 @@ type PopulationRow = {
   pcode: string;
   name: string;
   population: number;
+  level?: string;
 };
 
 export default function PopulationPage({ params }: any) {
@@ -64,7 +66,11 @@ export default function PopulationPage({ params }: any) {
       console.error("Error fetching population_datasets:", error);
       return;
     }
-    if (data) setDatasets(data as PopulationDataset[]);
+    if (data) {
+      setDatasets(data as PopulationDataset[]);
+      const active = data.find((d: any) => d.is_active);
+      if (active) setSelectedDataset(active.id);
+    }
   };
 
   useEffect(() => {
@@ -96,6 +102,22 @@ export default function PopulationPage({ params }: any) {
   const missingPopulation = rows.filter((r) => !r.population || r.population <= 0).length;
   const hasPopulation = totalUnits > 0 && missingPopulation === 0;
 
+  // Compute lowest admin level present in dataset
+  const computeLowestLevel = () => {
+    if (!rows || rows.length === 0) return "None";
+    const levels = new Set(rows.map((r) => r.level || "ADM0"));
+    if (levels.has("ADM2")) return "ADM2";
+    if (levels.has("ADM1")) return "ADM1";
+    return "ADM0";
+  };
+
+  // Compute completeness
+  const computeCompleteness = () => {
+    if (rows.length === 0) return "Missing";
+    if (allHavePcodes && hasPopulation) return "Complete";
+    return "Partial";
+  };
+
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population`,
     group: "country-config" as const,
@@ -125,25 +147,42 @@ export default function PopulationPage({ params }: any) {
             <p className="italic text-gray-400">No versions uploaded yet</p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {datasets.map((ds) => (
-                <li
-                  key={ds.id}
-                  className={`p-2 border rounded cursor-pointer ${
-                    selectedDataset === ds.id ? "bg-blue-50 border-blue-400" : "hover:bg-gray-50"
-                  }`}
-                  onClick={() => setSelectedDataset(ds.id)}
-                >
-                  <p>
-                    <strong>Year:</strong> {ds.year}
-                  </p>
-                  <p>
-                    <strong>Date:</strong> {ds.dataset_date}
-                  </p>
-                  <p>
-                    <strong>Source:</strong> {ds.source}
-                  </p>
-                </li>
-              ))}
+              {datasets.map((ds) => {
+                const isSelected = selectedDataset === ds.id;
+                return (
+                  <li
+                    key={ds.id}
+                    className={`p-2 border rounded cursor-pointer ${
+                      isSelected ? "bg-blue-50 border-blue-400" : "hover:bg-gray-50"
+                    }`}
+                    onClick={() => setSelectedDataset(ds.id)}
+                  >
+                    <p>
+                      <strong>Year:</strong> {ds.year}{" "}
+                      {ds.is_active && <span className="text-green-600">(Active)</span>}
+                    </p>
+                    {ds.dataset_date && (
+                      <p>
+                        <strong>Date:</strong> {ds.dataset_date}
+                      </p>
+                    )}
+                    {ds.source && (
+                      <p>
+                        <strong>Source:</strong> {ds.source}
+                      </p>
+                    )}
+                    <p>
+                      <strong>Rows:</strong> {rows.length}
+                    </p>
+                    <p>
+                      <strong>Lowest Level:</strong> {computeLowestLevel()}
+                    </p>
+                    <p>
+                      <strong>Status:</strong> {computeCompleteness()}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <button
