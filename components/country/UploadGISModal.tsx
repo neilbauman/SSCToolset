@@ -1,207 +1,133 @@
 "use client";
 
+import { Dialog } from "@headlessui/react";
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import Modal from "@/components/ui/Modal";
-import * as XLSX from "xlsx";
-import Papa from "papaparse";
+import { Upload } from "lucide-react";
 
-type Props = {
+interface UploadGISModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
   onUploaded: () => void;
-};
+}
 
 export default function UploadGISModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: Props) {
+}: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [invalidRows, setInvalidRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFile = async (f: File) => {
-    const ext = f.name.split(".").pop()?.toLowerCase();
-    let rows: any[] = [];
-
-    if (ext === "xlsx" || ext === "xls") {
-      const buffer = await f.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(ws);
-    } else if (ext === "csv") {
-      const text = await f.text();
-      rows = Papa.parse(text, { header: true }).data as any[];
-    } else {
-      setError("Please upload a CSV or XLSX file.");
-      return;
-    }
-
-    const valid: any[] = [];
-    const invalid: any[] = [];
-
-    rows.forEach((r) => {
-      const row = {
-        layer_name: r.layer_name?.toString().trim(),
-        format: r.format?.toString().trim(),
-        feature_count: Number(r.feature_count || 0),
-        crs: r.crs?.toString().trim(),
-      };
-
-      const isValid =
-        row.layer_name &&
-        row.format &&
-        row.crs &&
-        row.feature_count > 0 &&
-        row.crs.startsWith("EPSG:");
-
-      if (isValid) {
-        valid.push(row);
-      } else if (row.layer_name || row.format || row.crs) {
-        // only count rows that aren’t completely blank
-        invalid.push(row);
-      }
-    });
-
-    setFile(f);
-    setPreview(valid.slice(0, 10));
-    setInvalidRows(invalid);
-    setError(null);
-  };
-
   const handleUpload = async () => {
-    if (!file || preview.length === 0) return;
+    if (!file) return;
     setLoading(true);
-    try {
-      await supabase.from("gis_layers").delete().eq("country_iso", countryIso);
+    setError(null);
 
-      const { error } = await supabase.from("gis_layers").insert(
-        preview.map((r) => ({
+    try {
+      const text = await file.text();
+      const rows = text
+        .split("\n")
+        .slice(1)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => {
+          const [layer_name, format, feature_count, crs, dataset_date, source] = line.split(",");
+          return {
+            layer_name: layer_name?.trim(),
+            format: format?.trim(),
+            feature_count: feature_count ? parseInt(feature_count.trim(), 10) : 0,
+            crs: crs?.trim(),
+            dataset_date: dataset_date?.trim() || null,
+            source: source?.trim() || null,
+          };
+        });
+
+      // 1. Create a dataset version
+      const { data: version, error: versionError } = await supabase
+        .from("gis_dataset_versions")
+        .insert([
+          {
+            country_iso: countryIso,
+            title: `GIS Upload ${new Date().toISOString().slice(0, 10)}`,
+            year: new Date().getFullYear(),
+            dataset_date: rows[0]?.dataset_date || new Date().toISOString(),
+            source: rows[0]?.source || "Uploaded CSV",
+          },
+        ])
+        .select()
+        .single();
+
+      if (versionError) throw versionError;
+
+      // 2. Insert GIS layers linked to this version
+      const { error: insertError } = await supabase.from("gis_layers").insert(
+        rows.map((r) => ({
+          ...r,
           country_iso: countryIso,
-          layer_name: r.layer_name,
-          format: r.format,
-          feature_count: r.feature_count,
-          crs: r.crs,
-          source: {},
+          dataset_version_id: version.id,
         }))
       );
-      if (error) throw error;
+
+      if (insertError) throw insertError;
 
       onUploaded();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (err: any) {
+      console.error("GIS upload error:", err);
+      setError(err.message || "Upload failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const downloadTemplate = () => {
-    const sample = [
-      {
-        layer_name: "Admin Boundaries",
-        format: "GeoJSON",
-        feature_count: 120,
-        crs: "EPSG:4326",
-      },
-      {
-        layer_name: "Settlements",
-        format: "Shapefile",
-        feature_count: 450,
-        crs: "EPSG:3857",
-      },
-    ];
-    const ws = XLSX.utils.json_to_sheet(sample);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "gis_template.xlsx");
-  };
-
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold mb-2">Upload GIS Dataset</h2>
-        <p className="text-sm text-gray-600">
-          File must include:{" "}
-          <code>layer_name, format, feature_count, crs</code>. <br />
-          CRS must start with <code>EPSG:</code>. Feature count must be greater
-          than 0.
-        </p>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
-        <button
-          onClick={downloadTemplate}
-          className="px-2 py-1 text-sm border rounded bg-gray-100 hover:bg-gray-200"
-        >
-          Download Template
-        </button>
+      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
+        <Dialog.Title className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
+          Upload GIS Dataset
+        </Dialog.Title>
+
+        <p className="text-sm text-gray-600 mb-3">
+          File must include: <code>layer_name</code>, <code>format</code>,{" "}
+          <code>feature_count</code>, <code>crs</code>,{" "}
+          <code>dataset_date</code>, <code>source</code>.
+        </p>
 
         <input
           type="file"
-          accept=".csv,.xlsx"
-          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          accept=".csv"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="mb-4"
         />
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        {preview.length > 0 && (
-          <div>
-            <p className="text-sm font-semibold mb-2">
-              Preview (first {preview.length} valid rows)
-            </p>
-            <table className="text-xs border w-full">
-              <thead className="bg-gray-100">
-                <tr>
-                  {Object.keys(preview[0]).map((h) => (
-                    <th key={h} className="border px-1 py-0.5">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((row, i) => (
-                  <tr key={i}>
-                    {Object.values(row).map((v, j) => (
-                      <td key={j} className="border px-1 py-0.5">
-                        {String(v)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {invalidRows.length > 0 && (
-          <div className="bg-yellow-50 border border-yellow-300 p-2 rounded text-sm">
-            ⚠ {invalidRows.length} row(s) were skipped due to missing or invalid
-            values.
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1 border rounded text-sm"
-            disabled={loading}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
             disabled={!file || loading}
-            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm"
+            className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
           >
-            {loading ? "Uploading…" : "Replace Dataset"}
+            {loading ? "Uploading..." : "Upload & Save"}
           </button>
         </div>
       </div>
-    </Modal>
+    </Dialog>
   );
 }
