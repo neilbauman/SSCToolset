@@ -1,116 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Link2 } from "lucide-react";
 import Link from "next/link";
 
 type ManageJoinsCardProps = {
   countryIso: string;
+  joins?: any[];
 };
 
-type DatasetJoin = {
-  id: string;
-  country_iso: string;
-  notes?: string;
-  is_active?: boolean;
-  admin_datasets?: { title: string; year: number }[];
-  population_datasets?: { title: string; year: number }[];
-  gis_datasets?: { title: string; year: number }[];
-};
+function JoinRow({ join }: { join: any }) {
+  const datasets = join.datasets ?? null;
 
-export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
-  const [activeJoin, setActiveJoin] = useState<DatasetJoin | null>(null);
+  // Extract dataset info either from JSON or old fields
+  const getSummary = () => {
+    if (datasets) {
+      return datasets
+        .map((d: any) => `${d.type}: ${d.title ?? d.dataset_id ?? "—"}${d.year ? ` (${d.year})` : ""}`)
+        .join(", ");
+    }
+    return [
+      join.admin_datasets?.[0]?.title && `Admin: ${join.admin_datasets[0].title}`,
+      join.population_datasets?.[0]?.title && `Pop: ${join.population_datasets[0].title}`,
+      join.gis_datasets?.[0]?.title && `GIS: ${join.gis_datasets[0].title}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
+  };
 
-  useEffect(() => {
-    const fetchJoin = async () => {
-      const { data, error } = await supabase
-        .from("dataset_joins")
-        .select(
-          `
-          id,
-          country_iso,
-          notes,
-          is_active,
-          admin_datasets ( title, year ),
-          population_datasets ( title, year ),
-          gis_datasets ( title, year )
-        `
-        )
-        .eq("country_iso", countryIso)
-        .eq("is_active", true) // fetch only active
-        .limit(1)
-        .single();
+  return (
+    <tr className="border-b">
+      <td className="px-2 py-1 text-sm">{join.is_active ? "✅ Active" : ""}</td>
+      <td className="px-2 py-1 text-sm">{getSummary() || "—"}</td>
+      <td className="px-2 py-1 text-sm text-gray-500">{join.notes ?? "—"}</td>
+      <td className="px-2 py-1 text-sm">
+        <Link
+          href={`/country/${join.country_iso}/joins`}
+          className="text-blue-600 hover:underline"
+        >
+          Manage
+        </Link>
+      </td>
+    </tr>
+  );
+}
 
-      if (error) {
-        console.error("Error fetching active join:", error);
-      } else {
-        setActiveJoin(data as unknown as DatasetJoin);
-      }
-    };
-    fetchJoin();
-  }, [countryIso]);
-
+export default function ManageJoinsCard({ countryIso, joins = [] }: ManageJoinsCardProps) {
   return (
     <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <Link2 className="w-6 h-6 text-purple-600" />
-          <Link href={`/country/${countryIso}/joins`}>
-            <h3 className="text-lg font-semibold hover:underline">Manage Joins</h3>
-          </Link>
-        </div>
+        <h3 className="text-lg font-semibold">Manage Joins</h3>
+        <Link
+          href={`/country/${countryIso}/joins`}
+          className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:opacity-90"
+        >
+          View Joins
+        </Link>
       </div>
-      <p className="text-sm text-gray-600 mb-4">
-        Link Admin, Population, and GIS datasets together for consistency in analysis.
-      </p>
-      <div className="text-sm space-y-1">
-        <p>
-          <strong>Admin:</strong>{" "}
-          {activeJoin?.admin_datasets?.[0]?.title ? (
-            <Link
-              href={`/country/${countryIso}/admins`}
-              className="text-blue-600 hover:underline"
-            >
-              {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
-            </Link>
-          ) : (
-            "—"
-          )}
-        </p>
-        <p>
-          <strong>Population:</strong>{" "}
-          {activeJoin?.population_datasets?.[0]?.title ? (
-            <Link
-              href={`/country/${countryIso}/population`}
-              className="text-blue-600 hover:underline"
-            >
-              {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
-            </Link>
-          ) : (
-            "—"
-          )}
-        </p>
-        <p>
-          <strong>GIS:</strong>{" "}
-          {activeJoin?.gis_datasets?.[0]?.title ? (
-            <Link
-              href={`/country/${countryIso}/gis`}
-              className="text-blue-600 hover:underline"
-            >
-              {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
-            </Link>
-          ) : (
-            "—"
-          )}
-        </p>
-      </div>
-      <Link
-        href={`/country/${countryIso}/joins`}
-        className="mt-4 inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:opacity-90"
-      >
-        Manage
-      </Link>
+
+      {joins.length > 0 ? (
+        <table className="w-full text-sm border">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border px-2 py-1 text-left">Status</th>
+              <th className="border px-2 py-1 text-left">Datasets</th>
+              <th className="border px-2 py-1 text-left">Notes</th>
+              <th className="border px-2 py-1 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {joins.map((join) => (
+              <JoinRow key={join.id} join={join} />
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="italic text-gray-500">No joins defined yet.</p>
+      )}
     </div>
   );
 }
