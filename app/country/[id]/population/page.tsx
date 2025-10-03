@@ -19,6 +19,7 @@ type PopulationDataset = {
   year: number;
   dataset_date: string | null;
   source: string | null;
+  title?: string;
   description?: string;
   is_active?: boolean;
 };
@@ -69,7 +70,9 @@ export default function PopulationPage({ params }: any) {
     if (data) {
       setDatasets(data as PopulationDataset[]);
       const active = data.find((d: any) => d.is_active);
-      if (active) setSelectedDataset(active.id);
+      if (active) {
+        setSelectedDataset(active.id);
+      }
     }
   };
 
@@ -118,10 +121,13 @@ export default function PopulationPage({ params }: any) {
   const missingPopulation = rows.filter((r) => !r.population || r.population <= 0).length;
   const hasPopulation = totalUnits > 0 && missingPopulation === 0;
 
-  // Compute lowest admin level present in dataset
+  // Compute lowest admin level present in dataset (ADM0 → ADM5)
   const computeLowestLevel = () => {
     if (!rows || rows.length === 0) return "None";
     const levels = new Set(rows.map((r) => r.level || "ADM0"));
+    if (levels.has("ADM5")) return "ADM5";
+    if (levels.has("ADM4")) return "ADM4";
+    if (levels.has("ADM3")) return "ADM3";
     if (levels.has("ADM2")) return "ADM2";
     if (levels.has("ADM1")) return "ADM1";
     return "ADM0";
@@ -165,6 +171,7 @@ export default function PopulationPage({ params }: any) {
             <table className="w-full text-sm border">
               <thead className="bg-gray-100">
                 <tr>
+                  <th className="border px-2 py-1">Title</th>
                   <th className="border px-2 py-1">Year</th>
                   <th className="border px-2 py-1">Dataset Date</th>
                   <th className="border px-2 py-1">Source</th>
@@ -182,8 +189,11 @@ export default function PopulationPage({ params }: any) {
                   return (
                     <tr
                       key={ds.id}
-                      className={isSelected ? "bg-blue-50" : "hover:bg-gray-50"}
+                      className={`${isSelected ? "bg-blue-50" : ""} ${
+                        isActive ? "font-semibold" : ""
+                      } hover:bg-gray-50`}
                     >
+                      <td className="border px-2 py-1">{ds.title || `Dataset ${ds.year}`}</td>
                       <td className="border px-2 py-1">{ds.year}</td>
                       <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
                       <td className="border px-2 py-1">{ds.source || "-"}</td>
