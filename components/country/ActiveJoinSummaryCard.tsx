@@ -21,24 +21,50 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin }: Active
       </div>
 
       {activeJoin ? (
-        <div className="text-sm space-y-1">
+        <div className="text-sm space-y-2">
+          {/* Admin */}
           <p>
             <strong>Admin:</strong>{" "}
-            {activeJoin.admin_datasets?.[0]?.title
-              ? `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`
-              : "—"}
+            {activeJoin.admin_datasets?.[0]?.title ? (
+              <Link
+                href={`/country/${countryIso}/admins`}
+                className="text-blue-700 hover:underline"
+              >
+                {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
+              </Link>
+            ) : (
+              "—"
+            )}
           </p>
+
+          {/* Population */}
           <p>
             <strong>Population:</strong>{" "}
-            {activeJoin.population_datasets?.[0]?.title
-              ? `${activeJoin.population_datasets[0].title} (${activeJoin.population_datasets[0].year})`
-              : "—"}
+            {activeJoin.population_datasets?.[0]?.title ? (
+              <Link
+                href={`/country/${countryIso}/population`}
+                className="text-blue-700 hover:underline"
+              >
+                {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
+              </Link>
+            ) : (
+              "—"
+            )}
           </p>
+
+          {/* GIS */}
           <p>
             <strong>GIS:</strong>{" "}
-            {activeJoin.gis_datasets?.[0]?.title
-              ? `${activeJoin.gis_datasets[0].title} (${activeJoin.gis_datasets[0].year})`
-              : "—"}
+            {activeJoin.gis_datasets?.[0]?.title ? (
+              <Link
+                href={`/country/${countryIso}/gis`}
+                className="text-blue-700 hover:underline"
+              >
+                {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
+              </Link>
+            ) : (
+              "—"
+            )}
           </p>
         </div>
       ) : (
