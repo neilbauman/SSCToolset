@@ -1,205 +1,157 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { CountryParams } from "@/app/country/types";
-import { Plus } from "lucide-react";
-import Link from "next/link";
+
+type JoinRow = {
+  id: string;
+  country_iso: string;
+  datasets?: any;
+  advanced?: boolean;
+  admin_datasets?: any[];
+  population_datasets?: any[];
+  gis_datasets?: any[];
+  notes?: string;
+  created_at?: string;
+  is_active?: boolean;
+};
 
 export default function ManageJoinsPage({ params }: any) {
-  const { id } = params as CountryParams;
-
-  const [joins, setJoins] = useState<any[]>([]);
-  const [openModal, setOpenModal] = useState(false);
-
-  const [adminOptions, setAdminOptions] = useState<any[]>([]);
-  const [popOptions, setPopOptions] = useState<any[]>([]);
-  const [gisOptions, setGisOptions] = useState<any[]>([]);
-
-  const [selectedAdmin, setSelectedAdmin] = useState<string>("");
-  const [selectedPop, setSelectedPop] = useState<string>("");
-  const [selectedGIS, setSelectedGIS] = useState<string>("");
-
-  const fetchJoins = async () => {
-    const { data, error } = await supabase
-      .from("dataset_joins")
-      .select(
-        `
-        id,
-        notes,
-        created_at,
-        is_active,
-        admin_datasets ( id, title, year ),
-        population_datasets ( id, title, year ),
-        gis_datasets ( id, title, year )
-      `
-      )
-      .eq("country_iso", id)
-      .order("created_at", { ascending: false });
-
-    if (!error) setJoins(data || []);
-  };
+  const { id: countryIso } = params as CountryParams;
+  const [joins, setJoins] = useState<JoinRow[]>([]);
+  const [country, setCountry] = useState<any>(null);
 
   useEffect(() => {
-    fetchJoins();
+    const fetchData = async () => {
+      const { data: countryData } = await supabase
+        .from("countries")
+        .select("name")
+        .eq("iso_code", countryIso)
+        .single();
+      setCountry(countryData);
 
-    const fetchOptions = async () => {
-      const { data: admins } = await supabase
-        .from("admin_datasets")
-        .select("id, title, year")
-        .eq("country_iso", id);
-      const { data: pops } = await supabase
-        .from("population_datasets")
-        .select("id, title, year")
-        .eq("country_iso", id);
-      const { data: gis } = await supabase
-        .from("gis_datasets")
-        .select("id, title, year")
-        .eq("country_iso", id);
-
-      setAdminOptions(admins || []);
-      setPopOptions(pops || []);
-      setGisOptions(gis || []);
+      const { data } = await supabase
+        .from("dataset_joins")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (data) setJoins(data as JoinRow[]);
     };
+    fetchData();
+  }, [countryIso]);
 
-    fetchOptions();
-  }, [id]);
-
-  const handleSave = async () => {
-    const { error } = await supabase.from("dataset_joins").insert({
-      country_iso: id,
-      admin_dataset_id: selectedAdmin || null,
-      population_dataset_id: selectedPop || null,
-      gis_dataset_id: selectedGIS || null,
-      notes: "Created manually",
-    });
-
-    if (!error) {
-      setOpenModal(false);
-      setSelectedAdmin("");
-      setSelectedPop("");
-      setSelectedGIS("");
-      fetchJoins();
-    } else {
-      console.error("Error creating join:", error);
-    }
-  };
-
-  const handleSetActive = async (joinId: string) => {
-    // deactivate others
+  const setActive = async (joinId: string) => {
+    // Clear current active
     await supabase
       .from("dataset_joins")
       .update({ is_active: false })
-      .eq("country_iso", id);
+      .eq("country_iso", countryIso);
 
-    // activate selected
+    // Set chosen active
     await supabase
       .from("dataset_joins")
       .update({ is_active: true })
       .eq("id", joinId);
 
-    fetchJoins();
+    // Refresh
+    const { data } = await supabase
+      .from("dataset_joins")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+    if (data) setJoins(data as JoinRow[]);
   };
 
   const headerProps = {
-    title: `Manage Dataset Joins – ${id}`,
+    title: `${country?.name ?? countryIso} – Manage Joins`,
     group: "country-config" as const,
-    description: "Link Admin, Population, and GIS datasets for consistent analysis.",
+    description: "View and manage dataset joins for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: id, href: `/country/${id}` },
-          { label: "Manage Joins" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "Joins" },
         ]}
       />
     ),
   };
 
+  const renderDatasets = (join: JoinRow) => {
+    if (join.datasets) {
+      return (
+        <ul className="list-disc pl-5 text-sm text-gray-700">
+          {join.datasets.map((d: any, idx: number) => (
+            <li key={idx}>
+              <span className="font-medium capitalize">{d.type}</span>:{" "}
+              {d.title ?? d.dataset_id ?? "—"}{" "}
+              {d.year ? `(${d.year})` : ""} [join: {d.join_key}]
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // Fallback to old fields
+    return (
+      <ul className="list-disc pl-5 text-sm text-gray-700">
+        {join.admin_datasets?.[0] && (
+          <li>Admin: {join.admin_datasets[0].title} ({join.admin_datasets[0].year})</li>
+        )}
+        {join.population_datasets?.[0] && (
+          <li>Population: {join.population_datasets[0].title} ({join.population_datasets[0].year})</li>
+        )}
+        {join.gis_datasets?.[0] && (
+          <li>GIS: {join.gis_datasets[0].title} ({join.gis_datasets[0].year})</li>
+        )}
+      </ul>
+    );
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-5 shadow-sm mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Dataset Joins</h2>
-          <button
-            onClick={() => setOpenModal(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" /> Create New Join
-          </button>
-        </div>
+      <div className="border rounded-lg p-5 shadow-sm">
+        <h2 className="text-lg font-semibold mb-4">Dataset Joins</h2>
 
-        {joins.length === 0 ? (
-          <p className="italic text-gray-500">No joins defined yet.</p>
-        ) : (
+        {joins.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-2 py-1 text-left">Admin</th>
-                <th className="border px-2 py-1 text-left">Population</th>
-                <th className="border px-2 py-1 text-left">GIS</th>
+                <th className="border px-2 py-1 text-left">Status</th>
+                <th className="border px-2 py-1 text-left">Datasets</th>
                 <th className="border px-2 py-1 text-left">Notes</th>
-                <th className="border px-2 py-1 text-left">Created At</th>
-                <th className="border px-2 py-1 text-left">Active</th>
+                <th className="border px-2 py-1 text-left">Created</th>
+                <th className="border px-2 py-1 text-left">Action</th>
               </tr>
             </thead>
             <tbody>
-              {joins.map((j) => (
-                <tr key={j.id} className="hover:bg-gray-50">
+              {joins.map((join) => (
+                <tr key={join.id} className="hover:bg-gray-50">
                   <td className="border px-2 py-1">
-                    {j.admin_datasets?.[0]?.title ? (
-                      <Link
-                        href={`/country/${id}/admins`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {j.admin_datasets[0].title} ({j.admin_datasets[0].year})
-                      </Link>
+                    {join.is_active ? (
+                      <span className="text-green-600 font-medium">Active</span>
                     ) : (
                       "—"
                     )}
                   </td>
-                  <td className="border px-2 py-1">
-                    {j.population_datasets?.[0]?.title ? (
-                      <Link
-                        href={`/country/${id}/population`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {j.population_datasets[0].title} ({j.population_datasets[0].year})
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
+                  <td className="border px-2 py-1">{renderDatasets(join)}</td>
+                  <td className="border px-2 py-1">{join.notes ?? "—"}</td>
+                  <td className="border px-2 py-1 text-gray-500">
+                    {join.created_at
+                      ? new Date(join.created_at).toLocaleDateString()
+                      : "—"}
                   </td>
                   <td className="border px-2 py-1">
-                    {j.gis_datasets?.[0]?.title ? (
-                      <Link
-                        href={`/country/${id}/gis`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {j.gis_datasets[0].title} ({j.gis_datasets[0].year})
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="border px-2 py-1">{j.notes || "—"}</td>
-                  <td className="border px-2 py-1">
-                    {new Date(j.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="border px-2 py-1">
-                    {j.is_active ? (
-                      <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
-                        Active
-                      </span>
-                    ) : (
+                    {!join.is_active && (
                       <button
-                        onClick={() => handleSetActive(j.id)}
-                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:opacity-90"
+                        onClick={() => setActive(join.id)}
+                        className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:opacity-90"
                       >
-                        Make Active
+                        Set Active
                       </button>
                     )}
                   </td>
@@ -207,78 +159,10 @@ export default function ManageJoinsPage({ params }: any) {
               ))}
             </tbody>
           </table>
+        ) : (
+          <p className="italic text-gray-500">No joins defined yet.</p>
         )}
       </div>
-
-      {/* Modal for creating a new join */}
-      {openModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Create New Join</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium">Admin Dataset</label>
-                <select
-                  value={selectedAdmin}
-                  onChange={(e) => setSelectedAdmin(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">— None —</option>
-                  {adminOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.title} ({opt.year})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Population Dataset</label>
-                <select
-                  value={selectedPop}
-                  onChange={(e) => setSelectedPop(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">— None —</option>
-                  {popOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.title} ({opt.year})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium">GIS Dataset</label>
-                <select
-                  value={selectedGIS}
-                  onChange={(e) => setSelectedGIS(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">— None —</option>
-                  {gisOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.title} ({opt.year})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setOpenModal(false)}
-                className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:opacity-90"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </SidebarLayout>
   );
 }
