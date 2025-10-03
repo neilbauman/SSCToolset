@@ -69,6 +69,8 @@ export default function PopulationPage({ params }: any) {
     if (data) {
       const all = data as PopulationDataset[];
       setDatasets(all);
+
+      // pick active dataset if available
       const active = all.find((d) => d.is_active);
       if (active) {
         setSelectedDataset(active);
@@ -171,10 +173,11 @@ export default function PopulationPage({ params }: any) {
               <tbody>
                 {datasets.map((ds) => {
                   const isActive = ds.is_active;
+                  const isSelected = selectedDataset?.id === ds.id;
                   return (
                     <tr
                       key={ds.id}
-                      className={`${selectedDataset?.id === ds.id ? "bg-blue-50" : ""} ${
+                      className={`${isSelected ? "bg-blue-50" : ""} ${
                         isActive ? "font-semibold" : ""
                       } hover:bg-gray-50`}
                     >
@@ -182,19 +185,19 @@ export default function PopulationPage({ params }: any) {
                       <td className="border px-2 py-1">{ds.year}</td>
                       <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
                       <td className="border px-2 py-1">{ds.source || "-"}</td>
-                      <td className="border px-2 py-1 text-center">
-                        {isActive ? "✓" : ""}
-                      </td>
+                      <td className="border px-2 py-1 text-center">{isActive ? "✓" : ""}</td>
                       <td className="border px-2 py-1 space-x-2">
-                        <button
-                          className="text-blue-600 hover:underline text-xs"
-                          onClick={() => {
-                            setSelectedDataset(ds);
-                            fetchRows(ds.id);
-                          }}
-                        >
-                          Select
-                        </button>
+                        {!isSelected && (
+                          <button
+                            className="text-blue-600 hover:underline text-xs"
+                            onClick={() => {
+                              setSelectedDataset(ds);
+                              fetchRows(ds.id);
+                            }}
+                          >
+                            Select
+                          </button>
+                        )}
                         {!isActive && (
                           <button
                             className="text-green-600 hover:underline text-xs"
