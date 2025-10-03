@@ -14,6 +14,16 @@ export default function ManageJoinsPage({ params }: any) {
   const [joins, setJoins] = useState<any[]>([]);
   const [openModal, setOpenModal] = useState(false);
 
+  // dataset options
+  const [adminOptions, setAdminOptions] = useState<any[]>([]);
+  const [popOptions, setPopOptions] = useState<any[]>([]);
+  const [gisOptions, setGisOptions] = useState<any[]>([]);
+
+  // selected IDs
+  const [selectedAdmin, setSelectedAdmin] = useState<string>("");
+  const [selectedPop, setSelectedPop] = useState<string>("");
+  const [selectedGIS, setSelectedGIS] = useState<string>("");
+
   useEffect(() => {
     const fetchJoins = async () => {
       const { data, error } = await supabase
@@ -23,22 +33,72 @@ export default function ManageJoinsPage({ params }: any) {
           id,
           notes,
           created_at,
-          admin_datasets ( title, year ),
-          population_datasets ( title, year ),
-          gis_datasets ( title, year )
+          admin_datasets ( id, title, year ),
+          population_datasets ( id, title, year ),
+          gis_datasets ( id, title, year )
         `
         )
         .eq("country_iso", id);
 
-      if (error) {
-        console.error("Error fetching joins:", error);
-      } else {
-        setJoins(data || []);
-      }
+      if (!error) setJoins(data || []);
+    };
+
+    const fetchOptions = async () => {
+      const { data: admins } = await supabase
+        .from("admin_datasets")
+        .select("id, title, year")
+        .eq("country_iso", id);
+      const { data: pops } = await supabase
+        .from("population_datasets")
+        .select("id, title, year")
+        .eq("country_iso", id);
+      const { data: gis } = await supabase
+        .from("gis_datasets")
+        .select("id, title, year")
+        .eq("country_iso", id);
+
+      setAdminOptions(admins || []);
+      setPopOptions(pops || []);
+      setGisOptions(gis || []);
     };
 
     fetchJoins();
+    fetchOptions();
   }, [id]);
+
+  const handleSave = async () => {
+    const { error } = await supabase.from("dataset_joins").insert({
+      country_iso: id,
+      admin_dataset_id: selectedAdmin || null,
+      population_dataset_id: selectedPop || null,
+      gis_dataset_id: selectedGIS || null,
+      notes: "Created manually",
+    });
+
+    if (error) {
+      console.error("Error creating join:", error);
+    } else {
+      setOpenModal(false);
+      setSelectedAdmin("");
+      setSelectedPop("");
+      setSelectedGIS("");
+      // refresh joins
+      const { data } = await supabase
+        .from("dataset_joins")
+        .select(
+          `
+          id,
+          notes,
+          created_at,
+          admin_datasets ( id, title, year ),
+          population_datasets ( id, title, year ),
+          gis_datasets ( id, title, year )
+        `
+        )
+        .eq("country_iso", id);
+      setJoins(data || []);
+    }
+  };
 
   const headerProps = {
     title: `Manage Dataset Joins – ${id}`,
@@ -132,16 +192,59 @@ export default function ManageJoinsPage({ params }: any) {
         )}
       </div>
 
-      {/* Modal (placeholder for now) */}
+      {/* Modal for creating a new join */}
       {openModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
             <h3 className="text-lg font-semibold mb-4">Create New Join</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Here you will be able to select which Admin, Population, and GIS datasets to join.
-              For now this is a placeholder modal.
-            </p>
-            <div className="flex justify-end gap-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium">Admin Dataset</label>
+                <select
+                  value={selectedAdmin}
+                  onChange={(e) => setSelectedAdmin(e.target.value)}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {adminOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.title} ({opt.year})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Population Dataset</label>
+                <select
+                  value={selectedPop}
+                  onChange={(e) => setSelectedPop(e.target.value)}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {popOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.title} ({opt.year})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">GIS Dataset</label>
+                <select
+                  value={selectedGIS}
+                  onChange={(e) => setSelectedGIS(e.target.value)}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {gisOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.title} ({opt.year})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setOpenModal(false)}
                 className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
@@ -149,7 +252,7 @@ export default function ManageJoinsPage({ params }: any) {
                 Cancel
               </button>
               <button
-                onClick={() => setOpenModal(false)}
+                onClick={handleSave}
                 className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:opacity-90"
               >
                 Save
