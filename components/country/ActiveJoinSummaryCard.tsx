@@ -71,54 +71,69 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusDa
       </div>
 
       {activeJoin ? (
-        <div className="text-sm space-y-2">
+        <div className="text-sm space-y-3">
           {/* Admin */}
-          <p className="flex items-center gap-2">
-            <strong>Admin:</strong>{" "}
-            {activeJoin.admin_datasets?.[0]?.title ? (
-              <Link
-                href={`/country/${countryIso}/admins`}
-                className="text-blue-700 hover:underline"
-              >
-                {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
-              </Link>
-            ) : (
-              "—"
-            )}
-            <StatusBadge status={computeStatus("admins", statusData)} />
-          </p>
+          <div>
+            <p className="flex items-center gap-2">
+              <strong>Admin:</strong>{" "}
+              {activeJoin.admin_datasets?.[0]?.title ? (
+                <Link
+                  href={`/country/${countryIso}/admins`}
+                  className="text-blue-700 hover:underline"
+                >
+                  {activeJoin.admin_datasets[0].title} ({activeJoin.admin_datasets[0].year})
+                </Link>
+              ) : (
+                "—"
+              )}
+              <StatusBadge status={computeStatus("admins", statusData)} />
+            </p>
+            <p className="text-xs text-gray-500 ml-6">
+              Completeness: {activeJoin.admin_datasets?.[0]?.completeness ?? "—"}%
+            </p>
+          </div>
 
           {/* Population */}
-          <p className="flex items-center gap-2">
-            <strong>Population:</strong>{" "}
-            {activeJoin.population_datasets?.[0]?.title ? (
-              <Link
-                href={`/country/${countryIso}/population`}
-                className="text-blue-700 hover:underline"
-              >
-                {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
-              </Link>
-            ) : (
-              "—"
-            )}
-            <StatusBadge status={computeStatus("population", statusData)} />
-          </p>
+          <div>
+            <p className="flex items-center gap-2">
+              <strong>Population:</strong>{" "}
+              {activeJoin.population_datasets?.[0]?.title ? (
+                <Link
+                  href={`/country/${countryIso}/population`}
+                  className="text-blue-700 hover:underline"
+                >
+                  {activeJoin.population_datasets[0].title} ({activeJoin.population_datasets[0].year})
+                </Link>
+              ) : (
+                "—"
+              )}
+              <StatusBadge status={computeStatus("population", statusData)} />
+            </p>
+            <p className="text-xs text-gray-500 ml-6">
+              Completeness: {activeJoin.population_datasets?.[0]?.completeness ?? "—"}%
+            </p>
+          </div>
 
           {/* GIS */}
-          <p className="flex items-center gap-2">
-            <strong>GIS:</strong>{" "}
-            {activeJoin.gis_datasets?.[0]?.title ? (
-              <Link
-                href={`/country/${countryIso}/gis`}
-                className="text-blue-700 hover:underline"
-              >
-                {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
-              </Link>
-            ) : (
-              "—"
-            )}
-            <StatusBadge status={computeStatus("gis", statusData)} />
-          </p>
+          <div>
+            <p className="flex items-center gap-2">
+              <strong>GIS:</strong>{" "}
+              {activeJoin.gis_datasets?.[0]?.title ? (
+                <Link
+                  href={`/country/${countryIso}/gis`}
+                  className="text-blue-700 hover:underline"
+                >
+                  {activeJoin.gis_datasets[0].title} ({activeJoin.gis_datasets[0].year})
+                </Link>
+              ) : (
+                "—"
+              )}
+              <StatusBadge status={computeStatus("gis", statusData)} />
+            </p>
+            <p className="text-xs text-gray-500 ml-6">
+              Completeness: {activeJoin.gis_datasets?.[0]?.completeness ?? "—"}%
+            </p>
+          </div>
         </div>
       ) : (
         <p className="italic text-gray-500">No active join defined yet.</p>
