@@ -2,13 +2,16 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Map, Users, Database, AlertCircle, Pencil } from "lucide-react";
+import { Map, Users, Database, AlertCircle, Pencil, Link as LinkIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
+import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
+import UploadPopulationModal from "@/components/country/UploadPopulationModal";
+import UploadGISModal from "@/components/country/UploadGISModal";
 import type { CountryParams } from "@/app/country/types";
 
 // SSR-safe Leaflet
@@ -104,7 +107,7 @@ type DatasetJoin = {
   country_iso: string;
   notes: string | null;
   created_at: string;
-  admin_datasets: DatasetBase[];       // arrays
+  admin_datasets: DatasetBase[];
   population_datasets: DatasetBase[];
   gis_datasets: DatasetBase[];
 };
@@ -115,6 +118,11 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [country, setCountry] = useState<any>(null);
   const [join, setJoin] = useState<DatasetJoin | null>(null);
   const [openMeta, setOpenMeta] = useState(false);
+
+  // Upload modal toggles
+  const [openAdminUpload, setOpenAdminUpload] = useState(false);
+  const [openPopUpload, setOpenPopUpload] = useState(false);
+  const [openGISUpload, setOpenGISUpload] = useState(false);
 
   // fetch country metadata
   useEffect(() => {
@@ -176,6 +184,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       dataset: adminDs,
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
+      openUpload: () => setOpenAdminUpload(true),
     },
     {
       key: "population",
@@ -184,6 +193,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       dataset: popDs,
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
+      openUpload: () => setOpenPopUpload(true),
     },
     {
       key: "gis",
@@ -192,6 +202,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       dataset: gisDs,
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
+      openUpload: () => setOpenGISUpload(true),
     },
   ] as const;
 
@@ -248,30 +259,6 @@ export default function CountryConfigLandingPage({ params }: any) {
                   <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
                   <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
                 </div>
-                <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
-                  Extra Metadata
-                </h3>
-                <div className="pl-2 text-sm space-y-1">
-                  {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
-                    Object.entries(country.extra_metadata).map(([k, v]) => {
-                      const entry = v as { label: string; value: string; url?: string };
-                      return (
-                        <p key={k}>
-                          <strong>{entry.label}:</strong>{" "}
-                          {entry.url ? (
-                            <a href={entry.url} className="text-blue-700 hover:underline" target="_blank" rel="noreferrer">
-                              {entry.value}
-                            </a>
-                          ) : (
-                            <span>{entry.value}</span>
-                          )}
-                        </p>
-                      );
-                    })
-                  ) : (
-                    <p className="italic text-gray-400">None</p>
-                  )}
-                </div>
               </>
             ) : (
               <p className="text-gray-500">Loading metadata...</p>
@@ -309,11 +296,36 @@ export default function CountryConfigLandingPage({ params }: any) {
             )}
             <div className="flex gap-2">
               <SoftButton color="gray">Download Template</SoftButton>
-              <SoftButton color="green">Upload Data</SoftButton>
+              <SoftButton color="green" onClick={d.openUpload}>Upload Data</SoftButton>
               <SoftButton color="blue" href={d.href}>View</SoftButton>
             </div>
           </div>
         ))}
+
+        {/* Manage Joins card */}
+        <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <LinkIcon className="w-6 h-6 text-purple-600" />
+              <h3 className="text-lg font-semibold">Manage Joins</h3>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">
+            Link Admin, Population, and GIS datasets together for consistency in analysis.
+          </p>
+          {join ? (
+            <div className="text-sm text-gray-600 mb-3 space-y-1">
+              <p><strong>Admin:</strong> {adminDs?.title || "—"}</p>
+              <p><strong>Population:</strong> {popDs?.title || "—"}</p>
+              <p><strong>GIS:</strong> {gisDs?.title || "—"}</p>
+            </div>
+          ) : (
+            <p className="italic text-gray-400 mb-3">No join configured</p>
+          )}
+          <SoftButton color="blue" href={`/country/${id}/joins`}>
+            Manage
+          </SoftButton>
+        </div>
 
         {/* Other datasets */}
         <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition col-span-1 md:col-span-2">
@@ -333,7 +345,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         </div>
       </div>
 
-      {/* Edit Metadata Modal */}
+      {/* Modals */}
       {country && (
         <EditMetadataModal
           open={openMeta}
@@ -380,6 +392,27 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
         />
       )}
+
+      <UploadAdminUnitsModal
+        open={openAdminUpload}
+        onClose={() => setOpenAdminUpload(false)}
+        countryIso={id}
+        onUploaded={() => window.location.reload()}
+      />
+
+      <UploadPopulationModal
+        open={openPopUpload}
+        onClose={() => setOpenPopUpload(false)}
+        countryIso={id}
+        onUploaded={() => window.location.reload()}
+      />
+
+      <UploadGISModal
+        open={openGISUpload}
+        onClose={() => setOpenGISUpload(false)}
+        countryIso={id}
+        onUploaded={() => window.location.reload()}
+      />
     </SidebarLayout>
   );
 }
