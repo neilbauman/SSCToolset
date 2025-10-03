@@ -5,7 +5,6 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
 import { Users, Upload } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
@@ -25,11 +24,20 @@ type PopulationDataset = {
 
 type PopulationRow = {
   id: string;
+  dataset_id: string;
   pcode: string;
   name: string;
   population: number;
   year: number;
-  dataset_id: string;
+  level?: string;
+};
+
+type AdminUnit = {
+  id: string;
+  country_iso: string;
+  pcode: string;
+  name: string;
+  level: string;
 };
 
 export default function PopulationPage({ params }: any) {
@@ -39,6 +47,7 @@ export default function PopulationPage({ params }: any) {
   const [datasets, setDatasets] = useState<PopulationDataset[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<PopulationDataset | null>(null);
   const [rows, setRows] = useState<PopulationRow[]>([]);
+  const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
   // fetch country
@@ -54,7 +63,19 @@ export default function PopulationPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
-  // fetch population datasets
+  // fetch admin units (for completeness calc)
+  useEffect(() => {
+    const fetchAdmins = async () => {
+      const { data } = await supabase
+        .from("admin_units")
+        .select("id,country_iso,pcode,name,level")
+        .eq("country_iso", countryIso);
+      if (data) setAdminUnits(data as AdminUnit[]);
+    };
+    fetchAdmins();
+  }, [countryIso]);
+
+  // fetch datasets
   const fetchDatasets = async () => {
     const { data } = await supabase
       .from("population_datasets")
@@ -88,7 +109,7 @@ export default function PopulationPage({ params }: any) {
     fetchDatasets();
   }, [countryIso]);
 
-  // mark a dataset active
+  // set dataset active
   const makeActive = async (datasetId: string) => {
     await supabase
       .from("population_datasets")
@@ -103,8 +124,28 @@ export default function PopulationPage({ params }: any) {
     fetchDatasets();
   };
 
-  const allHavePcodes = rows.length > 0 && rows.every((r) => r.pcode);
-  const allHavePop = rows.length > 0 && rows.every((r) => r.population > 0);
+  // compute lowest admin level present
+  const computeLowestLevel = (data: PopulationRow[]) => {
+    if (!data || data.length === 0) return "None";
+    const levels = new Set(data.map((r) => r.level || "ADM0"));
+    if (levels.has("ADM5")) return "ADM5";
+    if (levels.has("ADM4")) return "ADM4";
+    if (levels.has("ADM3")) return "ADM3";
+    if (levels.has("ADM2")) return "ADM2";
+    if (levels.has("ADM1")) return "ADM1";
+    return "ADM0";
+  };
+
+  // compute completeness %
+  const computeCompleteness = (data: PopulationRow[]) => {
+    if (!data || data.length === 0) return 0;
+    const pcodes = new Set(data.map((r) => r.pcode));
+    const targetLevel = computeLowestLevel(data);
+    const targetAdmins = adminUnits.filter((a) => a.level === targetLevel);
+    if (targetAdmins.length === 0) return 0;
+    const covered = targetAdmins.filter((a) => pcodes.has(a.pcode)).length;
+    return Math.round((covered / targetAdmins.length) * 100);
+  };
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population`,
@@ -122,11 +163,14 @@ export default function PopulationPage({ params }: any) {
     ),
   };
 
+  const completeness = computeCompleteness(rows);
+  const lowestLevel = computeLowestLevel(rows);
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Dataset Versions */}
-        <div className="border rounded-lg p-4 shadow-sm">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        {/* Dataset Versions (2/3 width) */}
+        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm overflow-x-auto">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Users className="w-5 h-5 text-blue-600" /> Dataset Versions
           </h2>
@@ -137,51 +181,62 @@ export default function PopulationPage({ params }: any) {
                 <th className="border px-2 py-1">Year</th>
                 <th className="border px-2 py-1">Dataset Date</th>
                 <th className="border px-2 py-1">Source</th>
+                <th className="border px-2 py-1">Lowest Level</th>
+                <th className="border px-2 py-1">% Complete</th>
                 <th className="border px-2 py-1">Active</th>
                 <th className="border px-2 py-1">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {datasets.map((ds) => (
-                <tr
-                  key={ds.id}
-                  className={
-                    ds.id === selectedDataset?.id
-                      ? "bg-blue-50"
-                      : "hover:bg-gray-50"
-                  }
-                >
-                  <td className="border px-2 py-1">{ds.title || `Dataset ${ds.year}`}</td>
-                  <td className="border px-2 py-1">{ds.year}</td>
-                  <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
-                  <td className="border px-2 py-1">{ds.source || "-"}</td>
-                  <td className="border px-2 py-1 text-center">{ds.is_active ? "✓" : ""}</td>
-                  <td className="border px-2 py-1 space-x-2">
-                    {selectedDataset?.id !== ds.id && (
-                      <button
-                        onClick={() => {
-                          setSelectedDataset(ds);
-                          fetchRows(ds.id);
-                        }}
-                        className="text-blue-600 text-xs hover:underline"
-                      >
-                        Select
-                      </button>
-                    )}
-                    {!ds.is_active && (
-                      <button
-                        onClick={() => makeActive(ds.id)}
-                        className="text-green-600 text-xs hover:underline"
-                      >
-                        Make Active
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {datasets.map((ds) => {
+                const isActive = ds.is_active;
+                const isSelected = selectedDataset?.id === ds.id;
+                const dsRows = isSelected ? rows : []; // only compute for selected dataset
+                return (
+                  <tr
+                    key={ds.id}
+                    className={`${isSelected ? "bg-blue-50" : ""} ${
+                      isActive ? "font-semibold" : ""
+                    } hover:bg-gray-50`}
+                  >
+                    <td className="border px-2 py-1">{ds.title || `Dataset ${ds.year}`}</td>
+                    <td className="border px-2 py-1">{ds.year}</td>
+                    <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
+                    <td className="border px-2 py-1">{ds.source || "-"}</td>
+                    <td className="border px-2 py-1">
+                      {isSelected ? computeLowestLevel(dsRows) : "—"}
+                    </td>
+                    <td className="border px-2 py-1 text-center">
+                      {isSelected ? `${computeCompleteness(dsRows)}%` : "—"}
+                    </td>
+                    <td className="border px-2 py-1 text-center">{isActive ? "✓" : ""}</td>
+                    <td className="border px-2 py-1 space-x-2">
+                      {!isSelected && (
+                        <button
+                          onClick={() => {
+                            setSelectedDataset(ds);
+                            fetchRows(ds.id);
+                          }}
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          Select
+                        </button>
+                      )}
+                      {!isActive && (
+                        <button
+                          onClick={() => makeActive(ds.id)}
+                          className="text-green-600 hover:underline text-xs"
+                        >
+                          Make Active
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {datasets.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-4 text-gray-500">
+                  <td colSpan={8} className="text-center py-4 text-gray-500">
                     No datasets uploaded
                   </td>
                 </tr>
@@ -196,13 +251,25 @@ export default function PopulationPage({ params }: any) {
           </button>
         </div>
 
-        {/* Dataset Health */}
-        <DatasetHealth
-          totalUnits={rows.length}
-          allHavePcodes={allHavePcodes}
-          missingPcodes={rows.filter((r) => !r.pcode).length}
-          hasPopulation={allHavePop}
-        />
+        {/* Dataset Health (1/3 width) */}
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-3">Dataset Health</h2>
+          {rows.length === 0 ? (
+            <p className="italic text-gray-400">No dataset selected</p>
+          ) : (
+            <ul className="text-sm space-y-2">
+              <li>
+                <strong>Total Records:</strong> {rows.length}
+              </li>
+              <li>
+                <strong>Lowest Level:</strong> {lowestLevel}
+              </li>
+              <li>
+                <strong>Completeness:</strong> {completeness}%
+              </li>
+            </ul>
+          )}
+        </div>
       </div>
 
       {/* Population Data */}
