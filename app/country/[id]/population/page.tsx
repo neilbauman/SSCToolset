@@ -50,7 +50,7 @@ export default function PopulationPage({ params }: any) {
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
-  // fetch country
+  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -63,7 +63,7 @@ export default function PopulationPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
-  // fetch admin units (for completeness calc)
+  // Fetch admin units (for completeness calc)
   useEffect(() => {
     const fetchAdmins = async () => {
       const { data } = await supabase
@@ -75,7 +75,7 @@ export default function PopulationPage({ params }: any) {
     fetchAdmins();
   }, [countryIso]);
 
-  // fetch datasets
+  // Fetch datasets
   const fetchDatasets = async () => {
     const { data } = await supabase
       .from("population_datasets")
@@ -96,7 +96,7 @@ export default function PopulationPage({ params }: any) {
     }
   };
 
-  // fetch rows for selected dataset
+  // Fetch rows for selected dataset
   const fetchRows = async (datasetId: string) => {
     const { data } = await supabase
       .from("population_data")
@@ -109,7 +109,7 @@ export default function PopulationPage({ params }: any) {
     fetchDatasets();
   }, [countryIso]);
 
-  // set dataset active
+  // Set dataset active
   const makeActive = async (datasetId: string) => {
     await supabase
       .from("population_datasets")
@@ -124,7 +124,7 @@ export default function PopulationPage({ params }: any) {
     fetchDatasets();
   };
 
-  // compute lowest admin level present
+  // Compute lowest admin level present (ADM0 highest → ADM5 lowest)
   const computeLowestLevel = (data: PopulationRow[]) => {
     if (!data || data.length === 0) return "None";
     const levels = new Set(data.map((r) => r.level || "ADM0"));
@@ -136,12 +136,15 @@ export default function PopulationPage({ params }: any) {
     return "ADM0";
   };
 
-  // compute completeness %
+  // Compute completeness % based on lowest level
   const computeCompleteness = (data: PopulationRow[]) => {
     if (!data || data.length === 0) return 0;
-    const pcodes = new Set(data.map((r) => r.pcode));
     const targetLevel = computeLowestLevel(data);
+    if (targetLevel === "None") return 0;
+
+    const pcodes = new Set(data.map((r) => r.pcode));
     const targetAdmins = adminUnits.filter((a) => a.level === targetLevel);
+
     if (targetAdmins.length === 0) return 0;
     const covered = targetAdmins.filter((a) => pcodes.has(a.pcode)).length;
     return Math.round((covered / targetAdmins.length) * 100);
@@ -191,7 +194,9 @@ export default function PopulationPage({ params }: any) {
               {datasets.map((ds) => {
                 const isActive = ds.is_active;
                 const isSelected = selectedDataset?.id === ds.id;
-                const dsRows = isSelected ? rows : []; // only compute for selected dataset
+                const dsRows = isSelected ? rows : []; // compute only for selected dataset
+                const comp = isSelected ? computeCompleteness(dsRows) : null;
+
                 return (
                   <tr
                     key={ds.id}
@@ -207,7 +212,21 @@ export default function PopulationPage({ params }: any) {
                       {isSelected ? computeLowestLevel(dsRows) : "—"}
                     </td>
                     <td className="border px-2 py-1 text-center">
-                      {isSelected ? `${computeCompleteness(dsRows)}%` : "—"}
+                      {comp !== null ? (
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            comp >= 90
+                              ? "bg-green-100 text-green-700"
+                              : comp >= 50
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {comp}%
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="border px-2 py-1 text-center">{isActive ? "✓" : ""}</td>
                     <td className="border px-2 py-1 space-x-2">
@@ -265,7 +284,18 @@ export default function PopulationPage({ params }: any) {
                 <strong>Lowest Level:</strong> {lowestLevel}
               </li>
               <li>
-                <strong>Completeness:</strong> {completeness}%
+                <strong>Completeness:</strong>{" "}
+                <span
+                  className={`px-2 py-0.5 rounded text-xs ${
+                    completeness >= 90
+                      ? "bg-green-100 text-green-700"
+                      : completeness >= 50
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {completeness}%
+                </span>
               </li>
             </ul>
           )}
