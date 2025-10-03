@@ -5,6 +5,11 @@ import Link from "next/link";
 type ActiveJoinSummaryCardProps = {
   countryIso: string;
   activeJoin: any;
+  statusData?: {
+    admins: any[];
+    pop: any[];
+    gis: any[];
+  };
 };
 
 function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | "empty" }) {
@@ -21,7 +26,38 @@ function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | 
   );
 }
 
-export default function ActiveJoinSummaryCard({ countryIso, activeJoin }: ActiveJoinSummaryCardProps) {
+function computeStatus(key: "admins" | "population" | "gis", statusData?: any) {
+  if (!statusData) return "empty";
+
+  if (key === "admins") {
+    const admins = statusData.admins || [];
+    if (admins.length === 0) return "missing";
+    const levels = new Set(admins.map((a: any) => a.level));
+    const required = ["ADM0", "ADM1", "ADM2"];
+    const hasAll = required.every((lvl) => levels.has(lvl));
+    return hasAll ? "uploaded" : "partial";
+  }
+
+  if (key === "population") {
+    const pop = statusData.pop || [];
+    if (pop.length === 0) return "missing";
+    const invalid = pop.some(
+      (p: any) => !p.pcode || !p.population || p.population <= 0
+    );
+    return invalid ? "partial" : "uploaded";
+  }
+
+  if (key === "gis") {
+    const gis = statusData.gis || [];
+    if (gis.length === 0) return "missing";
+    const invalid = gis.some((g: any) => !g.crs || !g.crs.startsWith("EPSG:"));
+    return invalid ? "partial" : "uploaded";
+  }
+
+  return "empty";
+}
+
+export default function ActiveJoinSummaryCard({ countryIso, activeJoin, statusData }: ActiveJoinSummaryCardProps) {
   return (
     <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -49,7 +85,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin }: Active
             ) : (
               "—"
             )}
-            <StatusBadge status={activeJoin.admin_datasets?.[0] ? "uploaded" : "missing"} />
+            <StatusBadge status={computeStatus("admins", statusData)} />
           </p>
 
           {/* Population */}
@@ -65,7 +101,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin }: Active
             ) : (
               "—"
             )}
-            <StatusBadge status={activeJoin.population_datasets?.[0] ? "uploaded" : "missing"} />
+            <StatusBadge status={computeStatus("population", statusData)} />
           </p>
 
           {/* GIS */}
@@ -81,7 +117,7 @@ export default function ActiveJoinSummaryCard({ countryIso, activeJoin }: Active
             ) : (
               "—"
             )}
-            <StatusBadge status={activeJoin.gis_datasets?.[0] ? "uploaded" : "missing"} />
+            <StatusBadge status={computeStatus("gis", statusData)} />
           </p>
         </div>
       ) : (
