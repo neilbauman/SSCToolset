@@ -5,11 +5,13 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { CountryParams } from "@/app/country/types";
+import { Plus } from "lucide-react";
 
 export default function ManageJoinsPage({ params }: any) {
   const { id } = params as CountryParams;
 
   const [joins, setJoins] = useState<any[]>([]);
+  const [openModal, setOpenModal] = useState(false);
 
   useEffect(() => {
     const fetchJoins = async () => {
@@ -55,8 +57,17 @@ export default function ManageJoinsPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-5 shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Dataset Joins</h2>
+      <div className="border rounded-lg p-5 shadow-sm mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Dataset Joins</h2>
+          <button
+            onClick={() => setOpenModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Create New Join
+          </button>
+        </div>
+
         {joins.length === 0 ? (
           <p className="italic text-gray-500">No joins defined yet.</p>
         ) : (
@@ -92,6 +103,33 @@ export default function ManageJoinsPage({ params }: any) {
           </table>
         )}
       </div>
+
+      {/* Modal (placeholder for now) */}
+      {openModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Create New Join</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Here you will be able to select which Admin, Population, and GIS datasets to join.
+              For now this is a placeholder modal.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOpenModal(false)}
+                className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setOpenModal(false)}
+                className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:opacity-90"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SidebarLayout>
   );
 }
