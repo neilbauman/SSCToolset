@@ -1,65 +1,81 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Pencil } from "lucide-react";
 
-type Props = { countryIso: string };
-
-type Country = {
-  iso_code: string;
-  name: string;
-  adm0_label: string | null;
-  adm1_label: string | null;
-  adm2_label: string | null;
-  adm3_label: string | null;
-  adm4_label: string | null;
-  adm5_label: string | null;
+type CountryMetadataCardProps = {
+  country: any;
+  onEdit: () => void;
 };
 
-export default function CountryMetadataCard({ countryIso }: Props) {
-  const [country, setCountry] = useState<Country | null>(null);
-
-  useEffect(() => {
-    const run = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select(
-          "iso_code,name,adm0_label,adm1_label,adm2_label,adm3_label,adm4_label,adm5_label"
-        )
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    };
-    run();
-  }, [countryIso]);
-
-  const L = (v: string | null | undefined, fallback: string) =>
-    (v ?? "").trim() || fallback;
+export default function CountryMetadataCard({ country, onEdit }: CountryMetadataCardProps) {
+  if (!country) {
+    return (
+      <div className="border rounded-lg p-4 shadow-sm">
+        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
+        <p className="italic text-gray-400">Loading metadata...</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="border rounded-lg p-5 shadow-sm">
-      <h3 className="text-2xl font-semibold mb-3">Country Metadata</h3>
-      <h4 className="text-[color:var(--gsc-red)] font-semibold mb-4">Core Metadata</h4>
+    <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
 
-      <dl className="space-y-3 text-[15px] leading-6 text-gray-900">
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ISO:</dt><dd>{country?.iso_code ?? countryIso}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">Name:</dt><dd>{country?.name ?? "—"}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM0 Label:</dt><dd>{L(country?.adm0_label, "Country")}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM1 Label:</dt><dd>{L(country?.adm1_label, "Region")}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM2 Label:</dt><dd>{L(country?.adm2_label, "Province")}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM3 Label:</dt><dd>{L(country?.adm3_label, "Municipality")}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM4 Label:</dt><dd>{L(country?.adm4_label, "—")}</dd></div>
-        <div className="flex gap-2"><dt className="font-semibold min-w-[120px]">ADM5 Label:</dt><dd>{L(country?.adm5_label, "N/A")}</dd></div>
-      </dl>
+        {/* Core metadata */}
+        <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mb-2">
+          Core Metadata
+        </h3>
+        <div className="pl-2 text-sm space-y-1">
+          <p><strong>ISO:</strong> {country.iso_code}</p>
+          <p><strong>Name:</strong> {country.name}</p>
+          <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
+          <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
+          <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
+          <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
+          <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
+          <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
+        </div>
 
-      <div className="mt-8">
-        <a
-          href={`/country/${countryIso}/metadata`}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gray-50 px-4 py-2 text-[15px] font-medium text-gray-900 hover:bg-gray-100 border"
-        >
-          <span className="inline-block">✎</span> Edit Metadata
-        </a>
+        {/* Extra metadata */}
+        <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
+          Extra Metadata
+        </h3>
+        <div className="pl-2 text-sm space-y-1">
+          {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
+            Object.entries(country.extra_metadata).map(([k, v]) => {
+              const entry = v as { label: string; value: string; url?: string };
+              return (
+                <p key={k}>
+                  <strong>{entry.label}:</strong>{" "}
+                  {entry.url ? (
+                    <a
+                      href={entry.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 hover:underline"
+                    >
+                      {entry.value}
+                    </a>
+                  ) : (
+                    <span>{entry.value}</span>
+                  )}
+                </p>
+              );
+            })
+          ) : (
+            <p className="italic text-gray-400">None</p>
+          )}
+        </div>
       </div>
-    </section>
+
+      {/* Edit button */}
+      <button
+        onClick={onEdit}
+        className="mt-4 px-3 py-1.5 text-sm border rounded flex items-center gap-1 hover:bg-gray-50"
+      >
+        <Pencil className="w-4 h-4" /> Edit Metadata
+      </button>
+    </div>
   );
 }
