@@ -62,21 +62,42 @@ export default function ManageJoinsCard({ countryIso }: ManageJoinsCardProps) {
       <div className="text-sm space-y-1">
         <p>
           <strong>Admin:</strong>{" "}
-          {join?.admin_datasets?.[0]?.title
-            ? `${join.admin_datasets[0].title} (${join.admin_datasets[0].year})`
-            : "—"}
+          {join?.admin_datasets?.[0]?.title ? (
+            <Link
+              href={`/country/${countryIso}/admins`}
+              className="text-blue-600 hover:underline"
+            >
+              {join.admin_datasets[0].title} ({join.admin_datasets[0].year})
+            </Link>
+          ) : (
+            "—"
+          )}
         </p>
         <p>
           <strong>Population:</strong>{" "}
-          {join?.population_datasets?.[0]?.title
-            ? `${join.population_datasets[0].title} (${join.population_datasets[0].year})`
-            : "—"}
+          {join?.population_datasets?.[0]?.title ? (
+            <Link
+              href={`/country/${countryIso}/population`}
+              className="text-blue-600 hover:underline"
+            >
+              {join.population_datasets[0].title} ({join.population_datasets[0].year})
+            </Link>
+          ) : (
+            "—"
+          )}
         </p>
         <p>
           <strong>GIS:</strong>{" "}
-          {join?.gis_datasets?.[0]?.title
-            ? `${join.gis_datasets[0].title} (${join.gis_datasets[0].year})`
-            : "—"}
+          {join?.gis_datasets?.[0]?.title ? (
+            <Link
+              href={`/country/${countryIso}/gis`}
+              className="text-blue-600 hover:underline"
+            >
+              {join.gis_datasets[0].title} ({join.gis_datasets[0].year})
+            </Link>
+          ) : (
+            "—"
+          )}
         </p>
       </div>
       <Link
