@@ -29,26 +29,31 @@ export default function UploadAdminUnitsModal({
 
     try {
       const text = await file.text();
-      const rows = text.split("\n").slice(1).map((line) => {
-        const [pcode, name, level, parent_pcode] = line.split(",");
-        return {
-          pcode: pcode?.trim(),
-          name: name?.trim(),
-          level: level?.trim(),
-          parent_pcode: parent_pcode?.trim() || null,
-        };
-      });
+      const rows = text
+        .split("\n")
+        .slice(1)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => {
+          const [pcode, name, level, parent_pcode, dataset_date, source] = line.split(",");
+          return {
+            pcode: pcode?.trim(),
+            name: name?.trim(),
+            level: level?.trim(),
+            parent_pcode: parent_pcode?.trim() || null,
+            dataset_date: dataset_date?.trim() || null,
+            source: source?.trim() || null,
+          };
+        });
 
-      // 1. Insert dataset version metadata
+      // 1. Create a dataset version
       const { data: version, error: versionError } = await supabase
         .from("admin_dataset_versions")
         .insert([
           {
             country_iso: countryIso,
             title: `Admin Upload ${new Date().toISOString().slice(0, 10)}`,
-            year: new Date().getFullYear(),
-            dataset_date: new Date().toISOString(),
-            source: "Uploaded CSV",
+            dataset_date: rows[0]?.dataset_date || new Date().toISOString(),
+            source: rows[0]?.source || "Uploaded CSV",
           },
         ])
         .select()
@@ -56,7 +61,7 @@ export default function UploadAdminUnitsModal({
 
       if (versionError) throw versionError;
 
-      // 2. Insert uploaded rows with dataset_version_id
+      // 2. Insert admin units linked to this version
       const { error: insertError } = await supabase.from("admin_units").insert(
         rows.map((r) => ({
           ...r,
@@ -70,7 +75,7 @@ export default function UploadAdminUnitsModal({
       onUploaded();
       onClose();
     } catch (err: any) {
-      console.error("Upload error:", err);
+      console.error("Admin upload error:", err);
       setError(err.message || "Upload failed");
     } finally {
       setLoading(false);
@@ -78,7 +83,11 @@ export default function UploadAdminUnitsModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
       <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
       <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
@@ -88,8 +97,9 @@ export default function UploadAdminUnitsModal({
         </Dialog.Title>
 
         <p className="text-sm text-gray-600 mb-3">
-          File must include: <code>pcode</code>, <code>name</code>, <code>level</code>,{" "}
-          <code>parent_pcode</code>. Only levels ADM1–ADM5 are supported here.
+          File must include: <code>pcode</code>, <code>name</code>,{" "}
+          <code>level</code>, <code>parent_pcode</code>,{" "}
+          <code>dataset_date</code>, <code>source</code>.
         </p>
 
         <input
@@ -102,7 +112,10 @@ export default function UploadAdminUnitsModal({
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+          >
             Cancel
           </button>
           <button
