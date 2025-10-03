@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import FlexibleJoinModal from "@/components/country/FlexibleJoinModal";
 import type { CountryParams } from "@/app/country/types";
 
 type JoinRow = {
@@ -23,6 +24,7 @@ export default function ManageJoinsPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
   const [joins, setJoins] = useState<JoinRow[]>([]);
   const [country, setCountry] = useState<any>(null);
+  const [openNew, setOpenNew] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -43,26 +45,27 @@ export default function ManageJoinsPage({ params }: any) {
     fetchData();
   }, [countryIso]);
 
-  const setActive = async (joinId: string) => {
-    // Clear current active
-    await supabase
-      .from("dataset_joins")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-
-    // Set chosen active
-    await supabase
-      .from("dataset_joins")
-      .update({ is_active: true })
-      .eq("id", joinId);
-
-    // Refresh
+  const refreshJoins = async () => {
     const { data } = await supabase
       .from("dataset_joins")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
     if (data) setJoins(data as JoinRow[]);
+  };
+
+  const setActive = async (joinId: string) => {
+    await supabase
+      .from("dataset_joins")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+
+    await supabase
+      .from("dataset_joins")
+      .update({ is_active: true })
+      .eq("id", joinId);
+
+    refreshJoins();
   };
 
   const headerProps = {
@@ -96,17 +99,25 @@ export default function ManageJoinsPage({ params }: any) {
       );
     }
 
-    // Fallback to old fields
+    // Fallback for old schema
     return (
       <ul className="list-disc pl-5 text-sm text-gray-700">
         {join.admin_datasets?.[0] && (
-          <li>Admin: {join.admin_datasets[0].title} ({join.admin_datasets[0].year})</li>
+          <li>
+            Admin: {join.admin_datasets[0].title} (
+            {join.admin_datasets[0].year})
+          </li>
         )}
         {join.population_datasets?.[0] && (
-          <li>Population: {join.population_datasets[0].title} ({join.population_datasets[0].year})</li>
+          <li>
+            Population: {join.population_datasets[0].title} (
+            {join.population_datasets[0].year})
+          </li>
         )}
         {join.gis_datasets?.[0] && (
-          <li>GIS: {join.gis_datasets[0].title} ({join.gis_datasets[0].year})</li>
+          <li>
+            GIS: {join.gis_datasets[0].title} ({join.gis_datasets[0].year})
+          </li>
         )}
       </ul>
     );
@@ -115,7 +126,15 @@ export default function ManageJoinsPage({ params }: any) {
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="border rounded-lg p-5 shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Dataset Joins</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Dataset Joins</h2>
+          <button
+            onClick={() => setOpenNew(true)}
+            className="px-3 py-1.5 text-sm bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90"
+          >
+            + New Join
+          </button>
+        </div>
 
         {joins.length > 0 ? (
           <table className="w-full text-sm border">
@@ -163,6 +182,14 @@ export default function ManageJoinsPage({ params }: any) {
           <p className="italic text-gray-500">No joins defined yet.</p>
         )}
       </div>
+
+      {/* Flexible Join Modal */}
+      <FlexibleJoinModal
+        open={openNew}
+        onClose={() => setOpenNew(false)}
+        countryIso={countryIso}
+        onSaved={refreshJoins}
+      />
     </SidebarLayout>
   );
 }
