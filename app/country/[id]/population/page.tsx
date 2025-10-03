@@ -95,6 +95,22 @@ export default function PopulationPage({ params }: any) {
     if (selectedDataset) fetchRows(selectedDataset);
   }, [selectedDataset]);
 
+  // Set dataset active
+  const makeActive = async (datasetId: string) => {
+    await supabase
+      .from("population_datasets")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+
+    await supabase
+      .from("population_datasets")
+      .update({ is_active: true })
+      .eq("id", datasetId);
+
+    fetchDatasets();
+    setSelectedDataset(datasetId);
+  };
+
   // Health checks
   const totalUnits = rows.length;
   const missingPcodes = rows.filter((r) => !r.pcode).length;
@@ -137,8 +153,8 @@ export default function PopulationPage({ params }: any) {
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Dataset Versions */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        {/* Dataset Versions Table */}
+        <div className="border rounded-lg p-4 shadow-sm overflow-x-auto">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
             <Users className="w-5 h-5 text-blue-600" />
             Dataset Versions
@@ -146,44 +162,64 @@ export default function PopulationPage({ params }: any) {
           {datasets.length === 0 ? (
             <p className="italic text-gray-400">No versions uploaded yet</p>
           ) : (
-            <ul className="space-y-2 text-sm">
-              {datasets.map((ds) => {
-                const isSelected = selectedDataset === ds.id;
-                return (
-                  <li
-                    key={ds.id}
-                    className={`p-2 border rounded cursor-pointer ${
-                      isSelected ? "bg-blue-50 border-blue-400" : "hover:bg-gray-50"
-                    }`}
-                    onClick={() => setSelectedDataset(ds.id)}
-                  >
-                    <p>
-                      <strong>Year:</strong> {ds.year}{" "}
-                      {ds.is_active && <span className="text-green-600">(Active)</span>}
-                    </p>
-                    {ds.dataset_date && (
-                      <p>
-                        <strong>Date:</strong> {ds.dataset_date}
-                      </p>
-                    )}
-                    {ds.source && (
-                      <p>
-                        <strong>Source:</strong> {ds.source}
-                      </p>
-                    )}
-                    <p>
-                      <strong>Rows:</strong> {rows.length}
-                    </p>
-                    <p>
-                      <strong>Lowest Level:</strong> {computeLowestLevel()}
-                    </p>
-                    <p>
-                      <strong>Status:</strong> {computeCompleteness()}
-                    </p>
-                  </li>
-                );
-              })}
-            </ul>
+            <table className="w-full text-sm border">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-2 py-1">Year</th>
+                  <th className="border px-2 py-1">Dataset Date</th>
+                  <th className="border px-2 py-1">Source</th>
+                  <th className="border px-2 py-1">Rows</th>
+                  <th className="border px-2 py-1">Lowest Level</th>
+                  <th className="border px-2 py-1">Status</th>
+                  <th className="border px-2 py-1">Active</th>
+                  <th className="border px-2 py-1">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {datasets.map((ds) => {
+                  const isSelected = selectedDataset === ds.id;
+                  const isActive = ds.is_active;
+                  return (
+                    <tr
+                      key={ds.id}
+                      className={isSelected ? "bg-blue-50" : "hover:bg-gray-50"}
+                    >
+                      <td className="border px-2 py-1">{ds.year}</td>
+                      <td className="border px-2 py-1">{ds.dataset_date || "-"}</td>
+                      <td className="border px-2 py-1">{ds.source || "-"}</td>
+                      <td className="border px-2 py-1">
+                        {isSelected ? rows.length : "—"}
+                      </td>
+                      <td className="border px-2 py-1">
+                        {isSelected ? computeLowestLevel() : "—"}
+                      </td>
+                      <td className="border px-2 py-1">
+                        {isSelected ? computeCompleteness() : "—"}
+                      </td>
+                      <td className="border px-2 py-1 text-center">
+                        {isActive ? "✓" : ""}
+                      </td>
+                      <td className="border px-2 py-1 space-x-2">
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => setSelectedDataset(ds.id)}
+                        >
+                          Select
+                        </button>
+                        {!isActive && (
+                          <button
+                            className="text-green-600 hover:underline text-xs"
+                            onClick={() => makeActive(ds.id)}
+                          >
+                            Make Active
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
           <button
             onClick={() => setOpenUpload(true)}
