@@ -104,9 +104,9 @@ type DatasetJoin = {
   country_iso: string;
   notes: string | null;
   created_at: string;
-  admin_datasets: DatasetBase | null;
-  population_datasets: DatasetBase | null;
-  gis_datasets: DatasetBase | null;
+  admin_datasets: DatasetBase[];       // arrays
+  population_datasets: DatasetBase[];
+  gis_datasets: DatasetBase[];
 };
 
 export default function CountryConfigLandingPage({ params }: any) {
@@ -157,6 +157,10 @@ export default function CountryConfigLandingPage({ params }: any) {
     fetchJoin();
   }, [id]);
 
+  const adminDs = join?.admin_datasets?.[0] || null;
+  const popDs = join?.population_datasets?.[0] || null;
+  const gisDs = join?.gis_datasets?.[0] || null;
+
   const computeStatus = (ds: DatasetBase | null) => {
     if (!ds) return "missing";
     if (!ds.lowest_level || ds.completeness === null) return "partial";
@@ -169,7 +173,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "admins",
       title: "Places / Admin Units",
       description: "Administrative boundaries and place codes.",
-      dataset: join?.admin_datasets,
+      dataset: adminDs,
       icon: <Map className="w-6 h-6 text-green-600" />,
       href: `/country/${id}/admins`,
     },
@@ -177,7 +181,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "population",
       title: "Populations / Demographics",
       description: "Census population and demographic indicators.",
-      dataset: join?.population_datasets,
+      dataset: popDs,
       icon: <Users className="w-6 h-6 text-gray-500" />,
       href: `/country/${id}/population`,
     },
@@ -185,7 +189,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       key: "gis",
       title: "GIS / Mapping",
       description: "Geospatial boundary data and mapping layers.",
-      dataset: join?.gis_datasets,
+      dataset: gisDs,
       icon: <Database className="w-6 h-6 text-yellow-600" />,
       href: `/country/${id}/gis`,
     },
