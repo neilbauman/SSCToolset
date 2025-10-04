@@ -1,110 +1,123 @@
 "use client";
-
-import { useState } from "react";
-import { Dialog } from "@/components/ui/dialog";
+import React, { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type PopulationVersion = {
-  id: string;
-  title: string;
-  year: number;
-  dataset_date?: string;
-  source?: string;
-  is_active: boolean;
-};
-
-type Props = {
+type EditPopulationVersionModalProps = {
   open: boolean;
+  version: any;
   onClose: () => void;
-  version: PopulationVersion | null;
   onSave: () => void;
 };
 
 export default function EditPopulationVersionModal({
   open,
-  onClose,
   version,
+  onClose,
   onSave,
-}: Props) {
-  const [title, setTitle] = useState(version?.title || "");
-  const [year, setYear] = useState(version?.year || new Date().getFullYear());
-  const [datasetDate, setDatasetDate] = useState(version?.dataset_date || "");
-  const [source, setSource] = useState(version?.source || "");
-  const [loading, setLoading] = useState(false);
+}: EditPopulationVersionModalProps) {
+  const [form, setForm] = useState({
+    title: version?.title || "",
+    year: version?.year || "",
+    source: version?.source || "",
+    notes: version?.notes || "",
+  });
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  if (!open) return null;
 
   const handleSave = async () => {
-    if (!version) return;
-    setLoading(true);
+    setSaving(true);
     setError(null);
+    const { error } = await supabase
+      .from("population_dataset_versions")
+      .update({
+        title: form.title,
+        year: form.year,
+        source: form.source,
+        notes: form.notes,
+      })
+      .eq("id", version.id);
 
-    try {
-      const { error: err } = await supabase
-        .from("population_dataset_versions")
-        .update({
-          title,
-          year,
-          dataset_date: datasetDate || null,
-          source,
-        })
-        .eq("id", version.id);
-
-      if (err) throw err;
-
-      onSave();
-      onClose();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+    if (error) {
+      setError(error.message);
+      setSaving(false);
+      return;
     }
+
+    setSuccess(true);
+    setTimeout(() => {
+      setSaving(false);
+      setSuccess(false);
+      onClose();
+      onSave();
+    }, 1000);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <div className="p-4 space-y-3">
-        <h2 className="text-lg font-semibold">Edit Population Dataset</h2>
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <input
-          type="text"
-          placeholder="Title"
-          className="border rounded px-2 py-1 w-full"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <input
-          type="number"
-          placeholder="Year"
-          className="border rounded px-2 py-1 w-full"
-          value={year}
-          onChange={(e) => setYear(parseInt(e.target.value))}
-        />
-        <input
-          type="date"
-          className="border rounded px-2 py-1 w-full"
-          value={datasetDate}
-          onChange={(e) => setDatasetDate(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="Source"
-          className="border rounded px-2 py-1 w-full"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-        />
-        <div className="flex justify-end gap-2 mt-3">
-          <button onClick={onClose} className="px-3 py-1 border rounded">
+    <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+        <h2 className="text-lg font-semibold mb-3 text-[color:var(--gsc-red)]">
+          Edit Population Version
+        </h2>
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="block font-medium">Title</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="w-full border rounded px-2 py-1 mt-1"
+            />
+          </div>
+          <div>
+            <label className="block font-medium">Year</label>
+            <input
+              type="number"
+              value={form.year}
+              onChange={(e) => setForm({ ...form, year: e.target.value })}
+              className="w-full border rounded px-2 py-1 mt-1"
+            />
+          </div>
+          <div>
+            <label className="block font-medium">Source (optional)</label>
+            <input
+              type="text"
+              value={form.source}
+              onChange={(e) => setForm({ ...form, source: e.target.value })}
+              className="w-full border rounded px-2 py-1 mt-1"
+            />
+          </div>
+          <div>
+            <label className="block font-medium">Notes (optional)</label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              className="w-full border rounded px-2 py-1 mt-1"
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-[color:var(--gsc-red)] text-sm mt-3">{error}</p>}
+        {success && <p className="text-green-600 text-sm mt-3">✔ Saved successfully</p>}
+
+        <div className="flex justify-end gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="bg-gray-100 text-gray-800 px-3 py-1.5 rounded hover:bg-gray-200"
+          >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            disabled={loading}
-            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
+            disabled={saving}
+            className="bg-[color:var(--gsc-red)] text-white px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
-    </Dialog>
+    </div>
   );
 }
