@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadPopulationModal from "@/components/country/UploadPopulationModal";
+import UploadPopulationDatasetModal from "@/components/country/UploadPopulationDatasetModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { Database, Upload, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Database } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -23,16 +29,13 @@ type PopulationVersion = {
   source?: string;
   created_at: string;
   is_active: boolean;
-  joined?: boolean;
-  archived?: boolean;
 };
 
 type PopulationRecord = {
   id: string;
-  name: string;
   pcode: string;
+  name: string;
   population: number;
-  dataset_version_id: string;
 };
 
 export default function PopulationPage({ params }: any) {
@@ -41,7 +44,7 @@ export default function PopulationPage({ params }: any) {
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<PopulationVersion | null>(null);
-  const [records, setRecords] = useState<PopulationRecord[]>([]);
+  const [populationRecords, setPopulationRecords] = useState<PopulationRecord[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openEdit, setOpenEdit] = useState<PopulationVersion | null>(null);
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
@@ -50,7 +53,7 @@ export default function PopulationPage({ params }: any) {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
-        .select("iso_code, name")
+        .select("*")
         .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
@@ -66,18 +69,19 @@ export default function PopulationPage({ params }: any) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Error fetching versions:", error);
+      console.error("Error fetching population versions:", error);
       return;
     }
+
     setVersions(data as PopulationVersion[]);
     const active = data?.find((v: any) => v.is_active);
     if (active) {
       setActiveVersion(active);
-      fetchPopulation(active.id);
+      fetchPopulationRecords(active.id);
     }
   };
 
-  const fetchPopulation = async (versionId: string) => {
+  const fetchPopulationRecords = async (versionId: string) => {
     const { data, error } = await supabase
       .from("population_data")
       .select("*")
@@ -85,10 +89,10 @@ export default function PopulationPage({ params }: any) {
       .eq("dataset_version_id", versionId);
 
     if (error) {
-      console.error("Error fetching population:", error);
+      console.error("Error fetching population records:", error);
       return;
     }
-    setRecords(data as PopulationRecord[]);
+    setPopulationRecords(data as PopulationRecord[]);
   };
 
   useEffect(() => {
@@ -96,11 +100,13 @@ export default function PopulationPage({ params }: any) {
   }, [countryIso]);
 
   const handleMakeActive = async (versionId: string) => {
+    // Deactivate all other versions
     await supabase
       .from("population_dataset_versions")
       .update({ is_active: false })
       .eq("country_iso", countryIso);
 
+    // Activate the chosen one
     await supabase
       .from("population_dataset_versions")
       .update({ is_active: true })
@@ -111,26 +117,27 @@ export default function PopulationPage({ params }: any) {
 
   const handleSelectVersion = (version: PopulationVersion) => {
     setActiveVersion(version);
-    fetchPopulation(version.id);
+    fetchPopulationRecords(version.id);
   };
 
   const handleDeleteVersion = async (versionId: string) => {
-    await supabase.from("population_data").delete().eq("dataset_version_id", versionId);
     await supabase.from("population_dataset_versions").delete().eq("id", versionId);
+    await supabase.from("population_data").delete().eq("dataset_version_id", versionId);
+    setOpenDelete(null);
     fetchVersions();
   };
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Population`,
+    title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description: "Manage and inspect population datasets for this country.",
+    description: "Manage and inspect uploaded population datasets.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
           { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "Population" },
+          { label: "Population Data" },
         ]}
       />
     ),
@@ -138,7 +145,7 @@ export default function PopulationPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions table */}
+      {/* Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -148,7 +155,7 @@ export default function PopulationPage({ params }: any) {
             onClick={() => setOpenUpload(true)}
             className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
           >
-            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+            Upload Dataset
           </button>
         </div>
         {versions.length > 0 ? (
@@ -159,8 +166,8 @@ export default function PopulationPage({ params }: any) {
                 <th className="border px-2 py-1">Year</th>
                 <th className="border px-2 py-1">Date</th>
                 <th className="border px-2 py-1">Source</th>
-                <th className="border px-2 py-1 text-center">Status</th>
-                <th className="border px-2 py-1 text-center">Actions</th>
+                <th className="border px-2 py-1">Status</th>
+                <th className="border px-2 py-1">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -176,63 +183,55 @@ export default function PopulationPage({ params }: any) {
                   <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
                   <td className="border px-2 py-1">{v.source || "—"}</td>
                   <td className="border px-2 py-1 text-center">
-                    {v.is_active ? (
-                      <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700">
+                    {v.is_active && (
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
                         Active
                       </span>
-                    ) : v.archived ? (
-                      <span className="px-2 py-1 rounded text-xs bg-gray-200 text-gray-600">
-                        Archived
-                      </span>
-                    ) : v.joined ? (
-                      <span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700">
-                        Joined
-                      </span>
-                    ) : (
-                      "—"
                     )}
                   </td>
-                  <td className="border px-2 py-1 text-center space-x-2">
-                    <button
-                      className="text-blue-600 hover:underline"
-                      onClick={() => handleSelectVersion(v)}
-                    >
-                      Select
-                    </button>
-                    {!v.is_active && (
-                      <button
-                        className="text-green-600 hover:underline"
-                        onClick={() => handleMakeActive(v.id)}
-                      >
-                        Make Active
-                      </button>
-                    )}
-                    <button
-                      className="text-gray-700 hover:underline"
-                      onClick={() => setOpenEdit(v)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="text-red-600 hover:underline"
-                      onClick={() => setOpenDelete(v)}
-                    >
-                      Delete
-                    </button>
+                  <td className="border px-2 py-1 text-center">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="px-2 py-1 text-sm border rounded hover:bg-gray-50">
+                          Actions
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {!v.is_active && (
+                          <DropdownMenuItem onClick={() => handleMakeActive(v.id)}>
+                            Make Active
+                          </DropdownMenuItem>
+                        )}
+                        {activeVersion?.id !== v.id && (
+                          <DropdownMenuItem onClick={() => handleSelectVersion(v)}>
+                            Select
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => setOpenEdit(v)}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setOpenDelete(v)}
+                          className="text-red-600"
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No versions uploaded yet</p>
+          <p className="italic text-gray-500">No population versions uploaded yet</p>
         )}
       </div>
 
-      {/* Data table */}
-      <div className="border rounded-lg p-4 shadow-sm">
+      {/* Population Records Table */}
+      <div className="border rounded-lg p-4 shadow-sm mt-4">
         <h2 className="text-lg font-semibold mb-3">Population Records</h2>
-        {records.length > 0 ? (
+        {populationRecords.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
@@ -242,50 +241,41 @@ export default function PopulationPage({ params }: any) {
               </tr>
             </thead>
             <tbody>
-              {records.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{r.name}</td>
-                  <td className="border px-2 py-1">{r.pcode}</td>
-                  <td className="border px-2 py-1">{r.population}</td>
+              {populationRecords.map((u) => (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{u.name}</td>
+                  <td className="border px-2 py-1">{u.pcode}</td>
+                  <td className="border px-2 py-1">{u.population}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">
-            {activeVersion
-              ? "No records found for this version."
-              : "Select or upload a dataset version to view records."}
-          </p>
+          <p className="italic text-gray-500">No population records found</p>
         )}
       </div>
 
       {/* Modals */}
-      <UploadPopulationModal
+      <UploadPopulationDatasetModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
         countryIso={countryIso}
         onUploaded={fetchVersions}
       />
-
       {openEdit && (
         <EditPopulationVersionModal
           open={!!openEdit}
-          onClose={() => setOpenEdit(null)}
           version={openEdit}
+          onClose={() => setOpenEdit(null)}
           onSave={fetchVersions}
         />
       )}
-
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          onCancel={() => setOpenDelete(null)}
-          onConfirm={() => {
-            if (openDelete) handleDeleteVersion(openDelete.id);
-            setOpenDelete(null);
-          }}
-          message={`Are you sure you want to delete "${openDelete?.title}"? This action cannot be undone.`}
+          onClose={() => setOpenDelete(null)}
+          version={openDelete}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
     </SidebarLayout>
