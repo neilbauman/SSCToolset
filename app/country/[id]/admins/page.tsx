@@ -4,42 +4,27 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Database, Upload, FileDown } from "lucide-react";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
-import { Database, Upload } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
-
-type Country = {
-  iso_code: string;
-  name: string;
-};
 
 type AdminUnit = {
   id: string;
-  name: string;
   pcode: string;
+  name: string;
   level: string;
   parent_pcode: string | null;
+  dataset_version_id: string;
 };
 
-export default function AdminUnitsPage({ params }: any) {
+export default function AdminsPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
 
-  const [country, setCountry] = useState<Country | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
-
-  useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("iso_code, name")
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    };
-    fetchCountry();
-  }, [countryIso]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
   const fetchAdminUnits = async () => {
     const { data, error } = await supabase
@@ -51,6 +36,7 @@ export default function AdminUnitsPage({ params }: any) {
       console.error("Error fetching admin_units:", error);
       return;
     }
+
     if (data) setAdminUnits(data as AdminUnit[]);
   };
 
@@ -58,8 +44,16 @@ export default function AdminUnitsPage({ params }: any) {
     fetchAdminUnits();
   }, [countryIso]);
 
+  const filtered = adminUnits.filter(
+    (r) =>
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      r.pcode.toLowerCase().includes(search.toLowerCase())
+  );
+  const totalPages = Math.ceil((filtered.length || 1) / pageSize);
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Admin Units`,
+    title: `${countryIso} – Admin Units`,
     group: "country-config" as const,
     description: "Manage and inspect uploaded administrative boundaries.",
     breadcrumbs: (
@@ -67,15 +61,31 @@ export default function AdminUnitsPage({ params }: any) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: countryIso, href: `/country/${countryIso}` },
           { label: "Admin Units" },
         ]}
       />
     ),
   };
 
-  const totalUnits = adminUnits.length;
-  const validPcodeCount = adminUnits.filter((r) => !!r.pcode).length;
+  const handleDownloadTemplate = () => {
+    const header = ["pcode,name,level,parent_pcode"];
+    const example = [
+      "PH0000000000,Philippines,ADM0,",
+      "PH1300000000,National Capital Region,ADM1,PH0000000000",
+      "PH133900000,Manila,ADM2,PH1300000000",
+    ];
+    const csvContent = [header.join("\n"), example.join("\n")].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "admin_units_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -89,24 +99,41 @@ export default function AdminUnitsPage({ params }: any) {
             </span>
           </h2>
           <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Units:</strong> {totalUnits}
+            <strong>Total Units:</strong> {adminUnits.length}
           </p>
-          <button
-            onClick={() => setOpenUpload(true)}
-            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-2 py-1 rounded hover:opacity-90"
-          >
-            <Upload className="w-4 h-4 mr-1" /> Upload / Replace Dataset
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center text-sm text-gray-700 border px-2 py-1 rounded hover:bg-gray-50"
+            >
+              <FileDown className="w-4 h-4 mr-1" /> Download Template
+            </button>
+            <button
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-2 py-1 rounded hover:opacity-90"
+            >
+              <Upload className="w-4 h-4 mr-1" /> Upload Data
+            </button>
+          </div>
         </div>
-
-        <DatasetHealth
-          totalUnits={totalUnits}
-          allHavePcodes={validPcodeCount === totalUnits}
-          missingPcodes={totalUnits - validPcodeCount}
-        />
       </div>
 
       <div className="border rounded-lg p-4 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <input
+            type="text"
+            placeholder="Search by name or PCode..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="border px-3 py-1 rounded w-1/3 text-sm"
+          />
+          <span className="text-sm text-gray-500">
+            Showing {paginated.length} of {filtered.length}
+          </span>
+        </div>
         <table className="w-full text-sm border">
           <thead className="bg-gray-100">
             <tr>
@@ -117,7 +144,7 @@ export default function AdminUnitsPage({ params }: any) {
             </tr>
           </thead>
           <tbody>
-            {adminUnits.map((r) => (
+            {paginated.map((r) => (
               <tr key={r.id} className="hover:bg-gray-50">
                 <td className="border px-2 py-1">{r.name}</td>
                 <td className="border px-2 py-1">{r.pcode}</td>
@@ -125,7 +152,7 @@ export default function AdminUnitsPage({ params }: any) {
                 <td className="border px-2 py-1">{r.parent_pcode}</td>
               </tr>
             ))}
-            {adminUnits.length === 0 && (
+            {paginated.length === 0 && (
               <tr>
                 <td colSpan={4} className="text-center text-gray-500 py-6">
                   No results
