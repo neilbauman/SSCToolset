@@ -1,16 +1,15 @@
 "use client";
 
-import { Dialog } from "@headlessui/react";
 import { useState } from "react";
+import { Dialog } from "@headlessui/react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload } from "lucide-react";
 
-interface UploadAdminUnitsModalProps {
+type UploadAdminUnitsModalProps = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
   onUploaded: () => void;
-}
+};
 
 export default function UploadAdminUnitsModal({
   open,
@@ -19,113 +18,160 @@ export default function UploadAdminUnitsModal({
   onUploaded,
 }: UploadAdminUnitsModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [year, setYear] = useState("");
+  const [datasetDate, setDatasetDate] = useState("");
+  const [source, setSource] = useState("");
+  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const handleUpload = async () => {
+  async function handleUpload() {
     if (!file) return;
+
     setLoading(true);
-    setError(null);
 
     try {
       const text = await file.text();
       const rows = text
         .split("\n")
-        .slice(1)
+        .slice(1) // skip header row
         .filter((line) => line.trim().length > 0)
         .map((line) => {
-          const [pcode, name, level, parent_pcode, dataset_date, source] = line.split(",");
-          return {
-            pcode: pcode?.trim(),
-            name: name?.trim(),
-            level: level?.trim(),
-            parent_pcode: parent_pcode?.trim() || null,
-            dataset_date: dataset_date?.trim() || null,
-            source: source?.trim() || null,
-          };
+          const [pcode, name, level, parent_pcode] = line.split(",");
+          return { pcode, name, level, parent_pcode, country_iso: countryIso };
         });
 
-      // 1. Create a dataset version
+      // Step 1: Insert dataset version metadata
       const { data: version, error: versionError } = await supabase
         .from("admin_dataset_versions")
         .insert([
           {
             country_iso: countryIso,
-            title: `Admin Upload ${new Date().toISOString().slice(0, 10)}`,
-            dataset_date: rows[0]?.dataset_date || new Date().toISOString(),
-            source: rows[0]?.source || "Uploaded CSV",
+            year: parseInt(year),
+            dataset_date: datasetDate,
+            source,
+            is_active: true,
+            notes: notes || null,
           },
         ])
         .select()
         .single();
 
-      if (versionError) throw versionError;
+      if (versionError) {
+        console.error("Error inserting dataset version:", versionError);
+        alert("Error creating dataset version: " + versionError.message);
+        setLoading(false);
+        return;
+      }
 
-      // 2. Insert admin units linked to this version
-      const { error: insertError } = await supabase.from("admin_units").insert(
-        rows.map((r) => ({
-          ...r,
-          country_iso: countryIso,
-          dataset_version_id: version.id,
-        }))
-      );
+      // Step 2: Insert rows linked to that version
+      const rowsWithDataset = rows.map((r) => ({
+        ...r,
+        dataset_id: version.id,
+      }));
 
-      if (insertError) throw insertError;
+      const { error: unitsError } = await supabase
+        .from("admin_units")
+        .insert(rowsWithDataset);
 
+      if (unitsError) {
+        console.error("Error inserting admin units:", unitsError);
+        alert("Error inserting admin units: " + unitsError.message);
+        setLoading(false);
+        return;
+      }
+
+      alert("Upload successful!");
       onUploaded();
       onClose();
-    } catch (err: any) {
-      console.error("Admin upload error:", err);
-      setError(err.message || "Upload failed");
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      alert("Unexpected error: " + (err as any).message);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-    >
-      <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="mx-auto max-w-lg rounded bg-white p-6 space-y-4 shadow">
+          <Dialog.Title className="text-lg font-bold">
+            Upload Admin Units Dataset
+          </Dialog.Title>
 
-      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
-        <Dialog.Title className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
-          Upload Admin Units Dataset
-        </Dialog.Title>
+          <p className="text-sm text-gray-600">
+            File must include: <code>pcode, name, level, parent_pcode</code>.
+            Version metadata will be captured below.
+          </p>
 
-        <p className="text-sm text-gray-600 mb-3">
-          File must include: <code>pcode</code>, <code>name</code>,{" "}
-          <code>level</code>, <code>parent_pcode</code>,{" "}
-          <code>dataset_date</code>, <code>source</code>.
-        </p>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="w-full border rounded p-2"
+          />
 
-        <input
-          type="file"
-          accept=".csv"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="mb-4"
-        />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium">Year</label>
+              <input
+                type="number"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className="w-full border rounded p-2 text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Dataset Date</label>
+              <input
+                type="date"
+                value={datasetDate}
+                onChange={(e) => setDatasetDate(e.target.value)}
+                className="w-full border rounded p-2 text-sm"
+                required
+              />
+            </div>
+          </div>
 
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          <div>
+            <label className="block text-sm font-medium">Source</label>
+            <input
+              type="text"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="w-full border rounded p-2 text-sm"
+              placeholder="e.g. Philippine Statistics Authority"
+            />
+          </div>
 
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={!file || loading}
-            className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
-          >
-            {loading ? "Uploading..." : "Upload & Save"}
-          </button>
-        </div>
+          <div>
+            <label className="block text-sm font-medium">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full border rounded p-2 text-sm"
+              placeholder="Optional notes..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded border text-sm bg-gray-100 hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={loading}
+              className="px-4 py-2 rounded text-sm text-white bg-[color:var(--gsc-red)] hover:opacity-90"
+            >
+              {loading ? "Uploading..." : "Upload & Save"}
+            </button>
+          </div>
+        </Dialog.Panel>
       </div>
     </Dialog>
   );
