@@ -1,229 +1,206 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Dialog } from "@headlessui/react";
+import { Upload, X } from "lucide-react";
+import Papa from "papaparse";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void; // refresh callback
+  onUploaded: () => void;
 };
 
-export default function UploadPopulationModal({ open, onClose, countryIso, onUploaded }: Props) {
+export default function UploadPopulationModal({
+  open,
+  onClose,
+  countryIso,
+  onUploaded,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | "">("");
-  const [datasetDate, setDatasetDate] = useState<string>("");
-  const [source, setSource] = useState<string>("");
-  const [title, setTitle] = useState<string>("");
-  const [makeActive, setMakeActive] = useState<boolean>(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [datasetDate, setDatasetDate] = useState("");
+  const [source, setSource] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!open) {
-      setFile(null);
-      setYear("");
-      setDatasetDate("");
-      setSource("");
-      setTitle("");
-      setMakeActive(true);
-      setBusy(false);
-      setError(null);
-    }
-  }, [open]);
-
-  if (!open) return null;
-
-  const parseCsv = async (f: File): Promise<Array<{ pcode: string; population: number }>> => {
-    const text = await f.text();
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length === 0) return [];
-    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
-    const pIdx = header.indexOf("pcode");
-    const popIdx = header.indexOf("population");
-    if (pIdx === -1 || popIdx === -1) {
-      throw new Error("CSV must include headers: pcode,population");
-    }
-    const out: Array<{ pcode: string; population: number }> = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",");
-      const pcode = (cols[pIdx] || "").trim();
-      const popStr = (cols[popIdx] || "").trim();
-      if (!pcode) continue;
-      if (!popStr) {
-        out.push({ pcode, population: NaN as any }); // keep row with missing population
-        continue;
-      }
-      const val = Number(popStr);
-      if (Number.isNaN(val)) {
-        // skip non-numeric for now
-        continue;
-      }
-      out.push({ pcode, population: val });
-    }
-    return out;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] || null);
   };
 
-  const handleSubmit = async () => {
-    setError(null);
-    if (!file) return setError("Please select a CSV file.");
-    if (!year || typeof year !== "number") return setError("Year is required.");
-
-    setBusy(true);
+  const handleUpload = async () => {
     try {
-      // 1) Create version (inactive or active depending on toggle)
-      const payload = {
-        country_iso: countryIso,
-        title: title?.trim() || null,
-        year,
-        dataset_date: datasetDate || null,
-        source: source || null,
-        is_active: false, // set after upload if makeActive
-      };
-      const { data: vdata, error: vErr } = await supabase
+      if (!file || !title || !year) {
+        setError("Please provide a file, title, and year.");
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+
+      // 1️⃣ Create a new version record first
+      const { data: versionData, error: versionError } = await supabase
         .from("population_dataset_versions")
-        .insert(payload)
-        .select()
-        .single();
-      if (vErr) throw vErr;
-
-      const versionId = vdata.id as string;
-
-      // 2) Parse CSV
-      const parsed = await parseCsv(file);
-
-      // 3) Join to active Admin Units to derive levels
-      let levelByPcode: Record<string, string> = {};
-      const { data: av } = await supabase
-        .from("admin_dataset_versions")
+        .insert([
+          {
+            country_iso: countryIso,
+            title,
+            year,
+            dataset_date: datasetDate || null,
+            source,
+            is_active: true,
+          },
+        ])
         .select("id")
-        .eq("country_iso", countryIso)
-        .eq("is_active", true)
-        .maybeSingle();
-      const adminVid = av?.id as string | undefined;
+        .single();
 
-      if (adminVid) {
-        const { data: aus } = await supabase
-          .from("admin_units")
-          .select("pcode,level")
-          .eq("country_iso", countryIso)
-          .eq("dataset_version_id", adminVid);
-        (aus || []).forEach((u: any) => {
-          levelByPcode[u.pcode] = (u.level || "").toUpperCase();
-        });
+      if (versionError || !versionData) {
+        throw versionError || new Error("Failed to create population version");
       }
 
-      // 4) Insert rows in chunks
-      const chunkSize = 1000;
-      for (let i = 0; i < parsed.length; i += chunkSize) {
-        const chunk = parsed.slice(i, i + chunkSize).map((r) => ({
+      const versionId = versionData.id;
+
+      // 2️⃣ Parse the CSV
+      const text = await file.text();
+      const parsed = Papa.parse(text, { header: true });
+      const rows = parsed.data as any[];
+
+      if (!rows.length) {
+        throw new Error("No data found in CSV file.");
+      }
+
+      // 3️⃣ Clean and validate rows
+      const cleaned = rows
+        .filter((r) => r.pcode && r.population)
+        .map((r) => ({
           country_iso: countryIso,
-          dataset_version_id: versionId,
-          pcode: r.pcode,
-          population: Number.isNaN(r.population) ? null : r.population,
-          level: levelByPcode[r.pcode] || null,
+          pcode: r.pcode.trim(),
+          name: r.name?.trim() || null,
+          population: Number(r.population),
+          year: Number(year),
+          dataset_date: datasetDate || null,
+          source: source ? { name: source } : null,
+          dataset_version_id: versionId, // ✅ link new version
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         }));
-        const { error: insErr } = await supabase.from("population_data").insert(chunk);
-        if (insErr) throw insErr;
+
+      if (!cleaned.length) {
+        throw new Error("No valid rows found in file (missing PCode or population).");
       }
 
-      // 5) If "make active" toggle is on, flip versions
-      if (makeActive) {
-        await supabase
-          .from("population_dataset_versions")
-          .update({ is_active: false })
-          .eq("country_iso", countryIso);
-        await supabase
-          .from("population_dataset_versions")
-          .update({ is_active: true })
-          .eq("id", versionId);
+      // 4️⃣ Insert all rows
+      const { error: insertError } = await supabase
+        .from("population_data")
+        .insert(cleaned);
+
+      if (insertError) {
+        throw insertError;
       }
 
+      setLoading(false);
       onUploaded();
       onClose();
-    } catch (e: any) {
-      console.error(e);
-      setError(e.message || "Upload failed.");
-    } finally {
-      setBusy(false);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "An error occurred during upload.");
+      setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[1000]">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-4">
-        <h3 className="text-lg font-semibold mb-3">Upload Population Dataset</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium">CSV File</label>
-            <input type="file" accept=".csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            <p className="text-xs text-gray-500 mt-1">Required headers: <code>pcode,population</code></p>
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
+          <div className="flex justify-between items-center mb-4">
+            <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
+              <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
+              Upload Population Dataset
+            </Dialog.Title>
+            <button onClick={onClose}>
+              <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+            </button>
           </div>
-          <div>
-            <label className="block text-sm font-medium">Year <span className="text-red-600">*</span></label>
-            <input
-              type="number"
-              value={year}
-              onChange={(e) => setYear(e.target.value ? parseInt(e.target.value, 10) : "")}
-              className="border rounded px-3 py-1 w-40"
-              placeholder="e.g., 2023"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Dataset Date (optional)</label>
-            <input
-              type="date"
-              value={datasetDate}
-              onChange={(e) => setDatasetDate(e.target.value)}
-              className="border rounded px-3 py-1"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Source (optional)</label>
-            <input
-              type="text"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              className="border rounded px-3 py-1 w-full"
-              placeholder="e.g., Census 2020, NSO"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Title (optional)</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="border rounded px-3 py-1 w-full"
-              placeholder="Defaults to “Population {year}”"
-            />
-          </div>
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={makeActive}
-              onChange={(e) => setMakeActive(e.target.checked)}
-            />
-            <span className="text-sm">Set as Active after upload</span>
-          </label>
 
-          {error && <div className="text-red-700 text-sm">{error}</div>}
-        </div>
+          {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
 
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded disabled:opacity-50" disabled={busy}>
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-3 py-1 rounded text-white bg-[color:var(--gsc-red)] disabled:opacity-50"
-            disabled={busy}
-          >
-            {busy ? "Uploading…" : "Upload"}
-          </button>
-        </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Title *</label>
+              <input
+                type="text"
+                className="border rounded w-full p-2 text-sm"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. 2020 Census Data"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Year *</label>
+              <input
+                type="number"
+                className="border rounded w-full p-2 text-sm"
+                value={year}
+                onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}
+                placeholder="e.g. 2020"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Dataset Date</label>
+              <input
+                type="date"
+                className="border rounded w-full p-2 text-sm"
+                value={datasetDate}
+                onChange={(e) => setDatasetDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Source (optional)</label>
+              <input
+                type="text"
+                className="border rounded w-full p-2 text-sm"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="e.g. PSA / NSO / UN Population Division"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Upload File *</label>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="border rounded w-full p-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={loading}
+              className="px-3 py-1.5 text-sm rounded text-white bg-[color:var(--gsc-red)] hover:opacity-90"
+            >
+              {loading ? "Uploading..." : "Upload"}
+            </button>
+          </div>
+        </Dialog.Panel>
       </div>
-    </div>
+    </Dialog>
   );
 }
