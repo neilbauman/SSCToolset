@@ -12,20 +12,14 @@ import type { CountryParams } from "@/app/country/types";
 type Country = {
   iso_code: string;
   name: string;
-  adm0_label?: string;
-  adm1_label?: string;
-  adm2_label?: string;
-  adm3_label?: string;
-  adm4_label?: string;
-  adm5_label?: string;
 };
 
 type AdminDatasetVersion = {
   id: string;
   title: string;
   year: number;
-  dataset_date?: string;
-  source?: string;
+  dataset_date?: string | null;
+  source?: string | null;
   created_at: string;
   is_active: boolean;
 };
@@ -34,7 +28,7 @@ type AdminUnit = {
   id: string;
   pcode: string;
   name: string;
-  level: string;
+  level: string; // "ADM1"... "ADM5"
   parent_pcode: string | null;
 };
 
@@ -43,8 +37,8 @@ export default function AdminUnitsPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminDatasetVersion[]>([]);
-  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<AdminDatasetVersion | null>(null);
+  const [lowestByVersion, setLowestByVersion] = useState<Record<string, string>>({});
+  const [activeVersion, setActiveVersion] = useState<AdminDatasetVersion | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
@@ -52,7 +46,7 @@ export default function AdminUnitsPage({ params }: any) {
     const fetchCountry = async () => {
       const { data } = await supabase
         .from("countries")
-        .select("*")
+        .select("iso_code, name")
         .eq("iso_code", countryIso)
         .single();
       if (data) setCountry(data as Country);
@@ -60,7 +54,11 @@ export default function AdminUnitsPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
-  const fetchVersions = async () => {
+  useEffect(() => {
+    fetchVersions();
+  }, [countryIso]);
+
+  async function fetchVersions() {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
       .select("*")
@@ -75,24 +73,24 @@ export default function AdminUnitsPage({ params }: any) {
     const list = (data || []) as AdminDatasetVersion[];
     setVersions(list);
 
-    const active = list.find((v) => v.is_active);
-    setActiveVersionId(active ? active.id : null);
+    // default active
+    const active = list.find((v) => v.is_active) || null;
+    setActiveVersion(active || null);
+    if (active) fetchAdminUnits(active.id);
 
-    // default selection = active version (or first one if none active)
-    const initial = active ?? list[0] ?? null;
-    setSelectedVersion(initial);
-
-    if (initial) {
-      fetchAdminUnits(initial.id);
-    } else {
-      setAdminUnits([]);
+    // compute Lowest Level for each version (live)
+    const mapping: Record<string, string> = {};
+    for (const v of list) {
+      const lowest = await computeLowestLevel(v.id);
+      mapping[v.id] = lowest || "—";
     }
-  };
+    setLowestByVersion(mapping);
+  }
 
-  const fetchAdminUnits = async (versionId: string) => {
+  async function fetchAdminUnits(versionId: string) {
     const { data, error } = await supabase
       .from("admin_units")
-      .select("*")
+      .select("id, pcode, name, level, parent_pcode")
       .eq("country_iso", countryIso)
       .eq("dataset_version_id", versionId);
 
@@ -101,83 +99,62 @@ export default function AdminUnitsPage({ params }: any) {
       return;
     }
     setAdminUnits((data || []) as AdminUnit[]);
-  };
+  }
 
-  useEffect(() => {
-    fetchVersions();
-  }, [countryIso]);
+  async function computeLowestLevel(versionId: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("admin_units")
+      .select("level")
+      .eq("country_iso", countryIso)
+      .eq("dataset_version_id", versionId);
 
-  const handleMakeActive = async (versionId: string) => {
-    // flip active in DB
-    const { error: e1 } = await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-    if (e1) {
-      console.error(e1);
-      return;
+    if (error) {
+      console.error("Error reading levels:", error);
+      return null;
     }
-    const { error: e2 } = await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", versionId);
-    if (e2) {
-      console.error(e2);
-      return;
-    }
+    const levels = (data || []).map((r: any) => r.level).filter(Boolean) as string[];
+    if (levels.length === 0) return null;
 
-    // update local state to reflect a single active version
-    setVersions((prev) =>
-      prev.map((v) => ({ ...v, is_active: v.id === versionId })),
-    );
-    setActiveVersionId(versionId);
+    const toNum = (lvl: string) => Number(lvl.replace("ADM", "")) || 0;
+    const maxNum = Math.max(...levels.map(toNum));
+    return `ADM${maxNum}`;
+  }
 
-    // optionally also switch the selection to the new active
-    const newlyActive = versions.find((v) => v.id === versionId) || null;
-    if (newlyActive) {
-      setSelectedVersion(newlyActive);
-      fetchAdminUnits(newlyActive.id);
-    }
-  };
+  async function handleMakeActive(versionId: string) {
+    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", versionId);
+    await fetchVersions();
+    await fetchAdminUnits(versionId);
+  }
 
-  const handleSelectVersion = (version: AdminDatasetVersion) => {
-    setSelectedVersion(version);
-    fetchAdminUnits(version.id);
-  };
+  function handleSelectVersion(v: AdminDatasetVersion) {
+    setActiveVersion(v);
+    fetchAdminUnits(v.id);
+  }
 
-  const downloadTemplate = () => {
-    if (!country) return;
-
-    const headers = ["pcode", "name", "level", "parent_pcode"];
-    const labels = [
-      country.adm0_label,
-      country.adm1_label,
-      country.adm2_label,
-      country.adm3_label,
-      country.adm4_label,
-      country.adm5_label,
-    ].filter(Boolean) as string[];
-
-    let csv = "\uFEFF"; // BOM for Excel
-    csv += headers.join(",") + "\n";
-    // prefill reference lines for levels (not data, just hints)
-    labels.forEach((lbl, idx) => {
-      csv += `,,"ADM${idx} (${lbl})",,\n`;
-    });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  function downloadTemplate() {
+    // Universal ADM1–ADM5 template
+    const headers = [
+      "ADM1 Name","ADM1 PCode",
+      "ADM2 Name","ADM2 PCode",
+      "ADM3 Name","ADM3 PCode",
+      "ADM4 Name","ADM4 PCode",
+      "ADM5 Name","ADM5 PCode",
+    ];
+    const csv = headers.join(",") + "\n";
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${country.iso_code}_admin_units_template.csv`;
+    a.download = `${countryIso}_admin_units_template.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Admin Units`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded administrative boundaries.",
+    description: "Manage and inspect uploaded administrative place names and PCodes.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -192,59 +169,57 @@ export default function AdminUnitsPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions table */}
+      {/* Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
+            <Database className="w-5 h-5 text-green-600" />
+            Dataset Versions
           </h2>
-          <button
-            onClick={() => setOpenUpload(true)}
-            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-          >
-            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={downloadTemplate}
+              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50"
+            >
+              <FileDown className="w-4 h-4 mr-1" /> Download Template
+            </button>
+            <button
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+            >
+              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+            </button>
+          </div>
         </div>
 
         {versions.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-2 py-1">Title</th>
-                <th className="border px-2 py-1">Year</th>
-                <th className="border px-2 py-1">Date</th>
-                <th className="border px-2 py-1">Source</th>
-                <th className="border px-2 py-1">Active</th>
-                <th className="border px-2 py-1">Actions</th>
+                <th className="border px-2 py-1 text-left">Title</th>
+                <th className="border px-2 py-1 text-left">Year</th>
+                <th className="border px-2 py-1 text-left">Date</th>
+                <th className="border px-2 py-1 text-left">Source</th>
+                <th className="border px-2 py-1 text-left">Lowest Level</th>
+                <th className="border px-2 py-1 text-center">Active</th>
+                <th className="border px-2 py-1 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
               {versions.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
-                  }`}
-                >
+                <tr key={v.id} className={`hover:bg-gray-50 ${activeVersion?.id === v.id ? "bg-blue-50" : ""}`}>
                   <td className="border px-2 py-1">{v.title}</td>
                   <td className="border px-2 py-1">{v.year}</td>
-                  <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
-                  <td className="border px-2 py-1">{v.source || "—"}</td>
-                  <td className="border px-2 py-1 text-center">
-                    {v.is_active ? "✓" : ""}
-                  </td>
-                  <td className="border px-2 py-1 space-x-2">
-                    <button
-                      className="text-blue-600 hover:underline"
-                      onClick={() => handleSelectVersion(v)}
-                    >
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1">{lowestByVersion[v.id] || "—"}</td>
+                  <td className="border px-2 py-1 text-center">{v.is_active ? "✓" : ""}</td>
+                  <td className="border px-2 py-1 space-x-3">
+                    <button className="text-blue-600 hover:underline" onClick={() => handleSelectVersion(v)}>
                       Select
                     </button>
                     {!v.is_active && (
-                      <button
-                        className="text-green-600 hover:underline"
-                        onClick={() => handleMakeActive(v.id)}
-                      >
+                      <button className="text-green-600 hover:underline" onClick={() => handleMakeActive(v.id)}>
                         Make Active
                       </button>
                     )}
@@ -254,25 +229,19 @@ export default function AdminUnitsPage({ params }: any) {
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No versions uploaded yet</p>
+          <p className="italic text-gray-500">No versions uploaded yet.</p>
         )}
       </div>
 
-      {/* Dataset health (simple for now) */}
+      {/* Health */}
       <DatasetHealth totalUnits={adminUnits.length} />
 
-      {/* Admin Units table */}
+      {/* Active version’s Admin Units */}
       <div className="border rounded-lg p-4 shadow-sm mt-4">
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">
-            Admin Units{selectedVersion ? ` – ${selectedVersion.title}` : ""}
+            {activeVersion ? `Admin Units — ${activeVersion.title}` : "Admin Units"}
           </h2>
-          <button
-            onClick={downloadTemplate}
-            className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50"
-          >
-            <FileDown className="w-4 h-4 mr-1" /> Download Template
-          </button>
         </div>
 
         {adminUnits.length > 0 ? (
@@ -291,13 +260,13 @@ export default function AdminUnitsPage({ params }: any) {
                   <td className="border px-2 py-1">{u.name}</td>
                   <td className="border px-2 py-1">{u.pcode}</td>
                   <td className="border px-2 py-1">{u.level}</td>
-                  <td className="border px-2 py-1">{u.parent_pcode}</td>
+                  <td className="border px-2 py-1">{u.parent_pcode ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No admin units uploaded</p>
+          <p className="italic text-gray-500">No admin units found for the selected version.</p>
         )}
       </div>
 
