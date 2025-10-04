@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog } from "@/components/ui/dialog";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Upload } from "lucide-react";
 
 type Props = {
   open: boolean;
@@ -11,140 +11,204 @@ type Props = {
   onUploaded: () => void;
 };
 
-export default function UploadPopulationDatasetModal({
+export default function UploadPopulationModal({
   open,
   onClose,
   countryIso,
   onUploaded,
 }: Props) {
-  const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [year, setYear] = useState<number>(new Date().getFullYear());
-  const [datasetDate, setDatasetDate] = useState("");
+  const [year, setYear] = useState<number | "">("");
+  const [datasetDate, setDatasetDate] = useState<string>("");
   const [source, setSource] = useState("");
-  const [setActive, setSetActive] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [isActive, setIsActive] = useState(true);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  if (!open) return null;
+
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a CSV file.");
+    setError(null);
+
+    if (!file || !title || !year) {
+      setError("Please provide a Title, Year, and valid CSV file.");
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
+    setUploading(true);
     try {
       const text = await file.text();
-      const rows = text.split("\n").map((r) => r.trim().split(","));
-      const headers = rows[0].map((h) => h.toLowerCase());
-      const pcodeIdx = headers.indexOf("pcode");
-      const popIdx = headers.indexOf("population");
-      const nameIdx = headers.indexOf("name");
+      const rows = text
+        .split("\n")
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+      const headers = rows[0].split(",").map((h) => h.trim().toLowerCase());
 
-      if (pcodeIdx === -1 || popIdx === -1) {
+      if (!headers.includes("pcode") || !headers.includes("population")) {
         throw new Error("Missing required headers: pcode, population");
       }
 
+      const dataRows = rows.slice(1).map((r) => {
+        const values = r.split(",").map((v) => v.trim());
+        const record: Record<string, string> = {};
+        headers.forEach((h, i) => {
+          record[h] = values[i] ?? "";
+        });
+        return record;
+      });
+
+      if (dataRows.length === 0) {
+        throw new Error("No valid rows found in file (missing PCode or population).");
+      }
+
       // Create version
-      const { data: version, error: vErr } = await supabase
+      const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
           country_iso: countryIso,
           title,
-          year,
+          year: Number(year),
           dataset_date: datasetDate || null,
           source,
-          is_active: setActive,
+          is_active: isActive,
+          created_at: new Date().toISOString(),
         })
         .select()
         .single();
 
-      if (vErr) throw vErr;
+      if (versionError) throw versionError;
 
-      // Insert records
-      const records = rows.slice(1).filter((r) => r.length > 1).map((r) => ({
-        dataset_version_id: version.id,
+      const versionId = version.id;
+
+      // Prepare upload records
+      const records = dataRows.map((r) => ({
         country_iso: countryIso,
-        pcode: r[pcodeIdx],
-        name: nameIdx >= 0 ? r[nameIdx] : null,
-        population: parseInt(r[popIdx] || "0", 10),
+        pcode: r["pcode"],
+        population: Number(r["population"]) || 0,
+        name: r["name"] || "",
+        year: Number(year),
+        dataset_id: null,
+        dataset_version_id: versionId,
+        created_at: new Date().toISOString(),
       }));
 
-      if (records.length > 0) {
-        const { error: dErr } = await supabase.from("population_data").insert(records);
-        if (dErr) throw dErr;
+      // Upload in chunks (for Supabase limits)
+      const chunkSize = 500;
+      for (let i = 0; i < records.length; i += chunkSize) {
+        const chunk = records.slice(i, i + chunkSize);
+        const { error: insertError } = await supabase
+          .from("population_data")
+          .insert(chunk);
+        if (insertError) throw insertError;
+      }
+
+      // Mark all others inactive if new is active
+      if (isActive) {
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso)
+          .neq("id", versionId);
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: true })
+          .eq("id", versionId);
       }
 
       onUploaded();
       onClose();
     } catch (err: any) {
       console.error(err);
-      setError(err.message);
+      setError(err.message || "An unexpected error occurred during upload.");
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <div className="p-4 space-y-3">
-        <h2 className="text-lg font-semibold">Upload Population Dataset</h2>
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center">
+          <Upload className="w-5 h-5 text-[color:var(--gsc-red)] mr-2" />
+          Upload Population Dataset
+        </h2>
+
+        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+
+        <label className="block text-sm font-medium mb-1">Title *</label>
         <input
           type="text"
-          placeholder="Title"
-          className="border rounded px-2 py-1 w-full"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          className="border rounded px-2 py-1 w-full mb-3 text-sm"
+          placeholder="e.g. 2020 Census Population"
         />
+
+        <label className="block text-sm font-medium mb-1">Year *</label>
         <input
           type="number"
-          placeholder="Year"
-          className="border rounded px-2 py-1 w-full"
           value={year}
-          onChange={(e) => setYear(parseInt(e.target.value))}
+          onChange={(e) => setYear(Number(e.target.value))}
+          className="border rounded px-2 py-1 w-full mb-3 text-sm"
         />
+
+        <label className="block text-sm font-medium mb-1">Dataset Date (optional)</label>
         <input
           type="date"
-          className="border rounded px-2 py-1 w-full"
           value={datasetDate}
           onChange={(e) => setDatasetDate(e.target.value)}
+          className="border rounded px-2 py-1 w-full mb-3 text-sm"
         />
+
+        <label className="block text-sm font-medium mb-1">Source (optional)</label>
         <input
           type="text"
-          placeholder="Source (optional)"
-          className="border rounded px-2 py-1 w-full"
           value={source}
           onChange={(e) => setSource(e.target.value)}
+          className="border rounded px-2 py-1 w-full mb-3 text-sm"
+          placeholder="e.g. National Statistics Office"
         />
-        <label className="flex items-center gap-2 text-sm">
+
+        <div className="flex items-center mb-4">
           <input
+            id="isActive"
             type="checkbox"
-            checked={setActive}
-            onChange={(e) => setSetActive(e.target.checked)}
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="mr-2"
           />
-          Set as Active
-        </label>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-        />
-        <div className="flex justify-end gap-2 mt-3">
-          <button onClick={onClose} className="px-3 py-1 border rounded">
+          <label htmlFor="isActive" className="text-sm">
+            Set as Active after upload
+          </label>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Upload File *</label>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="border rounded px-2 py-1 w-full text-sm"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
             onClick={handleUpload}
-            disabled={loading}
-            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
+            disabled={uploading}
+            className="px-3 py-1 text-sm text-white rounded bg-[color:var(--gsc-red)] hover:opacity-90"
           >
-            {loading ? "Uploading..." : "Upload"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
         </div>
       </div>
-    </Dialog>
+    </div>
   );
 }
