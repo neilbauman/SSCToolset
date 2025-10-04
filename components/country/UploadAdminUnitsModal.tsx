@@ -1,358 +1,306 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, Upload, FileDown } from "lucide-react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded?: () => void;
+  onUploaded: () => void; // call to refresh versions list
 };
 
-type Country = {
-  iso_code: string;
+type ParsedRow = {
+  pcode: string;
   name: string;
-  adm0_label?: string;
-  adm1_label?: string;
-  adm2_label?: string;
-  adm3_label?: string;
-  adm4_label?: string;
-  adm5_label?: string;
+  level: `ADM1` | `ADM2` | `ADM3` | `ADM4` | `ADM5`;
+  parent_pcode: string | null;
 };
 
-const CHUNK_SIZE = 1000;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-// very basic CSV -> rows with headers; assumes no embedded commas/newlines in fields
-function simpleParseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .filter((l) => l.trim().length > 0);
-
-  if (lines.length === 0) return { headers: [], rows: [] };
-
-  const headers = lines[0].split(",").map((h) => h.trim());
-  const rows = lines.slice(1).map((line) => {
-    const cols = line.split(",").map((c) => c.trim());
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => (row[h] = cols[i] ?? ""));
-    return row;
-  });
-  return { headers, rows };
-}
+const ADM_LEVELS = [1, 2, 3, 4, 5] as const;
+const COLS = ADM_LEVELS.flatMap((n) => [`ADM${n} Name`, `ADM${n} PCode`]);
 
 export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUploaded }: Props) {
-  const [country, setCountry] = useState<Country | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    (async () => {
-      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
-      if (data) setCountry(data as Country);
-    })();
-  }, [open, countryIso]);
-
   const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | "">("");
   const [datasetDate, setDatasetDate] = useState<string>("");
   const [source, setSource] = useState<string>("");
-  const [notes, setNotes] = useState<string>("");
+  const [makeActive, setMakeActive] = useState(true);
   const [file, setFile] = useState<File | null>(null);
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Template content based on known ADM labels
-  const templateCSV = useMemo(() => {
-    const headers = ["pcode", "name", "level", "parent_pcode"];
-    const levelHints = [
-      country?.adm0_label,
-      country?.adm1_label,
-      country?.adm2_label,
-      country?.adm3_label,
-      country?.adm4_label,
-      country?.adm5_label,
-    ].filter(Boolean) as string[];
-
-    let csv = headers.join(",") + "\n";
-    if (levelHints.length > 0) {
-      // add a few hint lines users can delete
-      levelHints.forEach((lbl, i) => {
-        // level should be ADM0..ADM5 text — we just hint
-        csv += `,,ADM${i},,\n`;
-      });
+  useEffect(() => {
+    if (!open) {
+      setTitle("");
+      setYear("");
+      setDatasetDate("");
+      setSource("");
+      setMakeActive(true);
+      setFile(null);
+      setError(null);
+      setBusy(false);
     }
-    return csv;
-  }, [country]);
+  }, [open]);
 
-  const handleDownloadTemplate = () => {
-    const blob = new Blob([templateCSV], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${countryIso}_admin_units_template.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const disabled = useMemo(
+    () => !title || !year || !file || busy,
+    [title, year, file, busy]
+  );
 
-  const resetForm = () => {
-    setTitle("");
-    setYear("");
-    setDatasetDate("");
-    setSource("");
-    setNotes("");
-    setFile(null);
-    setError(null);
-    setInfo(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const closeAndReset = () => {
-    resetForm();
-    onClose();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
-
-    if (!file) {
-      setError("Please choose a CSV file.");
-      return;
-    }
-    if (!title || year === "" || year === undefined || year === null) {
-      setError("Title and Year are required.");
-      return;
-    }
-
-    // read file
-    setBusy(true);
-    let text: string;
+  async function handleSubmit() {
     try {
-      text = await file.text();
-    } catch {
-      setBusy(false);
-      setError("Could not read the CSV file.");
-      return;
-    }
+      setBusy(true);
+      setError(null);
+      if (!file || !title || !year) return;
 
-    // parse
-    const { headers, rows } = simpleParseCSV(text);
-    const required = ["pcode", "name", "level", "parent_pcode"];
-    const missing = required.filter((h) => !headers.includes(h));
-    if (missing.length > 0) {
-      setBusy(false);
-      setError(`CSV missing required columns: ${missing.join(", ")}`);
-      return;
-    }
-    if (rows.length === 0) {
-      setBusy(false);
-      setError("CSV appears to have no data rows.");
-      return;
-    }
+      // 1) Read CSV
+      const text = await file.text();
 
-    // create version
-    const versionPayload = {
-      id: crypto.randomUUID(),
-      country_iso: countryIso,
-      title,
-      year: Number(year),
-      dataset_date: datasetDate || null,
-      source: source || null,
-      notes: notes || null,
-      is_active: false,
-    };
+      // 2) Parse wide CSV -> normalized rows
+      const { rows, lowestLevelFound } = parseWideAdminCsv(text);
 
-    let createdVersionId = versionPayload.id;
-
-    try {
-      const { error: vErr } = await supabase.from("admin_dataset_versions").insert(versionPayload);
-      if (vErr) {
-        throw vErr;
+      if (rows.length === 0) {
+        throw new Error("No valid rows detected. Please verify the file matches the ADM1…ADM5 template.");
       }
-    } catch (err: any) {
-      setBusy(false);
-      setError(`Failed to create dataset version: ${err?.message ?? err}`);
-      return;
-    }
 
-    // build admin_units rows
-    const now = new Date().toISOString();
-    // optional: you can map level to ADM0..ADM5 only
-    const sanitized = rows.map((r) => ({
-      id: crypto.randomUUID(),
-      country_iso: countryIso,
-      pcode: r.pcode || null,
-      name: r.name || null,
-      level: r.level || null, // expect ADM0..ADM5 (text)
-      parent_pcode: r.parent_pcode || null,
-      metadata: {}, // empty object by default
-      source: null, // we store source at version level; keep row-level null
-      created_at: now,
-      updated_at: now,
-      dataset_id: null, // not used for admins; using version id instead
-      dataset_version_id: createdVersionId,
-    }));
+      // 3) Create a dataset version row
+      const { data: versionInsert, error: vErr } = await supabase
+        .from("admin_dataset_versions")
+        .insert({
+          country_iso: countryIso,
+          title,
+          year: Number(year),
+          dataset_date: datasetDate || null,
+          source: source || null,
+          is_active: false,
+          notes: null,
+        })
+        .select("id")
+        .single();
 
-    // insert in chunks
-    try {
-      for (const group of chunk(sanitized, CHUNK_SIZE)) {
-        const { error: iuErr } = await supabase.from("admin_units").insert(group);
-        if (iuErr) throw iuErr;
+      if (vErr) throw vErr;
+      const versionId = versionInsert.id as string;
+
+      // 4) Prepare normalized rows with version IDs
+      const payload = rows.map((r) => ({
+        id: cryptoRandomUUID(),
+        country_iso: countryIso,
+        dataset_id: null,
+        dataset_version_id: versionId,
+        pcode: r.pcode,
+        name: r.name,
+        level: r.level,
+        parent_pcode: r.parent_pcode,
+        metadata: null,
+        source: null,
+      }));
+
+      // 5) Insert normalized rows
+      const chunkSize = 1000;
+      for (let i = 0; i < payload.length; i += chunkSize) {
+        const chunk = payload.slice(i, i + chunkSize);
+        const { error: insErr } = await supabase.from("admin_units").insert(chunk);
+        if (insErr) throw insErr;
       }
-    } catch (err: any) {
-      // rollback version if rows failed
-      await supabase.from("admin_dataset_versions").delete().eq("id", createdVersionId);
-      setBusy(false);
-      setError(`Failed to insert admin units: ${err?.message ?? err}`);
-      return;
-    }
 
-    setBusy(false);
-    setInfo(`Uploaded ${sanitized.length} rows into version "${title}".`);
-    onUploaded?.();
-  };
+      // 6) Optionally make this version active (and deactivate others)
+      if (makeActive) {
+        await supabase
+          .from("admin_dataset_versions")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso);
+        await supabase
+          .from("admin_dataset_versions")
+          .update({ is_active: true })
+          .eq("id", versionId);
+      }
+
+      // Done
+      onUploaded();
+      onClose();
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Upload failed. Please check the CSV and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={closeAndReset} />
-
-      {/* modal */}
-      <div className="relative z-10 w-full max-w-2xl bg-white rounded-lg shadow-lg p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
-            Upload Admin Units
-          </h2>
-          <button onClick={closeAndReset} className="p-1 rounded hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl rounded-lg bg-white shadow-lg">
+        <div className="p-4 border-b">
+          <h3 className="text-lg font-semibold">Upload Admin Units (ADM1–ADM5 template)</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Use a wide CSV with columns: {COLS.join(", ")}. Leave unused levels blank.
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-4 space-y-4">
+          {error && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">
+              {error}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Title *</label>
+            <label className="text-sm">
+              <span className="block mb-1 font-medium">Title *</span>
               <input
-                type="text"
+                className="w-full border rounded px-2 py-1 text-sm"
+                placeholder="e.g., PSA Admin Names v2020"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
-                placeholder="e.g., 2023 National Admin Units"
-                required
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Year *</label>
+            <label className="text-sm">
+              <span className="block mb-1 font-medium">Year *</span>
               <input
+                className="w-full border rounded px-2 py-1 text-sm"
                 type="number"
+                min={1900}
+                max={2100}
                 value={year}
                 onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}
-                className="w-full border rounded px-3 py-2 text-sm"
-                placeholder="e.g., 2023"
-                required
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Dataset Date</label>
+            <label className="text-sm">
+              <span className="block mb-1 font-medium">Dataset Date (optional)</span>
               <input
+                className="w-full border rounded px-2 py-1 text-sm"
                 type="date"
                 value={datasetDate}
                 onChange={(e) => setDatasetDate(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Source (text or URL)</label>
+            <label className="text-sm">
+              <span className="block mb-1 font-medium">Source (optional)</span>
               <input
-                type="text"
+                className="w-full border rounded px-2 py-1 text-sm"
+                placeholder="e.g., National Statistics Office"
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
-                placeholder="e.g., National Statistics Office"
               />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">Notes</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
-                rows={2}
-              />
-            </div>
+            </label>
           </div>
 
-          <div className="border rounded p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-sm font-medium mb-1">CSV File *</label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="text-sm"
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Required headers: <code>pcode</code>, <code>name</code>, <code>level</code>, <code>parent_pcode</code>.
-                </p>
-              </div>
+          <label className="text-sm block">
+            <span className="block mb-1 font-medium">CSV File *</span>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
 
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50 h-9"
-                title="Download CSV template"
-              >
-                <FileDown className="w-4 h-4 mr-1" />
-                Template
-              </button>
-            </div>
-          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={makeActive}
+              onChange={(e) => setMakeActive(e.target.checked)}
+            />
+            Make this version active after import
+          </label>
+        </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {info && <p className="text-sm text-green-700">{info}</p>}
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={closeAndReset}
-              className="border px-3 py-2 text-sm rounded hover:bg-gray-50"
-              disabled={busy}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="bg-[color:var(--gsc-red)] text-white px-4 py-2 text-sm rounded hover:opacity-90 disabled:opacity-60"
-              disabled={busy}
-            >
-              {busy ? "Uploading…" : "Upload"}
-            </button>
-          </div>
-        </form>
+        <div className="p-4 border-t flex items-center justify-end gap-2">
+          <button className="border rounded px-3 py-1 text-sm" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
+            onClick={handleSubmit}
+            disabled={disabled}
+          >
+            {busy ? "Uploading…" : "Upload"}
+          </button>
+        </div>
       </div>
     </div>
   );
+}
+
+/** Parse wide ADM template into normalized rows */
+function parseWideAdminCsv(text: string): { rows: ParsedRow[]; lowestLevelFound: number } {
+  // Split lines, keep simple CSV rules (no quoted commas handling for now).
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return { rows: [], lowestLevelFound: 0 };
+  }
+
+  const header = lines[0].split(",").map((h) => h.trim());
+  // Ensure required columns exist (at least ADM1 Name + PCode)
+  const hasAdm1 = header.includes("ADM1 Name") && header.includes("ADM1 PCode");
+  if (!hasAdm1) {
+    throw new Error("Template must include at least 'ADM1 Name' and 'ADM1 PCode' columns.");
+  }
+
+  // Make an index lookup
+  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
+
+  const rows: ParsedRow[] = [];
+  let lowest = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map((c) => c.trim());
+
+    // Walk levels 1..5, emit normalized rows where PCode + Name exist
+    let parentPcode: string | null = null;
+
+    for (const n of ADM_LEVELS) {
+      const nNameIdx = idx[`ADM${n} Name`];
+      const nPcodeIdx = idx[`ADM${n} PCode`];
+      const name = nNameIdx != null ? (cols[nNameIdx] || "").trim() : "";
+      const pcode = nPcodeIdx != null ? (cols[nPcodeIdx] || "").trim() : "";
+
+      const present = !!name && !!pcode;
+      if (!present) {
+        // if this level is empty, deeper levels (n+1…) are ignored for this row
+        break;
+      }
+
+      rows.push({
+        name,
+        pcode,
+        level: `ADM${n}`,
+        parent_pcode: parentPcode,
+      });
+
+      lowest = Math.max(lowest, n);
+      parentPcode = pcode; // next level’s parent
+    }
+  }
+
+  // De-duplicate within the same file (same level + pcode)
+  const seen = new Set<string>();
+  const deduped = rows.filter((r) => {
+    const key = `${r.level}::${r.pcode}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { rows: deduped, lowestLevelFound: lowest };
+}
+
+// Minimal UUID helper for browsers w/o crypto.randomUUID
+function cryptoRandomUUID(): string {
+  // @ts-ignore
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
