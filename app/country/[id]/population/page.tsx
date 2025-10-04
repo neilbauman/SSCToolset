@@ -6,7 +6,19 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
-import { Database, Upload, FileDown } from "lucide-react";
+import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
+import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import {
+  Database,
+  Upload,
+  FileDown,
+  EllipsisVertical,
+  CheckCircle,
+  Link as LinkIcon,
+  Archive,
+  Edit,
+  Trash,
+} from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -23,6 +35,9 @@ type PopulationVersion = {
   created_at: string;
   is_active: boolean;
   notes?: string;
+  lowest_admin_level?: string;
+  completeness_percent?: number;
+  joined?: boolean;
 };
 
 type PopulationRow = {
@@ -38,16 +53,15 @@ export default function PopulationPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<PopulationVersion | null>(
-    null
-  );
+  const [activeVersion, setActiveVersion] = useState<PopulationVersion | null>(null);
   const [populationData, setPopulationData] = useState<PopulationRow[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
+  const [openEdit, setOpenEdit] = useState<PopulationVersion | null>(null);
+  const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
-  // Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -71,6 +85,7 @@ export default function PopulationPage({ params }: any) {
       console.error("Error fetching versions:", error);
       return;
     }
+
     setVersions(data || []);
     const active = data?.find((v) => v.is_active);
     if (active) {
@@ -90,6 +105,7 @@ export default function PopulationPage({ params }: any) {
       console.error("Error fetching population data:", error);
       return;
     }
+
     setPopulationData(data || []);
   };
 
@@ -114,6 +130,11 @@ export default function PopulationPage({ params }: any) {
   const handleSelectVersion = (version: PopulationVersion) => {
     setActiveVersion(version);
     fetchPopulationData(version.id);
+  };
+
+  const handleDeleteVersion = async (versionId: string) => {
+    await supabase.from("population_dataset_versions").delete().eq("id", versionId);
+    fetchVersions();
   };
 
   const downloadTemplate = () => {
@@ -144,13 +165,12 @@ export default function PopulationPage({ params }: any) {
     ),
   };
 
-  // Health indicators
+  // Dataset Health
   const missingPopulation = populationData.filter((r) => !r.population).length;
   const totalPopulation = populationData.length;
   const allHavePopulation =
     totalPopulation > 0 && missingPopulation === 0 ? true : false;
 
-  // Pagination
   const filtered = populationData.filter(
     (r) =>
       r.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -161,7 +181,7 @@ export default function PopulationPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Version Table */}
+      {/* Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -183,7 +203,9 @@ export default function PopulationPage({ params }: any) {
                 <th className="border px-2 py-1">Year</th>
                 <th className="border px-2 py-1">Date</th>
                 <th className="border px-2 py-1">Source</th>
-                <th className="border px-2 py-1">Active</th>
+                <th className="border px-2 py-1">Lowest ADM</th>
+                <th className="border px-2 py-1">% Complete</th>
+                <th className="border px-2 py-1">Status</th>
                 <th className="border px-2 py-1">Actions</th>
               </tr>
             </thead>
@@ -200,23 +222,57 @@ export default function PopulationPage({ params }: any) {
                   <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
                   <td className="border px-2 py-1">{v.source || "—"}</td>
                   <td className="border px-2 py-1 text-center">
-                    {v.is_active ? "✓" : ""}
+                    {v.lowest_admin_level || "ADM3"}
                   </td>
-                  <td className="border px-2 py-1 space-x-2">
-                    <button
-                      className="text-blue-600 hover:underline"
-                      onClick={() => handleSelectVersion(v)}
-                    >
-                      Select
-                    </button>
-                    {!v.is_active && (
-                      <button
-                        className="text-green-600 hover:underline"
-                        onClick={() => handleMakeActive(v.id)}
-                      >
-                        Make Active
-                      </button>
+                  <td className="border px-2 py-1 text-center">
+                    {v.completeness_percent
+                      ? `${v.completeness_percent.toFixed(1)}%`
+                      : "—"}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.is_active ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-800">
+                        Active
+                      </span>
+                    ) : v.joined ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-purple-100 text-purple-800">
+                        Joined
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-800">
+                        Archived
+                      </span>
                     )}
+                  </td>
+                  <td className="border px-2 py-1">
+                    <div className="flex justify-center gap-2">
+                      <button
+                        onClick={() => handleSelectVersion(v)}
+                        className="text-blue-600 hover:underline text-xs"
+                      >
+                        Select
+                      </button>
+                      {!v.is_active && (
+                        <button
+                          onClick={() => handleMakeActive(v.id)}
+                          className="text-green-600 hover:underline text-xs"
+                        >
+                          Make Active
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setOpenEdit(v)}
+                        className="text-gray-600 hover:underline text-xs"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setOpenDelete(v)}
+                        className="text-red-600 hover:underline text-xs"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -227,7 +283,7 @@ export default function PopulationPage({ params }: any) {
         )}
       </div>
 
-      {/* Health Card */}
+      {/* Dataset Health */}
       <DatasetHealth
         totalUnits={totalPopulation}
         missingPcodes={missingPopulation}
@@ -311,12 +367,34 @@ export default function PopulationPage({ params }: any) {
         )}
       </div>
 
+      {/* Modals */}
       <UploadPopulationModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
         countryIso={countryIso}
         onUploaded={fetchVersions}
       />
+
+      {openEdit && (
+        <EditPopulationVersionModal
+          open={!!openEdit}
+          onClose={() => setOpenEdit(null)}
+          version={openEdit}
+          onSave={fetchVersions}
+        />
+      )}
+
+      {openDelete && (
+        <ConfirmDeleteModal
+          open={!!openDelete}
+          onClose={() => setOpenDelete(null)}
+          version={openDelete}
+          onConfirm={() => {
+            handleDeleteVersion(openDelete.id);
+            setOpenDelete(null);
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
