@@ -4,22 +4,18 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Database } from "lucide-react";
 import UploadPopulationDatasetModal from "@/components/country/UploadPopulationDatasetModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { Database } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
+type CountryParams = { id: string };
 
 type PopulationVersion = {
   id: string;
@@ -27,40 +23,30 @@ type PopulationVersion = {
   year: number;
   dataset_date?: string;
   source?: string;
-  created_at: string;
   is_active: boolean;
+  created_at: string;
 };
 
 type PopulationRecord = {
   id: string;
   pcode: string;
-  name: string;
   population: number;
+  name: string;
 };
 
-export default function PopulationPage({ params }: any) {
-  const { id: countryIso } = params as CountryParams;
+export default function PopulationPage({ params }: { params: CountryParams }) {
+  const { id: countryIso } = params;
 
-  const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<PopulationVersion | null>(null);
-  const [populationRecords, setPopulationRecords] = useState<PopulationRecord[]>([]);
+  const [activeVersion, setActiveVersion] = useState<PopulationVersion | null>(
+    null
+  );
+  const [records, setRecords] = useState<PopulationRecord[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openEdit, setOpenEdit] = useState<PopulationVersion | null>(null);
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
 
-  useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("*")
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    };
-    fetchCountry();
-  }, [countryIso]);
-
+  // Fetch versions
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("population_dataset_versions")
@@ -69,19 +55,20 @@ export default function PopulationPage({ params }: any) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Error fetching population versions:", error);
+      console.error("Error fetching versions:", error);
       return;
     }
-
     setVersions(data as PopulationVersion[]);
+
     const active = data?.find((v: any) => v.is_active);
     if (active) {
       setActiveVersion(active);
-      fetchPopulationRecords(active.id);
+      fetchRecords(active.id);
     }
   };
 
-  const fetchPopulationRecords = async (versionId: string) => {
+  // Fetch records for selected version
+  const fetchRecords = async (versionId: string) => {
     const { data, error } = await supabase
       .from("population_data")
       .select("*")
@@ -89,24 +76,29 @@ export default function PopulationPage({ params }: any) {
       .eq("dataset_version_id", versionId);
 
     if (error) {
-      console.error("Error fetching population records:", error);
+      console.error("Error fetching population data:", error);
       return;
     }
-    setPopulationRecords(data as PopulationRecord[]);
+    setRecords(data as PopulationRecord[]);
   };
 
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
 
+  // Select a version
+  const handleSelectVersion = (version: PopulationVersion) => {
+    setActiveVersion(version);
+    fetchRecords(version.id);
+  };
+
+  // Make a version active (only one allowed)
   const handleMakeActive = async (versionId: string) => {
-    // Deactivate all other versions
     await supabase
       .from("population_dataset_versions")
       .update({ is_active: false })
       .eq("country_iso", countryIso);
 
-    // Activate the chosen one
     await supabase
       .from("population_dataset_versions")
       .update({ is_active: true })
@@ -115,29 +107,29 @@ export default function PopulationPage({ params }: any) {
     fetchVersions();
   };
 
-  const handleSelectVersion = (version: PopulationVersion) => {
-    setActiveVersion(version);
-    fetchPopulationRecords(version.id);
-  };
-
+  // Delete a version
   const handleDeleteVersion = async (versionId: string) => {
-    await supabase.from("population_dataset_versions").delete().eq("id", versionId);
+    await supabase
+      .from("population_dataset_versions")
+      .delete()
+      .eq("id", versionId);
+
     await supabase.from("population_data").delete().eq("dataset_version_id", versionId);
-    setOpenDelete(null);
+
     fetchVersions();
   };
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Population Data`,
+    title: `Population Datasets`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded population datasets.",
+    description: "Manage population datasets for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "Population Data" },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Population" },
         ]}
       />
     ),
@@ -145,7 +137,7 @@ export default function PopulationPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions Table */}
+      {/* Versions table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -182,29 +174,31 @@ export default function PopulationPage({ params }: any) {
                   <td className="border px-2 py-1">{v.year}</td>
                   <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
                   <td className="border px-2 py-1">{v.source || "—"}</td>
-                  <td className="border px-2 py-1 text-center">
+                  <td className="border px-2 py-1">
                     {v.is_active && (
-                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                      <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">
                         Active
                       </span>
                     )}
                   </td>
-                  <td className="border px-2 py-1 text-center">
+                  <td className="border px-2 py-1">
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="px-2 py-1 text-sm border rounded hover:bg-gray-50">
-                          Actions
-                        </button>
+                      <DropdownMenuTrigger className="text-blue-600 hover:underline">
+                        Actions
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        {!v.is_active && (
-                          <DropdownMenuItem onClick={() => handleMakeActive(v.id)}>
-                            Make Active
+                        {activeVersion?.id !== v.id && (
+                          <DropdownMenuItem
+                            onClick={() => handleSelectVersion(v)}
+                          >
+                            Select
                           </DropdownMenuItem>
                         )}
-                        {activeVersion?.id !== v.id && (
-                          <DropdownMenuItem onClick={() => handleSelectVersion(v)}>
-                            Select
+                        {!v.is_active && (
+                          <DropdownMenuItem
+                            onClick={() => handleMakeActive(v.id)}
+                          >
+                            Make Active
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onClick={() => setOpenEdit(v)}>
@@ -224,14 +218,14 @@ export default function PopulationPage({ params }: any) {
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No population versions uploaded yet</p>
+          <p className="italic text-gray-500">No versions uploaded yet</p>
         )}
       </div>
 
-      {/* Population Records Table */}
-      <div className="border rounded-lg p-4 shadow-sm mt-4">
+      {/* Records */}
+      <div className="border rounded-lg p-4 shadow-sm">
         <h2 className="text-lg font-semibold mb-3">Population Records</h2>
-        {populationRecords.length > 0 ? (
+        {records.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
@@ -241,17 +235,21 @@ export default function PopulationPage({ params }: any) {
               </tr>
             </thead>
             <tbody>
-              {populationRecords.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{u.name}</td>
-                  <td className="border px-2 py-1">{u.pcode}</td>
-                  <td className="border px-2 py-1">{u.population}</td>
+              {records.map((r) => (
+                <tr key={r.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{r.name}</td>
+                  <td className="border px-2 py-1">{r.pcode}</td>
+                  <td className="border px-2 py-1">{r.population}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No population records found</p>
+          <p className="italic text-gray-500">
+            {activeVersion
+              ? "No records in this dataset"
+              : "Select a version to view records"}
+          </p>
         )}
       </div>
 
@@ -265,8 +263,8 @@ export default function PopulationPage({ params }: any) {
       {openEdit && (
         <EditPopulationVersionModal
           open={!!openEdit}
-          version={openEdit}
           onClose={() => setOpenEdit(null)}
+          version={openEdit}
           onSave={fetchVersions}
         />
       )}
@@ -274,8 +272,8 @@ export default function PopulationPage({ params }: any) {
         <ConfirmDeleteModal
           open={!!openDelete}
           onClose={() => setOpenDelete(null)}
-          version={openDelete}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
+          message={`Are you sure you want to delete version "${openDelete.title}"? This cannot be undone.`}
         />
       )}
     </SidebarLayout>
