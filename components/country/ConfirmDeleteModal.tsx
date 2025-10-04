@@ -26,6 +26,7 @@ export default function ConfirmDeleteModal({
       <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
         <h2 className="text-lg font-semibold mb-2">{title}</h2>
         <p className="text-gray-700 mb-4 text-sm whitespace-pre-line">{message}</p>
+
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
