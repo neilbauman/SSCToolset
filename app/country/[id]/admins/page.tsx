@@ -43,7 +43,8 @@ export default function AdminUnitsPage({ params }: any) {
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminDatasetVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<AdminDatasetVersion | null>(null);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<AdminDatasetVersion | null>(null);
   const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
@@ -70,11 +71,21 @@ export default function AdminUnitsPage({ params }: any) {
       console.error("Error fetching versions:", error);
       return;
     }
-    setVersions(data as AdminDatasetVersion[]);
-    const active = data?.find((v: any) => v.is_active);
-    if (active) {
-      setActiveVersion(active);
-      fetchAdminUnits(active.id);
+
+    const list = (data || []) as AdminDatasetVersion[];
+    setVersions(list);
+
+    const active = list.find((v) => v.is_active);
+    setActiveVersionId(active ? active.id : null);
+
+    // default selection = active version (or first one if none active)
+    const initial = active ?? list[0] ?? null;
+    setSelectedVersion(initial);
+
+    if (initial) {
+      fetchAdminUnits(initial.id);
+    } else {
+      setAdminUnits([]);
     }
   };
 
@@ -89,7 +100,7 @@ export default function AdminUnitsPage({ params }: any) {
       console.error("Error fetching admin_units:", error);
       return;
     }
-    setAdminUnits(data as AdminUnit[]);
+    setAdminUnits((data || []) as AdminUnit[]);
   };
 
   useEffect(() => {
@@ -97,43 +108,64 @@ export default function AdminUnitsPage({ params }: any) {
   }, [countryIso]);
 
   const handleMakeActive = async (versionId: string) => {
-    await supabase
+    // flip active in DB
+    const { error: e1 } = await supabase
       .from("admin_dataset_versions")
       .update({ is_active: false })
       .eq("country_iso", countryIso);
-
-    await supabase
+    if (e1) {
+      console.error(e1);
+      return;
+    }
+    const { error: e2 } = await supabase
       .from("admin_dataset_versions")
       .update({ is_active: true })
       .eq("id", versionId);
+    if (e2) {
+      console.error(e2);
+      return;
+    }
 
-    fetchVersions();
+    // update local state to reflect a single active version
+    setVersions((prev) =>
+      prev.map((v) => ({ ...v, is_active: v.id === versionId })),
+    );
+    setActiveVersionId(versionId);
+
+    // optionally also switch the selection to the new active
+    const newlyActive = versions.find((v) => v.id === versionId) || null;
+    if (newlyActive) {
+      setSelectedVersion(newlyActive);
+      fetchAdminUnits(newlyActive.id);
+    }
   };
 
   const handleSelectVersion = (version: AdminDatasetVersion) => {
-    setActiveVersion(version);
+    setSelectedVersion(version);
     fetchAdminUnits(version.id);
   };
 
   const downloadTemplate = () => {
     if (!country) return;
+
     const headers = ["pcode", "name", "level", "parent_pcode"];
-    const levels = [
+    const labels = [
       country.adm0_label,
       country.adm1_label,
       country.adm2_label,
       country.adm3_label,
       country.adm4_label,
       country.adm5_label,
-    ].filter(Boolean);
+    ].filter(Boolean) as string[];
 
-    let csv = headers.join(",") + "\n";
-    // Pre-fill ADM levels for reference
-    levels.forEach((lvl, i) => {
-      csv += `,,"ADM${i}",,\n`;
+    let csv = "\uFEFF"; // BOM for Excel
+    csv += headers.join(",") + "\n";
+    // prefill reference lines for levels (not data, just hints)
+    labels.forEach((lbl, idx) => {
+      csv += `,,"ADM${idx} (${lbl})",,\n`;
     });
 
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -173,6 +205,7 @@ export default function AdminUnitsPage({ params }: any) {
             <Upload className="w-4 h-4 mr-1" /> Upload Dataset
           </button>
         </div>
+
         {versions.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
@@ -190,7 +223,7 @@ export default function AdminUnitsPage({ params }: any) {
                 <tr
                   key={v.id}
                   className={`hover:bg-gray-50 ${
-                    activeVersion?.id === v.id ? "bg-blue-50" : ""
+                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
                   }`}
                 >
                   <td className="border px-2 py-1">{v.title}</td>
@@ -225,13 +258,15 @@ export default function AdminUnitsPage({ params }: any) {
         )}
       </div>
 
-      {/* Dataset health */}
+      {/* Dataset health (simple for now) */}
       <DatasetHealth totalUnits={adminUnits.length} />
 
       {/* Admin Units table */}
       <div className="border rounded-lg p-4 shadow-sm mt-4">
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold">Admin Units</h2>
+          <h2 className="text-lg font-semibold">
+            Admin Units{selectedVersion ? ` – ${selectedVersion.title}` : ""}
+          </h2>
           <button
             onClick={downloadTemplate}
             className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50"
@@ -239,6 +274,7 @@ export default function AdminUnitsPage({ params }: any) {
             <FileDown className="w-4 h-4 mr-1" /> Download Template
           </button>
         </div>
+
         {adminUnits.length > 0 ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
