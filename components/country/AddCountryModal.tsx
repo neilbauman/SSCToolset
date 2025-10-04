@@ -1,135 +1,69 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Dialog } from "@headlessui/react";
+import { X, Trash2 } from "lucide-react";
+import { useState } from "react";
 
-type CountryInput = {
-  iso_code: string;
-  name: string;
-};
-
-type AddCountryModalProps = {
+type Props = {
   open: boolean;
   onClose: () => void;
-  onSave: () => void | Promise<void>;
-  mode?: "add" | "edit";
-  initialCountry?: CountryInput | null;
+  version: { id: string; title: string };
+  onConfirm: () => void;
 };
 
-export default function AddCountryModal({
+export default function ConfirmDeleteModal({
   open,
   onClose,
-  onSave,
-  mode = "add",
-  initialCountry,
-}: AddCountryModalProps) {
-  const [isoCode, setIsoCode] = useState("");
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  version,
+  onConfirm,
+}: Props) {
+  const [confirming, setConfirming] = useState(false);
 
-  // Initialize form fields when modal opens
-  useEffect(() => {
-    if (open && mode === "edit" && initialCountry) {
-      setIsoCode(initialCountry.iso_code);
-      setName(initialCountry.name);
-    } else if (open && mode === "add") {
-      setIsoCode("");
-      setName("");
-    }
-  }, [open, mode, initialCountry]);
-
-  if (!open) return null;
-
-  const handleSave = async () => {
-    if (!isoCode || !name) {
-      setError("ISO code and name are required.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (mode === "add") {
-        const { error: insertError } = await supabase.from("countries").insert([
-          {
-            iso_code: isoCode.trim().toUpperCase(),
-            name: name.trim(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ]);
-        if (insertError) throw insertError;
-      } else if (mode === "edit" && initialCountry) {
-        const { error: updateError } = await supabase
-          .from("countries")
-          .update({
-            name: name.trim(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("iso_code", initialCountry.iso_code);
-        if (updateError) throw updateError;
-      }
-
-      await onSave();
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Unexpected error occurred");
-    } finally {
-      setLoading(false);
-    }
+  const handleConfirm = async () => {
+    setConfirming(true);
+    await onConfirm();
+    setConfirming(false);
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-        <h2 className="text-lg font-semibold mb-4">
-          {mode === "add" ? "Add Country" : "Edit Country"}
-        </h2>
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+          <div className="flex justify-between items-center mb-4">
+            <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-[color:var(--gsc-red)]" />
+              Delete Version
+            </Dialog.Title>
+            <button onClick={onClose}>
+              <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+            </button>
+          </div>
 
-        <div className="mb-3">
-          <label className="block text-sm font-medium mb-1">ISO Code</label>
-          <input
-            value={isoCode}
-            onChange={(e) => setIsoCode(e.target.value)}
-            className="w-full border rounded px-3 py-2 text-sm"
-            placeholder="e.g. PHL"
-            disabled={mode === "edit"} // lock ISO in edit mode
-          />
-        </div>
+          <p className="text-sm text-gray-700 mb-4">
+            Are you sure you want to delete the version{" "}
+            <strong>{version.title}</strong>? This action cannot be undone.
+          </p>
 
-        <div className="mb-3">
-          <label className="block text-sm font-medium mb-1">Country Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border rounded px-3 py-2 text-sm"
-            placeholder="e.g. Philippines"
-          />
-        </div>
-
-        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {loading
-              ? "Saving..."
-              : mode === "add"
-              ? "Add Country"
-              : "Save Changes"}
-          </button>
-        </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
+              disabled={confirming}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={confirming}
+              className="px-3 py-1.5 text-sm rounded text-white bg-[color:var(--gsc-red)] hover:opacity-90"
+            >
+              {confirming ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </Dialog.Panel>
       </div>
-    </div>
+    </Dialog>
   );
 }
