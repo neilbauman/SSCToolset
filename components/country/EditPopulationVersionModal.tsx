@@ -1,20 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Dialog } from "@/components/ui/dialog";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+
+type PopulationVersion = {
+  id: string;
+  title: string;
+  year: number;
+  dataset_date?: string;
+  source?: string;
+  is_active: boolean;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  version: {
-    id: string;
-    title: string;
-    year: number;
-    dataset_date?: string;
-    source?: string;
-    notes?: string;
-  };
-  onSave: () => Promise<void>;
+  version: PopulationVersion | null;
+  onSave: () => void;
 };
 
 export default function EditPopulationVersionModal({
@@ -23,117 +26,85 @@ export default function EditPopulationVersionModal({
   version,
   onSave,
 }: Props) {
-  const [form, setForm] = useState(version);
+  const [title, setTitle] = useState(version?.title || "");
+  const [year, setYear] = useState(version?.year || new Date().getFullYear());
+  const [datasetDate, setDatasetDate] = useState(version?.dataset_date || "");
+  const [source, setSource] = useState(version?.source || "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (version) setForm(version);
-  }, [version]);
+  const handleSave = async () => {
+    if (!version) return;
+    setLoading(true);
+    setError(null);
 
-  if (!open) return null;
+    try {
+      const { error: err } = await supabase
+        .from("population_dataset_versions")
+        .update({
+          title,
+          year,
+          dataset_date: datasetDate || null,
+          source,
+        })
+        .eq("id", version.id);
 
-  const handleChange = (key: string, value: any) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
+      if (err) throw err;
 
-  const handleSubmit = async () => {
-    await supabase
-      .from("population_dataset_versions")
-      .update({
-        title: form.title,
-        year: form.year,
-        dataset_date: form.dataset_date || null,
-        source: form.source || null,
-        notes: form.notes || null,
-      })
-      .eq("id", form.id);
-
-    await onSave();
-    onClose();
+      onSave();
+      onClose();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
-        <h2 className="text-lg font-semibold mb-4 text-gray-900">
-          Edit Population Version
-        </h2>
-
-        <div className="space-y-3 text-sm">
-          <div>
-            <label className="block text-gray-700 font-medium mb-1">
-              Title
-            </label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => handleChange("title", e.target.value)}
-              className="border rounded px-2 py-1 w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-1">
-              Year
-            </label>
-            <input
-              type="number"
-              value={form.year}
-              onChange={(e) => handleChange("year", Number(e.target.value))}
-              className="border rounded px-2 py-1 w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-1">
-              Dataset Date
-            </label>
-            <input
-              type="date"
-              value={form.dataset_date || ""}
-              onChange={(e) => handleChange("dataset_date", e.target.value)}
-              className="border rounded px-2 py-1 w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-1">
-              Source
-            </label>
-            <input
-              type="text"
-              value={form.source || ""}
-              onChange={(e) => handleChange("source", e.target.value)}
-              className="border rounded px-2 py-1 w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-1">
-              Notes
-            </label>
-            <textarea
-              value={form.notes || ""}
-              onChange={(e) => handleChange("notes", e.target.value)}
-              className="border rounded px-2 py-1 w-full h-20"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end mt-5 space-x-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border rounded text-sm text-gray-700 hover:bg-gray-100"
-          >
+    <Dialog open={open} onOpenChange={onClose}>
+      <div className="p-4 space-y-3">
+        <h2 className="text-lg font-semibold">Edit Population Dataset</h2>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <input
+          type="text"
+          placeholder="Title"
+          className="border rounded px-2 py-1 w-full"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <input
+          type="number"
+          placeholder="Year"
+          className="border rounded px-2 py-1 w-full"
+          value={year}
+          onChange={(e) => setYear(parseInt(e.target.value))}
+        />
+        <input
+          type="date"
+          className="border rounded px-2 py-1 w-full"
+          value={datasetDate}
+          onChange={(e) => setDatasetDate(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Source"
+          className="border rounded px-2 py-1 w-full"
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+        />
+        <div className="flex justify-end gap-2 mt-3">
+          <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
-            className="px-4 py-2 rounded text-sm bg-[color:var(--gsc-red)] text-white hover:opacity-90"
+            onClick={handleSave}
+            disabled={loading}
+            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
           >
-            Save Changes
+            {loading ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
