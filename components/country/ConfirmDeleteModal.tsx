@@ -1,40 +1,47 @@
 "use client";
+import React from "react";
 
-import { Dialog } from "@/components/ui/dialog";
-
-type Props = {
+type ConfirmDeleteModalProps = {
   open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
+  title?: string;
   message: string;
+  confirmLabel?: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void> | void;
 };
 
 export default function ConfirmDeleteModal({
   open,
-  onClose,
-  onConfirm,
+  title = "Confirm Deletion",
   message,
-}: Props) {
+  confirmLabel = "Delete",
+  onCancel,
+  onConfirm,
+}: ConfirmDeleteModalProps) {
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <div className="p-4 space-y-3">
-        <h2 className="text-lg font-semibold text-red-600">Confirm Delete</h2>
-        <p className="text-sm text-gray-700">{message}</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="px-3 py-1 border rounded">
+    <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+        <h2 className="text-lg font-semibold mb-3 text-[color:var(--gsc-red)]">
+          {title}
+        </h2>
+        <p className="text-gray-700 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="bg-gray-100 text-gray-800 px-3 py-1.5 rounded hover:bg-gray-200"
+          >
             Cancel
           </button>
           <button
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-            className="px-3 py-1 bg-red-600 text-white rounded hover:opacity-90"
+            onClick={async () => await onConfirm()}
+            className="bg-[color:var(--gsc-red)] text-white px-3 py-1.5 rounded hover:opacity-90"
           >
-            Delete
+            {confirmLabel}
           </button>
         </div>
       </div>
-    </Dialog>
+    </div>
   );
 }
