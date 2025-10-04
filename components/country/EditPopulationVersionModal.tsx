@@ -6,93 +6,131 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 type Props = {
   open: boolean;
   onClose: () => void;
-  version: any | null;
-  onUpdated: () => void;
+  version: {
+    id: string;
+    title: string;
+    year: number;
+    dataset_date?: string;
+    source?: string;
+    notes?: string;
+  };
+  onSave: () => Promise<void>;
 };
 
-export default function EditPopulationVersionModal({ open, onClose, version, onUpdated }: Props) {
-  const [title, setTitle] = useState("");
-  const [year, setYear] = useState<number | "">("");
-  const [datasetDate, setDatasetDate] = useState("");
-  const [source, setSource] = useState("");
-  const [notes, setNotes] = useState("");
+export default function EditPopulationVersionModal({
+  open,
+  onClose,
+  version,
+  onSave,
+}: Props) {
+  const [form, setForm] = useState(version);
 
   useEffect(() => {
-    if (version) {
-      setTitle(version.title || "");
-      setYear(version.year || "");
-      setDatasetDate(version.dataset_date || "");
-      setSource(version.source || "");
-      setNotes(version.notes || "");
-    }
+    if (version) setForm(version);
   }, [version]);
-
-  const handleSave = async () => {
-    if (!version) return;
-    await supabase
-      .from("population_dataset_versions")
-      .update({
-        title,
-        year,
-        dataset_date: datasetDate || null,
-        source,
-        notes,
-      })
-      .eq("id", version.id);
-    onUpdated();
-    onClose();
-  };
 
   if (!open) return null;
 
+  const handleChange = (key: string, value: any) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = async () => {
+    await supabase
+      .from("population_dataset_versions")
+      .update({
+        title: form.title,
+        year: form.year,
+        dataset_date: form.dataset_date || null,
+        source: form.source || null,
+        notes: form.notes || null,
+      })
+      .eq("id", form.id);
+
+    await onSave();
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-        <h2 className="text-lg font-semibold mb-4">Edit Population Dataset</h2>
-        <div className="space-y-3">
-          <input
-            type="text"
-            placeholder="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="border rounded w-full px-3 py-2 text-sm"
-          />
-          <input
-            type="number"
-            placeholder="Year"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="border rounded w-full px-3 py-2 text-sm"
-          />
-          <input
-            type="date"
-            value={datasetDate}
-            onChange={(e) => setDatasetDate(e.target.value)}
-            className="border rounded w-full px-3 py-2 text-sm"
-          />
-          <input
-            type="text"
-            placeholder="Source"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="border rounded w-full px-3 py-2 text-sm"
-          />
-          <textarea
-            placeholder="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="border rounded w-full px-3 py-2 text-sm"
-          />
+      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+        <h2 className="text-lg font-semibold mb-4 text-gray-900">
+          Edit Population Version
+        </h2>
+
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">
+              Title
+            </label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => handleChange("title", e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">
+              Year
+            </label>
+            <input
+              type="number"
+              value={form.year}
+              onChange={(e) => handleChange("year", Number(e.target.value))}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">
+              Dataset Date
+            </label>
+            <input
+              type="date"
+              value={form.dataset_date || ""}
+              onChange={(e) => handleChange("dataset_date", e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">
+              Source
+            </label>
+            <input
+              type="text"
+              value={form.source || ""}
+              onChange={(e) => handleChange("source", e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">
+              Notes
+            </label>
+            <textarea
+              value={form.notes || ""}
+              onChange={(e) => handleChange("notes", e.target.value)}
+              className="border rounded px-2 py-1 w-full h-20"
+            />
+          </div>
         </div>
-        <div className="flex justify-end space-x-2 mt-4">
-          <button onClick={onClose} className="px-4 py-2 border rounded text-sm">
+
+        <div className="flex justify-end mt-5 space-x-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded text-sm text-gray-700 hover:bg-gray-100"
+          >
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-[color:var(--gsc-red)] text-white rounded text-sm"
+            onClick={handleSubmit}
+            className="px-4 py-2 rounded text-sm bg-[color:var(--gsc-red)] text-white hover:opacity-90"
           >
-            Save
+            Save Changes
           </button>
         </div>
       </div>
