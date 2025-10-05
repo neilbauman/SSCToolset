@@ -14,18 +14,11 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-
-    // ✅ This makes "@/..." paths work
     "baseUrl": ".",
     "paths": {
       "@/*": ["*"]
     }
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    "lib/types"       // ✅ Add this line so shpjs.d.ts is picked up
-  ],
-  "exclude": ["node_modules"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "lib/types"],
+  "exclude": ["node_modules", "supabase"]
 }
