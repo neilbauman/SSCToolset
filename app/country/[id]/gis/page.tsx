@@ -38,12 +38,14 @@ type GISLayer = {
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
   const mapRef = useRef<L.Map | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [activeLayer, setActiveLayer] = useState<GISLayer | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
   const [showMap, setShowMap] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
 
   // ---- Load country ----
   useEffect(() => {
@@ -101,27 +103,27 @@ export default function GISPage({ params }: any) {
     if (!activeLayer || !showMap) return;
 
     const initMap = async () => {
-      const mapContainer = document.getElementById("map-container");
-      if (!mapContainer) return;
+      if (!mapContainerRef.current) return;
 
-      // Cleanup existing map instance
+      // Clear any existing map
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
 
-      const map = L.map(mapContainer, {
+      // Initialize
+      const map = L.map(mapContainerRef.current, {
         zoomControl: true,
         scrollWheelZoom: true,
-      }).setView([12.8797, 121.774], 5); // center on Philippines
-
+      }).setView([12.8797, 121.774], 5);
       mapRef.current = map;
 
+      // Add basemap
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
 
-      // Load and display GeoJSON layer
+      // Load GeoJSON
       const { data, error } = await supabase.storage
         .from("gis_raw")
         .download(activeLayer.source.path);
@@ -136,10 +138,15 @@ export default function GISPage({ params }: any) {
         const geojson = JSON.parse(text);
 
         const geoLayer = L.geoJSON(geojson, {
-          style: { color: "#0070f3", weight: 1, fillOpacity: 0.2 },
+          style: {
+            color: "#cc0000",
+            weight: 1,
+            fillOpacity: 0.15,
+          },
         }).addTo(map);
 
         map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
+        setMapReady(true);
       } catch (e) {
         console.error("Invalid GeoJSON:", e);
       }
@@ -167,8 +174,9 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-3">
+      <div className="relative border rounded-lg p-4 shadow-sm mb-6">
+        {/* Upload always visible above map */}
+        <div className="flex justify-between items-center mb-3 relative z-50">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Layers className="w-5 h-5 text-green-600" />
             GIS Dataset Versions
@@ -183,6 +191,7 @@ export default function GISPage({ params }: any) {
           </div>
         </div>
 
+        {/* Table */}
         {versions.length > 0 ? (
           <table className="w-full text-sm border mb-3">
             <thead className="bg-gray-100">
@@ -224,18 +233,23 @@ export default function GISPage({ params }: any) {
           <p className="italic text-gray-500">No GIS versions uploaded yet.</p>
         )}
 
+        {/* Map section */}
         {activeLayer && (
           <div className="relative border rounded-lg overflow-hidden shadow-sm mt-4">
-            <button
-              onClick={() => setShowMap(!showMap)}
-              className="absolute top-2 left-2 z-10 bg-white text-sm px-2 py-1 rounded shadow hover:bg-gray-100"
-            >
-              {showMap ? "Hide Map" : "Show Map"}
-            </button>
+            <div className="absolute top-2 left-2 z-[60]">
+              <button
+                onClick={() => setShowMap(!showMap)}
+                className="bg-white text-sm px-3 py-1 rounded shadow hover:bg-gray-100"
+              >
+                {showMap ? "Hide Map" : "Show Map"}
+              </button>
+            </div>
+
             {showMap && (
               <div
+                ref={mapContainerRef}
                 id="map-container"
-                className="w-full"
+                className="w-full relative z-10"
                 style={{ height: "600px" }}
               />
             )}
@@ -243,12 +257,17 @@ export default function GISPage({ params }: any) {
         )}
       </div>
 
-      <UploadGISModal
-        open={openUpload}
-        onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
-        onUploaded={fetchVersions}
-      />
+      {/* Upload Modal — forced top z-index */}
+      {openUpload && (
+        <div className="z-[9999] relative">
+          <UploadGISModal
+            open={openUpload}
+            onClose={() => setOpenUpload(false)}
+            countryIso={countryIso}
+            onUploaded={fetchVersions}
+          />
+        </div>
+      )}
     </SidebarLayout>
   );
 }
