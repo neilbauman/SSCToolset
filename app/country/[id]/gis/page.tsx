@@ -28,8 +28,12 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-export default function GISPage({ params }: { params: { id: string } }) {
-  const countryIso = params.id;
+// ✅ Fix: Explicitly type props as { params: Promise<{ id: string }> }
+//     because Next.js 15 now sometimes wraps params in a Promise
+export default async function GISPage(props: { params: { id: string } | Promise<{ id: string }> }) {
+  const resolvedParams = await Promise.resolve(props.params);
+  const countryIso = resolvedParams.id;
+
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
@@ -52,6 +56,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
   // Load layers
   useEffect(() => {
     (async () => {
+      if (!versions.length) return;
       const { data } = await supabase
         .from("gis_layers")
         .select("*")
@@ -67,14 +72,14 @@ export default function GISPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current || !L) return;
 
-    // Destroy any existing instance cleanly
+    // Destroy existing instance if present
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
     }
 
     const map = L.map(mapContainerRef.current, {
-      center: [12.8797, 121.774], // Philippines center
+      center: [12.8797, 121.774],
       zoom: 6,
       zoomControl: true,
       attributionControl: true,
@@ -98,7 +103,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
             style: {
               color: layer.admin_level === "ADM2" ? "#e63946" : "#457b9d",
               weight: 1.2,
-              fillOpacity: 0.2,
+              fillOpacity: 0.25,
             },
           });
           geoLayer.addTo(map);
@@ -107,7 +112,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
         }
       }
 
-      // Adjust bounds once layers are drawn
+      // Fit to visible layers
       const allLayers = Object.values(map._layers);
       const geoLayers = allLayers.filter((l: any) => l.getBounds);
       if (geoLayers.length) {
