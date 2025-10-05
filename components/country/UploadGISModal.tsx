@@ -119,7 +119,7 @@ export default function UploadGISModal({
         </p>
         <input
           type="file"
-          accept=".zip"
+          accept=".zip,.geojson,.json"
           onChange={handleFileChange}
           className="border p-2 rounded text-sm"
         />
