@@ -1,13 +1,10 @@
 // /app/api/convert-gis/route.ts
-// Converts a zipped shapefile stored in gis_raw → GeoJSON in gis
+// Converts a zipped shapefile stored in gis_raw → GeoJSON in gis (server-side)
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/supabaseServer";
 
-export const runtime = "nodejs"; // ensures server execution on Vercel
-
-// Lazy-loaded mapshaper (to avoid bundling errors)
-let mapshaper: any = null;
+export const runtime = "nodejs"; // ensure server execution
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,26 +16,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ⚙️ Load mapshaper dynamically at runtime
-    if (!mapshaper) {
-      mapshaper = (await import("mapshaper")).default;
-    }
+    // ✅ Load mapshaper using require-style dynamic import to avoid bundler issues
+    const mapshaperModule: any = await import("mapshaper");
+    const mapshaper = mapshaperModule.default || mapshaperModule;
 
     // 1️⃣ Download ZIP from gis_raw bucket
     const { data, error: dlError } = await supabaseServer.storage
       .from(bucket)
       .download(path);
-    if (dlError || !data) throw new Error("Download failed: " + dlError?.message);
+    if (dlError || !data)
+      throw new Error("Download failed: " + dlError?.message);
 
     const arrayBuf = await data.arrayBuffer();
 
-    // 2️⃣ Convert & simplify with mapshaper
+    // 2️⃣ Convert + simplify using mapshaper
     const result = await mapshaper.applyCommands(
       "-i input.zip combine-files -simplify 5% keep-shapes -o format=geojson precision=0.0001",
       { "input.zip": new Uint8Array(arrayBuf) }
     );
 
-    const geojson = result["input.json"];
+    // Depending on version, the key may differ
+    const geojson =
+      result["output.json"] ||
+      result["input.json"] ||
+      Object.values(result)[0];
+
+    if (!geojson) throw new Error("No GeoJSON output from mapshaper");
 
     // 3️⃣ Upload simplified GeoJSON to public 'gis' bucket
     const geoPath = `${country_iso}/${version_id}/layer.geojson`;
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
       source: { path: geoPath },
     });
 
-    // 5️⃣ Mark dataset version active
+    // 5️⃣ Mark dataset version as active
     await supabaseServer
       .from("gis_dataset_versions")
       .update({ is_active: true, source: "Server conversion" })
@@ -71,9 +74,9 @@ export async function POST(req: NextRequest) {
       message: "Conversion complete",
     });
   } catch (err: any) {
-    console.error("Error in convert-gis:", err);
+    console.error("Error in /api/convert-gis:", err);
     return NextResponse.json(
-      { ok: false, error: err.message },
+      { ok: false, error: err.message || "Unknown error" },
       { status: 500 }
     );
   }
