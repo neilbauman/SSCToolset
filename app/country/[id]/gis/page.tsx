@@ -8,6 +8,9 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers, Upload, Check } from "lucide-react";
 
+// ✅ Static import (fixes build error)
+import "leaflet/dist/leaflet.css";
+
 type GISDatasetVersion = {
   id: string;
   title: string;
@@ -74,10 +77,7 @@ export default function GISPage() {
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current) return;
 
-    const initMap = async () => {
-      const L = await import("leaflet");
-      await import("leaflet/dist/leaflet.css");
-
+    import("leaflet").then(async (L) => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -127,9 +127,7 @@ export default function GISPage() {
       }
 
       mapRef.current = map;
-    };
-
-    initMap();
+    });
 
     return () => {
       if (mapRef.current) {
