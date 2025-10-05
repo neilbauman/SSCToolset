@@ -3,13 +3,13 @@
 import React, { useState } from "react";
 import ModalBase from "@/components/ui/ModalBase";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import shp from "shpjs";
 
 /**
- * UploadGISModal
- * --------------
- * Allows uploading a zipped shapefile (.zip). The file is converted to GeoJSON client-side
- * and stored in Supabase Storage (bucket: "gis"). A new gis_dataset_versions row and gis_layers row are created.
+ * UploadGISModal (raw upload version)
+ * -----------------------------------
+ * Uploads the zipped shapefile directly to Supabase Storage (bucket: gis_raw)
+ * and creates a gis_dataset_versions row.  The Edge Function will later
+ * convert + simplify it into GeoJSON inside the `gis` bucket.
  */
 
 type UploadGISModalProps = {
@@ -27,7 +27,7 @@ export default function UploadGISModal({
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState("");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -43,62 +43,37 @@ export default function UploadGISModal({
 
     try {
       setUploading(true);
-      setMessage("Converting shapefile to GeoJSON...");
+      setMessage("Uploading raw shapefile to Supabase...");
 
-      // 1️⃣ Convert shapefile ZIP -> GeoJSON
-      const arrayBuffer = await file.arrayBuffer();
-      const geojson = await shp(arrayBuffer);
-
-      // Count features and detect CRS (basic)
-      const featureCount = geojson.features?.length || 0;
-      const crs =
-        geojson.crs?.properties?.name ||
-        "EPSG:4326"; // default WGS84 if none present
-
-      // 2️⃣ Create a new gis_dataset_versions record
-      const { data: versionRow, error: versionErr } = await supabase
+      // 1️⃣ Create a new GIS dataset version row (inactive until conversion)
+      const { data: version, error: versionErr } = await supabase
         .from("gis_dataset_versions")
         .insert({
           country_iso: countryIso,
           title: file.name.replace(".zip", ""),
-          source: "User Upload",
-          is_active: true,
+          source: "User Upload (raw)",
+          is_active: false,
           created_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (versionErr) throw versionErr;
+      const versionId = version.id;
 
-      const versionId = versionRow.id;
-
-      // 3️⃣ Upload GeoJSON file to Supabase Storage
-      const geojsonString = JSON.stringify(geojson);
-      const uploadPath = `${countryIso}/${versionId}/${file.name.replace(".zip", ".geojson")}`;
-
-      const { error: storageErr } = await supabase.storage
-        .from("gis")
-        .upload(uploadPath, geojsonString, {
-          contentType: "application/geo+json",
+      // 2️⃣ Upload the raw zip to the gis_raw bucket
+      const uploadPath = `${countryIso}/${versionId}/${file.name}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("gis_raw")
+        .upload(uploadPath, file, {
+          cacheControl: "3600",
           upsert: true,
+          contentType: "application/zip",
         });
 
-      if (storageErr) throw storageErr;
+      if (uploadErr) throw uploadErr;
 
-      // 4️⃣ Record metadata in gis_layers
-      const { error: layerErr } = await supabase.from("gis_layers").insert({
-        country_iso: countryIso,
-        layer_name: file.name.replace(".zip", ""),
-        format: "GeoJSON",
-        feature_count: featureCount,
-        crs: crs,
-        dataset_version_id: versionId,
-        created_at: new Date().toISOString(),
-      });
-
-      if (layerErr) throw layerErr;
-
-      setMessage(`✅ Upload complete (${featureCount} features).`);
+      setMessage("✅ Upload complete. Conversion will run server-side.");
       await onUploaded();
       onClose();
     } catch (err: any) {
@@ -120,8 +95,9 @@ export default function UploadGISModal({
     >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-gray-700">
-          Upload a zipped shapefile (.zip) for <strong>{countryIso}</strong>. The file will
-          be converted to GeoJSON and stored automatically.
+          Upload a zipped shapefile (.zip) for <strong>{countryIso}</strong>.
+          The file will be stored in <code>gis_raw</code> for server-side
+          conversion to GeoJSON.
         </p>
         <input
           type="file"
@@ -130,7 +106,9 @@ export default function UploadGISModal({
           className="border p-2 rounded text-sm"
         />
         {message && (
-          <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">{message}</p>
+          <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+            {message}
+          </p>
         )}
       </div>
     </ModalBase>
