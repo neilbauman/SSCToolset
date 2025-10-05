@@ -6,9 +6,9 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers, Upload, Check, Map as MapIcon } from "lucide-react";
-import type { CountryParams } from "@/app/country/types";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import type { CountryParams } from "@/app/country/types";
 
 type Country = {
   iso_code: string;
@@ -37,17 +37,17 @@ type GISLayer = {
 
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
-  const mapRef = useRef<L.Map | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
-  const [activeLayer, setActiveLayer] = useState<GISLayer | null>(null);
+  const [layers, setLayers] = useState<GISLayer[]>([]);
+  const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
   const [showMap, setShowMap] = useState(true);
-  const [mapReady, setMapReady] = useState(false);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
 
-  // ---- Load country ----
+  // ---- Load Country ----
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -59,7 +59,7 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Load GIS versions ----
+  // ---- Load Versions ----
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -72,89 +72,75 @@ export default function GISPage({ params }: any) {
       return;
     }
 
-    setVersions(data || []);
+    const list = (data || []) as GISDatasetVersion[];
+    setVersions(list);
+    const active = list.find((v) => v.is_active) || list[0];
+    setActiveVersion(active || null);
 
-    const active = (data || []).find((v) => v.is_active);
-    if (active) fetchActiveLayer(active.id);
+    if (active) await fetchLayers(active.id);
   };
 
-  // ---- Load associated layer ----
-  const fetchActiveLayer = async (versionId: string) => {
+  // ---- Load Layers ----
+  const fetchLayers = async (versionId: string) => {
     const { data, error } = await supabase
       .from("gis_layers")
       .select("*")
-      .eq("dataset_version_id", versionId)
-      .maybeSingle();
+      .eq("dataset_version_id", versionId);
 
     if (error) {
-      console.error("Error fetching GIS layer:", error);
+      console.error("Error loading GIS layers:", error);
       return;
     }
 
-    if (data) setActiveLayer(data as GISLayer);
+    setLayers(data || []);
   };
 
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
 
-  // ---- Initialize / Update Map ----
+  // ---- Map Rendering ----
   useEffect(() => {
-    if (!activeLayer || !showMap) return;
+    if (!showMap || !activeVersion || layers.length === 0) return;
 
-    const initMap = async () => {
-      if (!mapContainerRef.current) return;
+    const layer = layers[0];
+    const geoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
 
-      // Clear any existing map
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+    // Destroy previous instance cleanly
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
 
-      // Initialize
-      const map = L.map(mapContainerRef.current, {
-        zoomControl: true,
-        scrollWheelZoom: true,
-      }).setView([12.8797, 121.774], 5);
-      mapRef.current = map;
+    const container = mapContainerRef.current;
+    if (!container) return;
 
-      // Add basemap
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap contributors",
-      }).addTo(map);
+    const map = L.map(container).setView([12.8797, 121.774], 5);
+    mapInstanceRef.current = map;
 
-      // Load GeoJSON
-      const { data, error } = await supabase.storage
-        .from("gis_raw")
-        .download(activeLayer.source.path);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
 
-      if (error || !data) {
-        console.error("Failed to download GeoJSON:", error);
-        return;
-      }
-
-      try {
-        const text = await data.text();
-        const geojson = JSON.parse(text);
-
-        const geoLayer = L.geoJSON(geojson, {
+    fetch(geoUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load GeoJSON");
+        return r.json();
+      })
+      .then((geojson) => {
+        const layer = L.geoJSON(geojson, {
           style: {
-            color: "#cc0000",
-            weight: 1,
+            color: "#d00",
+            weight: 1.5,
             fillOpacity: 0.15,
           },
         }).addTo(map);
+        map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+      })
+      .catch((err) => console.error("GeoJSON render error:", err));
+  }, [layers, showMap]);
 
-        map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
-        setMapReady(true);
-      } catch (e) {
-        console.error("Invalid GeoJSON:", e);
-      }
-    };
-
-    initMap();
-  }, [activeLayer, showMap]);
-
+  // ---- Header ----
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -174,34 +160,31 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="relative border rounded-lg p-4 shadow-sm mb-6">
-        {/* Upload always visible above map */}
-        <div className="flex justify-between items-center mb-3 relative z-50">
+      {/* Dataset Versions */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Layers className="w-5 h-5 text-green-600" />
             GIS Dataset Versions
           </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-            >
-              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-            </button>
-          </div>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+          >
+            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+          </button>
         </div>
 
-        {/* Table */}
         {versions.length > 0 ? (
-          <table className="w-full text-sm border mb-3">
+          <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
                 <th className="border px-2 py-1 text-left">Title</th>
                 <th className="border px-2 py-1 text-left">Source</th>
                 <th className="border px-2 py-1 text-left">Year</th>
                 <th className="border px-2 py-1 text-left">Created</th>
-                <th className="border px-2 py-1 text-left">Layers</th>
-                <th className="border px-2 py-1 text-left">Status</th>
+                <th className="border px-2 py-1 text-center">Layers</th>
+                <th className="border px-2 py-1 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -213,8 +196,10 @@ export default function GISPage({ params }: any) {
                   <td className="border px-2 py-1">
                     {new Date(v.created_at).toLocaleDateString()}
                   </td>
-                  <td className="border px-2 py-1 text-center">1</td>
-                  <td className="border px-2 py-1">
+                  <td className="border px-2 py-1 text-center">
+                    {layers.length}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-green-600 text-white">
                         <Check className="w-3 h-3" /> Active
@@ -232,42 +217,42 @@ export default function GISPage({ params }: any) {
         ) : (
           <p className="italic text-gray-500">No GIS versions uploaded yet.</p>
         )}
-
-        {/* Map section */}
-        {activeLayer && (
-          <div className="relative border rounded-lg overflow-hidden shadow-sm mt-4">
-            <div className="absolute top-2 left-2 z-[60]">
-              <button
-                onClick={() => setShowMap(!showMap)}
-                className="bg-white text-sm px-3 py-1 rounded shadow hover:bg-gray-100"
-              >
-                {showMap ? "Hide Map" : "Show Map"}
-              </button>
-            </div>
-
-            {showMap && (
-              <div
-                ref={mapContainerRef}
-                id="map-container"
-                className="w-full relative z-10"
-                style={{ height: "600px" }}
-              />
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Upload Modal — forced top z-index */}
-      {openUpload && (
-        <div className="z-[9999] relative">
-          <UploadGISModal
-            open={openUpload}
-            onClose={() => setOpenUpload(false)}
-            countryIso={countryIso}
-            onUploaded={fetchVersions}
-          />
+      {/* Map Controls + Map Section */}
+      {activeVersion && (
+        <div className="mt-4 border rounded-lg shadow-sm overflow-hidden relative">
+          <div className="flex justify-between items-center bg-gray-50 border-b px-3 py-2">
+            <span className="font-medium flex items-center gap-2 text-gray-700">
+              <MapIcon className="w-4 h-4 text-green-600" />
+              Map Preview
+            </span>
+            <button
+              onClick={() => setShowMap(!showMap)}
+              className="bg-white border text-sm px-3 py-1 rounded shadow-sm hover:bg-gray-100"
+            >
+              {showMap ? "Hide Map" : "Show Map"}
+            </button>
+          </div>
+
+          {showMap && (
+            <div
+              ref={mapContainerRef}
+              id="map-container"
+              className="relative"
+              style={{ height: "600px", zIndex: 1 }}
+            />
+          )}
         </div>
       )}
+
+      {/* Upload Modal */}
+      <UploadGISModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={fetchVersions}
+      />
     </SidebarLayout>
   );
 }
