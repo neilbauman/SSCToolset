@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload, Eye, EyeOff, Check, Edit } from "lucide-react";
+import { Layers, Upload, Eye, EyeOff, Check, Save } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -14,8 +14,6 @@ type GISDatasetVersion = {
   country_iso: string;
   title: string;
   source: string | null;
-  year: number | null;
-  dataset_date: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -23,10 +21,9 @@ type GISDatasetVersion = {
 type GISLayer = {
   id: string;
   dataset_version_id: string;
+  country_iso: string;
   layer_name: string;
   admin_level: string | null;
-  format: string;
-  crs: string;
   source: { path: string };
   is_active: boolean;
 };
@@ -40,31 +37,29 @@ export default function GISPage({ params }: any) {
   const [mapVisible, setMapVisible] = useState(true);
   const mapRef = useRef<L.Map | null>(null);
   const layerRefs = useRef<Record<string, L.GeoJSON>>({});
+  const [editingLevel, setEditingLevel] = useState<Record<string, string>>({});
 
   // ---- Fetch Versions ----
   const fetchVersions = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("gis_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-
-    if (!error && data) setVersions(data as GISDatasetVersion[]);
+    if (data) setVersions(data as GISDatasetVersion[]);
   };
 
   // ---- Fetch Layers ----
   const fetchLayers = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("gis_layers")
       .select("*")
       .eq("country_iso", countryIso);
-
-    if (!error && data) {
-      const layersData = data as GISLayer[];
-      setLayers(layersData);
-      const visMap: Record<string, boolean> = {};
-      layersData.forEach((l) => (visMap[l.id] = l.is_active || false));
-      setVisibleLayers(visMap);
+    if (data) {
+      const map: Record<string, boolean> = {};
+      data.forEach((l) => (map[l.id] = !!l.is_active));
+      setVisibleLayers(map);
+      setLayers(data as GISLayer[]);
     }
   };
 
@@ -83,7 +78,7 @@ export default function GISPage({ params }: any) {
     }
 
     const map = L.map("map-container", {
-      center: [12.8797, 121.774], // Philippines center
+      center: [12.8797, 121.774],
       zoom: 6,
     });
 
@@ -92,13 +87,9 @@ export default function GISPage({ params }: any) {
     }).addTo(map);
 
     mapRef.current = map;
-
-    // Add all visible layers
     renderVisibleLayers(map);
 
-    return () => {
-      map.remove();
-    };
+    return () => map.remove();
   }, [mapVisible]);
 
   // ---- Render Visible Layers ----
@@ -106,33 +97,46 @@ export default function GISPage({ params }: any) {
     const activeMap = map || mapRef.current;
     if (!activeMap) return;
 
-    // Remove old
+    // Remove previous
     Object.values(layerRefs.current).forEach((layer) => activeMap.removeLayer(layer));
     layerRefs.current = {};
 
-    // Add visible
     for (const layer of layers) {
       if (!visibleLayers[layer.id]) continue;
-      const { data } = await supabase.storage.from("gis").download(layer.source.path);
+      const { data } = await supabase.storage.from("gis_raw").download(layer.source.path);
       if (!data) continue;
 
       const text = await data.text();
       try {
         const geojson = JSON.parse(text);
         const leafletLayer = L.geoJSON(geojson, {
-          style: { color: "#e11d48", weight: 1, fillOpacity: 0.1 },
+          style: {
+            color: layer.admin_level === "ADM1" ? "#2563eb" : "#e11d48",
+            weight: 1,
+            fillOpacity: 0.1,
+          },
         }).addTo(activeMap);
         layerRefs.current[layer.id] = leafletLayer;
       } catch (e) {
-        console.error("Invalid GeoJSON for", layer.layer_name);
+        console.error("Invalid GeoJSON:", e);
       }
     }
   };
 
-  // ---- Toggle Layer Visibility ----
-  const toggleLayerVisibility = async (layerId: string) => {
-    const updated = { ...visibleLayers, [layerId]: !visibleLayers[layerId] };
+  // ---- Toggle Visibility ----
+  const toggleLayerVisibility = (id: string) => {
+    const updated = { ...visibleLayers, [id]: !visibleLayers[id] };
     setVisibleLayers(updated);
+    renderVisibleLayers();
+  };
+
+  // ---- Save Admin Level ----
+  const saveAdminLevel = async (layerId: string, newLevel: string) => {
+    await supabase
+      .from("gis_layers")
+      .update({ admin_level: newLevel })
+      .eq("id", layerId);
+    await fetchLayers();
     renderVisibleLayers();
   };
 
@@ -140,7 +144,7 @@ export default function GISPage({ params }: any) {
   const headerProps = {
     title: `GIS Layers – ${countryIso}`,
     group: "country-config" as const,
-    description: "Manage uploaded GIS boundary layers and toggle their visibility.",
+    description: "Manage boundary layers, toggle visibility, and assign admin levels.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -155,7 +159,7 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions Table */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -179,7 +183,7 @@ export default function GISPage({ params }: any) {
           </div>
         </div>
 
-        {versions.length > 0 ? (
+        {versions.length ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
@@ -203,9 +207,7 @@ export default function GISPage({ params }: any) {
                         <Check className="w-3 h-3" /> Active
                       </span>
                     ) : (
-                      <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-200">
-                        —
-                      </span>
+                      <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-200">—</span>
                     )}
                   </td>
                 </tr>
@@ -227,26 +229,53 @@ export default function GISPage({ params }: any) {
       {/* Layers Table */}
       <div className="border rounded-lg p-4 shadow-sm">
         <h3 className="text-md font-semibold mb-2">Layers</h3>
-        {layers.length > 0 ? (
+        {layers.length ? (
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
                 <th className="border px-2 py-1 text-left">Layer Name</th>
                 <th className="border px-2 py-1 text-center">Admin Level</th>
                 <th className="border px-2 py-1 text-center">Visible</th>
+                <th className="border px-2 py-1 text-center">Save</th>
               </tr>
             </thead>
             <tbody>
               {layers.map((l) => (
                 <tr key={l.id}>
                   <td className="border px-2 py-1">{l.layer_name}</td>
-                  <td className="border px-2 py-1 text-center">{l.admin_level || "—"}</td>
+                  <td className="border px-2 py-1 text-center">
+                    <select
+                      className="border rounded px-2 py-0.5 text-sm"
+                      value={editingLevel[l.id] ?? l.admin_level ?? ""}
+                      onChange={(e) =>
+                        setEditingLevel({ ...editingLevel, [l.id]: e.target.value })
+                      }
+                    >
+                      <option value="">—</option>
+                      <option value="ADM0">ADM0</option>
+                      <option value="ADM1">ADM1</option>
+                      <option value="ADM2">ADM2</option>
+                      <option value="ADM3">ADM3</option>
+                      <option value="ADM4">ADM4</option>
+                      <option value="ADM5">ADM5</option>
+                    </select>
+                  </td>
                   <td className="border px-2 py-1 text-center">
                     <input
                       type="checkbox"
                       checked={visibleLayers[l.id] || false}
                       onChange={() => toggleLayerVisibility(l.id)}
                     />
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    <button
+                      onClick={() =>
+                        saveAdminLevel(l.id, editingLevel[l.id] ?? l.admin_level ?? "")
+                      }
+                      className="p-1 rounded bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
