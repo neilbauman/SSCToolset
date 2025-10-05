@@ -7,15 +7,6 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers, Upload, Check } from "lucide-react";
 
-// -------------------------------
-// Types
-// -------------------------------
-interface GISPageProps {
-  params: {
-    id: string;
-  };
-}
-
 type GISDatasetVersion = {
   id: string;
   title: string;
@@ -34,10 +25,11 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-// -------------------------------
-// Page Component
-// -------------------------------
-export default function GISPage({ params }: GISPageProps) {
+export default function GISPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const countryIso = params.id;
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -46,7 +38,7 @@ export default function GISPage({ params }: GISPageProps) {
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // ---- Fetch dataset versions ----
+  // ---- Load Versions ----
   useEffect(() => {
     const fetchVersions = async () => {
       const { data, error } = await supabase
@@ -60,7 +52,7 @@ export default function GISPage({ params }: GISPageProps) {
     fetchVersions();
   }, [countryIso]);
 
-  // ---- Fetch layers ----
+  // ---- Load Layers ----
   useEffect(() => {
     const fetchLayers = async () => {
       if (!versions.length) return;
@@ -77,7 +69,7 @@ export default function GISPage({ params }: GISPageProps) {
     fetchLayers();
   }, [versions]);
 
-  // ---- Initialize and render map ----
+  // ---- Initialize Map ----
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current || !layers.length) return;
 
@@ -85,7 +77,6 @@ export default function GISPage({ params }: GISPageProps) {
       const L = await import("leaflet");
       await import("leaflet/dist/leaflet.css");
 
-      // Remove existing instance
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -95,16 +86,13 @@ export default function GISPage({ params }: GISPageProps) {
         center: [12.8797, 121.774],
         zoom: 6,
         zoomControl: true,
-        attributionControl: true,
       });
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
-
       mapRef.current = map;
 
-      // Add all GeoJSON layers
       for (const layer of layers) {
         try {
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
@@ -123,17 +111,15 @@ export default function GISPage({ params }: GISPageProps) {
             style: {
               color,
               weight: 1.2,
-              fillOpacity: 0.2,
+              fillOpacity: 0.25,
             },
           });
-
           geoLayer.addTo(map);
         } catch (err) {
           console.warn("Failed to render layer:", layer.layer_name, err);
         }
       }
 
-      // Fit bounds of all drawn layers
       const drawn = Object.values(map._layers).filter((l: any) => l.getBounds);
       if (drawn.length) {
         const group = L.featureGroup(drawn as any);
@@ -142,7 +128,6 @@ export default function GISPage({ params }: GISPageProps) {
     };
 
     initMap();
-
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
@@ -171,7 +156,6 @@ export default function GISPage({ params }: GISPageProps) {
   // ---- Render ----
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -225,7 +209,6 @@ export default function GISPage({ params }: GISPageProps) {
         </table>
       </div>
 
-      {/* Map */}
       {mapVisible && (
         <div className="relative w-full">
           <div
@@ -236,7 +219,6 @@ export default function GISPage({ params }: GISPageProps) {
         </div>
       )}
 
-      {/* Upload Modal */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
