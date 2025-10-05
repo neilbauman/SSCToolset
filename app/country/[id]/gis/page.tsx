@@ -7,6 +7,13 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers, Upload, Check } from "lucide-react";
 
+// -------------------------------
+// Types
+// -------------------------------
+interface CountryParams {
+  id: string;
+}
+
 type GISDatasetVersion = {
   id: string;
   title: string;
@@ -25,7 +32,10 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-export default function GISPage({ params }: { params: { id: string } }) {
+// -------------------------------
+// Page Component
+// -------------------------------
+export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -34,7 +44,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch dataset versions
+  // ---- Fetch dataset versions ----
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -46,7 +56,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
     })();
   }, [countryIso]);
 
-  // Fetch layers
+  // ---- Fetch layers ----
   useEffect(() => {
     if (!versions.length) return;
     (async () => {
@@ -61,7 +71,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
     })();
   }, [versions]);
 
-  // Render map
+  // ---- Initialize and render map ----
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current || !layers.length) return;
 
@@ -69,7 +79,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
       const L = await import("leaflet");
       await import("leaflet/dist/leaflet.css");
 
-      // Destroy old instance
+      // Clear existing map
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -88,7 +98,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
 
       mapRef.current = map;
 
-      // Add GeoJSON layers
+      // Add each GeoJSON layer
       for (const layer of layers) {
         try {
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
@@ -117,7 +127,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
         }
       }
 
-      // Fit map to visible layers
+      // Fit bounds
       const drawn = Object.values(map._layers).filter((l: any) => l.getBounds);
       if (drawn.length) {
         const group = L.featureGroup(drawn as any);
@@ -152,6 +162,7 @@ export default function GISPage({ params }: { params: { id: string } }) {
     ),
   };
 
+  // ---- Render ----
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Dataset Versions */}
