@@ -38,7 +38,7 @@ export default function GISPage({ params }: any) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const geoLayersRef = useRef<Record<string, L.GeoJSON<any>>>({});
 
-  // ---- Load country ----
+  // ---- Load Country ----
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -50,18 +50,17 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Load versions ----
+  // ---- Load Versions ----
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-    if (error) return console.error(error);
-    setVersions(data || []);
+    if (!error && data) setVersions(data);
   };
 
-  // ---- Load layers ----
+  // ---- Load Layers ----
   const fetchLayers = async () => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -80,41 +79,49 @@ export default function GISPage({ params }: any) {
     fetchLayers();
   }, [countryIso]);
 
-  // ---- Initialize map ----
+  // ---- Initialize Map ----
   useEffect(() => {
     if (!mapVisible || typeof window === "undefined" || !L) return;
-
-    // Avoid re-initializing if map already exists
-    if (mapRef.current) {
-      setTimeout(() => mapRef.current?.invalidateSize(), 300);
-      return;
-    }
 
     const container = mapContainerRef.current;
     if (!container) return;
 
-    const map = L.map(container, {
-      zoomControl: true,
-      preferCanvas: true,
-    }).setView([12.8797, 121.774], 6);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "© OpenStreetMap contributors",
-    }).addTo(map);
-
-    mapRef.current = map;
-
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
-    resizeObserver.observe(container);
-
-    return () => {
-      resizeObserver.disconnect();
-      map.remove();
+    // Cleanup old map
+    if (mapRef.current) {
+      mapRef.current.remove();
       mapRef.current = null;
-    };
+    }
+
+    // Create map after short delay to ensure container layout
+    const timeout = setTimeout(() => {
+      const map = L.map(container, {
+        zoomControl: true,
+        preferCanvas: true,
+      }).setView([12.8797, 121.774], 6);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(map);
+
+      mapRef.current = map;
+
+      // Resize observer ensures proper render after load
+      const resizeObserver = new ResizeObserver(() => {
+        map.invalidateSize();
+      });
+      resizeObserver.observe(container);
+
+      // Trigger initial invalidation once
+      setTimeout(() => map.invalidateSize(), 400);
+
+      return () => {
+        resizeObserver.disconnect();
+        map.remove();
+      };
+    }, 150);
+
+    return () => clearTimeout(timeout);
   }, [mapVisible]);
 
   // ---- Render GIS layers ----
@@ -122,7 +129,7 @@ export default function GISPage({ params }: any) {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear old
+    // Clear old layers
     Object.values(geoLayersRef.current).forEach((gl) => gl.remove());
     geoLayersRef.current = {};
 
@@ -154,7 +161,7 @@ export default function GISPage({ params }: any) {
             style: {
               color: colorMap[layer.admin_level || "ADM2"],
               weight: 1,
-              fillOpacity: 0.1,
+              fillOpacity: 0.15,
             },
           }).addTo(map);
           geoLayersRef.current[layer.id] = geoLayer;
@@ -178,7 +185,6 @@ export default function GISPage({ params }: any) {
     setVisibleLayers((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // ---- Header ----
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -253,10 +259,11 @@ export default function GISPage({ params }: any) {
         <div
           ref={mapContainerRef}
           id="map-container"
-          className="w-full border rounded-lg shadow-sm"
+          className="w-full border rounded-lg shadow-sm my-4"
           style={{
             height: "600px",
-            overflow: "hidden",
+            minHeight: "500px",
+            width: "100%",
             position: "relative",
             zIndex: 0,
           }}
