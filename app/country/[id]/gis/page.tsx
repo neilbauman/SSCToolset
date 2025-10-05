@@ -50,6 +50,7 @@ export default function GISPage({ params }: any) {
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const mapRef = useRef<L.Map | null>(null);
+  const layerRefs = useRef<Record<string, L.GeoJSON>>( {} );
 
   // ---- Load Country ----
   useEffect(() => {
@@ -104,7 +105,7 @@ export default function GISPage({ params }: any) {
 
   // ---- Render Map ----
   useEffect(() => {
-    if (!mapVisible || !layers.length) return;
+    if (!mapVisible) return;
 
     // Remove existing map instance if any
     const container = L.DomUtil.get("map-container");
@@ -117,36 +118,82 @@ export default function GISPage({ params }: any) {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    const activeLayers = layers.filter((l) => l.is_active !== false);
-
-    activeLayers.forEach(async (layer) => {
-      const { data, error } = await supabase.storage
-        .from("gis")
-        .download(layer.source.path);
-      if (error || !data) return;
-      const text = await data.text();
-      const geojson = JSON.parse(text);
-      const geoLayer = L.geoJSON(geojson, {
-        style: {
-          color: "#ff7800",
-          weight: 1,
-        },
-      }).addTo(map);
-      map.fitBounds(geoLayer.getBounds());
-    });
-
     mapRef.current = map;
+    layerRefs.current = {}; // reset map layers
+
     return () => {
       map.remove();
     };
-  }, [layers, mapVisible]);
+  }, [mapVisible]);
+
+  // ---- Sync active layers to map ----
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Clear all current layers from map before re-rendering
+    Object.values(layerRefs.current).forEach((layer) => map.removeLayer(layer));
+    layerRefs.current = {};
+
+    const activeLayers = layers.filter((l) => l.is_active);
+
+    activeLayers.forEach(async (layer) => {
+      try {
+        const { data, error } = await supabase.storage
+          .from("gis")
+          .download(layer.source.path);
+        if (error || !data) {
+          console.error("Error downloading:", error);
+          return;
+        }
+        const text = await data.text();
+        const geojson = JSON.parse(text);
+        const geoLayer = L.geoJSON(geojson, {
+          style: {
+            color: layer.admin_level
+              ? layer.admin_level === "ADM1"
+                ? "#1976d2"
+                : layer.admin_level === "ADM2"
+                ? "#388e3c"
+                : layer.admin_level === "ADM3"
+                ? "#f57c00"
+                : "#ff0000"
+              : "#666",
+            weight: 1,
+            opacity: 0.9,
+          },
+        }).addTo(map);
+
+        layerRefs.current[layer.id] = geoLayer;
+      } catch (err) {
+        console.error("Error rendering GeoJSON:", err);
+      }
+    });
+
+    // Fit bounds once all layers added
+    setTimeout(() => {
+      const bounds = L.latLngBounds(
+        Object.values(layerRefs.current).flatMap((layer) =>
+          layer.getBounds().getSouthWest()
+            ? [
+                layer.getBounds().getSouthWest(),
+                layer.getBounds().getNorthEast(),
+              ]
+            : []
+        )
+      );
+      if (bounds.isValid()) {
+        map.fitBounds(bounds);
+      }
+    }, 800);
+  }, [layers]);
 
   // ---- Header ----
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
     description:
-      "Manage and inspect uploaded GIS datasets (aligned to administrative boundaries).",
+      "Manage and inspect uploaded GIS datasets (aligned to administrative boundaries). Multiple layers can be active simultaneously.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
