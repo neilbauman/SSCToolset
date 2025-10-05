@@ -1,36 +1,70 @@
 # SSC Toolset – Future Enhancements
 
+This document tracks ideas and deferred improvements.  
+Do not implement these until explicitly prioritized.
+
+---
+
 ## Dataset Management
-- Population upload: allow selection of associated ADM level, aggregate upwards automatically.
-- Completeness flag for datasets (all units covered vs partial).
-- GIS upload: support flexible formats (CSV → shapefile → GeoJSON).
-- Dataset joins management card on country landing page:
-  - Show integration health (joins between admin, population, GIS).
-  - Fuzzy matching for place names and manual overrides.
+
+- **Population Upload Enhancements**
+  - Add ADM level selection and automatic upward aggregation.
+  - Add completeness and coverage scoring.
+
+- **GIS Upload Enhancements**
+  - Accept multiple formats (CSV, Shapefile, GeoJSON).
+  - Validate CRS and feature counts.
+  - Support linking GIS layers directly to admin boundaries.
+
+- **Join Management**
+  - Extend Manage Joins card to visualize dataset relationships.
+  - Highlight missing joins or incomplete linkages.
+  - Add “join integrity” badge.
+
+---
 
 ## Metadata & Projections
-- Extend `countries` with:
-  - growth_rate_urban, growth_rate_rural, growth_rate_periurban
-  - avg_household_size_urban, avg_household_size_rural, avg_household_size_periurban
-- Use metadata to project current-year population when census data is outdated.
-- Join population with GIS polygons to calculate population density.
-- Auto-classify settlements as urban/peri-urban/rural based on density thresholds.
 
-## Versioning
-- Implement `*_versions` tables for admin_units, population_data, gis_layers.
-- Allow SSC instances to lock to specific dataset versions.
-- Provide comparison tools to show differences between versions (e.g. place names, population changes).
+- Extend `countries` with metadata:
+  - `growth_rate_urban`, `growth_rate_rural`, `growth_rate_periurban`
+  - `avg_household_size_urban`, etc.
+- Project population data using growth metadata when census year is old.
+- Compute population density by joining Population + GIS.
+- Auto-classify settlements as urban/peri-urban/rural using thresholds.
 
-## UI/UX
-- Add cards to landing page:
-  - Dataset joins
-  - Population projections & density
-  - Version history
-- Health badges (complete / incomplete dataset coverage).
-- Improved error handling in upload modals (skip bad rows, report counts).
+---
 
-## Workflow & Tooling
-- Improve parser resilience (trim headers, ignore blank rows, normalize level casing).
-- Provide downloadable templates based on selected ADM levels and dataset type.
-- Archive outdated files in `/archive/` for traceability.
-- Add a simple CI smoke test using sample datasets.
+## Versioning & Comparison
+
+- Add diffing between dataset versions (place names, pop. change, new ADM units).
+- Allow SSC Instances to lock to specific dataset versions.
+- Version badges: Active / Linked / Archived.
+
+---
+
+## UI/UX Roadmap
+
+- Landing Page cards for:
+  - Dataset Joins
+  - Population Projections
+  - Version History
+- Upload modals:
+  - Show progress and validation counts.
+  - Skip bad rows gracefully.
+- Pagination and filtering for large tables.
+- Visual indicators:
+  - Completeness %.
+  - Lowest ADM level.
+
+---
+
+## Tooling & Maintenance
+
+- Add command-line tools for bulk imports.
+- Improve parser resilience (case-insensitive headers, blank-row skips).
+- Provide standardized templates:
+  - Admin (Adm1–Adm5)
+  - Population
+  - GIS
+- Archive older data and schema changes.
+- Basic CI check: can upload, view, and join sample data across all types.
