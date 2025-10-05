@@ -15,7 +15,6 @@ type GISLayer = {
   admin_level: string | null;
   source: { path: string };
   dataset_version_id: string;
-  is_active?: boolean;
 };
 
 export default function GISPage({ params }: any) {
@@ -25,7 +24,9 @@ export default function GISPage({ params }: any) {
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
   const [mapVisible, setMapVisible] = useState(true);
+
   const mapRef = useRef<L.Map | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const geoLayersRef = useRef<Record<string, L.GeoJSON<any>>>({});
 
   // ---- Load country ----
@@ -56,40 +57,50 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Initialize map (only once) ----
+  // ---- Initialize map once ----
   useEffect(() => {
     if (!mapVisible || typeof window === "undefined" || !L) return;
 
+    // Prevent multiple maps from attaching to same div
     if (mapRef.current) {
-      mapRef.current.invalidateSize();
+      setTimeout(() => mapRef.current?.invalidateSize(), 200);
       return;
     }
 
-    const map = L.map("map-container", {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const map = L.map(container, {
       zoomControl: true,
       preferCanvas: true,
-      attributionControl: false,
     }).setView([12.8797, 121.774], 6);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: "© OpenStreetMap",
+      attribution: "© OpenStreetMap contributors",
     }).addTo(map);
 
     mapRef.current = map;
 
+    // Handle resize events to avoid cropped map
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(container);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
   }, [mapVisible]);
 
-  // ---- Load and render layers ----
+  // ---- Render layers ----
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove previous layers
+    // Clear previous
     Object.values(geoLayersRef.current).forEach((gl) => gl.remove());
     geoLayersRef.current = {};
 
@@ -104,7 +115,6 @@ export default function GISPage({ params }: any) {
 
       for (const layer of layers) {
         if (!visibleLayers[layer.id]) continue;
-
         const path = layer.source?.path;
         if (!path) continue;
 
@@ -120,35 +130,37 @@ export default function GISPage({ params }: any) {
             style: {
               color: colorMap[layer.admin_level || "ADM2"] || "#ff0000",
               weight: 1,
-              fillOpacity: 0.05,
+              fillOpacity: 0.1,
             },
           }).addTo(map);
-
           geoLayersRef.current[layer.id] = geoLayer;
         } catch (err) {
           console.error("Invalid GeoJSON:", err);
         }
       }
 
-      const allBounds = Object.values(geoLayersRef.current)
+      // Fit bounds once layers are loaded
+      const boundsList = Object.values(geoLayersRef.current)
         .map((gl) => gl.getBounds())
         .filter((b) => b.isValid());
-      if (allBounds.length > 0) {
-        const combined = allBounds[0];
-        allBounds.slice(1).forEach((b) => combined.extend(b));
-        map.fitBounds(combined);
+      if (boundsList.length > 0) {
+        const merged = boundsList[0];
+        boundsList.slice(1).forEach((b) => merged.extend(b));
+        map.fitBounds(merged);
       }
     })();
   }, [layers, visibleLayers]);
 
-  // ---- Toggle visibility ----
-  const toggleLayer = (id: string) =>
+  // ---- Toggle layer ----
+  const toggleLayer = (id: string) => {
     setVisibleLayers((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
+  // ---- Header ----
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
-    description: "Manage uploaded GIS boundary layers and preview them on the map.",
+    description: "Preview and manage administrative boundary layers.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -179,21 +191,20 @@ export default function GISPage({ params }: any) {
       </div>
 
       {mapVisible && (
-        <div className="relative mb-4">
-          <div
-            id="map-container"
-            className="w-full rounded-lg border shadow-sm"
-            style={{
-              height: "600px",
-              overflow: "hidden",
-              position: "relative",
-              zIndex: 0,
-            }}
-          ></div>
-        </div>
+        <div
+          ref={mapContainerRef}
+          id="map-container"
+          className="w-full border rounded-lg shadow-sm"
+          style={{
+            height: "600px",
+            overflow: "hidden",
+            position: "relative",
+            zIndex: 0,
+          }}
+        />
       )}
 
-      <div className="border rounded-lg p-4 shadow-sm">
+      <div className="border rounded-lg p-4 shadow-sm mt-4">
         <h3 className="font-semibold text-base mb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-500" /> Layers
         </h3>
