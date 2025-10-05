@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Database, Upload, Layers, Check, Link2 } from "lucide-react";
+import { Layers, Upload, Check } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -39,6 +40,7 @@ export default function GISPage({ params }: any) {
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layersMap, setLayersMap] = useState<Record<string, number>>({});
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
+  const [openUpload, setOpenUpload] = useState(false);
 
   // ---- Load Country ----
   useEffect(() => {
@@ -101,7 +103,7 @@ export default function GISPage({ params }: any) {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
     description:
-      "Manage and inspect uploaded GIS datasets (aligned to admin boundaries).",
+      "Manage and inspect uploaded GIS datasets (aligned to administrative boundaries).",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -114,9 +116,9 @@ export default function GISPage({ params }: any) {
     ),
   };
 
-  // ---- Render ----
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -125,9 +127,8 @@ export default function GISPage({ params }: any) {
           </h2>
           <div className="flex items-center gap-2">
             <button
-              disabled
-              className="flex items-center text-sm text-white bg-gray-400 px-3 py-1 rounded cursor-not-allowed"
-              title="Upload coming soon"
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
             >
               <Upload className="w-4 h-4 mr-1" /> Upload Dataset
             </button>
@@ -174,11 +175,19 @@ export default function GISPage({ params }: any) {
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">
-            No GIS versions uploaded yet.
-          </p>
+          <p className="italic text-gray-500">No GIS versions uploaded yet.</p>
         )}
       </div>
+
+      {/* Upload Modal */}
+      <UploadGISModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={async () => {
+          await fetchVersions();
+        }}
+      />
     </SidebarLayout>
   );
 }
