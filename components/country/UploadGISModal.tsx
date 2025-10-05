@@ -1,16 +1,23 @@
 "use client";
 
-import { Dialog } from "@headlessui/react";
-import { useState } from "react";
+import React, { useState } from "react";
+import ModalBase from "@/components/ui/ModalBase";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload } from "lucide-react";
+import shp from "shpjs";
 
-interface UploadGISModalProps {
+/**
+ * UploadGISModal
+ * --------------
+ * Allows uploading a zipped shapefile (.zip). The file is converted to GeoJSON client-side
+ * and stored in Supabase Storage (bucket: "gis"). A new gis_dataset_versions row and gis_layers row are created.
+ */
+
+type UploadGISModalProps = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void;
-}
+  onUploaded: () => Promise<void> | void;
+};
 
 export default function UploadGISModal({
   open,
@@ -19,115 +26,113 @@ export default function UploadGISModal({
   onUploaded,
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<string>("");
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    setMessage("");
+  };
 
   const handleUpload = async () => {
-    if (!file) return;
-    setLoading(true);
-    setError(null);
+    if (!file) {
+      setMessage("Please select a .zip shapefile first.");
+      return;
+    }
 
     try {
-      const text = await file.text();
-      const rows = text
-        .split("\n")
-        .slice(1)
-        .filter((line) => line.trim().length > 0)
-        .map((line) => {
-          const [layer_name, format, feature_count, crs, dataset_date, source] = line.split(",");
-          return {
-            layer_name: layer_name?.trim(),
-            format: format?.trim(),
-            feature_count: feature_count ? parseInt(feature_count.trim(), 10) : 0,
-            crs: crs?.trim(),
-            dataset_date: dataset_date?.trim() || null,
-            source: source?.trim() || null,
-          };
-        });
+      setUploading(true);
+      setMessage("Converting shapefile to GeoJSON...");
 
-      // 1. Create a dataset version
-      const { data: version, error: versionError } = await supabase
+      // 1️⃣ Convert shapefile ZIP -> GeoJSON
+      const arrayBuffer = await file.arrayBuffer();
+      const geojson = await shp(arrayBuffer);
+
+      // Count features and detect CRS (basic)
+      const featureCount = geojson.features?.length || 0;
+      const crs =
+        geojson.crs?.properties?.name ||
+        "EPSG:4326"; // default WGS84 if none present
+
+      // 2️⃣ Create a new gis_dataset_versions record
+      const { data: versionRow, error: versionErr } = await supabase
         .from("gis_dataset_versions")
-        .insert([
-          {
-            country_iso: countryIso,
-            title: `GIS Upload ${new Date().toISOString().slice(0, 10)}`,
-            year: new Date().getFullYear(),
-            dataset_date: rows[0]?.dataset_date || new Date().toISOString(),
-            source: rows[0]?.source || "Uploaded CSV",
-          },
-        ])
+        .insert({
+          country_iso: countryIso,
+          title: file.name.replace(".zip", ""),
+          source: "User Upload",
+          is_active: true,
+          created_at: new Date().toISOString(),
+        })
         .select()
         .single();
 
-      if (versionError) throw versionError;
+      if (versionErr) throw versionErr;
 
-      // 2. Insert GIS layers linked to this version
-      const { error: insertError } = await supabase.from("gis_layers").insert(
-        rows.map((r) => ({
-          ...r,
-          country_iso: countryIso,
-          dataset_version_id: version.id,
-        }))
-      );
+      const versionId = versionRow.id;
 
-      if (insertError) throw insertError;
+      // 3️⃣ Upload GeoJSON file to Supabase Storage
+      const geojsonString = JSON.stringify(geojson);
+      const uploadPath = `${countryIso}/${versionId}/${file.name.replace(".zip", ".geojson")}`;
 
-      onUploaded();
+      const { error: storageErr } = await supabase.storage
+        .from("gis")
+        .upload(uploadPath, geojsonString, {
+          contentType: "application/geo+json",
+          upsert: true,
+        });
+
+      if (storageErr) throw storageErr;
+
+      // 4️⃣ Record metadata in gis_layers
+      const { error: layerErr } = await supabase.from("gis_layers").insert({
+        country_iso: countryIso,
+        layer_name: file.name.replace(".zip", ""),
+        format: "GeoJSON",
+        feature_count: featureCount,
+        crs: crs,
+        dataset_version_id: versionId,
+        created_at: new Date().toISOString(),
+      });
+
+      if (layerErr) throw layerErr;
+
+      setMessage(`✅ Upload complete (${featureCount} features).`);
+      await onUploaded();
       onClose();
     } catch (err: any) {
-      console.error("GIS upload error:", err);
-      setError(err.message || "Upload failed");
+      console.error(err);
+      setMessage(`Upload failed: ${err.message || err}`);
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
   return (
-    <Dialog
+    <ModalBase
       open={open}
+      title="Upload GIS Dataset"
+      confirmLabel={uploading ? "Uploading..." : "Upload"}
       onClose={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      onConfirm={handleUpload}
+      disableConfirm={uploading}
     >
-      <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
-
-      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative z-10">
-        <Dialog.Title className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
-          Upload GIS Dataset
-        </Dialog.Title>
-
-        <p className="text-sm text-gray-600 mb-3">
-          File must include: <code>layer_name</code>, <code>format</code>,{" "}
-          <code>feature_count</code>, <code>crs</code>,{" "}
-          <code>dataset_date</code>, <code>source</code>.
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-gray-700">
+          Upload a zipped shapefile (.zip) for <strong>{countryIso}</strong>. The file will
+          be converted to GeoJSON and stored automatically.
         </p>
-
         <input
           type="file"
-          accept=".csv"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="mb-4"
+          accept=".zip"
+          onChange={handleFileChange}
+          className="border p-2 rounded text-sm"
         />
-
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={!file || loading}
-            className="px-3 py-1 rounded bg-[color:var(--gsc-red)] text-white hover:opacity-90 text-sm"
-          >
-            {loading ? "Uploading..." : "Upload & Save"}
-          </button>
-        </div>
+        {message && (
+          <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">{message}</p>
+        )}
       </div>
-    </Dialog>
+    </ModalBase>
   );
 }
