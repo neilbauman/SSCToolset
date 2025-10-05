@@ -10,26 +10,19 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
-
+type Country = { iso_code: string; name: string; };
 type GISDatasetVersion = {
   id: string;
   country_iso: string;
   title: string;
   source: string | null;
-  year: number | null;
-  dataset_date: string | null;
   is_active: boolean;
   created_at: string;
 };
-
 type GISLayer = {
   id: string;
-  country_iso: string;
   layer_name: string;
+  admin_level?: number | null;
   format: string;
   source: { path: string };
   dataset_version_id: string;
@@ -37,17 +30,18 @@ type GISLayer = {
 
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
-
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
   const [showMap, setShowMap] = useState(true);
+  const [visibleLevels, setVisibleLevels] = useState<Record<number, boolean>>({});
+  const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
+  const layerGroupsRef = useRef<Record<number, L.GeoJSON>>({});
 
-  // ---- Load Country ----
+  // Load Country Info
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -59,7 +53,7 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Load Versions ----
+  // Load Versions
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -72,15 +66,14 @@ export default function GISPage({ params }: any) {
       return;
     }
 
-    const list = (data || []) as GISDatasetVersion[];
+    const list = data || [];
     setVersions(list);
     const active = list.find((v) => v.is_active) || list[0];
     setActiveVersion(active || null);
-
     if (active) await fetchLayers(active.id);
   };
 
-  // ---- Load Layers ----
+  // Load Layers
   const fetchLayers = async (versionId: string) => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -93,54 +86,82 @@ export default function GISPage({ params }: any) {
     }
 
     setLayers(data || []);
+    const uniqueLevels = Array.from(
+      new Set((data || []).map((l) => l.admin_level ?? 0))
+    );
+    const visibility = Object.fromEntries(uniqueLevels.map((lvl) => [lvl, true]));
+    setVisibleLevels(visibility);
   };
 
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
 
-  // ---- Map Rendering ----
+  // Initialize + Render Map
   useEffect(() => {
-    if (!showMap || !activeVersion || layers.length === 0) return;
-
-    const layer = layers[0];
-    const geoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
-
-    // Destroy previous instance cleanly
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
+    if (!showMap || !activeVersion) return;
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+      layerGroupsRef.current = {};
     }
 
-    const container = mapContainerRef.current;
-    if (!container) return;
-
-    const map = L.map(container).setView([12.8797, 121.774], 5);
-    mapInstanceRef.current = map;
+    const map = L.map(mapContainerRef.current as HTMLElement).setView(
+      [12.8797, 121.774],
+      5
+    );
+    mapRef.current = map;
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    fetch(geoUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to load GeoJSON");
-        return r.json();
-      })
-      .then((geojson) => {
-        const layer = L.geoJSON(geojson, {
+    (async () => {
+      for (const layer of layers) {
+        const level = layer.admin_level ?? 0;
+        const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const geojson = await res.json();
+
+        const gLayer = L.geoJSON(geojson, {
           style: {
-            color: "#d00",
-            weight: 1.5,
-            fillOpacity: 0.15,
+            color: ["#0044cc", "#d00", "#228B22", "#ff9900"][level] ?? "#d00",
+            weight: 1,
+            fillOpacity: 0.1,
           },
-        }).addTo(map);
-        map.fitBounds(layer.getBounds(), { padding: [20, 20] });
-      })
-      .catch((err) => console.error("GeoJSON render error:", err));
+        });
+
+        layerGroupsRef.current[level] = gLayer;
+        if (visibleLevels[level]) gLayer.addTo(map);
+      }
+
+      const allBounds = Object.values(layerGroupsRef.current)
+        .map((l) => l.getBounds?.())
+        .filter(Boolean);
+      if (allBounds.length > 0) {
+        const combined = allBounds.reduce((a, b) => a.extend(b), allBounds[0]);
+        map.fitBounds(combined, { padding: [20, 20] });
+      }
+    })();
   }, [layers, showMap]);
 
-  // ---- Header ----
+  // Toggle Layer Visibility
+  const toggleLevel = (level: number) => {
+    setVisibleLevels((prev) => {
+      const next = { ...prev, [level]: !prev[level] };
+      const map = mapRef.current;
+      if (!map) return next;
+      const layer = layerGroupsRef.current[level];
+      if (layer) {
+        if (next[level]) layer.addTo(map);
+        else layer.removeFrom(map);
+      }
+      return next;
+    });
+  };
+
+  // Header
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -181,9 +202,7 @@ export default function GISPage({ params }: any) {
               <tr>
                 <th className="border px-2 py-1 text-left">Title</th>
                 <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Year</th>
                 <th className="border px-2 py-1 text-left">Created</th>
-                <th className="border px-2 py-1 text-center">Layers</th>
                 <th className="border px-2 py-1 text-center">Status</th>
               </tr>
             </thead>
@@ -192,12 +211,8 @@ export default function GISPage({ params }: any) {
                 <tr key={v.id} className="hover:bg-gray-50">
                   <td className="border px-2 py-1">{v.title}</td>
                   <td className="border px-2 py-1">{v.source || "—"}</td>
-                  <td className="border px-2 py-1">{v.year || "—"}</td>
                   <td className="border px-2 py-1">
                     {new Date(v.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="border px-2 py-1 text-center">
-                    {layers.length}
                   </td>
                   <td className="border px-2 py-1 text-center">
                     {v.is_active ? (
@@ -219,13 +234,12 @@ export default function GISPage({ params }: any) {
         )}
       </div>
 
-      {/* Map Controls + Map Section */}
+      {/* Map Controls */}
       {activeVersion && (
         <div className="mt-4 border rounded-lg shadow-sm overflow-hidden relative">
           <div className="flex justify-between items-center bg-gray-50 border-b px-3 py-2">
             <span className="font-medium flex items-center gap-2 text-gray-700">
-              <MapIcon className="w-4 h-4 text-green-600" />
-              Map Preview
+              <MapIcon className="w-4 h-4 text-green-600" /> Map Preview
             </span>
             <button
               onClick={() => setShowMap(!showMap)}
@@ -235,10 +249,26 @@ export default function GISPage({ params }: any) {
             </button>
           </div>
 
+          {/* Layer Toggles */}
+          {showMap && (
+            <div className="absolute top-3 left-3 z-[1000] bg-white shadow p-2 rounded text-xs">
+              <strong className="block mb-1 text-gray-700">Layers</strong>
+              {Object.keys(visibleLevels).map((lvl) => (
+                <label key={lvl} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={visibleLevels[Number(lvl)]}
+                    onChange={() => toggleLevel(Number(lvl))}
+                  />
+                  Adm{lvl}
+                </label>
+              ))}
+            </div>
+          )}
+
           {showMap && (
             <div
               ref={mapContainerRef}
-              id="map-container"
               className="relative"
               style={{ height: "600px", zIndex: 1 }}
             />
