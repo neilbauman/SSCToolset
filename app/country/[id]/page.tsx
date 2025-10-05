@@ -316,7 +316,7 @@ export default function CountryConfigLandingPage({ params }: any) {
         open={openGISUpload}
         onClose={() => setOpenGISUpload(false)}
         countryIso={id}
-        onUploaded={() => window.location.reload()}
+        onUploaded={async () => window.location.reload()}
       />
       {country && (
         <EditMetadataModal
