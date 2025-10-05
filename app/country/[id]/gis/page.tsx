@@ -27,7 +27,6 @@ type GISLayer = {
 
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params;
-
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -82,46 +81,36 @@ export default function GISPage({ params }: any) {
   // ---- Initialize Map ----
   useEffect(() => {
     if (!mapVisible || typeof window === "undefined" || !L) return;
-
     const container = mapContainerRef.current;
     if (!container) return;
 
-    // Cleanup old map
+    // Remove ghost map instances
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
     }
+    container.innerHTML = "";
 
-    // Create map after short delay to ensure container layout
-    const timeout = setTimeout(() => {
-      const map = L.map(container, {
-        zoomControl: true,
-        preferCanvas: true,
-      }).setView([12.8797, 121.774], 6);
+    const map = L.map(container, {
+      zoomControl: true,
+      preferCanvas: true,
+    }).setView([12.8797, 121.774], 6);
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 18,
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "© OpenStreetMap contributors",
+    }).addTo(map);
 
-      mapRef.current = map;
+    mapRef.current = map;
+    setTimeout(() => map.invalidateSize(), 400);
 
-      // Resize observer ensures proper render after load
-      const resizeObserver = new ResizeObserver(() => {
-        map.invalidateSize();
-      });
-      resizeObserver.observe(container);
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(container);
 
-      // Trigger initial invalidation once
-      setTimeout(() => map.invalidateSize(), 400);
-
-      return () => {
-        resizeObserver.disconnect();
-        map.remove();
-      };
-    }, 150);
-
-    return () => clearTimeout(timeout);
+    return () => {
+      resizeObserver.disconnect();
+      map.remove();
+    };
   }, [mapVisible]);
 
   // ---- Render GIS layers ----
@@ -129,7 +118,6 @@ export default function GISPage({ params }: any) {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear old layers
     Object.values(geoLayersRef.current).forEach((gl) => gl.remove());
     geoLayersRef.current = {};
 
@@ -145,10 +133,8 @@ export default function GISPage({ params }: any) {
 
       for (const layer of layers) {
         if (!visibleLayers[layer.id]) continue;
-
         const path = layer.source?.path;
         if (!path) continue;
-
         const bucket = path.startsWith("gis_raw/") ? "gis_raw" : "gis";
         const relativePath = path.replace(/^gis_raw\//, "").replace(/^gis\//, "");
 
@@ -203,7 +189,7 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* ---- Versions Table ---- */}
+      {/* ---- Versions ---- */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -218,59 +204,54 @@ export default function GISPage({ params }: any) {
           </button>
         </div>
 
-        {versions.length > 0 ? (
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border px-2 py-1 text-left">Title</th>
-                <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Created</th>
-                <th className="border px-2 py-1 text-left">Status</th>
+        <table className="w-full text-sm border">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border px-2 py-1 text-left">Title</th>
+              <th className="border px-2 py-1 text-left">Source</th>
+              <th className="border px-2 py-1 text-left">Created</th>
+              <th className="border px-2 py-1 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {versions.map((v) => (
+              <tr key={v.id}>
+                <td className="border px-2 py-1">{v.title}</td>
+                <td className="border px-2 py-1">{v.source || "—"}</td>
+                <td className="border px-2 py-1">
+                  {new Date(v.created_at).toLocaleDateString()}
+                </td>
+                <td className="border px-2 py-1">
+                  {v.is_active ? (
+                    <span className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
+                      <Check className="w-3 h-3" /> Active
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-500">—</span>
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) => (
-                <tr key={v.id}>
-                  <td className="border px-2 py-1">{v.title}</td>
-                  <td className="border px-2 py-1">{v.source || "—"}</td>
-                  <td className="border px-2 py-1">
-                    {new Date(v.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="border px-2 py-1">
-                    {v.is_active ? (
-                      <span className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
-                        <Check className="w-3 h-3" /> Active
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-500">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="italic text-gray-500">No GIS versions uploaded yet.</p>
-        )}
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* ---- Map ---- */}
       {mapVisible && (
         <div
-          ref={mapContainerRef}
-          id="map-container"
-          className="w-full border rounded-lg shadow-sm my-4"
-          style={{
-            height: "600px",
-            minHeight: "500px",
-            width: "100%",
-            position: "relative",
-            zIndex: 0,
-          }}
-        />
+          className="relative w-full border rounded-lg shadow-sm overflow-hidden"
+          style={{ height: "600px", minHeight: "500px" }}
+        >
+          <div
+            ref={mapContainerRef}
+            id="map-container"
+            className="absolute inset-0"
+            style={{ zIndex: 0 }}
+          />
+        </div>
       )}
 
-      {/* ---- Layer Toggles ---- */}
+      {/* ---- Layers ---- */}
       <div className="border rounded-lg p-4 shadow-sm mt-6">
         <h3 className="font-semibold text-base mb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-500" /> Layers
