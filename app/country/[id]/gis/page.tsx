@@ -4,11 +4,19 @@ import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers } from "lucide-react";
+import { Layers, Upload, Check } from "lucide-react";
 
 const L = typeof window !== "undefined" ? require("leaflet") : null;
 
 type Country = { iso_code: string; name: string };
+type GISDatasetVersion = {
+  id: string;
+  country_iso: string;
+  title: string;
+  source: string | null;
+  created_at: string;
+  is_active: boolean;
+};
 type GISLayer = {
   id: string;
   layer_name: string;
@@ -21,6 +29,7 @@ export default function GISPage({ params }: any) {
   const { id: countryIso } = params;
 
   const [country, setCountry] = useState<Country | null>(null);
+  const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
   const [mapVisible, setMapVisible] = useState(true);
@@ -41,29 +50,43 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Load GIS layers ----
+  // ---- Load versions ----
+  const fetchVersions = async () => {
+    const { data, error } = await supabase
+      .from("gis_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+    if (error) return console.error(error);
+    setVersions(data || []);
+  };
+
+  // ---- Load layers ----
+  const fetchLayers = async () => {
+    const { data, error } = await supabase
+      .from("gis_layers")
+      .select("*")
+      .eq("country_iso", countryIso);
+    if (!error && data) {
+      setLayers(data);
+      const defaults: Record<string, boolean> = {};
+      data.forEach((l) => (defaults[l.id] = true));
+      setVisibleLayers(defaults);
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("gis_layers")
-        .select("*")
-        .eq("country_iso", countryIso);
-      if (!error && data) {
-        setLayers(data);
-        const defaults: Record<string, boolean> = {};
-        data.forEach((l: GISLayer) => (defaults[l.id] = true));
-        setVisibleLayers(defaults);
-      }
-    })();
+    fetchVersions();
+    fetchLayers();
   }, [countryIso]);
 
-  // ---- Initialize map once ----
+  // ---- Initialize map ----
   useEffect(() => {
     if (!mapVisible || typeof window === "undefined" || !L) return;
 
-    // Prevent multiple maps from attaching to same div
+    // Avoid re-initializing if map already exists
     if (mapRef.current) {
-      setTimeout(() => mapRef.current?.invalidateSize(), 200);
+      setTimeout(() => mapRef.current?.invalidateSize(), 300);
       return;
     }
 
@@ -82,7 +105,6 @@ export default function GISPage({ params }: any) {
 
     mapRef.current = map;
 
-    // Handle resize events to avoid cropped map
     const resizeObserver = new ResizeObserver(() => {
       map.invalidateSize();
     });
@@ -95,12 +117,12 @@ export default function GISPage({ params }: any) {
     };
   }, [mapVisible]);
 
-  // ---- Render layers ----
+  // ---- Render GIS layers ----
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear previous
+    // Clear old
     Object.values(geoLayersRef.current).forEach((gl) => gl.remove());
     geoLayersRef.current = {};
 
@@ -111,10 +133,12 @@ export default function GISPage({ params }: any) {
         ADM2: "#bc5090",
         ADM3: "#ff6361",
         ADM4: "#ffa600",
+        ADM5: "#8884d8",
       };
 
       for (const layer of layers) {
         if (!visibleLayers[layer.id]) continue;
+
         const path = layer.source?.path;
         if (!path) continue;
 
@@ -128,7 +152,7 @@ export default function GISPage({ params }: any) {
           const geojson = JSON.parse(await data.text());
           const geoLayer = L.geoJSON(geojson, {
             style: {
-              color: colorMap[layer.admin_level || "ADM2"] || "#ff0000",
+              color: colorMap[layer.admin_level || "ADM2"],
               weight: 1,
               fillOpacity: 0.1,
             },
@@ -139,19 +163,17 @@ export default function GISPage({ params }: any) {
         }
       }
 
-      // Fit bounds once layers are loaded
-      const boundsList = Object.values(geoLayersRef.current)
+      const bounds = Object.values(geoLayersRef.current)
         .map((gl) => gl.getBounds())
         .filter((b) => b.isValid());
-      if (boundsList.length > 0) {
-        const merged = boundsList[0];
-        boundsList.slice(1).forEach((b) => merged.extend(b));
+      if (bounds.length > 0) {
+        const merged = bounds[0];
+        bounds.slice(1).forEach((b) => merged.extend(b));
         map.fitBounds(merged);
       }
     })();
   }, [layers, visibleLayers]);
 
-  // ---- Toggle layer ----
   const toggleLayer = (id: string) => {
     setVisibleLayers((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -160,7 +182,7 @@ export default function GISPage({ params }: any) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
-    description: "Preview and manage administrative boundary layers.",
+    description: "Manage and visualize uploaded GIS datasets for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -175,7 +197,8 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-4 shadow-sm mb-4">
+      {/* ---- Versions Table ---- */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Layers className="w-5 h-5 text-green-600" />
@@ -183,13 +206,49 @@ export default function GISPage({ params }: any) {
           </h2>
           <button
             onClick={() => setMapVisible((v) => !v)}
-            className="text-sm border rounded px-2 py-1 hover:bg-gray-100"
+            className="text-sm border rounded px-3 py-1 hover:bg-gray-100"
           >
             {mapVisible ? "Hide Map" : "Show Map"}
           </button>
         </div>
+
+        {versions.length > 0 ? (
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="border px-2 py-1 text-left">Title</th>
+                <th className="border px-2 py-1 text-left">Source</th>
+                <th className="border px-2 py-1 text-left">Created</th>
+                <th className="border px-2 py-1 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.id}>
+                  <td className="border px-2 py-1">{v.title}</td>
+                  <td className="border px-2 py-1">{v.source || "—"}</td>
+                  <td className="border px-2 py-1">
+                    {new Date(v.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="border px-2 py-1">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
+                        <Check className="w-3 h-3" /> Active
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-500">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500">No GIS versions uploaded yet.</p>
+        )}
       </div>
 
+      {/* ---- Map ---- */}
       {mapVisible && (
         <div
           ref={mapContainerRef}
@@ -204,7 +263,8 @@ export default function GISPage({ params }: any) {
         />
       )}
 
-      <div className="border rounded-lg p-4 shadow-sm mt-4">
+      {/* ---- Layer Toggles ---- */}
+      <div className="border rounded-lg p-4 shadow-sm mt-6">
         <h3 className="font-semibold text-base mb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-500" /> Layers
         </h3>
@@ -218,7 +278,7 @@ export default function GISPage({ params }: any) {
           </thead>
           <tbody>
             {layers.map((l) => (
-              <tr key={l.id} className="hover:bg-gray-50">
+              <tr key={l.id}>
                 <td className="border px-2 py-1">{l.layer_name}</td>
                 <td className="border px-2 py-1">{l.admin_level || "—"}</td>
                 <td className="border px-2 py-1 text-center">
