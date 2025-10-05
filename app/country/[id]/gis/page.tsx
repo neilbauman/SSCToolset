@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { usePathname } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
@@ -25,12 +26,12 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-export default function GISPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const countryIso = params.id;
+export default function GISPage() {
+  // ---- Extract country ISO directly from URL ----
+  const pathname = usePathname();
+  const countryIso =
+    pathname?.split("/country/")[1]?.split("/")[0]?.toUpperCase() ?? "UNK";
+
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
@@ -71,7 +72,7 @@ export default function GISPage({
 
   // ---- Initialize Map ----
   useEffect(() => {
-    if (!mapVisible || !mapContainerRef.current || !layers.length) return;
+    if (!mapVisible || !mapContainerRef.current) return;
 
     const initMap = async () => {
       const L = await import("leaflet");
@@ -91,7 +92,6 @@ export default function GISPage({
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
-      mapRef.current = map;
 
       for (const layer of layers) {
         try {
@@ -125,9 +125,12 @@ export default function GISPage({
         const group = L.featureGroup(drawn as any);
         map.fitBounds(group.getBounds(), { padding: [25, 25] });
       }
+
+      mapRef.current = map;
     };
 
     initMap();
+
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
