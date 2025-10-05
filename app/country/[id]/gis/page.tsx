@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
+import EditGISLayerModal from "@/components/country/EditGISLayerModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload, Check, EyeOff, Eye } from "lucide-react";
+import { Layers, Upload, Check, EyeOff, Eye, Edit } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CountryParams } from "@/app/country/types";
@@ -34,8 +35,9 @@ type GISLayer = {
   feature_count: number | null;
   dataset_version_id: string;
   admin_level?: string | null;
-  is_active: boolean; // NEW FIELD
+  is_active: boolean;
   source: { path: string };
+  created_at: string;
 };
 
 export default function GISPage({ params }: any) {
@@ -45,6 +47,7 @@ export default function GISPage({ params }: any) {
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
+  const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const mapRef = useRef<L.Map | null>(null);
 
@@ -74,7 +77,7 @@ export default function GISPage({ params }: any) {
     const list = (data || []) as GISDatasetVersion[];
     setVersions(list);
     const active = list.find((v) => v.is_active);
-    setSelectedVersion(active?.id || null);
+    setSelectedVersion(active?.id || list[0]?.id || null);
   };
 
   // ---- Load Layers ----
@@ -90,7 +93,7 @@ export default function GISPage({ params }: any) {
     setLayers((data || []) as GISLayer[]);
   };
 
-  // ---- Fetch on load ----
+  // ---- Initial load ----
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
@@ -114,7 +117,7 @@ export default function GISPage({ params }: any) {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    const activeLayers = layers.filter((l) => l.is_active !== false); // Only show active layers
+    const activeLayers = layers.filter((l) => l.is_active !== false);
 
     activeLayers.forEach(async (layer) => {
       const { data, error } = await supabase.storage
@@ -133,8 +136,6 @@ export default function GISPage({ params }: any) {
     });
 
     mapRef.current = map;
-
-    // ✅ Proper cleanup — avoid returning a value
     return () => {
       map.remove();
     };
@@ -160,6 +161,7 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -241,6 +243,52 @@ export default function GISPage({ params }: any) {
         </div>
       )}
 
+      {/* Layers Table */}
+      {layers.length > 0 && (
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h3 className="text-md font-semibold mb-3">Layers</h3>
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="border px-2 py-1 text-left">Layer Name</th>
+                <th className="border px-2 py-1 text-left">Admin Level</th>
+                <th className="border px-2 py-1 text-center">Active</th>
+                <th className="border px-2 py-1 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {layers.map((l) => (
+                <tr key={l.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{l.layer_name}</td>
+                  <td className="border px-2 py-1 text-center">
+                    {l.admin_level || "—"}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {l.is_active ? (
+                      <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-green-600 text-white">
+                        <Check className="w-3 h-3" /> Active
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-300 text-gray-700">
+                        —
+                      </span>
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    <button
+                      onClick={() => setEditLayer(l)}
+                      className="flex items-center gap-1 text-sm text-blue-600 hover:underline mx-auto"
+                    >
+                      <Edit className="w-4 h-4" /> Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Upload Modal */}
       <UploadGISModal
         open={openUpload}
@@ -251,6 +299,18 @@ export default function GISPage({ params }: any) {
           if (selectedVersion) await fetchLayers(selectedVersion);
         }}
       />
+
+      {/* Edit Modal */}
+      {editLayer && (
+        <EditGISLayerModal
+          open={!!editLayer}
+          onClose={() => setEditLayer(null)}
+          layer={editLayer}
+          onSaved={async () => {
+            await fetchLayers(editLayer.dataset_version_id);
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
