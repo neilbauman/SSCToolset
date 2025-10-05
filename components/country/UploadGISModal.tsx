@@ -5,11 +5,11 @@ import ModalBase from "@/components/ui/ModalBase";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 /**
- * UploadGISModal (raw upload version)
- * -----------------------------------
- * Uploads the zipped shapefile directly to Supabase Storage (bucket: gis_raw)
- * and creates a gis_dataset_versions row.  The Edge Function will later
- * convert + simplify it into GeoJSON inside the `gis` bucket.
+ * UploadGISModal (server conversion version)
+ * ------------------------------------------
+ * Uploads a zipped shapefile to Supabase Storage (gis_raw),
+ * creates a gis_dataset_versions record, then calls /api/convert-gis
+ * to handle server-side GeoJSON conversion and metadata insertion.
  */
 
 type UploadGISModalProps = {
@@ -43,9 +43,9 @@ export default function UploadGISModal({
 
     try {
       setUploading(true);
-      setMessage("Uploading raw shapefile to Supabase...");
+      setMessage("Uploading shapefile...");
 
-      // 1️⃣ Create a new GIS dataset version row (inactive until conversion)
+      // 1️⃣ Create a new GIS dataset version (inactive)
       const { data: version, error: versionErr } = await supabase
         .from("gis_dataset_versions")
         .insert({
@@ -61,7 +61,7 @@ export default function UploadGISModal({
       if (versionErr) throw versionErr;
       const versionId = version.id;
 
-      // 2️⃣ Upload the raw zip to the gis_raw bucket
+      // 2️⃣ Upload ZIP to gis_raw bucket
       const uploadPath = `${countryIso}/${versionId}/${file.name}`;
       const { error: uploadErr } = await supabase.storage
         .from("gis_raw")
@@ -70,14 +70,32 @@ export default function UploadGISModal({
           upsert: true,
           contentType: "application/zip",
         });
-
       if (uploadErr) throw uploadErr;
 
-      setMessage("✅ Upload complete. Conversion will run server-side.");
+      setMessage("✅ Upload complete. Starting server conversion...");
+
+      // 3️⃣ Trigger server-side conversion
+      const response = await fetch("/api/convert-gis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "gis_raw",
+          path: uploadPath,
+          country_iso: countryIso,
+          version_id: versionId,
+        }),
+      });
+
+      const result = await response.json();
+      if (!result.ok) {
+        throw new Error(result.error || "Conversion failed");
+      }
+
+      setMessage("✅ Conversion complete. GIS dataset ready.");
       await onUploaded();
       onClose();
     } catch (err: any) {
-      console.error(err);
+      console.error("UploadGISModal error:", err);
       setMessage(`Upload failed: ${err.message || err}`);
     } finally {
       setUploading(false);
@@ -96,8 +114,8 @@ export default function UploadGISModal({
       <div className="flex flex-col gap-3">
         <p className="text-sm text-gray-700">
           Upload a zipped shapefile (.zip) for <strong>{countryIso}</strong>.
-          The file will be stored in <code>gis_raw</code> for server-side
-          conversion to GeoJSON.
+          Files up to <strong>150 MB</strong> are supported. The system will
+          automatically convert and simplify the dataset on the server.
         </p>
         <input
           type="file"
