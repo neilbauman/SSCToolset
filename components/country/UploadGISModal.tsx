@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import ModalBase from "@/components/ui/ModalBase";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Upload } from "lucide-react";
@@ -9,7 +9,7 @@ type UploadGISModalProps = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => Promise<void>;
+  onUploaded: () => Promise<void> | void;
 };
 
 export default function UploadGISModal({
@@ -20,80 +20,91 @@ export default function UploadGISModal({
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [adminLevel, setAdminLevel] = useState<string>("");
+
+  // 🧠 Detect ADM level from filename
+  const guessLevelFromFilename = (name: string): string => {
+    const lower = name.toLowerCase();
+    if (lower.includes("adm0")) return "ADM0";
+    if (lower.includes("adm1")) return "ADM1";
+    if (lower.includes("adm2")) return "ADM2";
+    if (lower.includes("adm3")) return "ADM3";
+    return "";
+  };
+
+  const handleFileSelect = (f: File | null) => {
+    setFile(f);
+    if (f) {
+      const guessed = guessLevelFromFilename(f.name);
+      if (guessed) setAdminLevel(guessed);
+    }
+  };
 
   const handleUpload = async () => {
     try {
-      if (!file) {
-        setError("Please select a file to upload.");
-        return;
-      }
-      setError(null);
-      setSuccess(null);
-      setUploading(true);
+      if (!file) return setMessage("Please select a file first.");
+      if (!adminLevel) return setMessage("Please select an administrative level.");
 
-      // 1️⃣ Create new GIS dataset version
+      setUploading(true);
+      setMessage(null);
+
+      // Step 1️⃣: Create dataset version entry
+      const title = file.name;
       const { data: versionData, error: versionError } = await supabase
         .from("gis_dataset_versions")
         .insert({
           country_iso: countryIso,
-          title: file.name,
+          title,
           source: "User Upload (raw)",
           is_active: false,
         })
-        .select()
+        .select("id")
         .single();
 
-      if (versionError) throw versionError;
+      if (versionError || !versionData)
+        throw new Error(versionError?.message || "Failed to create version record");
+
       const versionId = versionData.id;
+      const path = `${countryIso}/${versionId}/${file.name}`;
 
-      // 2️⃣ Upload the file to the gis_raw bucket
-      const fileExt = file.name.split(".").pop()?.toLowerCase();
-      const uploadPath = `${countryIso}/${versionId}/${file.name}`;
-
+      // Step 2️⃣: Upload to storage bucket (gis_raw)
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
-        .upload(uploadPath, file, {
+        .upload(path, file, {
+          cacheControl: "3600",
           upsert: true,
-          contentType:
-            fileExt === "zip"
-              ? "application/zip"
-              : fileExt === "geojson"
-              ? "application/geo+json"
-              : "application/json",
         });
 
       if (uploadError) throw uploadError;
 
-      // 3️⃣ Trigger the Supabase Edge Function for conversion
-      const funcUrl =
-        "https://ergsggprgtlsrrsmwtkf.supabase.co/functions/v1/convert-gis";
-
-      const resp = await fetch(funcUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          bucket: "gis_raw",
-          path: uploadPath,
-          country_iso: countryIso,
-          version_id: versionId,
-        }),
+      // Step 3️⃣: Save layer metadata (includes admin level)
+      const { error: layerError } = await supabase.from("gis_layers").insert({
+        country_iso: countryIso,
+        dataset_version_id: versionId,
+        layer_name: file.name,
+        format: file.name.endsWith(".zip") ? "zip" : "json",
+        crs: "EPSG:4326",
+        admin_level: adminLevel,
+        source: { path },
       });
 
-      const result = await resp.json();
-      if (!resp.ok || !result.ok) {
-        throw new Error(result.error || "Conversion failed.");
-      }
+      if (layerError) throw layerError;
 
-      setSuccess(result.message || "Upload successful.");
-      await onUploaded();
+      // Step 4️⃣: Mark version active
+      await supabase
+        .from("gis_dataset_versions")
+        .update({ is_active: true })
+        .eq("id", versionId);
+
+      setMessage("✅ GIS dataset uploaded successfully!");
+      setTimeout(() => {
+        onUploaded();
+        onClose();
+      }, 1200);
     } catch (err: any) {
-      console.error("Upload error:", err);
-      setError(err.message || "Upload failed.");
+      console.error(err);
+      setMessage(`Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -103,47 +114,61 @@ export default function UploadGISModal({
     <ModalBase open={open} onClose={onClose} title="Upload GIS Dataset">
       <div className="space-y-4">
         <p className="text-sm text-gray-700">
-          Upload a zipped shapefile (<code>.zip</code>) or GeoJSON file (
-          <code>.json</code> / <code>.geojson</code>) for{" "}
-          <strong>{countryIso}</strong>. Files up to{" "}
-          <strong>150 MB</strong> are supported. The system will automatically
-          convert and simplify the dataset on the server.
+          Upload a zipped shapefile (<code>.zip</code>) or GeoJSON file (<code>.json</code> /
+          <code>.geojson</code>) for <strong>{countryIso}</strong>. Files up to{" "}
+          <strong>150&nbsp;MB</strong> are supported.
         </p>
 
+        {/* File input */}
         <input
           type="file"
           accept=".zip,.json,.geojson"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          disabled={uploading}
-          className="block w-full text-sm text-gray-700 border border-gray-300 rounded-lg cursor-pointer focus:outline-none"
+          onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+          className="block w-full text-sm border border-gray-300 rounded px-2 py-1"
         />
 
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>
-        )}
-        {success && (
-          <p className="text-sm text-green-700 bg-green-50 p-2 rounded">
-            {success}
+        {/* Admin level selector */}
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Administrative Level
+          </label>
+          <select
+            value={adminLevel}
+            onChange={(e) => setAdminLevel(e.target.value)}
+            className="block w-full text-sm border border-gray-300 rounded px-2 py-1 bg-white"
+          >
+            <option value="">Select...</option>
+            <option value="ADM0">National (ADM0)</option>
+            <option value="ADM1">Region / Province (ADM1)</option>
+            <option value="ADM2">Municipality / District (ADM2)</option>
+            <option value="ADM3">Subdistrict / Barangay (ADM3)</option>
+          </select>
+          {file && !adminLevel && (
+            <p className="text-xs text-gray-500 mt-1">
+              Hint: Try naming your file like <code>phl_adm2...</code> to auto-detect level.
+            </p>
+          )}
+        </div>
+
+        {/* Upload button */}
+        <button
+          onClick={handleUpload}
+          disabled={uploading}
+          className="flex items-center justify-center w-full text-sm text-white bg-[color:var(--gsc-red)] px-3 py-2 rounded hover:opacity-90 disabled:opacity-50"
+        >
+          <Upload className="w-4 h-4 mr-2" />
+          {uploading ? "Uploading..." : "Upload"}
+        </button>
+
+        {message && (
+          <p
+            className={`text-sm text-center ${
+              message.startsWith("✅") ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {message}
           </p>
         )}
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={uploading}
-            className="px-3 py-2 text-sm border rounded bg-gray-100 hover:bg-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={uploading}
-            className="px-3 py-2 text-sm text-white rounded bg-[color:var(--gsc-red)] hover:opacity-90 flex items-center gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            {uploading ? "Uploading..." : "Upload"}
-          </button>
-        </div>
       </div>
     </ModalBase>
   );
