@@ -44,7 +44,7 @@ type AdminUnit = {
 
 type JoinRow = {
   id: string;
-  datasets: any[]; // array of objects that may contain { dataset_version_id: string }
+  datasets: any[];
   is_active: boolean;
 };
 
@@ -91,7 +91,6 @@ export default function AdminUnitsPage({ params }: any) {
     const active = list.find((v) => v.is_active) || null;
     setActiveVersion(active);
 
-    // Keep the currently selected one if still present; else default to active
     const keepSelected =
       selectedVersion && list.find((v) => v.id === selectedVersion.id)
         ? selectedVersion
@@ -108,7 +107,6 @@ export default function AdminUnitsPage({ params }: any) {
   };
 
   const fetchLinkedMap = async () => {
-    // Pull all joins for this country and build a map of versionId -> isLinked
     const { data, error } = await supabase
       .from("dataset_joins")
       .select("id, datasets, is_active")
@@ -120,7 +118,6 @@ export default function AdminUnitsPage({ params }: any) {
       return;
     }
     const rows = (data || []) as JoinRow[];
-
     const map: Record<string, boolean> = {};
     rows.forEach((row) => {
       const arr = Array.isArray(row.datasets) ? row.datasets : [];
@@ -159,47 +156,24 @@ export default function AdminUnitsPage({ params }: any) {
   };
 
   const handleMakeActive = async (versionId: string) => {
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", versionId);
-
+    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", versionId);
     await fetchVersions();
   };
 
   const handleDeactivate = async (versionId: string) => {
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("id", versionId);
+    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("id", versionId);
     await fetchVersions();
   };
 
   const handleDeleted = async (versionId: string) => {
-    // Delete all units for that version, then delete the version row.
-    // (Hard delete is allowed only when not linked & not active, UI enforces that)
-    await supabase
-      .from("admin_units")
-      .delete()
-      .eq("country_iso", countryIso)
-      .eq("dataset_version_id", versionId);
-
-    await supabase
-      .from("admin_dataset_versions")
-      .delete()
-      .eq("id", versionId);
-
+    await supabase.from("admin_units").delete().eq("country_iso", countryIso).eq("dataset_version_id", versionId);
+    await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
     setDeletingVersion(null);
     await fetchVersions();
     await fetchLinkedMap();
   };
 
-  // -------- Template download ----------
   const downloadTemplate = () => {
     const headers = [
       "Adm1 Name",
@@ -239,102 +213,63 @@ export default function AdminUnitsPage({ params }: any) {
     ),
   };
 
-  // -------- Computed ----------
   const statusBadge = (v: AdminDatasetVersion) => {
     const isLinked = !!linkedMap[v.id];
     const active = v.is_active;
 
-    if (active && isLinked) {
+    if (active && isLinked)
       return (
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-blue-600 text-white">
-          <Check className="w-3 h-3" /> Active
-          <span className="mx-0.5">•</span>
+          <Check className="w-3 h-3" /> Active <span className="mx-0.5">•</span>
           <Link2 className="w-3 h-3" /> Linked
         </span>
       );
-    }
-    if (active) {
+    if (active)
       return (
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-green-600 text-white">
           <Check className="w-3 h-3" /> Active
         </span>
       );
-    }
-    if (isLinked) {
+    if (isLinked)
       return (
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-amber-500 text-white">
           <Link2 className="w-3 h-3" /> Linked
         </span>
       );
-    }
     return <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-200">—</span>;
   };
 
   const canHardDelete = (v: AdminDatasetVersion) => !v.is_active && !linkedMap[v.id];
 
-  // Keep menu popover small/simple (no extra deps)
   const RowMenu = ({ v }: { v: AdminDatasetVersion }) => {
     const open = menuOpenId === v.id;
     return (
       <div className="relative">
-        <button
-          onClick={() => setMenuOpenId(open ? null : v.id)}
-          className="p-1 rounded hover:bg-gray-100"
-          aria-label="Open row menu"
-        >
+        <button onClick={() => setMenuOpenId(open ? null : v.id)} className="p-1 rounded hover:bg-gray-100">
           <MoreVertical className="w-4 h-4" />
         </button>
         {open && (
-          <div
-            onMouseLeave={() => setMenuOpenId(null)}
-            className="absolute right-0 z-10 mt-2 w-40 rounded border bg-white shadow"
-          >
-            <button
-              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-              onClick={() => {
-                setMenuOpenId(null);
-                handleSelectVersion(v);
-              }}
-            >
+          <div onMouseLeave={() => setMenuOpenId(null)} className="absolute right-0 z-10 mt-2 w-40 rounded border bg-white shadow">
+            <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleSelectVersion(v); }}>
               Select
             </button>
             {!v.is_active && (
-              <button
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-                onClick={() => {
-                  setMenuOpenId(null);
-                  handleMakeActive(v.id);
-                }}
-              >
+              <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleMakeActive(v.id); }}>
                 Make Active
               </button>
             )}
             {v.is_active && (
-              <button
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-                onClick={() => {
-                  setMenuOpenId(null);
-                  handleDeactivate(v.id);
-                }}
-              >
+              <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleDeactivate(v.id); }}>
                 Deactivate
               </button>
             )}
-            <button
-              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-              onClick={() => {
-                setMenuOpenId(null);
-                setEditingVersion(v);
-              }}
-            >
+            <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); setEditingVersion(v); }}>
               Edit
             </button>
             <button
               disabled={!canHardDelete(v)}
               className={`w-full text-left px-3 py-2 text-sm ${
-                canHardDelete(v)
-                  ? "hover:bg-red-50 text-red-600"
-                  : "opacity-50 cursor-not-allowed"
+                canHardDelete(v) ? "hover:bg-red-50 text-red-600" : "opacity-50 cursor-not-allowed"
               }`}
               onClick={() => {
                 if (!canHardDelete(v)) return;
@@ -354,24 +289,16 @@ export default function AdminUnitsPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Dataset Versions
+            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-            >
+            <button onClick={() => setOpenUpload(true)} className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90">
               <Upload className="w-4 h-4 mr-1" /> Upload Dataset
             </button>
-            <button
-              onClick={downloadTemplate}
-              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50"
-            >
+            <button onClick={downloadTemplate} className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50">
               <FileDown className="w-4 h-4 mr-1" /> Download Template
             </button>
           </div>
@@ -391,12 +318,7 @@ export default function AdminUnitsPage({ params }: any) {
             </thead>
             <tbody>
               {versions.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
-                  }`}
-                >
+                <tr key={v.id} className={`hover:bg-gray-50 ${selectedVersion?.id === v.id ? "bg-blue-50" : ""}`}>
                   <td className="border px-2 py-1">{v.title}</td>
                   <td className="border px-2 py-1">{v.year}</td>
                   <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
@@ -414,20 +336,14 @@ export default function AdminUnitsPage({ params }: any) {
         )}
       </div>
 
-      {/* Health */}
       <DatasetHealth totalUnits={totalUnits} />
 
-      {/* Units */}
       <div className="border rounded-lg p-4 shadow-sm mt-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">
             Admin Units {selectedVersion ? `– ${selectedVersion.title}` : ""}
           </h2>
-          {selectedVersion && (
-            <span className="text-xs text-gray-500">
-              Version ID: {selectedVersion.id}
-            </span>
-          )}
+          {selectedVersion && <span className="text-xs text-gray-500">Version ID: {selectedVersion.id}</span>}
         </div>
 
         {adminUnits.length > 0 ? (
@@ -452,15 +368,12 @@ export default function AdminUnitsPage({ params }: any) {
             </tbody>
           </table>
         ) : selectedVersion ? (
-          <p className="italic text-gray-500">
-            No units found for this version. Upload a dataset or select another version.
-          </p>
+          <p className="italic text-gray-500">No units found for this version. Upload a dataset or select another version.</p>
         ) : (
           <p className="italic text-gray-500">Select a version to view its units.</p>
         )}
       </div>
 
-      {/* Modals */}
       <UploadAdminUnitsModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
@@ -489,7 +402,7 @@ export default function AdminUnitsPage({ params }: any) {
           title="Delete Version Permanently"
           message={`This will permanently remove the version "${deletingVersion.title}" and all its admin units. This cannot be undone.`}
           confirmLabel="Delete Permanently"
-          onCancel={() => setDeletingVersion(null)}
+          onClose={() => setDeletingVersion(null)}   // ✅ fixed line
           onConfirm={async () => {
             await handleDeleted(deletingVersion.id);
           }}
