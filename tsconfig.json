@@ -21,6 +21,11 @@
       "@/*": ["*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "lib/types"       // ✅ Add this line so shpjs.d.ts is picked up
+  ],
   "exclude": ["node_modules"]
 }
