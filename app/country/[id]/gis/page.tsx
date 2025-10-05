@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 
 type GISDatasetVersion = {
   id: string;
@@ -32,10 +32,7 @@ export default function GISPage({ params }: any) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Load Leaflet dynamically (avoid SSR issues)
-  const L = dynamic(() => import("leaflet"), { ssr: false });
-
-  // Fetch dataset versions
+  // ---- Fetch dataset versions ----
   useEffect(() => {
     const fetchVersions = async () => {
       const { data, error } = await supabase
@@ -48,7 +45,7 @@ export default function GISPage({ params }: any) {
     fetchVersions();
   }, [countryIso]);
 
-  // Fetch layers
+  // ---- Fetch layers ----
   useEffect(() => {
     const fetchLayers = async () => {
       const { data, error } = await supabase
@@ -59,55 +56,56 @@ export default function GISPage({ params }: any) {
     fetchLayers();
   }, []);
 
-  // Initialize and render map
+  // ---- Initialize map ----
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current) return;
 
-    import("leaflet").then((L) => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+    // Destroy old map before creating a new one
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
 
-      const map = L.map(mapContainerRef.current).setView([12.8797, 121.774], 5);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
-      mapRef.current = map;
+    const map = L.map(mapContainerRef.current).setView([12.8797, 121.774], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors",
+    }).addTo(map);
+    mapRef.current = map;
 
-      const loadLayers = async () => {
-        for (const layer of layers) {
-          const path = layer.source?.path;
-          if (!path) continue;
+    // ---- Load and render GeoJSON layers ----
+    const loadLayers = async () => {
+      for (const layer of layers) {
+        const path = layer.source?.path;
+        if (!path) continue;
+        const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${path}`;
 
-          const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${path}`;
-          try {
-            const res = await fetch(url);
-            if (!res.ok) continue;
-            const geojson = await res.json();
-            const gjLayer = L.geoJSON(geojson, {
-              style: {
-                color: "#ff0000",
-                weight: 1,
-                fillOpacity: 0.2,
-              },
-            }).addTo(map);
-            map.fitBounds(gjLayer.getBounds(), { padding: [20, 20] });
-          } catch (err) {
-            console.error("Layer load error:", err);
-          }
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const geojson = await res.json();
+          const gjLayer = L.geoJSON(geojson, {
+            style: {
+              color: "#ff0000",
+              weight: 1,
+              fillOpacity: 0.2,
+            },
+          }).addTo(map);
+          map.fitBounds(gjLayer.getBounds(), { padding: [20, 20] });
+        } catch (err) {
+          console.error("Layer load error:", err);
         }
-      };
+      }
+    };
 
-      loadLayers();
+    loadLayers();
 
-      return () => {
-        map.remove();
-      };
-    });
+    // Cleanup when map is hidden
+    return () => {
+      map.remove();
+    };
   }, [mapVisible, layers]);
 
-  // Page header
+  // ---- Page header ----
   const headerProps = {
     title: `${countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -126,6 +124,7 @@ export default function GISPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -169,6 +168,7 @@ export default function GISPage({ params }: any) {
         </table>
       </div>
 
+      {/* Map */}
       {mapVisible && (
         <div
           className="relative w-full border rounded-lg shadow overflow-hidden"
@@ -183,6 +183,7 @@ export default function GISPage({ params }: any) {
         </div>
       )}
 
+      {/* Layers Table */}
       <div className="border rounded-lg mt-6 p-4 shadow-sm">
         <h3 className="text-md font-semibold mb-2">Layers</h3>
         <table className="w-full text-sm border">
