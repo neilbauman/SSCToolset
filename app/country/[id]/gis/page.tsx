@@ -1,124 +1,184 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadGISModal from "@/components/country/UploadGISModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
-import { Database, Upload } from "lucide-react";
+import { Database, Upload, Layers, Check, Link2 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
+
+type Country = {
+  iso_code: string;
+  name: string;
+};
+
+type GISDatasetVersion = {
+  id: string;
+  country_iso: string;
+  title: string;
+  source: string | null;
+  year: number | null;
+  dataset_date: string | null;
+  is_active: boolean;
+  created_at: string;
+};
 
 type GISLayer = {
   id: string;
+  country_iso: string;
   layer_name: string;
   format: string;
-  feature_count: number;
-  crs: string;
+  feature_count: number | null;
+  dataset_version_id: string;
 };
 
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
 
-  const [gisLayers, setGisLayers] = useState<GISLayer[]>([]);
-  const [openUpload, setOpenUpload] = useState(false);
+  const [country, setCountry] = useState<Country | null>(null);
+  const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
+  const [layersMap, setLayersMap] = useState<Record<string, number>>({});
+  const [activeVersion, setActiveVersion] = useState<string | null>(null);
 
-  const fetchGisLayers = async () => {
+  // ---- Load Country ----
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("iso_code, name")
+        .eq("iso_code", countryIso)
+        .single();
+      if (data) setCountry(data);
+    })();
+  }, [countryIso]);
+
+  // ---- Load Versions ----
+  const fetchVersions = async () => {
+    const { data, error } = await supabase
+      .from("gis_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading GIS versions:", error);
+      return;
+    }
+
+    const list = (data || []) as GISDatasetVersion[];
+    setVersions(list);
+    const active = list.find((v) => v.is_active);
+    setActiveVersion(active?.id || null);
+    await fetchLayers(list.map((v) => v.id));
+  };
+
+  // ---- Load Layers ----
+  const fetchLayers = async (versionIds: string[]) => {
+    if (!versionIds.length) return;
     const { data, error } = await supabase
       .from("gis_layers")
-      .select("*")
-      .eq("country_iso", countryIso);
+      .select("dataset_version_id, id")
+      .in("dataset_version_id", versionIds);
 
-    if (!error && data) {
-      setGisLayers(data as GISLayer[]);
+    if (error) {
+      console.error("Error loading GIS layers:", error);
+      return;
     }
+
+    const map: Record<string, number> = {};
+    for (const l of data || []) {
+      map[l.dataset_version_id] = (map[l.dataset_version_id] || 0) + 1;
+    }
+    setLayersMap(map);
   };
 
   useEffect(() => {
-    fetchGisLayers();
+    fetchVersions();
   }, [countryIso]);
 
-  const validCRSCount = gisLayers.filter((r) => r.crs && r.crs.startsWith("EPSG:")).length;
-  const validFeatureCount = gisLayers.filter((r) => r.feature_count > 0).length;
-
+  // ---- Header ----
   const headerProps = {
-    title: `${countryIso} – GIS Layers`,
+    title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded GIS datasets.",
+    description:
+      "Manage and inspect uploaded GIS datasets (aligned to admin boundaries).",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "GIS Layers" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "GIS" },
         ]}
       />
     ),
   };
 
+  // ---- Render ----
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-            <Database className="w-5 h-5 text-blue-600" />
-            GIS Summary
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Layers className="w-5 h-5 text-green-600" />
+            GIS Dataset Versions
           </h2>
-          <p className="text-sm text-gray-700 mb-2">
-            <strong>Total Layers:</strong> {gisLayers.length}
-          </p>
-          <button
-            onClick={() => setOpenUpload(true)}
-            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-2 py-1 rounded hover:opacity-90"
-          >
-            <Upload className="w-4 h-4 mr-1" /> Upload / Replace Dataset
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              disabled
+              className="flex items-center text-sm text-white bg-gray-400 px-3 py-1 rounded cursor-not-allowed"
+              title="Upload coming soon"
+            >
+              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+            </button>
+          </div>
         </div>
 
-        <DatasetHealth
-          totalUnits={gisLayers.length}
-          validCRSCount={validCRSCount}
-          validFeatureCount={validFeatureCount}
-        />
-      </div>
-
-      <div className="border rounded-lg p-4 shadow-sm">
-        <table className="w-full text-sm border">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border px-2 py-1 text-left">Layer Name</th>
-              <th className="border px-2 py-1 text-left">Format</th>
-              <th className="border px-2 py-1 text-left">Features</th>
-              <th className="border px-2 py-1 text-left">CRS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gisLayers.map((r) => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <td className="border px-2 py-1">{r.layer_name}</td>
-                <td className="border px-2 py-1">{r.format}</td>
-                <td className="border px-2 py-1">{r.feature_count}</td>
-                <td className="border px-2 py-1">{r.crs}</td>
-              </tr>
-            ))}
-            {gisLayers.length === 0 && (
+        {versions.length > 0 ? (
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
               <tr>
-                <td colSpan={4} className="text-center text-gray-500 py-6">
-                  No results
-                </td>
+                <th className="border px-2 py-1 text-left">Title</th>
+                <th className="border px-2 py-1 text-left">Source</th>
+                <th className="border px-2 py-1 text-left">Year</th>
+                <th className="border px-2 py-1 text-left">Created</th>
+                <th className="border px-2 py-1 text-left">Layers</th>
+                <th className="border px-2 py-1 text-left">Status</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{v.title}</td>
+                  <td className="border px-2 py-1">{v.source || "—"}</td>
+                  <td className="border px-2 py-1">{v.year || "—"}</td>
+                  <td className="border px-2 py-1">
+                    {new Date(v.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {layersMap[v.id] ?? 0}
+                  </td>
+                  <td className="border px-2 py-1">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-green-600 text-white">
+                        <Check className="w-3 h-3" /> Active
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-200">
+                        —
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500">
+            No GIS versions uploaded yet.
+          </p>
+        )}
       </div>
-
-      <UploadGISModal
-        open={openUpload}
-        onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
-        onUploaded={fetchGisLayers}
-      />
     </SidebarLayout>
   );
 }
