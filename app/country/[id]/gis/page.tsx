@@ -1,20 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers } from "lucide-react";
-import dynamic from "next/dynamic";
 
-// Load Leaflet dynamically (prevents SSR errors)
 const L = typeof window !== "undefined" ? require("leaflet") : null;
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
-
+type Country = { iso_code: string; name: string };
 type GISLayer = {
   id: string;
   layer_name: string;
@@ -31,10 +25,10 @@ export default function GISPage({ params }: any) {
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
   const [mapVisible, setMapVisible] = useState(true);
-  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [geoLayers, setGeoLayers] = useState<Record<string, L.GeoJSON<any>>>({});
+  const mapRef = useRef<L.Map | null>(null);
+  const geoLayersRef = useRef<Record<string, L.GeoJSON<any>>>({});
 
-  // ---- Load country metadata ----
+  // ---- Load country ----
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -46,7 +40,7 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Load all GIS layers ----
+  // ---- Load GIS layers ----
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -62,39 +56,51 @@ export default function GISPage({ params }: any) {
     })();
   }, [countryIso]);
 
-  // ---- Initialize Leaflet map ----
+  // ---- Initialize map (only once) ----
   useEffect(() => {
-    if (!mapVisible || typeof window === "undefined") return;
+    if (!mapVisible || typeof window === "undefined" || !L) return;
 
-    const container = L.DomUtil.get("map-container");
-    if (container && (container as any)._leaflet_id) {
-      L.DomUtil.remove(container);
-      const newDiv = document.createElement("div");
-      newDiv.id = "map-container";
-      newDiv.style.height = "600px";
-      container.parentNode?.appendChild(newDiv);
+    if (mapRef.current) {
+      mapRef.current.invalidateSize();
+      return;
     }
 
-    const map = L.map("map-container").setView([12.8797, 121.774], 6);
+    const map = L.map("map-container", {
+      zoomControl: true,
+      preferCanvas: true,
+      attributionControl: false,
+    }).setView([12.8797, 121.774], 6);
+
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: "© OSM",
+      attribution: "© OpenStreetMap",
     }).addTo(map);
 
-    setMapInstance(map);
+    mapRef.current = map;
+
     return () => {
       map.remove();
+      mapRef.current = null;
     };
   }, [mapVisible]);
 
   // ---- Load and render layers ----
   useEffect(() => {
-    if (!mapInstance) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Remove previous layers
+    Object.values(geoLayersRef.current).forEach((gl) => gl.remove());
+    geoLayersRef.current = {};
 
     (async () => {
-      // Remove previous GeoJSONs
-      Object.values(geoLayers).forEach((gl) => gl.remove());
-      const newGeoLayers: Record<string, L.GeoJSON<any>> = {};
+      const colorMap: Record<string, string> = {
+        ADM0: "#003f5c",
+        ADM1: "#58508d",
+        ADM2: "#bc5090",
+        ADM3: "#ff6361",
+        ADM4: "#ffa600",
+      };
 
       for (const layer of layers) {
         if (!visibleLayers[layer.id]) continue;
@@ -102,59 +108,43 @@ export default function GISPage({ params }: any) {
         const path = layer.source?.path;
         if (!path) continue;
 
-        // Detect correct bucket
         const bucket = path.startsWith("gis_raw/") ? "gis_raw" : "gis";
         const relativePath = path.replace(/^gis_raw\//, "").replace(/^gis\//, "");
-        console.log("Loading from:", bucket, relativePath);
 
         const { data, error } = await supabase.storage.from(bucket).download(relativePath);
-        if (error || !data) {
-          console.warn("Failed to fetch layer:", layer.layer_name, error);
-          continue;
-        }
+        if (error || !data) continue;
 
         try {
-          const text = await data.text();
-          const geojson = JSON.parse(text);
-
-          const colorMap: Record<string, string> = {
-            ADM0: "#003f5c",
-            ADM1: "#58508d",
-            ADM2: "#bc5090",
-            ADM3: "#ff6361",
-            ADM4: "#ffa600",
-          };
-
+          const geojson = JSON.parse(await data.text());
           const geoLayer = L.geoJSON(geojson, {
             style: {
               color: colorMap[layer.admin_level || "ADM2"] || "#ff0000",
               weight: 1,
-              fillOpacity: 0.1,
+              fillOpacity: 0.05,
             },
-          }).addTo(mapInstance);
+          }).addTo(map);
 
-          newGeoLayers[layer.id] = geoLayer;
+          geoLayersRef.current[layer.id] = geoLayer;
         } catch (err) {
-          console.error("Invalid GeoJSON:", layer.layer_name, err);
+          console.error("Invalid GeoJSON:", err);
         }
       }
 
-      setGeoLayers(newGeoLayers);
-
-      // Fit bounds to all active layers
-      const allBounds = Object.values(newGeoLayers)
+      const allBounds = Object.values(geoLayersRef.current)
         .map((gl) => gl.getBounds())
-        .filter((b) => b && b.isValid());
-
+        .filter((b) => b.isValid());
       if (allBounds.length > 0) {
         const combined = allBounds[0];
         allBounds.slice(1).forEach((b) => combined.extend(b));
-        mapInstance.fitBounds(combined);
+        map.fitBounds(combined);
       }
     })();
-  }, [layers, visibleLayers, mapInstance]);
+  }, [layers, visibleLayers]);
 
-  // ---- Header ----
+  // ---- Toggle visibility ----
+  const toggleLayer = (id: string) =>
+    setVisibleLayers((prev) => ({ ...prev, [id]: !prev[id] }));
+
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -171,21 +161,16 @@ export default function GISPage({ params }: any) {
     ),
   };
 
-  // ---- Toggle visibility ----
-  const toggleLayer = (id: string) => {
-    setVisibleLayers((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
+      <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Layers className="w-5 h-5 text-green-600" />
             GIS Dataset Versions
           </h2>
           <button
-            onClick={() => setMapVisible(!mapVisible)}
+            onClick={() => setMapVisible((v) => !v)}
             className="text-sm border rounded px-2 py-1 hover:bg-gray-100"
           >
             {mapVisible ? "Hide Map" : "Show Map"}
@@ -193,16 +178,21 @@ export default function GISPage({ params }: any) {
         </div>
       </div>
 
-      {/* Map Container */}
       {mapVisible && (
-        <div
-          id="map-container"
-          style={{ height: "600px" }}
-          className="rounded-lg shadow-sm mb-6 z-10"
-        />
+        <div className="relative mb-4">
+          <div
+            id="map-container"
+            className="w-full rounded-lg border shadow-sm"
+            style={{
+              height: "600px",
+              overflow: "hidden",
+              position: "relative",
+              zIndex: 0,
+            }}
+          ></div>
+        </div>
       )}
 
-      {/* Layers Table */}
       <div className="border rounded-lg p-4 shadow-sm">
         <h3 className="font-semibold text-base mb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-500" /> Layers
