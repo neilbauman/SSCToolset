@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import dynamic from "next/dynamic";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload, Check } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
-
-const L = dynamic(() => import("leaflet"), { ssr: false });
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Layers, Upload, Check } from "lucide-react";
 
 type GISDatasetVersion = {
   id: string;
@@ -28,27 +25,17 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-// ✅ Next.js 15 fix: params come in asynchronously; unwrap them inside an async wrapper
-export default function GISPage({ params }: { params: Promise<{ id: string }> }) {
-  const [countryIso, setCountryIso] = useState<string | null>(null);
+export default function GISPage({ params }: { params: { id: string } }) {
+  const { id: countryIso } = params;
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [mapVisible, setMapVisible] = useState(true);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // unwrap async route param
+  // Fetch dataset versions
   useEffect(() => {
-    (async () => {
-      const resolved = await params;
-      setCountryIso(resolved.id);
-    })();
-  }, [params]);
-
-  // load dataset versions
-  useEffect(() => {
-    if (!countryIso) return;
     (async () => {
       const { data } = await supabase
         .from("gis_dataset_versions")
@@ -59,7 +46,7 @@ export default function GISPage({ params }: { params: Promise<{ id: string }> })
     })();
   }, [countryIso]);
 
-  // load layers
+  // Fetch layers
   useEffect(() => {
     if (!versions.length) return;
     (async () => {
@@ -74,61 +61,83 @@ export default function GISPage({ params }: { params: Promise<{ id: string }> })
     })();
   }, [versions]);
 
-  // render map and layers
+  // Render map
   useEffect(() => {
-    if (!mapVisible || !mapContainerRef.current || !L || !layers.length) return;
+    if (!mapVisible || !mapContainerRef.current || !layers.length) return;
 
-    // clean up previous instance
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
+    const loadMap = async () => {
+      const L = await import("leaflet");
+      await import("leaflet/dist/leaflet.css");
 
-    const map = L.map(mapContainerRef.current, {
-      center: [12.8797, 121.774],
-      zoom: 6,
-      zoomControl: true,
-      attributionControl: true,
-    });
+      // Destroy old instance
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+      const map = L.map(mapContainerRef.current, {
+        center: [12.8797, 121.774],
+        zoom: 6,
+        zoomControl: true,
+        attributionControl: true,
+      });
 
-    mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
 
-    (async () => {
+      mapRef.current = map;
+
+      // Add GeoJSON layers
       for (const layer of layers) {
         try {
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
           const res = await fetch(url);
           if (!res.ok) continue;
           const geojson = await res.json();
-          const color = layer.admin_level === "ADM2" ? "#e63946" : "#1d3557";
+
+          const color =
+            layer.admin_level === "ADM1"
+              ? "#003f5c"
+              : layer.admin_level === "ADM2"
+              ? "#bc5090"
+              : "#ffa600";
+
           const geoLayer = L.geoJSON(geojson, {
-            style: { color, weight: 1.2, fillOpacity: 0.2 },
+            style: {
+              color,
+              weight: 1.2,
+              fillOpacity: 0.2,
+            },
           });
+
           geoLayer.addTo(map);
         } catch (err) {
-          console.warn("Layer render error:", layer.layer_name, err);
+          console.warn("Failed to render layer", layer.layer_name, err);
         }
       }
 
+      // Fit map to visible layers
       const drawn = Object.values(map._layers).filter((l: any) => l.getBounds);
       if (drawn.length) {
         const group = L.featureGroup(drawn as any);
         map.fitBounds(group.getBounds(), { padding: [25, 25] });
       }
-    })();
+    };
+
+    loadMap();
 
     return () => {
-      map.remove();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [mapVisible, layers]);
 
+  // ---- Header ----
   const headerProps = {
-    title: `${countryIso ?? ""} – GIS Layers`,
+    title: `${countryIso} – GIS Layers`,
     group: "country-config" as const,
     description: "Manage and preview uploaded GIS datasets.",
     breadcrumbs: (
@@ -136,7 +145,7 @@ export default function GISPage({ params }: { params: Promise<{ id: string }> })
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso ?? "", href: `/country/${countryIso}` },
+          { label: countryIso, href: `/country/${countryIso}` },
           { label: "GIS" },
         ]}
       />
@@ -145,7 +154,7 @@ export default function GISPage({ params }: { params: Promise<{ id: string }> })
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* dataset versions table */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -199,22 +208,22 @@ export default function GISPage({ params }: { params: Promise<{ id: string }> })
         </table>
       </div>
 
-      {/* map frame */}
+      {/* Map */}
       {mapVisible && (
         <div className="relative w-full">
           <div
             ref={mapContainerRef}
             id="map-container"
-            className="h-[70vh] w-full rounded-lg border shadow-inner"
+            className="h-[70vh] w-full rounded-lg border shadow-inner overflow-hidden"
           />
         </div>
       )}
 
-      {/* upload modal */}
+      {/* Upload Modal */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
-        countryIso={countryIso ?? ""}
+        countryIso={countryIso}
         onUploaded={() => window.location.reload()}
       />
     </SidebarLayout>
