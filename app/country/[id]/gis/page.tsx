@@ -10,11 +10,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
-
+type Country = { iso_code: string; name: string };
 type GISDatasetVersion = {
   id: string;
   country_iso: string;
@@ -25,7 +21,6 @@ type GISDatasetVersion = {
   is_active: boolean;
   created_at: string;
 };
-
 type GISLayer = {
   id: string;
   country_iso: string;
@@ -38,6 +33,7 @@ type GISLayer = {
 export default function GISPage({ params }: any) {
   const { id: countryIso } = params as CountryParams;
   const mapRef = useRef<L.Map | null>(null);
+  const geoLayerRef = useRef<L.GeoJSON | null>(null);
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
@@ -70,7 +66,6 @@ export default function GISPage({ params }: any) {
       console.error("Error loading GIS versions:", error);
       return;
     }
-
     const list = (data || []) as GISDatasetVersion[];
     setVersions(list);
     const active = list.find((v) => v.is_active);
@@ -89,7 +84,6 @@ export default function GISPage({ params }: any) {
       console.error("Error loading GIS layers:", error);
       return;
     }
-
     setLayers(data || []);
   };
 
@@ -99,60 +93,63 @@ export default function GISPage({ params }: any) {
 
   // ---- Initialize Map ----
   useEffect(() => {
-    const container = L.DomUtil.get("map-container") as HTMLElement & {
-      _leaflet_id?: number;
+    const initMap = () => {
+      const container = L.DomUtil.get("map-container") as HTMLElement & {
+        _leaflet_id?: number;
+      };
+      if (container && container._leaflet_id) container._leaflet_id = undefined;
+
+      const map = L.map("map-container", {
+        center: [12.8797, 121.774],
+        zoom: 5,
+      });
+      mapRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      window.addEventListener("resize", () => map.invalidateSize());
+      setTimeout(() => map.invalidateSize(), 500);
     };
-    if (container && container._leaflet_id) container._leaflet_id = undefined;
 
-    const map = L.map("map-container", {
-      center: [12.8797, 121.774],
-      zoom: 5,
-      zoomControl: true,
-    });
-    mapRef.current = map;
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
-      maxZoom: 18,
-    }).addTo(map);
-
-    const handleResize = () => map.invalidateSize();
-    window.addEventListener("resize", handleResize);
-    setTimeout(() => map.invalidateSize(), 400);
-
+    if (mapVisible) initMap();
     return () => {
-      window.removeEventListener("resize", handleResize);
-      map.remove();
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
-  }, [countryIso]);
+  }, [mapVisible]);
 
-  // ---- Load GeoJSON Boundaries ----
+  // ---- Load GeoJSON when map + layer ready ----
   useEffect(() => {
     const loadGeoJSON = async () => {
-      if (!activeVersion || !mapRef.current) return;
-      if (!layers.length) return;
-
+      if (!mapRef.current || !activeVersion || !layers.length) return;
       const layer = layers[0];
       const path = layer.source?.path;
       if (!path) return;
 
+      // Try from `gis` bucket (public)
+      const { data: urlData } = supabase.storage.from("gis").getPublicUrl(path);
+      const url = urlData?.publicUrl;
+      if (!url) {
+        console.error("Missing public URL for layer path", path);
+        return;
+      }
+
       try {
-        const { data: urlData } = supabase.storage
-          .from("gis")
-          .getPublicUrl(path);
-
-        if (!urlData?.publicUrl) {
-          console.warn("No public URL found for GIS layer:", layer.layer_name);
-          return;
-        }
-
-        const res = await fetch(urlData.publicUrl);
+        const res = await fetch(url);
         const geo = await res.json();
 
         if (!geo || !geo.features) {
-          console.error("Invalid GeoJSON object:", geo);
+          console.error("Invalid GeoJSON:", geo);
           return;
+        }
+
+        if (geoLayerRef.current) {
+          mapRef.current.removeLayer(geoLayerRef.current);
         }
 
         const geoLayer = L.geoJSON(geo, {
@@ -160,18 +157,19 @@ export default function GISPage({ params }: any) {
             color: "#c62828",
             weight: 1,
             fillColor: "#ef9a9a",
-            fillOpacity: 0.3,
+            fillOpacity: 0.35,
           },
         }).addTo(mapRef.current);
 
+        geoLayerRef.current = geoLayer;
         mapRef.current.fitBounds(geoLayer.getBounds());
       } catch (err) {
-        console.error("Error loading GeoJSON:", err);
+        console.error("Error fetching or parsing GeoJSON:", err);
       }
     };
 
     loadGeoJSON();
-  }, [layers, activeVersion]);
+  }, [layers, activeVersion, mapVisible]);
 
   // ---- Header ----
   const headerProps = {
@@ -200,14 +198,12 @@ export default function GISPage({ params }: any) {
             <Layers className="w-5 h-5 text-green-600" />
             GIS Dataset Versions
           </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-            >
-              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-            </button>
-          </div>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+          >
+            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+          </button>
         </div>
 
         {versions.length > 0 ? (
@@ -220,7 +216,6 @@ export default function GISPage({ params }: any) {
                 <th className="border px-2 py-1 text-left">Created</th>
                 <th className="border px-2 py-1 text-left">Layers</th>
                 <th className="border px-2 py-1 text-left">Status</th>
-                <th className="border px-2 py-1 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -246,22 +241,6 @@ export default function GISPage({ params }: any) {
                       </span>
                     )}
                   </td>
-                  <td className="border px-2 py-1 text-center">
-                    <button
-                      onClick={() => setMapVisible(!mapVisible)}
-                      className="text-xs text-blue-600 hover:underline flex items-center justify-center gap-1"
-                    >
-                      {mapVisible ? (
-                        <>
-                          <ChevronUp className="w-3 h-3" /> Hide Map
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="w-3 h-3" /> Show Map
-                        </>
-                      )}
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -272,9 +251,32 @@ export default function GISPage({ params }: any) {
       </div>
 
       {/* Collapsible Map Section */}
-      {mapVisible && (
-        <div className="w-full h-[650px] mb-8 rounded-lg border shadow-sm overflow-hidden relative bg-gray-50">
-          <div id="map-container" className="w-full h-full" />
+      {versions.length > 0 && (
+        <div className="border rounded-lg shadow-sm mb-8 bg-white">
+          <div className="flex justify-between items-center px-4 py-2 border-b">
+            <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-gray-500" /> Map Preview
+            </h3>
+            <button
+              onClick={() => setMapVisible(!mapVisible)}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              {mapVisible ? (
+                <>
+                  <ChevronUp className="w-3 h-3" /> Hide Map
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3 h-3" /> Show Map
+                </>
+              )}
+            </button>
+          </div>
+          {mapVisible && (
+            <div className="w-full h-[650px] rounded-b-lg overflow-hidden">
+              <div id="map-container" className="w-full h-full" />
+            </div>
+          )}
         </div>
       )}
 
