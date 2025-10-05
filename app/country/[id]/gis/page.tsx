@@ -28,12 +28,9 @@ type GISLayer = {
   admin_level: string | null;
 };
 
-// ✅ Fix: Explicitly type props as { params: Promise<{ id: string }> }
-//     because Next.js 15 now sometimes wraps params in a Promise
-export default async function GISPage(props: { params: { id: string } | Promise<{ id: string }> }) {
-  const resolvedParams = await Promise.resolve(props.params);
-  const countryIso = resolvedParams.id;
-
+// ✅ Next.js 15 fix: params come in asynchronously; unwrap them inside an async wrapper
+export default function GISPage({ params }: { params: Promise<{ id: string }> }) {
+  const [countryIso, setCountryIso] = useState<string | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
@@ -41,8 +38,17 @@ export default async function GISPage(props: { params: { id: string } | Promise<
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Load dataset versions
+  // unwrap async route param
   useEffect(() => {
+    (async () => {
+      const resolved = await params;
+      setCountryIso(resolved.id);
+    })();
+  }, [params]);
+
+  // load dataset versions
+  useEffect(() => {
+    if (!countryIso) return;
     (async () => {
       const { data } = await supabase
         .from("gis_dataset_versions")
@@ -53,10 +59,10 @@ export default async function GISPage(props: { params: { id: string } | Promise<
     })();
   }, [countryIso]);
 
-  // Load layers
+  // load layers
   useEffect(() => {
+    if (!versions.length) return;
     (async () => {
-      if (!versions.length) return;
       const { data } = await supabase
         .from("gis_layers")
         .select("*")
@@ -68,11 +74,11 @@ export default async function GISPage(props: { params: { id: string } | Promise<
     })();
   }, [versions]);
 
-  // Initialize map safely
+  // render map and layers
   useEffect(() => {
-    if (!mapVisible || !mapContainerRef.current || !L) return;
+    if (!mapVisible || !mapContainerRef.current || !L || !layers.length) return;
 
-    // Destroy existing instance if present
+    // clean up previous instance
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -91,33 +97,27 @@ export default async function GISPage(props: { params: { id: string } | Promise<
 
     mapRef.current = map;
 
-    // Render visible layers
     (async () => {
       for (const layer of layers) {
         try {
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
-          const response = await fetch(url);
-          if (!response.ok) continue;
-          const geojson = await response.json();
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const geojson = await res.json();
+          const color = layer.admin_level === "ADM2" ? "#e63946" : "#1d3557";
           const geoLayer = L.geoJSON(geojson, {
-            style: {
-              color: layer.admin_level === "ADM2" ? "#e63946" : "#457b9d",
-              weight: 1.2,
-              fillOpacity: 0.25,
-            },
+            style: { color, weight: 1.2, fillOpacity: 0.2 },
           });
           geoLayer.addTo(map);
         } catch (err) {
-          console.warn("Failed to render layer:", layer.layer_name, err);
+          console.warn("Layer render error:", layer.layer_name, err);
         }
       }
 
-      // Fit to visible layers
-      const allLayers = Object.values(map._layers);
-      const geoLayers = allLayers.filter((l: any) => l.getBounds);
-      if (geoLayers.length) {
-        const group = L.featureGroup(geoLayers as any);
-        map.fitBounds(group.getBounds(), { padding: [20, 20] });
+      const drawn = Object.values(map._layers).filter((l: any) => l.getBounds);
+      if (drawn.length) {
+        const group = L.featureGroup(drawn as any);
+        map.fitBounds(group.getBounds(), { padding: [25, 25] });
       }
     })();
 
@@ -128,15 +128,15 @@ export default async function GISPage(props: { params: { id: string } | Promise<
   }, [mapVisible, layers]);
 
   const headerProps = {
-    title: `${countryIso} – GIS Layers`,
+    title: `${countryIso ?? ""} – GIS Layers`,
     group: "country-config" as const,
-    description: "View, manage, and visualize uploaded GIS layers.",
+    description: "Manage and preview uploaded GIS datasets.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
+          { label: countryIso ?? "", href: `/country/${countryIso}` },
           { label: "GIS" },
         ]}
       />
@@ -145,11 +145,11 @@ export default async function GISPage(props: { params: { id: string } | Promise<
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* dataset versions table */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Layers className="w-5 h-5 text-green-600" />
-            GIS Dataset Versions
+            <Layers className="w-5 h-5 text-green-600" /> GIS Dataset Versions
           </h2>
           <div className="flex gap-2 items-center">
             <button
@@ -199,6 +199,7 @@ export default async function GISPage(props: { params: { id: string } | Promise<
         </table>
       </div>
 
+      {/* map frame */}
       {mapVisible && (
         <div className="relative w-full">
           <div
@@ -209,10 +210,11 @@ export default async function GISPage(props: { params: { id: string } | Promise<
         </div>
       )}
 
+      {/* upload modal */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
+        countryIso={countryIso ?? ""}
         onUploaded={() => window.location.reload()}
       />
     </SidebarLayout>
