@@ -313,11 +313,14 @@ export default function CountryConfigLandingPage({ params }: any) {
         onUploaded={() => window.location.reload()}
       />
       <UploadGISModal
-        open={openGISUpload}
-        onClose={() => setOpenGISUpload(false)}
-        countryIso={id}
-        onUploaded={async () => window.location.reload()}
-      />
+  open={openGISUpload}
+  onClose={() => setOpenGISUpload(false)}
+  countryIso={id}
+  onUploaded={async () => {
+    // Re-fetch GIS dataset versions or refresh the page
+    window.location.reload();
+  }}
+/>
       {country && (
         <EditMetadataModal
           open={openMeta}
