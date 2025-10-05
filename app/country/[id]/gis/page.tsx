@@ -10,8 +10,10 @@ import { Layers, Upload, Check } from "lucide-react";
 // -------------------------------
 // Types
 // -------------------------------
-interface CountryParams {
-  id: string;
+interface GISPageProps {
+  params: {
+    id: string;
+  };
 }
 
 type GISDatasetVersion = {
@@ -35,8 +37,8 @@ type GISLayer = {
 // -------------------------------
 // Page Component
 // -------------------------------
-export default function GISPage({ params }: { params: CountryParams }) {
-  const { id: countryIso } = params;
+export default function GISPage({ params }: GISPageProps) {
+  const countryIso = params.id;
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
@@ -46,40 +48,44 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   // ---- Fetch dataset versions ----
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
+    const fetchVersions = async () => {
+      const { data, error } = await supabase
         .from("gis_dataset_versions")
         .select("*")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
-      setVersions(data || []);
-    })();
+      if (error) console.error("Error fetching versions:", error);
+      else setVersions(data || []);
+    };
+    fetchVersions();
   }, [countryIso]);
 
   // ---- Fetch layers ----
   useEffect(() => {
-    if (!versions.length) return;
-    (async () => {
-      const { data } = await supabase
+    const fetchLayers = async () => {
+      if (!versions.length) return;
+      const { data, error } = await supabase
         .from("gis_layers")
         .select("*")
         .in(
           "dataset_version_id",
           versions.map((v) => v.id)
         );
-      setLayers(data || []);
-    })();
+      if (error) console.error("Error fetching layers:", error);
+      else setLayers(data || []);
+    };
+    fetchLayers();
   }, [versions]);
 
   // ---- Initialize and render map ----
   useEffect(() => {
     if (!mapVisible || !mapContainerRef.current || !layers.length) return;
 
-    const loadMap = async () => {
+    const initMap = async () => {
       const L = await import("leaflet");
       await import("leaflet/dist/leaflet.css");
 
-      // Clear existing map
+      // Remove existing instance
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -98,7 +104,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
       mapRef.current = map;
 
-      // Add each GeoJSON layer
+      // Add all GeoJSON layers
       for (const layer of layers) {
         try {
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${layer.source.path}`;
@@ -123,11 +129,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
           geoLayer.addTo(map);
         } catch (err) {
-          console.warn("Failed to render layer", layer.layer_name, err);
+          console.warn("Failed to render layer:", layer.layer_name, err);
         }
       }
 
-      // Fit bounds
+      // Fit bounds of all drawn layers
       const drawn = Object.values(map._layers).filter((l: any) => l.getBounds);
       if (drawn.length) {
         const group = L.featureGroup(drawn as any);
@@ -135,7 +141,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }
     };
 
-    loadMap();
+    initMap();
 
     return () => {
       if (mapRef.current) {
