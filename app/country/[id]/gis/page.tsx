@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Layers, Upload, Check } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
-import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 
 type Country = {
   iso_code: string;
@@ -32,7 +32,6 @@ type GISLayer = {
   format: string;
   feature_count: number | null;
   dataset_version_id: string;
-  source: any;
 };
 
 export default function GISPage({ params }: any) {
@@ -43,6 +42,7 @@ export default function GISPage({ params }: any) {
   const [layersMap, setLayersMap] = useState<Record<string, number>>({});
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
+  const mapRef = useRef<L.Map | null>(null);
 
   // ---- Load Country ----
   useEffect(() => {
@@ -100,66 +100,28 @@ export default function GISPage({ params }: any) {
     fetchVersions();
   }, [countryIso]);
 
-  // ---- Load and render GeoJSON Map ----
+  // ---- Map initialization ----
   useEffect(() => {
-    if (!activeVersion) return;
+    // Cleanup duplicate maps if present
+    const container = L.DomUtil.get("map-container") as HTMLElement & {
+      _leaflet_id?: number;
+    };
+    if (container && (container as any)._leaflet_id) {
+      (container as any)._leaflet_id = null;
+    }
 
-    (async () => {
-      try {
-        // Get layer metadata
-        const { data, error } = await supabase
-          .from("gis_layers")
-          .select("source")
-          .eq("dataset_version_id", activeVersion)
-          .single();
+    const map = L.map("map-container").setView([12.8797, 121.774], 5); // Center on PH
+    mapRef.current = map;
 
-        if (error || !data) throw new Error("No GIS layer found");
-        const path = data.source?.path;
-        if (!path) throw new Error("Missing path in GIS layer");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+    }).addTo(map);
 
-        // Construct public URL
-        const url = `https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/${path}`;
-        console.log("Fetching GeoJSON from:", url);
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Failed to load GeoJSON file");
-
-        const json = await response.json();
-
-        // Validate GeoJSON structure
-        const geo =
-          json?.type === "FeatureCollection"
-            ? json
-            : json?.data?.type === "FeatureCollection"
-            ? json.data
-            : { type: "FeatureCollection", features: json.features || [] };
-
-        if (!geo.features?.length) {
-          console.warn("No features found in GeoJSON");
-          return;
-        }
-
-        const L = await import("leaflet");
-
-        // Remove any previous map instance (avoid duplicate mounts)
-        const container = L.DomUtil.get("map-container");
-        if (container && container._leaflet_id) {
-          container._leaflet_id = null;
-        }
-
-        const map = L.map("map-container").setView([12.8797, 121.774], 6);
-
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "&copy; OpenStreetMap contributors",
-        }).addTo(map);
-
-        const layer = L.geoJSON(geo).addTo(map);
-        map.fitBounds(layer.getBounds());
-      } catch (err) {
-        console.error("GIS load error:", err);
-      }
-    })();
-  }, [activeVersion]);
+    return () => {
+      map.remove();
+    };
+  }, [countryIso]);
 
   // ---- Header ----
   const headerProps = {
@@ -242,11 +204,11 @@ export default function GISPage({ params }: any) {
         )}
       </div>
 
-      {/* Map Display */}
+      {/* Map Preview */}
       <div
         id="map-container"
-        className="w-full h-[600px] rounded-lg border shadow-sm"
-      ></div>
+        className="h-[500px] w-full rounded-lg border shadow-sm"
+      />
 
       {/* Upload Modal */}
       <UploadGISModal
