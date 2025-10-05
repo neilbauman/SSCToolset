@@ -1,44 +1,67 @@
 # SSC Toolset – Development Charter
 
-This document defines the rules of development for the SSC Toolset project.  
-Goal: prevent project drift, ensure stable forward progress, and maintain reproducibility.
+Defines the rules of development for the SSC Toolset project.  
+**Goal:** maintain coherence, prevent drift, and ensure sustainable growth through verified green builds.
 
 ---
 
-## Principles
+## Core Principles
 
 1. **Green First, Grow Later**
-   - Never merge broken code. Vercel build must be green before new features.
+   - Never merge broken code.
+   - Vercel build must be green before any new feature is accepted.
 
 2. **No Drift**
    - All changes must align with `project-overview.md`.
-   - If new ideas appear, log them in `future-enhancements.md`.
+   - New ideas go into `future-enhancements.md` — never directly into code.
 
 3. **Incremental Development**
-   - Favor small additive commits over whole-file rewrites.
-   - Archive old files in `/archive/` if replacing.
+   - Small additive commits > full rewrites.
+   - If replacing, move old files to `/archive/` for traceability.
 
-4. **Typed Interfaces**
-   - Shared types (`Country`, `AdminUnit`, `PopulationRow`, `GISLayer`) live in `/types`.
-   - No ad-hoc redefinitions.
+4. **Shared Typed Interfaces**
+   - Keep shared types in `/types/`:
+     - `Country`, `AdminUnit`, `PopulationRow`, `GISLayer`, `DatasetVersion`, `DatasetJoin`.
+   - No ad-hoc type redefinitions in pages.
 
-5. **Resilient Data Uploads**
-   - Validate inputs, accept partial success, show user errors.
-   - Do not break the DB with invalid rows.
+5. **Resilient Upload Workflows**
+   - CSV uploads must:
+     - Validate headers & required fields.
+     - Allow partial success and give row-level error feedback.
+     - Not break Supabase schema integrity.
+   - All uploads must create a version record first.
 
-6. **Versioning of Data**
-   - Replace → archive as new version. Never destroy old data.
+6. **Versioning Discipline**
+   - Each dataset (Admin, Population, GIS) has a `_versions` table.
+   - Only one version per dataset type can be active per country.
+   - Replacements archive older data.
+   - Linked/Active datasets cannot be hard-deleted.
 
-7. **Test Harness**
+7. **Testing & Verification**
    - Maintain sample datasets in `/tests/data/`.
-   - Use them to manually verify uploads/rendering after changes.
+   - Manual test each data upload and version selection for all dataset types.
 
 8. **Feature Flags**
-   - Hide incomplete features behind flags until stable.
+   - New or partial features hidden until validated and integrated into the workflow.
+
+9. **UI Consistency**
+   - All dataset pages (Admin, Population, GIS) use:
+     - Dataset version table with dropdown actions
+     - Upload, Edit, Delete, Template buttons
+     - DatasetHealth and record tables
+   - Styling follows GSC Red and Tailwind; no shadcn/ui.
 
 ---
 
-## Workflow
+## Workflow Rules
 
-1. Spec → Branch → Implement increment → Upload sample → Verify green build → Merge.
-2. Do not bypass `development-charter.md`.
+1. **Branch → Implement → Test → Verify green build → Merge**
+2. **Never bypass `development-charter.md`**
+3. Each commit should move the app forward, not sideways.
+
+---
+
+## Thread Transition
+When starting a new ChatGPT thread:
+- Attach this charter.
+- Paste the “Next Thread Prompt” from below to ensure full project continuity.
