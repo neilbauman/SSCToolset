@@ -133,7 +133,11 @@ export default function GISPage({ params }: any) {
     });
 
     mapRef.current = map;
-    return () => map.remove();
+
+    // ✅ Proper cleanup — avoid returning a value
+    return () => {
+      map.remove();
+    };
   }, [layers, mapVisible]);
 
   // ---- Header ----
