@@ -1,10 +1,11 @@
-// /app/api/convert-gis/route.ts
-// Converts a zipped shapefile stored in gis_raw → GeoJSON in gis (server-side)
-
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/supabaseServer";
+import { tmpdir } from "os";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { join } from "path";
+import { execSync } from "child_process";
 
-export const runtime = "nodejs"; // ensure server execution
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,11 +17,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Load mapshaper using require-style dynamic import to avoid bundler issues
-    const mapshaperModule: any = await import("mapshaper");
-    const mapshaper = mapshaperModule.default || mapshaperModule;
-
-    // 1️⃣ Download ZIP from gis_raw bucket
+    // 1️⃣ Download ZIP from gis_raw
     const { data, error: dlError } = await supabaseServer.storage
       .from(bucket)
       .download(path);
@@ -29,21 +26,19 @@ export async function POST(req: NextRequest) {
 
     const arrayBuf = await data.arrayBuffer();
 
-    // 2️⃣ Convert + simplify using mapshaper
-    const result = await mapshaper.applyCommands(
-      "-i input.zip combine-files -simplify 5% keep-shapes -o format=geojson precision=0.0001",
-      { "input.zip": new Uint8Array(arrayBuf) }
-    );
+    // 2️⃣ Write ZIP to a temporary file
+    const tmpZip = join(tmpdir(), `${version_id}.zip`);
+    writeFileSync(tmpZip, Buffer.from(arrayBuf));
 
-    // Depending on version, the key may differ
-    const geojson =
-      result["output.json"] ||
-      result["input.json"] ||
-      Object.values(result)[0];
+    // 3️⃣ Run mapshaper CLI to convert + simplify
+    const tmpOut = join(tmpdir(), `${version_id}.geojson`);
+    const cmd = `npx mapshaper -i ${tmpZip} combine-files -simplify 5% keep-shapes -o format=geojson precision=0.0001 ${tmpOut}`;
+    execSync(cmd, { stdio: "pipe" });
 
-    if (!geojson) throw new Error("No GeoJSON output from mapshaper");
+    // 4️⃣ Read the resulting GeoJSON
+    const geojson = readFileSync(tmpOut);
 
-    // 3️⃣ Upload simplified GeoJSON to public 'gis' bucket
+    // 5️⃣ Upload to gis bucket
     const geoPath = `${country_iso}/${version_id}/layer.geojson`;
     const { error: upErr } = await supabaseServer.storage
       .from("gis")
@@ -53,7 +48,7 @@ export async function POST(req: NextRequest) {
       });
     if (upErr) throw upErr;
 
-    // 4️⃣ Insert GIS layer metadata
+    // 6️⃣ Insert GIS layer metadata
     await supabaseServer.from("gis_layers").insert({
       country_iso,
       dataset_version_id: version_id,
@@ -63,11 +58,17 @@ export async function POST(req: NextRequest) {
       source: { path: geoPath },
     });
 
-    // 5️⃣ Mark dataset version as active
+    // 7️⃣ Mark dataset version as active
     await supabaseServer
       .from("gis_dataset_versions")
       .update({ is_active: true, source: "Server conversion" })
       .eq("id", version_id);
+
+    // 8️⃣ Clean up temp files
+    try {
+      unlinkSync(tmpZip);
+      unlinkSync(tmpOut);
+    } catch {}
 
     return NextResponse.json({
       ok: true,
