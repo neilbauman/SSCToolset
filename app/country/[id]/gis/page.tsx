@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
@@ -12,15 +12,18 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import EditGISLayerModal from "@/components/country/EditGISLayerModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 
-import {
-  Database,
-  Layers,
-  Upload,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Database, Layers, Upload, Pencil, Trash2 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types";
+
+// Helper component: stores the map instance safely
+function MapInitializer({ mapRef }: { mapRef: React.MutableRefObject<any> }) {
+  const map = useMap();
+  useEffect(() => {
+    mapRef.current = map;
+  }, [map]);
+  return null;
+}
 
 type Country = {
   iso_code: string;
@@ -52,7 +55,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [deleteLayer, setDeleteLayer] = useState<GISLayer | null>(null);
 
-  // Fetch Country Metadata
+  // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -65,7 +68,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch Versions
+  // --- Fetch Versions ---
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -88,7 +91,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     else setLayers([]);
   };
 
-  // Fetch Layers for selected version
+  // --- Fetch Layers ---
   const fetchLayers = async (versionId: string) => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -109,7 +112,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
-  // Delete Layer
+  // --- Delete Layer ---
   const handleDeleteLayer = async (layerId: string) => {
     const { error } = await supabase.from("gis_layers").delete().eq("id", layerId);
     if (error) console.error("Error deleting layer:", error);
@@ -118,7 +121,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   const totalLayers = layers.length;
 
-  // Header Configuration
+  // --- Header Config ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Datasets`,
     group: "country-config" as const,
@@ -250,10 +253,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* --- Data Health Panel --- */}
+      {/* --- Data Health --- */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* --- Map Panel --- */}
+      {/* --- Map --- */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6 relative z-0">
         <div className="lg:col-span-3 border rounded-lg overflow-hidden shadow-sm">
           <MapContainer
@@ -261,10 +264,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
             zoom={2}
             style={{ height: "600px", width: "100%" }}
             className="z-0"
-            whenReady={(event: any) => {
-              mapRef.current = event.target;
-            }}
           >
+            <MapInitializer mapRef={mapRef} />
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution="© OpenStreetMap contributors"
@@ -272,14 +273,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
             {layers.map((layer) => (
               <GeoJSON
                 key={layer.id}
-                data={{
-                  type: "FeatureCollection",
-                  features: [],
-                }}
-                style={{
-                  color: "#630710",
-                  weight: 1,
-                }}
+                data={{ type: "FeatureCollection", features: [] }}
+                style={{ color: "#630710", weight: 1 }}
               />
             ))}
           </MapContainer>
