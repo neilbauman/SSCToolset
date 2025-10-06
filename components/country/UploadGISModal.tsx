@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Modal from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { toast } from "sonner";
+import { toast } from "sonner"; // ✅ Safe import (already installed)
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { UploadModalProps } from "@/types/modals";
 
@@ -45,11 +45,12 @@ export default function UploadGISModal({
       if (!file) throw new Error("Please select a GIS file to upload.");
       if (!title || !year) throw new Error("Title and year are required.");
 
-      // Upload file to storage
+      // Upload file to Supabase Storage
       const storagePath = `${countryIso}/gis/${Date.now()}-${file.name}`;
       const { error: uploadErr } = await supabase.storage
         .from("gis")
         .upload(storagePath, file, { upsert: true });
+
       if (uploadErr) throw uploadErr;
 
       // Insert version record
@@ -61,8 +62,10 @@ export default function UploadGISModal({
         source: source || null,
         is_active: makeActive,
       });
+
       if (insertErr) throw insertErr;
 
+      // Manage activation
       if (makeActive) {
         await supabase
           .from("gis_dataset_versions")
@@ -76,13 +79,19 @@ export default function UploadGISModal({
           .eq("title", title);
       }
 
-      toast.success("GIS dataset uploaded successfully.");
+      if (toast && typeof toast.success === "function") {
+        toast.success("GIS dataset uploaded successfully.");
+      }
+
       onUploaded?.();
       onClose();
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Upload failed.");
-      toast.error(err.message || "Failed to upload dataset.");
+
+      if (toast && typeof toast.error === "function") {
+        toast.error(err.message || "Failed to upload dataset.");
+      }
     } finally {
       setBusy(false);
     }
@@ -130,7 +139,7 @@ export default function UploadGISModal({
         </label>
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
+          <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={disabled}>
