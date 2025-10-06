@@ -1,207 +1,135 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
-import { toast } from "sonner"; // ✅ Safe import (already installed)
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { UploadModalProps } from "@/types/modals";
 
-export default function UploadGISModal({
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  datasetVersionId: string;
+  onUploaded?: () => void;
+};
+
+const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
+
+export default function UploadGISLayerModal({
   open,
   onClose,
   countryIso,
+  datasetVersionId,
   onUploaded,
-}: UploadModalProps) {
-  const [title, setTitle] = useState("");
-  const [year, setYear] = useState<number | "">("");
-  const [datasetDate, setDatasetDate] = useState("");
-  const [source, setSource] = useState("");
-  const [makeActive, setMakeActive] = useState(true);
+}: Props) {
+  const [adminLevel, setAdminLevel] = useState<(typeof LEVELS)[number]>("ADM1");
+  const [layerName, setLayerName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setTitle("");
-      setYear("");
-      setDatasetDate("");
-      setSource("");
-      setMakeActive(true);
+      setAdminLevel("ADM1");
+      setLayerName("");
       setFile(null);
-      setError(null);
       setBusy(false);
+      setError(null);
     }
   }, [open]);
 
-  const disabled = !title || !year || !file || busy;
+  const disabled = useMemo(() => !layerName || !file || busy, [layerName, file, busy]);
 
-  async function handleSubmit() {
+  const handleSubmit = async () => {
     try {
       setBusy(true);
       setError(null);
+      if (!file) throw new Error("Please choose a file.");
 
-      if (!file) throw new Error("Please select a GIS file to upload.");
-      if (!title || !year) throw new Error("Title and year are required.");
-
-      // Upload file to Supabase Storage
       const storagePath = `${countryIso}/gis/${Date.now()}-${file.name}`;
-      const { error: uploadErr } = await supabase.storage
-        .from("gis")
-        .upload(storagePath, file, { upsert: true });
+      const { error: upErr } = await supabase.storage.from("gis_raw").upload(storagePath, file, { upsert: true });
+      if (upErr) throw upErr;
 
-      if (uploadErr) throw uploadErr;
-
-      // Insert version record
-      const { error: insertErr } = await supabase.from("gis_dataset_versions").insert({
+      // Insert metadata row
+      const payload = {
+        dataset_version_id: datasetVersionId,
         country_iso: countryIso,
-        title,
-        year: Number(year),
-        dataset_date: datasetDate || null,
-        source: source || null,
-        is_active: makeActive,
-      });
+        admin_level: adminLevel,
+        storage_path: storagePath,
+        source: {
+          name: layerName,
+          originalFilename: file.name,
+          mimeType: file.type,
+          size: file.size,
+          bucket: "gis_raw",
+          path: storagePath,
+        },
+      };
 
-      if (insertErr) throw insertErr;
-
-      // Manage activation
-      if (makeActive) {
-        await supabase
-          .from("gis_dataset_versions")
-          .update({ is_active: false })
-          .eq("country_iso", countryIso)
-          .neq("title", title);
-
-        await supabase
-          .from("gis_dataset_versions")
-          .update({ is_active: true })
-          .eq("title", title);
-      }
-
-      if (toast && typeof toast.success === "function") {
-        toast.success("GIS dataset uploaded successfully.");
-      }
+      const { error: insErr } = await supabase.from("gis_layers").insert(payload);
+      if (insErr) throw insErr;
 
       onUploaded?.();
-      onClose();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Upload failed.");
-
-      if (toast && typeof toast.error === "function") {
-        toast.error(err.message || "Failed to upload dataset.");
-      }
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Failed to upload layer.");
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   if (!open) return null;
 
   return (
     <Modal open={open} onClose={onClose}>
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Upload GIS Dataset</h3>
-        <p className="text-xs text-gray-500">
-          Upload a GIS layer ZIP or GeoJSON file for {countryIso.toUpperCase()}.
-        </p>
-
-        {error && (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">
-            {error}
-          </div>
-        )}
+        <h3 className="text-lg font-semibold">Add GIS Layer</h3>
+        {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">{error}</div>}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <LabeledInput label="Title *" value={title} onChange={setTitle} />
-          <LabeledNumber label="Year *" value={year} onChange={setYear} min={1900} max={2100} />
-          <LabeledInput label="Dataset Date" type="date" value={datasetDate} onChange={setDatasetDate} />
-          <LabeledInput label="Source" value={source} onChange={setSource} />
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Admin Level</span>
+            <select
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={adminLevel}
+              onChange={(e) => setAdminLevel(e.target.value as any)}
+            >
+              {LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Layer Name *</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={layerName}
+              onChange={(e) => setLayerName(e.target.value)}
+              placeholder="e.g., National Boundaries 2020"
+            />
+          </label>
         </div>
 
         <label className="text-sm block">
           <span className="block mb-1 font-medium">File *</span>
-          <input
-            type="file"
-            accept=".zip,.geojson,.json"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={makeActive}
-            onChange={(e) => setMakeActive(e.target.checked)}
-          />
-          Make this version active
+          <input type="file" accept=".geojson,.json,.zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button onClick={onClose} disabled={busy}>
+          <button className="border rounded px-3 py-1 text-sm" onClick={onClose} disabled={busy}>
             Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={disabled}>
+          </button>
+          <button
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
+            onClick={handleSubmit}
+            disabled={disabled}
+          >
             {busy ? "Uploading…" : "Upload"}
-          </Button>
+          </button>
         </div>
       </div>
     </Modal>
-  );
-}
-
-function LabeledInput({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <label className="text-sm">
-      <span className="block mb-1 font-medium">{label}</span>
-      <input
-        className="w-full border rounded px-2 py-1 text-sm"
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-function LabeledNumber({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-}: {
-  label: string;
-  value: number | "";
-  onChange: (v: number | "") => void;
-  min?: number;
-  max?: number;
-}) {
-  return (
-    <label className="text-sm">
-      <span className="block mb-1 font-medium">{label}</span>
-      <input
-        className="w-full border rounded px-2 py-1 text-sm"
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : "")}
-      />
-    </label>
   );
 }
