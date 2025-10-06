@@ -5,20 +5,20 @@ import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { GISLayer } from "@/types";
 
-type Props = {
+interface Props {
   open: boolean;
   onClose: () => void;
   layer: GISLayer;
-  onSaved: () => Promise<void>;
-};
+  onSaved: () => Promise<void> | void;
+}
 
 const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
 
 export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Props) {
   const [layerName, setLayerName] = useState(layer.layer_name || "");
   const [adminLevel, setAdminLevel] = useState(layer.admin_level || "ADM1");
-  const [format, setFormat] = useState(layer.format || "");
   const [crs, setCrs] = useState(layer.crs || "");
+  const [format, setFormat] = useState(layer.format || "json");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,8 +26,8 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
     if (open) {
       setLayerName(layer.layer_name || "");
       setAdminLevel(layer.admin_level || "ADM1");
-      setFormat(layer.format || "");
       setCrs(layer.crs || "");
+      setFormat(layer.format || "json");
       setError(null);
       setBusy(false);
     }
@@ -37,22 +37,23 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
     try {
       setBusy(true);
       setError(null);
+      const { error: upErr } = await supabase
+        .from("gis_layers")
+        .update({
+          layer_name: layerName.trim(),
+          admin_level: adminLevel,
+          crs: crs || null,
+          format: format || null,
+        })
+        .eq("id", layer.id);
 
-      const updates = {
-        layer_name: layerName,
-        admin_level: adminLevel,
-        format: format || null,
-        crs: crs || null,
-      };
-
-      const { error } = await supabase.from("gis_layers").update(updates).eq("id", layer.id);
-      if (error) throw error;
+      if (upErr) throw upErr;
 
       await onSaved();
       onClose();
     } catch (e: any) {
-      console.error("Error updating layer:", e);
-      setError(e.message || "Failed to save changes.");
+      console.error(e);
+      setError(e?.message || "Failed to update layer.");
     } finally {
       setBusy(false);
     }
@@ -74,6 +75,7 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
           <label className="text-sm">
             <span className="block mb-1 font-medium">Layer Name *</span>
             <input
+              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={layerName}
               onChange={(e) => setLayerName(e.target.value)}
@@ -95,44 +97,44 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
               ))}
             </select>
           </label>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm">
-            <span className="block mb-1 font-medium">Format</span>
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={format}
-              onChange={(e) => setFormat(e.target.value)}
-              placeholder="e.g., GeoJSON"
-            />
-          </label>
 
           <label className="text-sm">
             <span className="block mb-1 font-medium">CRS</span>
             <input
+              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={crs}
               onChange={(e) => setCrs(e.target.value)}
               placeholder="e.g., EPSG:4326"
             />
           </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Format</span>
+            <input
+              type="text"
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={format}
+              onChange={(e) => setFormat(e.target.value)}
+              placeholder="e.g., GeoJSON"
+            />
+          </label>
         </div>
 
         <div className="flex justify-end gap-2 pt-4">
           <button
-            className="border rounded px-3 py-1 text-sm"
             onClick={onClose}
             disabled={busy}
+            className="border rounded px-3 py-1 text-sm"
           >
             Cancel
           </button>
           <button
-            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
             onClick={handleSave}
-            disabled={!layerName || busy}
+            disabled={busy || !layerName}
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
           >
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
