@@ -1,36 +1,21 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
-import DatasetHealth from "@/components/country/DatasetHealth";
-import EditAdminDatasetVersionModal from "@/components/country/EditAdminDatasetVersionModal";
-import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { Database, Upload, FileDown, MoreVertical, Check, Link2 } from "lucide-react";
+import { Database, Layers, ListTree, Upload, ChevronDown, ChevronRight } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-  adm0_label?: string;
-  adm1_label?: string;
-  adm2_label?: string;
-  adm3_label?: string;
-  adm4_label?: string;
-  adm5_label?: string;
-};
-
-type AdminDatasetVersion = {
+type AdminVersion = {
   id: string;
-  country_iso: string;
+  country_iso: string | null;
   title: string;
-  year: number;
+  year: number | null;
   dataset_date: string | null;
   source: string | null;
-  created_at: string;
   is_active: boolean;
+  created_at: string;
   notes: string | null;
 };
 
@@ -42,371 +27,206 @@ type AdminUnit = {
   parent_pcode: string | null;
 };
 
-type JoinRow = {
-  id: string;
-  datasets: any[];
-  is_active: boolean;
-};
+export default function AdminsPage({ params }: { params: CountryParams }) {
+  const { id: countryIso } = params;
 
-export default function AdminUnitsPage({ params }: any) {
-  const { id: countryIso } = params as CountryParams;
+  const [versions, setVersions] = useState<AdminVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
+  const [units, setUnits] = useState<AdminUnit[]>([]);
+  const [viewMode, setViewMode] = useState<"table" | "tree">("table");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const [country, setCountry] = useState<Country | null>(null);
-  const [versions, setVersions] = useState<AdminDatasetVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<AdminDatasetVersion | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<AdminDatasetVersion | null>(null);
-  const [linkedMap, setLinkedMap] = useState<Record<string, boolean>>({});
-  const [adminUnits, setAdminUnits] = useState<AdminUnit[]>([]);
-  const [openUpload, setOpenUpload] = useState(false);
-  const [editingVersion, setEditingVersion] = useState<AdminDatasetVersion | null>(null);
-  const [deletingVersion, setDeletingVersion] = useState<AdminDatasetVersion | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
-  // -------- Data loads ----------
+  // Fetch versions
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("countries")
+    const fetchVersions = async () => {
+      const { data, error } = await supabase
+        .from("admin_dataset_versions")
         .select("*")
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    })();
-  }, [countryIso]);
-
-  const fetchVersions = async () => {
-    const { data, error } = await supabase
-      .from("admin_dataset_versions")
-      .select("*")
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching versions:", error);
-      return;
-    }
-    const list = (data || []) as AdminDatasetVersion[];
-    setVersions(list);
-
-    const active = list.find((v) => v.is_active) || null;
-    setActiveVersion(active);
-
-    const keepSelected =
-      selectedVersion && list.find((v) => v.id === selectedVersion.id)
-        ? selectedVersion
-        : active;
-    setSelectedVersion(keepSelected || null);
-
-    if (keepSelected?.id) {
-      fetchAdminUnits(keepSelected.id);
-    } else if (active?.id) {
-      fetchAdminUnits(active.id);
-    } else {
-      setAdminUnits([]);
-    }
-  };
-
-  const fetchLinkedMap = async () => {
-    const { data, error } = await supabase
-      .from("dataset_joins")
-      .select("id, datasets, is_active")
-      .eq("country_iso", countryIso);
-
-    if (error) {
-      console.error("Error fetching dataset_joins:", error);
-      setLinkedMap({});
-      return;
-    }
-    const rows = (data || []) as JoinRow[];
-    const map: Record<string, boolean> = {};
-    rows.forEach((row) => {
-      const arr = Array.isArray(row.datasets) ? row.datasets : [];
-      for (const item of arr) {
-        const vid = item?.dataset_version_id;
-        if (vid) map[vid] = true;
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (error) console.error("Error fetching admin versions:", error);
+      else {
+        setVersions(data || []);
+        const active = data?.find((v) => v.is_active);
+        const initial = active || data?.[0] || null;
+        setSelectedVersion(initial);
       }
-    });
-    setLinkedMap(map);
-  };
-
-  useEffect(() => {
+    };
     fetchVersions();
-    fetchLinkedMap();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryIso]);
 
-  const fetchAdminUnits = async (versionId: string) => {
-    const { data, error } = await supabase
-      .from("admin_units")
-      .select("id, pcode, name, level, parent_pcode")
-      .eq("country_iso", countryIso)
-      .eq("dataset_version_id", versionId);
+  // Fetch admin units for selected version
+  useEffect(() => {
+    const fetchUnits = async () => {
+      if (!selectedVersion) {
+        setUnits([]);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("admin_units")
+        .select("id,pcode,name,level,parent_pcode")
+        .eq("dataset_version_id", selectedVersion.id)
+        .order("pcode", { ascending: true });
+      if (error) console.error("Error fetching admin units:", error);
+      else setUnits(data || []);
+    };
+    fetchUnits();
+  }, [selectedVersion]);
 
-    if (error) {
-      console.error("Error fetching admin_units:", error);
-      return;
+  // Build tree from flat list
+  const buildTree = (rows: AdminUnit[]) => {
+    const map: Record<string, AdminUnit & { children: AdminUnit[] }> = {};
+    const roots: (AdminUnit & { children: AdminUnit[] })[] = [];
+    for (const row of rows) map[row.pcode] = { ...row, children: [] };
+    for (const row of rows) {
+      if (row.parent_pcode && map[row.parent_pcode]) {
+        map[row.parent_pcode].children.push(map[row.pcode]);
+      } else roots.push(map[row.pcode]);
     }
-    setAdminUnits((data || []) as AdminUnit[]);
+    return roots;
   };
 
-  // -------- Actions ----------
-  const handleSelectVersion = (version: AdminDatasetVersion) => {
-    setSelectedVersion(version);
-    fetchAdminUnits(version.id);
+  const treeData = buildTree(units);
+
+  const toggleExpand = (pcode: string) => {
+    const next = new Set(expanded);
+    next.has(pcode) ? next.delete(pcode) : next.add(pcode);
+    setExpanded(next);
   };
 
-  const handleMakeActive = async (versionId: string) => {
-    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", versionId);
-    await fetchVersions();
-  };
-
-  const handleDeactivate = async (versionId: string) => {
-    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("id", versionId);
-    await fetchVersions();
-  };
-
-  const handleDeleted = async (versionId: string) => {
-    await supabase.from("admin_units").delete().eq("country_iso", countryIso).eq("dataset_version_id", versionId);
-    await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
-    setDeletingVersion(null);
-    await fetchVersions();
-    await fetchLinkedMap();
-  };
-
-  const downloadTemplate = () => {
-    const headers = [
-      "Adm1 Name",
-      "Adm1 PCode",
-      "Adm2 Name",
-      "Adm2 PCode",
-      "Adm3 Name",
-      "Adm3 PCode",
-      "Adm4 Name",
-      "Adm4 PCode",
-      "Adm5 Name",
-      "Adm5 PCode",
-    ];
-    const csv = headers.join(",") + "\n";
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${countryIso}_admin_units_template.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const renderTreeNode = (node: AdminUnit & { children: AdminUnit[] }, depth = 0) => (
+    <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
+      <div className="flex items-center gap-1">
+        {node.children.length > 0 ? (
+          <button onClick={() => toggleExpand(node.pcode)}>
+            {expanded.has(node.pcode) ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+        ) : (
+          <span className="w-4 h-4" />
+        )}
+        <span className="font-medium">{node.name}</span>
+        <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
+      </div>
+      {expanded.has(node.pcode) &&
+        node.children.map((child) => renderTreeNode(child, depth + 1))}
+    </div>
+  );
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} – Admin Units`,
+    title: `${countryIso.toUpperCase()} – Administrative Boundaries`,
     group: "country-config" as const,
-    description: "Manage and inspect uploaded administrative boundaries.",
+    description:
+      "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "Admin Units" },
+          { label: countryIso.toUpperCase(), href: `/country/${countryIso}` },
+          { label: "Admins" },
         ]}
       />
     ),
   };
 
-  const statusBadge = (v: AdminDatasetVersion) => {
-    const isLinked = !!linkedMap[v.id];
-    const active = v.is_active;
-
-    if (active && isLinked)
-      return (
-        <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-blue-600 text-white">
-          <Check className="w-3 h-3" /> Active <span className="mx-0.5">•</span>
-          <Link2 className="w-3 h-3" /> Linked
-        </span>
-      );
-    if (active)
-      return (
-        <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-green-600 text-white">
-          <Check className="w-3 h-3" /> Active
-        </span>
-      );
-    if (isLinked)
-      return (
-        <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-amber-500 text-white">
-          <Link2 className="w-3 h-3" /> Linked
-        </span>
-      );
-    return <span className="inline-block rounded px-2 py-0.5 text-xs bg-gray-200">—</span>;
-  };
-
-  const canHardDelete = (v: AdminDatasetVersion) => !v.is_active && !linkedMap[v.id];
-
-  const RowMenu = ({ v }: { v: AdminDatasetVersion }) => {
-    const open = menuOpenId === v.id;
-    return (
-      <div className="relative">
-        <button onClick={() => setMenuOpenId(open ? null : v.id)} className="p-1 rounded hover:bg-gray-100">
-          <MoreVertical className="w-4 h-4" />
-        </button>
-        {open && (
-          <div onMouseLeave={() => setMenuOpenId(null)} className="absolute right-0 z-10 mt-2 w-40 rounded border bg-white shadow">
-            <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleSelectVersion(v); }}>
-              Select
-            </button>
-            {!v.is_active && (
-              <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleMakeActive(v.id); }}>
-                Make Active
-              </button>
-            )}
-            {v.is_active && (
-              <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); handleDeactivate(v.id); }}>
-                Deactivate
-              </button>
-            )}
-            <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { setMenuOpenId(null); setEditingVersion(v); }}>
-              Edit
-            </button>
-            <button
-              disabled={!canHardDelete(v)}
-              className={`w-full text-left px-3 py-2 text-sm ${
-                canHardDelete(v) ? "hover:bg-red-50 text-red-600" : "opacity-50 cursor-not-allowed"
-              }`}
-              onClick={() => {
-                if (!canHardDelete(v)) return;
-                setMenuOpenId(null);
-                setDeletingVersion(v);
-              }}
-            >
-              Delete Permanently
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const totalUnits = adminUnits.length;
-
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Versions Selector */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setOpenUpload(true)} className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90">
+          <div className="flex gap-2">
+            <button
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+              onClick={() => alert("Upload modal coming soon")}
+            >
               <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-            </button>
-            <button onClick={downloadTemplate} className="flex items-center text-sm border px-2 py-1 rounded hover:bg-gray-50">
-              <FileDown className="w-4 h-4 mr-1" /> Download Template
             </button>
           </div>
         </div>
 
-        {versions.length > 0 ? (
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border px-2 py-1 text-left">Title</th>
-                <th className="border px-2 py-1 text-left">Year</th>
-                <th className="border px-2 py-1 text-left">Date</th>
-                <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Status</th>
-                <th className="border px-2 py-1 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) => (
-                <tr key={v.id} className={`hover:bg-gray-50 ${selectedVersion?.id === v.id ? "bg-blue-50" : ""}`}>
-                  <td className="border px-2 py-1">{v.title}</td>
-                  <td className="border px-2 py-1">{v.year}</td>
-                  <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
-                  <td className="border px-2 py-1">{v.source || "—"}</td>
-                  <td className="border px-2 py-1">{statusBadge(v)}</td>
-                  <td className="border px-2 py-1">
-                    <RowMenu v={v} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {versions.length ? (
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={selectedVersion?.id || ""}
+            onChange={(e) => {
+              const v = versions.find((x) => x.id === e.target.value) || null;
+              setSelectedVersion(v);
+            }}
+          >
+            {versions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.title} ({v.year ?? "—"})
+                {v.is_active ? " ★" : ""}
+              </option>
+            ))}
+          </select>
         ) : (
-          <p className="italic text-gray-500">No versions uploaded yet</p>
+          <p className="italic text-gray-500">No admin dataset versions found.</p>
         )}
       </div>
 
-      <DatasetHealth totalUnits={totalUnits} />
-
-      <div className="border rounded-lg p-4 shadow-sm mt-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">
-            Admin Units {selectedVersion ? `– ${selectedVersion.title}` : ""}
-          </h2>
-          {selectedVersion && <span className="text-xs text-gray-500">Version ID: {selectedVersion.id}</span>}
+      {/* View toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Layers className="w-5 h-5 text-blue-700" /> Administrative Units
+        </h2>
+        <div className="flex gap-2">
+          <button
+            className={`px-3 py-1 rounded text-sm border ${
+              viewMode === "table" ? "bg-blue-50 border-blue-400" : ""
+            }`}
+            onClick={() => setViewMode("table")}
+          >
+            Table View
+          </button>
+          <button
+            className={`px-3 py-1 rounded text-sm border ${
+              viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""
+            }`}
+            onClick={() => setViewMode("tree")}
+          >
+            Tree View
+          </button>
         </div>
-
-        {adminUnits.length > 0 ? (
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border px-2 py-1 text-left">Name</th>
-                <th className="border px-2 py-1 text-left">PCode</th>
-                <th className="border px-2 py-1 text-left">Level</th>
-                <th className="border px-2 py-1 text-left">Parent PCode</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adminUnits.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{u.name}</td>
-                  <td className="border px-2 py-1">{u.pcode}</td>
-                  <td className="border px-2 py-1">{u.level}</td>
-                  <td className="border px-2 py-1">{u.parent_pcode || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : selectedVersion ? (
-          <p className="italic text-gray-500">No units found for this version. Upload a dataset or select another version.</p>
-        ) : (
-          <p className="italic text-gray-500">Select a version to view its units.</p>
-        )}
       </div>
 
-      <UploadAdminUnitsModal
-        open={openUpload}
-        onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
-        onUploaded={async () => {
-          await fetchVersions();
-          await fetchLinkedMap();
-        }}
-      />
-
-      {editingVersion && (
-        <EditAdminDatasetVersionModal
-          open={!!editingVersion}
-          onClose={() => setEditingVersion(null)}
-          version={editingVersion}
-          onSaved={async () => {
-            setEditingVersion(null);
-            await fetchVersions();
-          }}
-        />
-      )}
-
-      {deletingVersion && (
-        <ConfirmDeleteModal
-          open={!!deletingVersion}
-          title="Delete Version Permanently"
-          message={`This will permanently remove the version "${deletingVersion.title}" and all its admin units. This cannot be undone.`}
-          confirmLabel="Delete Permanently"
-          onClose={() => setDeletingVersion(null)}   // ✅ fixed line
-          onConfirm={async () => {
-            await handleDeleted(deletingVersion.id);
-          }}
-        />
+      {/* Conditional Rendering */}
+      {viewMode === "table" ? (
+        <table className="w-full text-sm border">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border px-2 py-1 text-left">Name</th>
+              <th className="border px-2 py-1 text-left">PCode</th>
+              <th className="border px-2 py-1 text-left">Level</th>
+              <th className="border px-2 py-1 text-left">Parent PCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            {units.map((u) => (
+              <tr key={u.id} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{u.name}</td>
+                <td className="border px-2 py-1">{u.pcode}</td>
+                <td className="border px-2 py-1">{u.level}</td>
+                <td className="border px-2 py-1">{u.parent_pcode || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="border rounded-lg p-3 bg-white shadow-sm">
+          {treeData.length ? (
+            treeData.map((node) => renderTreeNode(node))
+          ) : (
+            <p className="italic text-gray-500">No admin units found.</p>
+          )}
+        </div>
       )}
     </SidebarLayout>
   );
