@@ -17,21 +17,29 @@ const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
 /**
  * EditGISLayerModal
  * Allows editing of layer metadata (name, admin level, source).
- * CRS is automatically assumed to be EPSG:4326 — not editable by user.
+ * CRS is fixed as EPSG:4326 (not user-editable).
  */
 export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Props) {
   const [adminLevel, setAdminLevel] = useState<string>(layer.admin_level || "ADM1");
   const [layerName, setLayerName] = useState(layer.layer_name || "");
-  const [source, setSource] = useState(layer.source || "");
+  const [sourceText, setSourceText] = useState<string>(() => {
+    if (typeof layer.source === "string") return layer.source;
+    if (layer.source && typeof layer.source === "object" && "name" in layer.source)
+      return (layer.source as any).name;
+    return "";
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset modal state whenever it opens or the layer changes
+  // Reset state when modal opens
   useEffect(() => {
     if (open && layer) {
       setAdminLevel(layer.admin_level || "ADM1");
       setLayerName(layer.layer_name || "");
-      setSource(layer.source || "");
+      if (typeof layer.source === "string") setSourceText(layer.source);
+      else if (layer.source && typeof layer.source === "object" && "name" in layer.source)
+        setSourceText((layer.source as any).name);
+      else setSourceText("");
       setError(null);
       setBusy(false);
     }
@@ -47,8 +55,8 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
       const payload = {
         admin_level: adminLevel,
         layer_name: layerName,
-        source,
-        crs: "EPSG:4326", // Always set default
+        source: sourceText || null,
+        crs: "EPSG:4326",
         updated_at: new Date().toISOString(),
       };
 
@@ -115,8 +123,8 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
           <input
             type="text"
             className="w-full border rounded px-2 py-1 text-sm"
-            value={source || ""}
-            onChange={(e) => setSource(e.target.value)}
+            value={sourceText}
+            onChange={(e) => setSourceText(e.target.value)}
             placeholder="e.g., OCHA, UNHCR, Government Survey"
           />
         </label>
