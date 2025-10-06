@@ -2,18 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
-import { toast } from "sonner";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-type GISLayer = {
-  id: string;
-  dataset_version_id: string | null;
-  admin_level: string | null;
-  storage_path?: string | null;
-  source?: any | null;
-  created_at?: string | null;
-};
+import type { GISLayer } from "@/types";
 
 type Props = {
   open: boolean;
@@ -22,18 +12,22 @@ type Props = {
   onSaved: () => Promise<void>;
 };
 
+const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
+
 export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Props) {
-  const [adminLevel, setAdminLevel] = useState(layer.admin_level || "");
-  const [source, setSource] = useState(
-    typeof layer.source === "string" ? layer.source : JSON.stringify(layer.source || {}, null, 2)
-  );
+  const [layerName, setLayerName] = useState(layer.layer_name || "");
+  const [adminLevel, setAdminLevel] = useState(layer.admin_level || "ADM1");
+  const [format, setFormat] = useState(layer.format || "");
+  const [crs, setCrs] = useState(layer.crs || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setAdminLevel(layer.admin_level || "");
-      setSource(typeof layer.source === "string" ? layer.source : JSON.stringify(layer.source || {}, null, 2));
+      setLayerName(layer.layer_name || "");
+      setAdminLevel(layer.admin_level || "ADM1");
+      setFormat(layer.format || "");
+      setCrs(layer.crs || "");
       setError(null);
       setBusy(false);
     }
@@ -44,31 +38,21 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
       setBusy(true);
       setError(null);
 
-      const parsedSource = (() => {
-        try {
-          return JSON.parse(source);
-        } catch {
-          return source;
-        }
-      })();
+      const updates = {
+        layer_name: layerName,
+        admin_level: adminLevel,
+        format: format || null,
+        crs: crs || null,
+      };
 
-      const { error: updateErr } = await supabase
-        .from("gis_layers")
-        .update({
-          admin_level: adminLevel || null,
-          source: parsedSource || null,
-        })
-        .eq("id", layer.id);
+      const { error } = await supabase.from("gis_layers").update(updates).eq("id", layer.id);
+      if (error) throw error;
 
-      if (updateErr) throw updateErr;
-
-      toast.success("Layer updated successfully.");
       await onSaved();
       onClose();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to update layer.");
-      toast.error(err.message || "Failed to update layer.");
+    } catch (e: any) {
+      console.error("Error updating layer:", e);
+      setError(e.message || "Failed to save changes.");
     } finally {
       setBusy(false);
     }
@@ -80,41 +64,76 @@ export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Pro
     <Modal open={open} onClose={onClose}>
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Edit GIS Layer</h3>
-
         {error && (
           <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">
             {error}
           </div>
         )}
 
-        <label className="text-sm block">
-          <span className="block mb-1 font-medium">Admin Level</span>
-          <input
-            type="text"
-            className="w-full border rounded px-2 py-1 text-sm"
-            value={adminLevel}
-            onChange={(e) => setAdminLevel(e.target.value)}
-            placeholder="e.g. ADM1"
-          />
-        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Layer Name *</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={layerName}
+              onChange={(e) => setLayerName(e.target.value)}
+              placeholder="Layer name"
+            />
+          </label>
 
-        <label className="text-sm block">
-          <span className="block mb-1 font-medium">Source (JSON or text)</span>
-          <textarea
-            className="w-full border rounded px-2 py-1 text-sm font-mono"
-            rows={5}
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-          />
-        </label>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Admin Level</span>
+            <select
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={adminLevel}
+              onChange={(e) => setAdminLevel(e.target.value as any)}
+            >
+              {LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Format</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={format}
+              onChange={(e) => setFormat(e.target.value)}
+              placeholder="e.g., GeoJSON"
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">CRS</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={crs}
+              onChange={(e) => setCrs(e.target.value)}
+              placeholder="e.g., EPSG:4326"
+            />
+          </label>
+        </div>
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button onClick={onClose} disabled={busy}>
+          <button
+            className="border rounded px-3 py-1 text-sm"
+            onClick={onClose}
+            disabled={busy}
+          >
             Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={busy}>
+          </button>
+          <button
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
+            onClick={handleSave}
+            disabled={!layerName || busy}
+          >
             {busy ? "Saving…" : "Save"}
-          </Button>
+          </button>
         </div>
       </div>
     </Modal>
