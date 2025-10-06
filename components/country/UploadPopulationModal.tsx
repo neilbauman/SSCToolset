@@ -41,11 +41,19 @@ export default function UploadPopulationModal({
     try {
       setBusy(true);
       setError(null);
-      if (!file) throw new Error("Please select a file to upload.");
 
-      const text = await file.text();
-      const json = JSON.parse(text);
+      if (!file) throw new Error("Please select a population file to upload.");
+      if (!title || !year) throw new Error("Title and year are required.");
 
+      // Upload file to Supabase Storage
+      const storagePath = `${countryIso}/population/${Date.now()}-${file.name}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("population")
+        .upload(storagePath, file, { upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      // Insert version record
       const { error: insertErr } = await supabase.from("population_dataset_versions").insert({
         country_iso: countryIso,
         title,
@@ -54,7 +62,22 @@ export default function UploadPopulationModal({
         source: source || null,
         is_active: makeActive,
       });
+
       if (insertErr) throw insertErr;
+
+      // Manage active version
+      if (makeActive) {
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso)
+          .neq("title", title);
+
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: true })
+          .eq("title", title);
+      }
 
       toast.success("Population dataset uploaded successfully.");
       onUploaded?.();
@@ -75,7 +98,7 @@ export default function UploadPopulationModal({
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Upload Population Dataset</h3>
         <p className="text-xs text-gray-500">
-          Upload a JSON or CSV file with population data for {countryIso.toUpperCase()}.
+          Upload a CSV file containing population data for {countryIso.toUpperCase()}.
         </p>
 
         {error && (
@@ -93,16 +116,24 @@ export default function UploadPopulationModal({
 
         <label className="text-sm block">
           <span className="block mb-1 font-medium">File *</span>
-          <input type="file" accept=".json,.csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
         </label>
 
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={makeActive} onChange={(e) => setMakeActive(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={makeActive}
+            onChange={(e) => setMakeActive(e.target.checked)}
+          />
           Make this version active
         </label>
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
+          <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={disabled}>
