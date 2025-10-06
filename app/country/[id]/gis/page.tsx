@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { MapContainer, TileLayer } from "react-leaflet";
@@ -13,23 +13,24 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import type { CountryParams } from "@/app/country/types";
 
 export default function GISPage({ params }: { params: CountryParams }) {
-  const { id } = params;
+  const countryIso = String(params.id);
   const mapRef = useRef<L.Map | null>(null);
   const [layers, setLayers] = useState<any[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
   // ✅ Fetch GIS layers
+  const fetchLayers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("gis_layers")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .eq("is_active", true);
+    if (!error && data) setLayers(data);
+  }, [countryIso]);
+
   useEffect(() => {
-    const fetchLayers = async () => {
-      const { data, error } = await supabase
-        .from("gis_layers")
-        .select("*")
-        .eq("country_iso", id)
-        .eq("is_active", true);
-      if (!error && data) setLayers(data);
-    };
     fetchLayers();
-  }, [id]);
+  }, [fetchLayers]);
 
   // ✅ Hook for rendering layers
   const { geoJsonLayers } = useGeoJSONLayers({
@@ -39,15 +40,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
   });
 
   const headerProps = {
-    title: `${id.toUpperCase()} – GIS Layers`,
-    group: "country-config" as const,
+    title: `${countryIso.toUpperCase()} – GIS Layers`,
+    groupKey: "country-config",
     description: "Manage and visualize geospatial boundary datasets.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Config", href: "/country" },
-          { label: id.toUpperCase() },
+          { label: countryIso.toUpperCase() },
           { label: "GIS" },
         ]}
       />
@@ -73,28 +74,31 @@ export default function GISPage({ params }: { params: CountryParams }) {
       <GISDataHealthPanel layers={layers} />
 
       {/* Map container */}
-      <MapContainer
-        center={[12.8797, 121.774]}
-        zoom={5}
-        style={{ height: "600px", width: "100%" }}
-        ref={mapRef as any} // ✅ direct ref instead of whenReady
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        {geoJsonLayers}
-      </MapContainer>
+      <div className="border rounded-lg overflow-hidden shadow-sm">
+        <MapContainer
+          center={[12.8797, 121.774]}
+          zoom={5}
+          style={{ height: "600px", width: "100%" }}
+          whenCreated={(mapInstance) => {
+            mapRef.current = mapInstance;
+          }}
+          className="rounded-md z-0"
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
+          />
+          {geoJsonLayers}
+        </MapContainer>
+      </div>
 
-      {/* Upload modal */}
-      {openUpload && (
-        <UploadGISModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
-          countryIso={id}
-          onUploaded={() => window.location.reload()}
-        />
-      )}
+      {/* Upload modal (always rendered, controlled by `open`) */}
+      <UploadGISModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={fetchLayers}
+      />
     </SidebarLayout>
   );
 }
