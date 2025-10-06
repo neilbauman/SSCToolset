@@ -1,24 +1,61 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    /* === Core TypeScript Options === */
+    "target": "ES2020",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+
+    /* === Next.js Integration === */
+    "plugins": [{ "name": "next" }],
+    "allowSyntheticDefaultImports": true,
+
+    /* === Project Structure === */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["*"]
-    }
+      "@/*": ["*"],
+      "@types": ["types"]
+    },
+    "typeRoots": ["./types", "./node_modules/@types"],
+
+    /* === Build Hygiene === */
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "useUnknownInCatchVariables": false
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "lib/types"],
-  "exclude": ["node_modules", "supabase"]
+
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "types/**/*.d.ts",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx"
+  ],
+
+  "exclude": [
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "coverage"
+  ],
+
+  /* === Strictness for app/ directory (Next 13+ App Router) === */
+  "compilerOptions": {
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": false
+  }
 }
