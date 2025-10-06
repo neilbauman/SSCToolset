@@ -46,14 +46,13 @@ export default function UploadGISModal({
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
         .upload(path, file);
-
       if (uploadError) throw uploadError;
 
-      // 3️⃣ Extract admin level integer
+      // 3️⃣ Extract admin level integer (if known)
       const levelMatch = adminLevel.match(/ADM?(\d)/i);
       const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
 
-      // 4️⃣ Determine format
+      // 4️⃣ Determine file format
       const ext = file.name.split(".").pop()?.toLowerCase();
       const format =
         ext === "zip"
@@ -62,7 +61,7 @@ export default function UploadGISModal({
           ? "json"
           : "unknown";
 
-      // 5️⃣ Check for existing layer
+      // 5️⃣ Check if layer already exists for same ADM level
       const { data: existing } = await supabase
         .from("gis_layers")
         .select("id")
@@ -72,7 +71,6 @@ export default function UploadGISModal({
         .eq("is_active", true)
         .maybeSingle();
 
-      // 6️⃣ If existing, confirm replacement and deactivate old layer
       if (existing) {
         const confirmReplace = confirm(
           `A layer for ${adminLevel} already exists. Replace it?`
@@ -82,15 +80,15 @@ export default function UploadGISModal({
           return;
         }
 
+        // 6️⃣ Deactivate the old layer before inserting new one
         const { error: deactivateError } = await supabase
           .from("gis_layers")
           .update({ is_active: false })
           .eq("id", existing.id);
-
         if (deactivateError) throw deactivateError;
       }
 
-      // 7️⃣ Insert new layer (sequentially after deactivation)
+      // 7️⃣ Insert new layer (catch unique constraint errors gracefully)
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
@@ -106,7 +104,7 @@ export default function UploadGISModal({
 
       if (insertError) {
         if (insertError.message.includes("duplicate key value")) {
-          alert("Layer already exists and was not replaced. Please refresh.");
+          alert("A layer already exists and could not be replaced automatically. Please refresh the page.");
         } else {
           throw insertError;
         }
