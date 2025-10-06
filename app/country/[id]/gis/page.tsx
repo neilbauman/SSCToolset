@@ -1,95 +1,75 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Plus, Upload, Pencil } from "lucide-react";
+import { Layers, Upload, Pencil } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
-import type { GISDatasetVersion, GISLayer } from "@/types";
-import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
-import EditGISVersionModal from "@/components/country/EditGISVersionModal";
+import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
+const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
 
-// Dynamic Leaflet Components (safe for SSR)
-const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
-
-export default function GISPage({ params }: { params: CountryParams }) {
-  const { id } = params;
-  const mapRef = useRef<L.Map | null>(null);
-
-  const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
-  const [layers, setLayers] = useState<GISLayer[]>([]);
-  const [visible, setVisible] = useState<Record<number, boolean>>({
-    0: false, 1: false, 2: false, 3: false, 4: false, 5: false,
-  });
-
+export default async function GISPage({ params }: any) {
+  const { id } = await params;
+  const [versions, setVersions] = useState<any[]>([]);
+  const [activeVersion, setActiveVersion] = useState<any | null>(null);
+  const [layers, setLayers] = useState<any[]>([]);
+  const [visible, setVisible] = useState<{ [key: number]: boolean }>({});
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
   const [openEditVersion, setOpenEditVersion] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const mapRef = useRef<L.Map | null>(null);
 
-  // ────────────── Fetch Dataset Versions ──────────────
+  // ─────────────── Fetch dataset versions ───────────────
   useEffect(() => {
-    (async () => {
+    const fetchVersions = async () => {
       const { data } = await supabase
         .from("gis_dataset_versions")
         .select("*")
         .eq("country_iso", id)
         .order("created_at", { ascending: false });
-      setVersions(data || []);
-      const active = data?.find(v => v.is_active);
-      setActiveVersion(active || data?.[0] || null);
-    })();
+      if (data) {
+        setVersions(data);
+        setActiveVersion(data.find((v) => v.is_active) || data[0] || null);
+      }
+    };
+    fetchVersions();
   }, [id]);
 
-  // ────────────── Fetch Layers for Active Version ──────────────
+  // ─────────────── Fetch layers for active version ───────────────
   useEffect(() => {
-    if (!activeVersion) return;
-    (async () => {
-      const { data } = await supabase
+    const fetchLayers = async () => {
+      if (!activeVersion) return;
+      setLoading(true);
+      const { data, error } = await supabase
         .from("gis_layers")
         .select("*")
         .eq("country_iso", id)
-        .eq("dataset_version_id", activeVersion.id);
-      setLayers(data || []);
-    })();
+        .eq("is_active", true)
+        .order("admin_level_int", { ascending: true });
+
+      if (!error && data) {
+        setLayers(data);
+        const initialVisibility: { [key: number]: boolean } = {};
+        data.forEach((l) => {
+          initialVisibility[l.admin_level_int] = false; // off by default
+        });
+        setVisible(initialVisibility);
+      }
+      setLoading(false);
+    };
+    fetchLayers();
   }, [id, activeVersion]);
 
-  // ────────────── Layer Visibility Change ──────────────
-  const toggleLayer = (level: number) =>
-    setVisible(prev => ({ ...prev, [level]: !prev[level] }));
-
-  // ────────────── Fit Bounds When Layers Active ──────────────
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const map = mapRef.current;
-    const activeLayers = layers.filter(l => visible[l.admin_level_int]);
-    if (activeLayers.length === 0) return;
-
-    const boundsList: L.LatLngBounds[] = [];
-    activeLayers.forEach(layer => {
-      if (!layer.source?.url) return;
-      fetch(layer.source.url)
-        .then(res => res.json())
-        .then(data => {
-          const geo = L.geoJSON(data);
-          boundsList.push(geo.getBounds());
-          if (boundsList.length === activeLayers.length) {
-            const merged = boundsList.reduce((acc, b) => acc.extend(b), boundsList[0]);
-            map.fitBounds(merged.pad(0.05));
-          }
-        });
-    });
-  }, [visible, layers]);
-
+  // ─────────────── Header Props ───────────────
   const headerProps = {
     title: "GIS Datasets",
     group: "country-config" as const,
@@ -97,7 +77,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     breadcrumbs: (
       <Breadcrumbs
         items={[
-          { label: "Dashboard", href: "/" },
+          { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
           { label: id },
           { label: "GIS" },
@@ -106,10 +86,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // ────────────── Render ──────────────
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top Summary Cards */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* Dataset Version */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
@@ -130,12 +109,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
             <select
               value={activeVersion?.id || ""}
               onChange={(e) => {
-                const selected = versions.find(v => v.id === e.target.value);
+                const selected = versions.find((v) => v.id === e.target.value);
                 setActiveVersion(selected || null);
               }}
               className="text-sm border rounded p-1 flex-1"
             >
-              {versions.map(v => (
+              {versions.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.title} {v.year ? `(${v.year})` : ""}
                 </option>
@@ -171,51 +150,53 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
         {/* Active Layers */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
-          <p className="text-xs text-gray-500 uppercase">Active Layers</p>
+          <p className="text-xs text-gray-500 uppercase mb-1">Active Layers</p>
           <h3 className="text-lg font-semibold">{layers.length}</h3>
-          <p className="text-sm text-gray-600">ADM0–ADM5 supported</p>
+          <p className="text-xs text-gray-500">ADM0–ADM5 supported</p>
         </div>
 
-        {/* Country */}
-        <div className="p-4 rounded-lg border shadow-sm bg-white flex justify-between items-center">
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Country</p>
-            <h3 className="text-lg font-semibold">{id}</h3>
-            <p className="text-sm text-gray-600">SSC GIS</p>
-          </div>
-          <button
-            onClick={() => setOpenUpload(true)}
-            className="px-4 py-2 text-sm text-white rounded hover:opacity-90"
-            style={{ backgroundColor: "var(--gsc-red)" }}
-          >
-            <Upload className="inline w-4 h-4 mr-1" /> Upload GIS
-          </button>
+        {/* Country Info */}
+        <div className="p-4 rounded-lg border shadow-sm bg-white">
+          <p className="text-xs text-gray-500 uppercase mb-1">Country</p>
+          <h3 className="text-lg font-semibold">{id}</h3>
+          <p className="text-xs text-gray-500">SSC GIS</p>
         </div>
       </div>
 
-      {/* Data Health */}
+      {/* Data Health Panel */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Layer Table */}
+      {/* Layers Table */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
+          <thead className="bg-gray-100 text-gray-700">
             <tr>
-              <th className="px-3 py-2 text-left">Level</th>
-              <th className="px-3 py-2 text-left">Layer</th>
-              <th className="px-3 py-2 text-left">Features</th>
+              <th className="px-3 py-2 text-left">LEVEL</th>
+              <th className="px-3 py-2 text-left">LAYER</th>
+              <th className="px-3 py-2 text-left">FEATURES</th>
               <th className="px-3 py-2 text-left">CRS</th>
-              <th className="px-3 py-2 text-left">Format</th>
+              <th className="px-3 py-2 text-left">FORMAT</th>
+              <th className="px-3 py-2 text-left">SOURCE</th>
             </tr>
           </thead>
           <tbody>
-            {layers.map(l => (
+            {layers.map((l) => (
               <tr key={l.id} className="border-t hover:bg-gray-50">
-                <td className="px-3 py-2 font-semibold">{l.admin_level}</td>
+                <td className="px-3 py-2">{l.admin_level}</td>
                 <td className="px-3 py-2">{l.layer_name}</td>
-                <td className="px-3 py-2 text-gray-700">{l.feature_count ?? "—"}</td>
-                <td className="px-3 py-2 text-gray-700">{l.crs ?? "—"}</td>
-                <td className="px-3 py-2 text-gray-700">{l.format ?? "json"}</td>
+                <td className="px-3 py-2">{l.feature_count ?? "—"}</td>
+                <td className="px-3 py-2">{l.crs ?? "—"}</td>
+                <td className="px-3 py-2">{l.format ?? "json"}</td>
+                <td className="px-3 py-2">
+                  {l.source?.path && (
+                    <button
+                      onClick={() => navigator.clipboard.writeText(l.source.path)}
+                      className="text-xs px-2 py-1 bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -223,67 +204,71 @@ export default function GISPage({ params }: { params: CountryParams }) {
       </div>
 
       {/* Map */}
-      <div className="relative rounded-lg overflow-hidden border shadow-sm">
+      <div className="relative border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
-          ref={mapRef as any}
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
+          whenCreated={(map) => (mapRef.current = map)}
         >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {layers.map(l =>
-            visible[l.admin_level_int] && l.source?.url ? (
-              <GeoJSON
-                key={l.id}
-                data={l.source.url as any}
-                style={{
-                  color: "#C72B2B",
-                  weight: 1,
-                  fillOpacity: 0.1,
-                }}
-              />
-            ) : null
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
+          />
+          {layers.map(
+            (layer) =>
+              visible[layer.admin_level_int] && (
+                <GeoJSON
+                  key={layer.id}
+                  data={`https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/gis_raw/${layer.source?.path}`}
+                  style={{
+                    color: "#C72B2B",
+                    weight: 1,
+                    fillOpacity: 0.2,
+                  }}
+                />
+              )
           )}
         </MapContainer>
-        <div className="absolute top-2 left-2 bg-white rounded-lg shadow p-2">
-          <p className="text-sm font-semibold flex items-center mb-1">
-            <Layers className="w-4 h-4 mr-1" /> Layers
-          </p>
-          {layers.map(l => (
-            <label key={l.id} className="block text-sm">
-              <input
-                type="checkbox"
-                className="mr-1"
-                checked={!!visible[l.admin_level_int]}
-                onChange={() => toggleLayer(l.admin_level_int)}
-              />
-              {l.admin_level}
-            </label>
-          ))}
-        </div>
+        <button
+          onClick={() => setOpenUpload(true)}
+          className="absolute bottom-4 right-4 px-4 py-2 text-sm text-white rounded shadow-lg hover:opacity-90"
+          style={{ backgroundColor: "var(--gsc-red)" }}
+        >
+          <Upload className="inline w-4 h-4 mr-1" />
+          Upload GIS
+        </button>
       </div>
 
       {/* Modals */}
       {openUpload && (
         <UploadGISModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
           countryIso={id}
-          onUploaded={() => window.location.reload()}
+          onClose={() => setOpenUpload(false)}
+          onUploaded={async () => {
+            const { data } = await supabase
+              .from("gis_layers")
+              .select("*")
+              .eq("country_iso", id)
+              .eq("is_active", true);
+            setLayers(data || []);
+          }}
         />
       )}
+
       {openNewVersion && (
         <CreateGISVersionModal
           countryIso={id}
           onClose={() => setOpenNewVersion(false)}
-          onCreated={() => window.location.reload()}
-        />
-      )}
-      {openEditVersion && activeVersion && (
-        <EditGISVersionModal
-          version={activeVersion}
-          onClose={() => setOpenEditVersion(false)}
-          onUpdated={() => window.location.reload()}
+          onCreated={async () => {
+            const { data } = await supabase
+              .from("gis_dataset_versions")
+              .select("*")
+              .eq("country_iso", id)
+              .order("created_at", { ascending: false });
+            setVersions(data || []);
+            setActiveVersion(data?.[0] || null);
+          }}
         />
       )}
     </SidebarLayout>
