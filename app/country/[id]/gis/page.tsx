@@ -209,7 +209,9 @@ export default async function GISPage({ params }: any) {
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenCreated={(map) => (mapRef.current = map)}
+          whenReady={(e) => {
+            mapRef.current = e.target;
+          }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
