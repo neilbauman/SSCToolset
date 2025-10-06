@@ -15,10 +15,10 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "allowSyntheticDefaultImports": true,
 
     /* === Next.js Integration === */
     "plugins": [{ "name": "next" }],
-    "allowSyntheticDefaultImports": true,
 
     /* === Project Structure === */
     "baseUrl": ".",
@@ -31,7 +31,11 @@
     /* === Build Hygiene === */
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": false,
-    "useUnknownInCatchVariables": false
+    "useUnknownInCatchVariables": false,
+
+    /* === App Router Strictness (merged properly now) === */
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": false
   },
 
   "include": [
@@ -45,17 +49,5 @@
     "components/**/*.tsx"
   ],
 
-  "exclude": [
-    "node_modules",
-    ".next",
-    "dist",
-    "build",
-    "coverage"
-  ],
-
-  /* === Strictness for app/ directory (Next 13+ App Router) === */
-  "compilerOptions": {
-    "moduleDetection": "force",
-    "verbatimModuleSyntax": false
-  }
+  "exclude": ["node_modules", ".next", "dist", "build", "coverage"]
 }
