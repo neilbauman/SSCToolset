@@ -4,6 +4,7 @@ export interface GISLayer {
   id: string;
   country_iso: string;
   layer_name: string;
+  storage_path: string;
   format: GISFileFormat;
   feature_count?: number | null;  // bigint -> number
   crs?: string | null;
@@ -14,7 +15,7 @@ export interface GISLayer {
   dataset_version_id?: string | null;
   admin_level?: string | null;
   admin_level_int?: number | null;
-  is_active: boolean;
+  is_active?: boolean | null;
 }
 
 export interface GISDatasetVersion {
