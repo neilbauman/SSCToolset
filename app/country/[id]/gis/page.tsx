@@ -7,7 +7,15 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 import DatasetHealth from "@/components/country/DatasetHealth";
-import { Database, FileDown, Layers as LayersIcon, Upload, PlusCircle } from "lucide-react";
+import {
+  Database,
+  FileDown,
+  Layers as LayersIcon,
+  Upload,
+  PlusCircle,
+  Edit,
+  Trash2,
+} from "lucide-react";
 
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import type { FeatureCollection, Polygon, MultiPolygon, GeoJsonObject } from "geojson";
@@ -32,6 +40,9 @@ type GisLayer = {
   id: string;
   dataset_version_id: string | null;
   admin_level: "ADM0" | "ADM1" | "ADM2" | "ADM3" | "ADM4" | "ADM5";
+  source?: any;
+  created_at?: string;
+  updated_at?: string;
 };
 
 const ALL_LEVELS: GisLayer["admin_level"][] = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
@@ -42,8 +53,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GisVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GisVersion | null>(null);
+
   const [availableLevels, setAvailableLevels] = useState<GisLayer["admin_level"][]>([]);
   const [visibleLevels, setVisibleLevels] = useState<Set<GisLayer["admin_level"]>>(new Set());
+  const [layerMetadata, setLayerMetadata] = useState<GisLayer[]>([]);
 
   // ─────────────────────────────── Fetch metadata ───────────────────────────────
   useEffect(() => {
@@ -77,22 +90,29 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
+  // ─────────────────────────────── Fetch layers ───────────────────────────────
   useEffect(() => {
     const run = async () => {
       if (!selectedVersion?.id) {
         setAvailableLevels([]);
         setVisibleLevels(new Set());
+        setLayerMetadata([]);
         return;
       }
+
       const { data, error } = await supabase
         .from("gis_layers")
-        .select("admin_level")
+        .select("id,admin_level,source,created_at,updated_at")
         .eq("dataset_version_id", selectedVersion.id);
       if (error) return console.error(error);
-      const lvls = (data ?? [])
+
+      const layers = (data ?? []) as GisLayer[];
+      const lvls = layers
         .map((r) => r.admin_level)
         .filter((v): v is GisLayer["admin_level"] => ALL_LEVELS.includes(v as any));
+
       setAvailableLevels(lvls);
+      setLayerMetadata(layers);
       setVisibleLevels(new Set());
     };
     run();
@@ -270,6 +290,61 @@ export default function GISPage({ params }: { params: CountryParams }) {
           )
         ) : (
           <p className="italic text-gray-500">Select a dataset version to see its layers.</p>
+        )}
+      </div>
+
+      {/* Layer Metadata Table */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+          <LayersIcon className="w-5 h-5 text-blue-600" /> Layer Metadata
+        </h2>
+
+        {selectedVersion ? (
+          layerMetadata.length ? (
+            <table className="w-full text-sm border">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-2 py-1 text-left">Admin Level</th>
+                  <th className="border px-2 py-1 text-left">Storage Path</th>
+                  <th className="border px-2 py-1 text-left">Created</th>
+                  <th className="border px-2 py-1 text-left">Updated</th>
+                  <th className="border px-2 py-1 text-left">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layerMetadata.map((l) => (
+                  <tr key={l.id} className="hover:bg-gray-50">
+                    <td className="border px-2 py-1">{l.admin_level}</td>
+                    <td className="border px-2 py-1 text-gray-700">
+                      {l.source?.path || l.source?.file || "—"}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {l.created_at ? new Date(l.created_at).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {l.updated_at ? new Date(l.updated_at).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="border px-2 py-1">
+                      <div className="flex gap-2 text-gray-400">
+                        <button disabled title="Edit disabled">
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button disabled title="Delete disabled">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="italic text-gray-500">
+              No layer metadata found for this dataset version.
+            </p>
+          )
+        ) : (
+          <p className="italic text-gray-500">Select a version to view layer metadata.</p>
         )}
       </div>
 
