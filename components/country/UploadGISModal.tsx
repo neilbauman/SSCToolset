@@ -1,57 +1,145 @@
-const handleUpload = async () => {
-  if (!file) return;
-  setUploading(true);
-  setError(null);
+"use client";
 
-  try {
-    // 1️⃣ Get the active version ID
-    const { data: versionData, error: versionError } = await supabase
-      .from("gis_dataset_versions")
-      .select("id")
-      .eq("country_iso", countryIso)
-      .eq("is_active", true)
-      .single();
+import { useState } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-    if (versionError || !versionData)
-      throw new Error("No active dataset version found. Please create one first.");
+interface UploadGISModalProps {
+  countryIso: string;
+  onClose: () => void;
+  onUploaded?: () => Promise<void> | void;
+}
 
-    const activeVersionId = versionData.id;
+export default function UploadGISModal({
+  countryIso,
+  onClose,
+  onUploaded,
+}: UploadGISModalProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [adminLevel, setAdminLevel] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    // 2️⃣ Upload file to Storage
-    const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
-    const { error: uploadError } = await supabase.storage
-      .from("gis_raw")
-      .upload(path, file);
+  const GSC_RED = "#C72B2B";
 
-    if (uploadError) throw uploadError;
+  const handleUpload = async () => {
+    if (!file) return setError("Please select a file to upload.");
+    if (!adminLevel) return setError("Please select an administrative level.");
 
-    // 3️⃣ Infer admin level (from file name or dropdown)
-    const match = file.name.match(/adm(\d)/i);
-    const adminLevelInt = match ? parseInt(match[1]) : null;
-    const adminLevel = adminLevelInt ? `ADM${adminLevelInt}` : null;
+    setUploading(true);
+    setError(null);
 
-    // 4️⃣ Insert into gis_layers with dataset_version_id
-    const { error: insertError } = await supabase.from("gis_layers").insert([
-      {
-        country_iso: countryIso,
-        layer_name: file.name,
-        admin_level,
-        admin_level_int: adminLevelInt,
-        source: { path },
-        dataset_version_id: activeVersionId, // ✅ attach version
-        is_active: true,
-      },
-    ]);
+    try {
+      // 1️⃣ Get the active version ID
+      const { data: versionData, error: versionError } = await supabase
+        .from("gis_dataset_versions")
+        .select("id")
+        .eq("country_iso", countryIso)
+        .eq("is_active", true)
+        .single();
 
-    if (insertError) throw insertError;
+      if (versionError || !versionData)
+        throw new Error(
+          "No active dataset version found. Please create one first."
+        );
 
-    alert("Upload successful!");
-    await onUploaded?.();
-    onClose();
-  } catch (err: any) {
-    console.error("Upload error:", err);
-    setError(err.message);
-  } finally {
-    setUploading(false);
-  }
-};
+      const activeVersionId = versionData.id;
+
+      // 2️⃣ Upload file to Supabase Storage
+      const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("gis_raw")
+        .upload(path, file);
+
+      if (uploadError) throw uploadError;
+
+      // 3️⃣ Extract admin level integer (if known)
+      const levelMatch = adminLevel.match(/ADM?(\d)/i);
+      const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
+
+      // 4️⃣ Insert layer record linked to the active version
+      const { error: insertError } = await supabase.from("gis_layers").insert([
+        {
+          country_iso: countryIso,
+          layer_name: file.name,
+          admin_level: adminLevel,
+          admin_level_int: adminLevelInt,
+          source: { path },
+          dataset_version_id: activeVersionId,
+          is_active: true,
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      alert("Upload successful!");
+      await onUploaded?.();
+      onClose();
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      setError(err.message || "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/30"
+      onClick={onClose}
+    >
+      <div
+        className="relative z-[2100] w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Choose File
+        </label>
+        <input
+          type="file"
+          accept=".geojson,.json,.zip"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full text-sm mb-4"
+        />
+
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Admin Level
+        </label>
+        <select
+          value={adminLevel}
+          onChange={(e) => setAdminLevel(e.target.value)}
+          className="w-full rounded border p-2 text-sm mb-3"
+        >
+          <option value="">Select level</option>
+          <option value="ADM0">ADM0 – Country</option>
+          <option value="ADM1">ADM1 – Region / Province</option>
+          <option value="ADM2">ADM2 – Municipality</option>
+          <option value="ADM3">ADM3 – Barangay</option>
+          <option value="ADM4">ADM4</option>
+          <option value="ADM5">ADM5</option>
+        </select>
+
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={uploading}
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={uploading}
+            className="rounded px-4 py-2 text-sm text-white hover:opacity-90"
+            style={{ backgroundColor: GSC_RED }}
+          >
+            {uploading ? "Uploading..." : "Upload"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
