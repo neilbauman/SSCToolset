@@ -9,7 +9,7 @@ import "leaflet/dist/leaflet.css";
 
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import UploadGISModal from "@/components/country/UploadGISModal";
-import { Layers, Upload, MoreVertical } from "lucide-react";
+import { Layers, Upload, MoreVertical, Trash2, Edit } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types";
 
@@ -38,10 +38,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+  const [layerMenuFor, setLayerMenuFor] = useState<string | null>(null);
 
   const mapRef = useRef<any>(null);
 
-  // Fetch country info
+  // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -54,7 +55,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch dataset versions
+  // --- Fetch Dataset Versions ---
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -76,7 +77,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     if (initial) fetchLayers(initial.id);
   };
 
-  // Fetch layers for a version
+  // --- Fetch Layers for a Version ---
   const fetchLayers = async (versionId: string) => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -97,6 +98,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
+  // --- Version actions ---
   const handleSelectVersion = (v: GISDatasetVersion) => {
     setSelectedVersion(v);
     fetchLayers(v.id);
@@ -118,6 +120,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
     await supabase.from("gis_layers").delete().eq("dataset_version_id", versionId);
     await supabase.from("gis_dataset_versions").delete().eq("id", versionId);
     await fetchVersions();
+  };
+
+  // --- Layer actions ---
+  const handleDeleteLayer = async (layerId: string) => {
+    await supabase.from("gis_layers").delete().eq("id", layerId);
+    if (selectedVersion) await fetchLayers(selectedVersion.id);
   };
 
   const headerProps = {
@@ -245,13 +253,19 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </section>
 
-      {/* --- Version Layers Section --- */}
+      {/* --- Version Layers --- */}
       <section className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Layers className="w-5 h-5 text-[color:var(--gsc-blue)]" />
             Version Layers
           </h2>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+          >
+            <Upload className="w-4 h-4 mr-1" /> Add GIS Layer
+          </button>
         </div>
 
         {layers.length ? (
@@ -263,6 +277,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 <th className="border px-2 py-1 text-left">Format</th>
                 <th className="border px-2 py-1 text-left">CRS</th>
                 <th className="border px-2 py-1 text-left">Features</th>
+                <th className="border px-2 py-1 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -272,8 +287,38 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   <td className="border px-2 py-1">{l.admin_level || "—"}</td>
                   <td className="border px-2 py-1">{l.format || "—"}</td>
                   <td className="border px-2 py-1">{l.crs || "—"}</td>
-                  <td className="border px-2 py-1">
-                    {l.feature_count ?? "—"}
+                  <td className="border px-2 py-1">{l.feature_count ?? "—"}</td>
+                  <td className="border px-2 py-1 relative">
+                    <button
+                      className="text-blue-700 hover:underline flex items-center gap-1"
+                      onClick={() =>
+                        setLayerMenuFor(layerMenuFor === l.id ? null : l.id)
+                      }
+                    >
+                      Actions <MoreVertical className="w-4 h-4" />
+                    </button>
+                    {layerMenuFor === l.id && (
+                      <div className="absolute right-0 mt-2 w-32 rounded border bg-white shadow z-10">
+                        <button
+                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-1 hover:bg-gray-50"
+                          onClick={() => {
+                            console.log("Edit layer:", l.id);
+                            setLayerMenuFor(null);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" /> Edit
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-1 text-red-600 hover:bg-red-50"
+                          onClick={async () => {
+                            await handleDeleteLayer(l.id);
+                            setLayerMenuFor(null);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -284,17 +329,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </section>
 
-      {/* --- GIS Data Health Panel --- */}
+      {/* --- GIS Data Health --- */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* --- Map Section --- */}
+      {/* --- Map --- */}
       <section className="border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
-          center={[12.8797, 121.774]} // default center (Philippines)
+          center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
           whenReady={() => {
-            // @ts-ignore – Leaflet typing bug workaround
+            // @ts-ignore leaflet type workaround
             mapRef.current = (window as any).L?.map || null;
           }}
           className="rounded-md z-0"
