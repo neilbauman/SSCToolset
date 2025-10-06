@@ -1,6 +1,9 @@
-package.json
-tsconfig.json
-next.config.js
-supabase/
-app/
-components/
+# Ignore Supabase Edge Functions so Vercel doesn't try to build or lint them
+supabase/functions/
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Ignore any local dev caches or logs
+node_modules/.cache/
+*.log
