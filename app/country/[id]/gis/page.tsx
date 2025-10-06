@@ -188,7 +188,11 @@ export default function GISPage({ params }: any) {
 
       // Fit to combined bounds of visible layers (if any)
       if (addedBounds.length) {
-        const merged = addedBounds.reduce((acc, b) => acc.extend(b), addedBounds[0].clone());
+        const base = new L.LatLngBounds(
+          addedBounds[0].getSouthWest(),
+          addedBounds[0].getNorthEast()
+        );
+        const merged = addedBounds.reduce((acc, b) => acc.extend(b), base);
         map.fitBounds(merged.pad(0.05));
       }
     })();
@@ -303,10 +307,7 @@ export default function GISPage({ params }: any) {
                 <td className="px-4 py-2 border text-center">
                   {l.format ?? "json"}
                 </td>
-                <td className="px-4 py-2 border text-center">
-                  {/* Placeholder for future “Download” action */}
-                  — 
-                </td>
+                <td className="px-4 py-2 border text-center">—</td>
               </tr>
             ))}
           </tbody>
@@ -331,7 +332,6 @@ export default function GISPage({ params }: any) {
             className="px-2 py-1 text-xs rounded text-white"
             style={{ backgroundColor: "var(--gsc-blue)" }}
             onClick={() => {
-              // Fit to visible layers
               const map = mapRef.current;
               if (!map) return;
               const bounds: L.LatLngBounds[] = [];
@@ -342,10 +342,11 @@ export default function GISPage({ params }: any) {
                 }
               });
               if (bounds.length) {
-                const merged = bounds.reduce(
-                  (acc, b) => acc.extend(b),
-                  bounds[0].clone()
+                const base = new L.LatLngBounds(
+                  bounds[0].getSouthWest(),
+                  bounds[0].getNorthEast()
                 );
+                const merged = bounds.reduce((acc, b) => acc.extend(b), base);
                 map.fitBounds(merged.pad(0.05));
               }
             }}
