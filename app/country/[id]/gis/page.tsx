@@ -254,7 +254,7 @@ export default function CountryGISPage({
     <SidebarLayout
       headerProps={{
         title: "GIS Datasets",
-        group: "country",
+        group: "gis",
         description:
           "Manage and visualize GIS layers for the selected country.",
         breadcrumbs: (
