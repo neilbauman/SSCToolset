@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
-    "@supabase/auth-helpers-react": "^0.5.8",
+    "@supabase/auth-helpers-react": "^0.4.1",
     "@headlessui/react": "^1.7.18",
     "lucide-react": "^0.453.0",
     "mapshaper": "^0.6.58",
