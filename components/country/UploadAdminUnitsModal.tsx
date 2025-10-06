@@ -2,13 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  countryIso: string;
-  onUploaded: () => void; // call to refresh versions list
-};
+import { UploadModalProps } from "@/types/modals";
 
 type ParsedRow = {
   pcode: string;
@@ -20,7 +14,12 @@ type ParsedRow = {
 const ADM_LEVELS = [1, 2, 3, 4, 5] as const;
 const COLS = ADM_LEVELS.flatMap((n) => [`ADM${n} Name`, `ADM${n} PCode`]);
 
-export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUploaded }: Props) {
+export default function UploadAdminUnitsModal({
+  open,
+  onClose,
+  countryIso,
+  onUploaded,
+}: UploadModalProps) {
   const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | "">("");
   const [datasetDate, setDatasetDate] = useState<string>("");
@@ -43,10 +42,7 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
     }
   }, [open]);
 
-  const disabled = useMemo(
-    () => !title || !year || !file || busy,
-    [title, year, file, busy]
-  );
+  const disabled = useMemo(() => !title || !year || !file || busy, [title, year, file, busy]);
 
   async function handleSubmit() {
     try {
@@ -54,17 +50,15 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
       setError(null);
       if (!file || !title || !year) return;
 
-      // 1) Read CSV
+      // 1️⃣ Read CSV
       const text = await file.text();
 
-      // 2) Parse wide CSV -> normalized rows
+      // 2️⃣ Parse wide CSV -> normalized rows
       const { rows, lowestLevelFound } = parseWideAdminCsv(text);
+      if (rows.length === 0)
+        throw new Error("No valid rows detected. Please verify the file matches the ADM1–ADM5 template.");
 
-      if (rows.length === 0) {
-        throw new Error("No valid rows detected. Please verify the file matches the ADM1…ADM5 template.");
-      }
-
-      // 3) Create a dataset version row
+      // 3️⃣ Insert dataset version
       const { data: versionInsert, error: vErr } = await supabase
         .from("admin_dataset_versions")
         .insert({
@@ -82,9 +76,9 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
       if (vErr) throw vErr;
       const versionId = versionInsert.id as string;
 
-      // 4) Prepare normalized rows with version IDs
+      // 4️⃣ Prepare normalized rows
       const payload = rows.map((r) => ({
-        id: cryptoRandomUUID(),
+        id: safeUUID(),
         country_iso: countryIso,
         dataset_id: null,
         dataset_version_id: versionId,
@@ -96,7 +90,7 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
         source: null,
       }));
 
-      // 5) Insert normalized rows
+      // 5️⃣ Bulk insert (chunked)
       const chunkSize = 1000;
       for (let i = 0; i < payload.length; i += chunkSize) {
         const chunk = payload.slice(i, i + chunkSize);
@@ -104,7 +98,7 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
         if (insErr) throw insErr;
       }
 
-      // 6) Optionally make this version active (and deactivate others)
+      // 6️⃣ Activate version if requested
       if (makeActive) {
         await supabase
           .from("admin_dataset_versions")
@@ -116,8 +110,7 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
           .eq("id", versionId);
       }
 
-      // Done
-      onUploaded();
+      await onUploaded?.();
       onClose();
     } catch (e: any) {
       console.error(e);
@@ -133,7 +126,7 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl rounded-lg bg-white shadow-lg">
         <div className="p-4 border-b">
-          <h3 className="text-lg font-semibold">Upload Admin Units (ADM1–ADM5 template)</h3>
+          <h3 className="text-lg font-semibold">Upload Admin Units (ADM1–ADM5 Template)</h3>
           <p className="text-xs text-gray-500 mt-1">
             Use a wide CSV with columns: {COLS.join(", ")}. Leave unused levels blank.
           </p>
@@ -147,64 +140,19 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="text-sm">
-              <span className="block mb-1 font-medium">Title *</span>
-              <input
-                className="w-full border rounded px-2 py-1 text-sm"
-                placeholder="e.g., PSA Admin Names v2020"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </label>
-
-            <label className="text-sm">
-              <span className="block mb-1 font-medium">Year *</span>
-              <input
-                className="w-full border rounded px-2 py-1 text-sm"
-                type="number"
-                min={1900}
-                max={2100}
-                value={year}
-                onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}
-              />
-            </label>
-
-            <label className="text-sm">
-              <span className="block mb-1 font-medium">Dataset Date (optional)</span>
-              <input
-                className="w-full border rounded px-2 py-1 text-sm"
-                type="date"
-                value={datasetDate}
-                onChange={(e) => setDatasetDate(e.target.value)}
-              />
-            </label>
-
-            <label className="text-sm">
-              <span className="block mb-1 font-medium">Source (optional)</span>
-              <input
-                className="w-full border rounded px-2 py-1 text-sm"
-                placeholder="e.g., National Statistics Office"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-              />
-            </label>
+            <LabeledInput label="Title *" value={title} onChange={setTitle} placeholder="e.g., PSA Admin Names v2020" />
+            <LabeledNumber label="Year *" value={year} onChange={setYear} min={1900} max={2100} />
+            <LabeledInput label="Dataset Date" type="date" value={datasetDate} onChange={setDatasetDate} />
+            <LabeledInput label="Source (optional)" value={source} onChange={setSource} />
           </div>
 
           <label className="text-sm block">
             <span className="block mb-1 font-medium">CSV File *</span>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
+            <input type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={makeActive}
-              onChange={(e) => setMakeActive(e.target.checked)}
-            />
+            <input type="checkbox" checked={makeActive} onChange={(e) => setMakeActive(e.target.checked)} />
             Make this version active after import
           </label>
         </div>
@@ -226,48 +174,97 @@ export default function UploadAdminUnitsModal({ open, onClose, countryIso, onUpl
   );
 }
 
+/** Utility: labeled text input */
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  min,
+  max,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <label className="text-sm">
+      <span className="block mb-1 font-medium">{label}</span>
+      <input
+        className="w-full border rounded px-2 py-1 text-sm"
+        type={type}
+        placeholder={placeholder}
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+/** Utility: labeled number input */
+function LabeledNumber({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string;
+  value: number | "";
+  onChange: (v: number | "") => void;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <label className="text-sm">
+      <span className="block mb-1 font-medium">{label}</span>
+      <input
+        className="w-full border rounded px-2 py-1 text-sm"
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : "")}
+      />
+    </label>
+  );
+}
+
 /** Parse wide ADM template into normalized rows */
 function parseWideAdminCsv(text: string): { rows: ParsedRow[]; lowestLevelFound: number } {
-  // Split lines, keep simple CSV rules (no quoted commas handling for now).
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
-  if (lines.length === 0) {
-    return { rows: [], lowestLevelFound: 0 };
-  }
+  if (lines.length === 0) return { rows: [], lowestLevelFound: 0 };
 
   const header = lines[0].split(",").map((h) => h.trim());
-  // Ensure required columns exist (at least ADM1 Name + PCode)
-  const hasAdm1 = header.includes("ADM1 Name") && header.includes("ADM1 PCode");
-  if (!hasAdm1) {
+  if (!header.includes("ADM1 Name") || !header.includes("ADM1 PCode"))
     throw new Error("Template must include at least 'ADM1 Name' and 'ADM1 PCode' columns.");
-  }
 
-  // Make an index lookup
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
-
   const rows: ParsedRow[] = [];
   let lowest = 0;
 
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(",").map((c) => c.trim());
-
-    // Walk levels 1..5, emit normalized rows where PCode + Name exist
     let parentPcode: string | null = null;
 
     for (const n of ADM_LEVELS) {
       const nNameIdx = idx[`ADM${n} Name`];
       const nPcodeIdx = idx[`ADM${n} PCode`];
-      const name = nNameIdx != null ? (cols[nNameIdx] || "").trim() : "";
-      const pcode = nPcodeIdx != null ? (cols[nPcodeIdx] || "").trim() : "";
+      const name = nNameIdx != null ? cols[nNameIdx]?.trim() : "";
+      const pcode = nPcodeIdx != null ? cols[nPcodeIdx]?.trim() : "";
 
-      const present = !!name && !!pcode;
-      if (!present) {
-        // if this level is empty, deeper levels (n+1…) are ignored for this row
-        break;
-      }
+      if (!name || !pcode) break;
 
       rows.push({
         name,
@@ -277,11 +274,11 @@ function parseWideAdminCsv(text: string): { rows: ParsedRow[]; lowestLevelFound:
       });
 
       lowest = Math.max(lowest, n);
-      parentPcode = pcode; // next level’s parent
+      parentPcode = pcode;
     }
   }
 
-  // De-duplicate within the same file (same level + pcode)
+  // Deduplicate
   const seen = new Set<string>();
   const deduped = rows.filter((r) => {
     const key = `${r.level}::${r.pcode}`;
@@ -293,14 +290,15 @@ function parseWideAdminCsv(text: string): { rows: ParsedRow[]; lowestLevelFound:
   return { rows: deduped, lowestLevelFound: lowest };
 }
 
-// Minimal UUID helper for browsers w/o crypto.randomUUID
-function cryptoRandomUUID(): string {
-  // @ts-ignore
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  // Fallback
+/** Safe UUID generator */
+function safeUUID(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    // @ts-ignore
+    return crypto.randomUUID();
+  }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8;
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
