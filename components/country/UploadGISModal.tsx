@@ -27,19 +27,29 @@ export default function UploadGISModal({
       setUploading(true);
       setError(null);
 
-      // Generate path
+      // Build unique folder path
       const folder = `${countryIso}/${crypto.randomUUID()}`;
       const path = `${folder}/${file.name}`;
 
-      // Upload to storage
+      // Upload file to storage
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
         .upload(path, file);
 
       if (uploadError) throw uploadError;
 
-      // Record layer in DB
-      const { error: dbError } = await supabase.from("gis_layers").insert([
+      // ✅ Deactivate any previous layer for this admin level
+      const { error: deactivateError } = await supabase
+        .from("gis_layers")
+        .update({ is_active: false })
+        .eq("country_iso", countryIso)
+        .eq("admin_level_int", adminLevel)
+        .eq("is_active", true);
+
+      if (deactivateError) throw deactivateError;
+
+      // ✅ Insert new active layer
+      const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
           layer_name: file.name,
@@ -50,7 +60,7 @@ export default function UploadGISModal({
         },
       ]);
 
-      if (dbError) throw dbError;
+      if (insertError) throw insertError;
 
       await onUploaded();
       onClose();
