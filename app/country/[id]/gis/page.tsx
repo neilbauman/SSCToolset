@@ -5,31 +5,31 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import GISDataHealthPanel, { GISLayer } from "@/components/country/GISDataHealthPanel";
+import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload } from "lucide-react";
+import { Upload, ExternalLink } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-/** Client-side GIS management page for a single country */
 export default function GISPage({ params }: any) {
   const { id } = params as { id: string };
 
-  // ────────────── Types ──────────────
   type GISDatasetVersion = {
     id: string;
     title: string;
     year: number | null;
     is_active: boolean;
     country_iso: string;
+    source_name?: string | null;
+    source_url?: string | null;
   };
 
-  // ────────────── State ──────────────
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
+  const [openNewVersion, setOpenNewVersion] = useState(false);
 
-  // Layer visibility (all off by default)
   const [visible, setVisible] = useState<Record<number, boolean>>({
     0: false,
     1: false,
@@ -39,7 +39,6 @@ export default function GISPage({ params }: any) {
     5: false,
   });
 
-  // Map containers
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupsRef = useRef<Record<number, L.GeoJSON | null>>({
     0: null,
@@ -50,7 +49,7 @@ export default function GISPage({ params }: any) {
     5: null,
   });
 
-  // ────────────── Fetch dataset versions ──────────────
+  // ────────────── Load Versions ──────────────
   useEffect(() => {
     const loadVersions = async () => {
       const { data, error } = await supabase
@@ -58,6 +57,7 @@ export default function GISPage({ params }: any) {
         .select("*")
         .eq("country_iso", id)
         .order("created_at", { ascending: false });
+
       if (!error && data) {
         setVersions(data);
         setActiveVersion(data.find((v) => v.is_active) || data[0] || null);
@@ -66,7 +66,7 @@ export default function GISPage({ params }: any) {
     loadVersions();
   }, [id]);
 
-  // ────────────── Fetch layers for active version ──────────────
+  // ────────────── Load Layers for Active Version ──────────────
   useEffect(() => {
     const loadLayers = async () => {
       if (!activeVersion) return;
@@ -87,6 +87,7 @@ export default function GISPage({ params }: any) {
           enriched.push({ ...(l as any), crs: null, feature_count: null });
           continue;
         }
+
         try {
           const { data: urlData } = supabase.storage.from("gis_raw").getPublicUrl(filePath);
           const url = urlData?.publicUrl;
@@ -119,7 +120,7 @@ export default function GISPage({ params }: any) {
     loadLayers();
   }, [activeVersion]);
 
-  // ────────────── Initialize map ──────────────
+  // ────────────── Initialize Map ──────────────
   useEffect(() => {
     if (mapRef.current) return;
     const map = L.map("gis-map", {
@@ -133,12 +134,11 @@ export default function GISPage({ params }: any) {
     mapRef.current = map;
   }, []);
 
-  // ────────────── Render layers; respect visibility ──────────────
+  // ────────────── Render Layers ──────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear existing layers
     Object.values(layerGroupsRef.current).forEach((g) => g?.remove());
     layerGroupsRef.current = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null };
 
@@ -187,7 +187,6 @@ export default function GISPage({ params }: any) {
     })();
   }, [layers, visible]);
 
-  // ────────────── UI header props ──────────────
   const headerProps = {
     title: "GIS Datasets",
     group: "country-config" as const,
@@ -206,11 +205,11 @@ export default function GISPage({ params }: any) {
 
   const toggleLevel = (lvl: number) => setVisible((v) => ({ ...v, [lvl]: !v[lvl] }));
 
-  // ────────────── Render ──────────────
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Summary cards row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
+        {/* Dataset Version Card */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
           <p className="text-xs text-gray-500 uppercase">Dataset Version</p>
           <div className="mt-1 flex items-center gap-2">
@@ -229,14 +228,36 @@ export default function GISPage({ params }: any) {
               ))}
             </select>
             <button
-              className="px-3 py-1 text-sm text-white rounded"
+              onClick={() => setOpenNewVersion(true)}
+              className="px-3 py-1 text-sm text-white rounded hover:opacity-90"
               style={{ backgroundColor: "var(--gsc-blue)" }}
             >
               + New
             </button>
           </div>
+
+          {/* Source metadata */}
+          {activeVersion?.source_name || activeVersion?.source_url ? (
+            <div className="mt-3 text-sm text-gray-700">
+              {activeVersion.source_name && (
+                <p className="font-medium">{activeVersion.source_name}</p>
+              )}
+              {activeVersion.source_url && (
+                <a
+                  href={activeVersion.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[color:var(--gsc-blue)] hover:underline mt-1"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Open Source
+                </a>
+              )}
+            </div>
+          ) : null}
         </div>
 
+        {/* Active Layers Card */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
           <p className="text-xs text-gray-500 uppercase">Active Layers</p>
           <p className="text-lg font-semibold">
@@ -245,6 +266,7 @@ export default function GISPage({ params }: any) {
           </p>
         </div>
 
+        {/* Country Info Card */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
           <div className="flex items-center justify-between">
             <div>
@@ -267,7 +289,7 @@ export default function GISPage({ params }: any) {
       {/* GIS Data Health Summary */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Layer table */}
+      {/* Map + Table layout */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
         <table className="min-w-full text-sm text-left border-collapse">
           <thead className="bg-[color:var(--gsc-beige)] text-gray-700 uppercase text-xs">
@@ -303,7 +325,7 @@ export default function GISPage({ params }: any) {
         </table>
       </div>
 
-      {/* Visibility controls */}
+      {/* Visibility Controls */}
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium text-gray-700">Layers:</span>
         {[0, 1, 2, 3, 4, 5].map((lvl) => (
@@ -316,43 +338,25 @@ export default function GISPage({ params }: any) {
             <span>{`ADM${lvl}`}</span>
           </label>
         ))}
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            className="px-2 py-1 text-xs rounded text-white"
-            style={{ backgroundColor: "var(--gsc-blue)" }}
-            onClick={() => {
-              const map = mapRef.current;
-              if (!map) return;
-              const bounds: L.LatLngBounds[] = [];
-              Object.values(layerGroupsRef.current).forEach((g) => {
-                if (g) {
-                  const b = g.getBounds();
-                  if (b.isValid()) bounds.push(b);
-                }
-              });
-              if (bounds.length) {
-                const base = new L.LatLngBounds(
-                  bounds[0].getSouthWest(),
-                  bounds[0].getNorthEast()
-                );
-                const merged = bounds.reduce((acc, b) => acc.extend(b), base);
-                map.fitBounds(merged.pad(0.05));
-              }
-            }}
-          >
-            Fit
-          </button>
-        </div>
       </div>
 
       {/* Map */}
       <div id="gis-map" className="w-full h-[600px] rounded-lg border shadow-sm z-0" />
 
+      {/* Modals */}
       {openUpload && (
         <UploadGISModal
           countryIso={id}
           onClose={() => setOpenUpload(false)}
           onUploaded={async () => window.location.reload()}
+        />
+      )}
+
+      {openNewVersion && (
+        <CreateGISVersionModal
+          countryIso={id}
+          onClose={() => setOpenNewVersion(false)}
+          onCreated={async () => window.location.reload()}
         />
       )}
     </SidebarLayout>
