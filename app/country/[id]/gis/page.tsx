@@ -58,7 +58,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [visibleLevels, setVisibleLevels] = useState<Set<GisLayer["admin_level"]>>(new Set());
   const [layerMetadata, setLayerMetadata] = useState<GisLayer[]>([]);
 
-  // ─────────────────────────────── Fetch metadata ───────────────────────────────
+  // ─────────────────────────────── Fetch country & versions ───────────────────────────────
   useEffect(() => {
     const run = async () => {
       const { data } = await supabase
@@ -145,7 +145,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   const downloadTemplate = () => {
-    const csv = ["admin_level,storage_path", "ADM0,countries/ADM0.geojson"].join("\n");
+    const csv = ["admin_level,layer_name", "ADM0,ExampleLayer.geojson"].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -254,14 +254,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Dataset Health */}
-      <DatasetHealth totalUnits={totalRecords} />
-
-      {/* Layers Panel */}
-      <div className="border rounded-lg p-4 shadow-sm mt-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
+      {/* Version Layers (Metadata Table + Add Button) */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <LayersIcon className="w-5 h-5 text-blue-600" /> Layers in Selected Version
+            <LayersIcon className="w-5 h-5 text-blue-600" /> Version Layers
           </h2>
           <button
             disabled
@@ -272,40 +269,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </div>
 
         {selectedVersion ? (
-          availableLevels.length ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-y-2">
-              {availableLevels.map((lvl) => (
-                <label key={lvl} className="inline-flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={visibleLevels.has(lvl)}
-                    onChange={() => handleToggle(lvl)}
-                  />
-                  {lvl}
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p className="italic text-gray-500">No layers registered for this version.</p>
-          )
-        ) : (
-          <p className="italic text-gray-500">Select a dataset version to see its layers.</p>
-        )}
-      </div>
-
-      {/* Layer Metadata Table */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
-          <LayersIcon className="w-5 h-5 text-blue-600" /> Layer Metadata
-        </h2>
-
-        {selectedVersion ? (
           layerMetadata.length ? (
             <table className="w-full text-sm border">
               <thead className="bg-gray-100">
                 <tr>
                   <th className="border px-2 py-1 text-left">Admin Level</th>
-                  <th className="border px-2 py-1 text-left">Storage Path</th>
+                  <th className="border px-2 py-1 text-left">Layer Name</th>
                   <th className="border px-2 py-1 text-left">Created</th>
                   <th className="border px-2 py-1 text-left">Updated</th>
                   <th className="border px-2 py-1 text-left">Actions</th>
@@ -316,7 +285,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   <tr key={l.id} className="hover:bg-gray-50">
                     <td className="border px-2 py-1">{l.admin_level}</td>
                     <td className="border px-2 py-1 text-gray-700">
-                      {l.source?.path || l.source?.file || "—"}
+                      {l.source?.name || l.source?.file || l.admin_level}
                     </td>
                     <td className="border px-2 py-1">
                       {l.created_at ? new Date(l.created_at).toLocaleDateString() : "—"}
@@ -345,6 +314,36 @@ export default function GISPage({ params }: { params: CountryParams }) {
           )
         ) : (
           <p className="italic text-gray-500">Select a version to view layer metadata.</p>
+        )}
+      </div>
+
+      {/* Dataset Health */}
+      <DatasetHealth totalUnits={totalRecords} />
+
+      {/* Layers Toggle Panel */}
+      <div className="border rounded-lg p-4 shadow-sm mt-4 mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+          <LayersIcon className="w-5 h-5 text-blue-600" /> Layers in Selected Version
+        </h2>
+        {selectedVersion ? (
+          availableLevels.length ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-y-2">
+              {availableLevels.map((lvl) => (
+                <label key={lvl} className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={visibleLevels.has(lvl)}
+                    onChange={() => handleToggle(lvl)}
+                  />
+                  {lvl}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="italic text-gray-500">No layers registered for this version.</p>
+          )
+        ) : (
+          <p className="italic text-gray-500">Select a dataset version to see its layers.</p>
         )}
       </div>
 
