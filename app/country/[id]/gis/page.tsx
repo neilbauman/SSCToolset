@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
+import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Upload } from "lucide-react";
 import L from "leaflet";
@@ -23,6 +24,7 @@ export default function GISPage({ params }: any) {
     format: string | null;
     crs: string | null;
     feature_count: number | null;
+    created_at?: string;
   };
 
   type GISDatasetVersion = {
@@ -41,12 +43,12 @@ export default function GISPage({ params }: any) {
 
   // layer visibility by admin level int (0..5)
   const [visible, setVisible] = useState<Record<number, boolean>>({
-    0: true,
-    1: true,
-    2: true,
-    3: true,
-    4: true,
-    5: true,
+    0: false,
+    1: false,
+    2: false,
+    3: false,
+    4: false,
+    5: false,
   });
 
   // Map containers
@@ -215,7 +217,6 @@ export default function GISPage({ params }: any) {
     ),
   };
 
-  // Helper to toggle a level
   const toggleLevel = (lvl: number) =>
     setVisible((v) => ({ ...v, [lvl]: !v[lvl] }));
 
@@ -277,6 +278,9 @@ export default function GISPage({ params }: any) {
           </div>
         </div>
       </div>
+
+      {/* Data Health Summary */}
+      <GISDataHealthPanel layers={layers} />
 
       {/* Layer table */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
