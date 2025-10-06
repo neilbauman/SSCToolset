@@ -382,8 +382,8 @@ export default function CountryGISPage({
                 layers.map((l) => {
                   const lvl =
                     l.admin_level_int ??
-                    Number((l.admin_level || "").replace("ADM", "")) ||
-                    null;
+                    (Number((l.admin_level || "").replace("ADM", "")) || null);
+                  
                   const on = lvl && lvl >= 1 && lvl <= 5 ? visible[lvl] : false;
                   return (
                     <tr key={l.id} className="border-t">
