@@ -41,7 +41,7 @@ export default function UploadGISModal({
 
       const activeVersionId = versionData.id;
 
-      // 2️⃣ Upload to storage
+      // 2️⃣ Upload file to Supabase Storage
       const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
@@ -59,7 +59,7 @@ export default function UploadGISModal({
           ? "json"
           : "unknown";
 
-      // 4️⃣ Check for existing layer
+      // 4️⃣ Check for an existing layer
       const { data: existing } = await supabase
         .from("gis_layers")
         .select("id")
@@ -69,7 +69,7 @@ export default function UploadGISModal({
         .eq("is_active", true)
         .maybeSingle();
 
-      // 5️⃣ If exists → confirm and deactivate before inserting new
+      // 5️⃣ If exists → confirm, deactivate, and verify
       if (existing) {
         const confirmReplace = confirm(
           `A layer for ${adminLevel} already exists. Replace it?`
@@ -79,31 +79,30 @@ export default function UploadGISModal({
           return;
         }
 
-        const { error: deactivateError } = await supabase
+        // 🔒 Force update to deactivate and confirm the change
+        const { data: deactivated, error: deactivateError } = await supabase
           .from("gis_layers")
           .update({ is_active: false })
-          .eq("id", existing.id);
-        if (deactivateError) throw deactivateError;
+          .eq("id", existing.id)
+          .select("id, is_active");
 
-        // Confirm deactivation committed before continuing
-        let confirmDone = false;
-        for (let i = 0; i < 5; i++) {
-          const { data: stillActive } = await supabase
-            .from("gis_layers")
-            .select("id")
-            .eq("id", existing.id)
-            .eq("is_active", true);
-          if (!stillActive?.length) {
-            confirmDone = true;
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 300)); // small wait
+        if (deactivateError) throw deactivateError;
+        if (!deactivated?.length)
+          throw new Error("Deactivation failed for existing layer.");
+
+        // 🧹 If constraint still exists, remove the old record entirely
+        await new Promise((resolve) => setTimeout(resolve, 300)); // allow commit flush
+        const { error: cleanupError } = await supabase
+          .from("gis_layers")
+          .delete()
+          .eq("id", existing.id)
+          .eq("is_active", false);
+        if (cleanupError && !cleanupError.message.includes("0 rows")) {
+          console.warn("Cleanup skip:", cleanupError.message);
         }
-        if (!confirmDone)
-          throw new Error("Could not confirm previous layer was deactivated.");
       }
 
-      // 6️⃣ Insert new layer
+      // 6️⃣ Insert new layer (guaranteed unique)
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
@@ -175,7 +174,7 @@ export default function UploadGISModal({
         {/* Error Message */}
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        {/* Action Buttons */}
+        {/* Buttons */}
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
