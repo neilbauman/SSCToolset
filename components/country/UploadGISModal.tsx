@@ -19,8 +19,6 @@ export default function UploadGISModal({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const GSC_RED = "#C72B2B";
-
   const handleUpload = async () => {
     if (!file) return setError("Please select a file to upload.");
     if (!adminLevel)
@@ -57,7 +55,7 @@ export default function UploadGISModal({
       const levelMatch = adminLevel.match(/ADM?(\d)/i);
       const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
 
-      // 4️⃣ Determine format based on file extension
+      // 4️⃣ Determine file format
       const ext = file.name.split(".").pop()?.toLowerCase();
       const format =
         ext === "zip"
@@ -66,14 +64,43 @@ export default function UploadGISModal({
           ? "json"
           : "unknown";
 
-      // 5️⃣ Insert layer record linked to the active version
+      // 5️⃣ Check if a layer already exists at same level
+      const { data: existing } = await supabase
+        .from("gis_layers")
+        .select("id")
+        .eq("country_iso", countryIso)
+        .eq("dataset_version_id", activeVersionId)
+        .eq("admin_level_int", adminLevelInt)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (existing) {
+        const confirmReplace = confirm(
+          `A layer for ${adminLevel} already exists. Replace it?`
+        );
+        if (!confirmReplace) {
+          setUploading(false);
+          return;
+        }
+
+        // 6️⃣ Deactivate old layer before inserting new one
+        const { error: deactivateError } = await supabase
+          .from("gis_layers")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso)
+          .eq("dataset_version_id", activeVersionId)
+          .eq("admin_level_int", adminLevelInt);
+        if (deactivateError) throw deactivateError;
+      }
+
+      // 7️⃣ Insert new layer record linked to active version
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
           layer_name: file.name,
-          admin_level: adminLevel,
+          admin_level,
           admin_level_int: adminLevelInt,
-          format, // ✅ required field added
+          format,
           source: { path },
           dataset_version_id: activeVersionId,
           is_active: true,
@@ -102,7 +129,9 @@ export default function UploadGISModal({
         className="relative z-[2100] w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
+        <h2 className="mb-4 text-lg font-semibold text-[color:var(--gsc-gray)]">
+          Upload GIS Layer
+        </h2>
 
         {/* File Upload */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -141,7 +170,7 @@ export default function UploadGISModal({
           <button
             onClick={onClose}
             disabled={uploading}
-            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            className="rounded border border-[color:var(--gsc-light-gray)] px-4 py-2 text-sm text-[color:var(--gsc-gray)] hover:bg-[color:var(--gsc-light-gray)]"
           >
             Cancel
           </button>
@@ -149,7 +178,7 @@ export default function UploadGISModal({
             onClick={handleUpload}
             disabled={uploading}
             className="rounded px-4 py-2 text-sm text-white hover:opacity-90"
-            style={{ backgroundColor: GSC_RED }}
+            style={{ backgroundColor: "var(--gsc-red)" }}
           >
             {uploading ? "Uploading..." : "Upload"}
           </button>
