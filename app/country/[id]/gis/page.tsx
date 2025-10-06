@@ -42,7 +42,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   // ✅ Header configuration
   const headerProps = {
     title: `${countryIso.toUpperCase()} – GIS Layers`,
-    group: "country-config" as const, // ✅ fixed key
+    group: "country-config" as const,
     description: "Manage and visualize geospatial boundary datasets.",
     breadcrumbs: (
       <Breadcrumbs
@@ -80,8 +80,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenCreated={(mapInstance) => {
-            mapRef.current = mapInstance;
+          whenReady={(event) => {
+            mapRef.current = event.target;
           }}
           className="rounded-md z-0"
         >
