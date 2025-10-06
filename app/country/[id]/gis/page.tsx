@@ -37,7 +37,7 @@ export default function GISPage({
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
 
-  // Visibility defaults: all off
+  // All admin levels start invisible
   const [visible, setVisible] = useState<Record<number, boolean>>({
     0: false,
     1: false,
@@ -47,9 +47,7 @@ export default function GISPage({
     5: false,
   });
 
-  // ───────────────────────────────
-  // Fetch dataset versions
-  // ───────────────────────────────
+  // ─────────── Fetch Versions ───────────
   useEffect(() => {
     const fetchVersions = async () => {
       const { data } = await supabase
@@ -67,9 +65,7 @@ export default function GISPage({
     fetchVersions();
   }, [id]);
 
-  // ───────────────────────────────
-  // Fetch layers for active version
-  // ───────────────────────────────
+  // ─────────── Fetch Layers ───────────
   useEffect(() => {
     const fetchLayers = async () => {
       if (!activeVersion) return;
@@ -94,9 +90,7 @@ export default function GISPage({
     if (data) setVersions(data);
   };
 
-  // ───────────────────────────────
-  // GeoJSON rendering hook
-  // ───────────────────────────────
+  // ─────────── GeoJSON Rendering Hook ───────────
   const { geoJsonLayers, loadingIndicator } = useGeoJSONLayers({
     supabase,
     layers,
@@ -108,6 +102,7 @@ export default function GISPage({
     setVisible((prev) => ({ ...prev, [lvl]: !prev[lvl] }));
 
   const GSC_RED = "var(--gsc-red)";
+  const GSC_BLUE = "var(--gsc-blue)";
 
   const headerProps = {
     title: "GIS Datasets",
@@ -125,12 +120,10 @@ export default function GISPage({
     ),
   };
 
-  // ───────────────────────────────
-  // Render
-  // ───────────────────────────────
+  // ─────────── Render ───────────
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* ─────────────── Summary Cards ─────────────── */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* Dataset Version */}
         <div className="rounded-lg border p-4 shadow-sm">
@@ -200,10 +193,10 @@ export default function GISPage({
         </div>
       </div>
 
-      {/* ─────────────── Data Health Panel ─────────────── */}
+      {/* Data Health Panel */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* ─────────────── Layer Table ─────────────── */}
+      {/* Layer Table */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-gray-700">
@@ -237,15 +230,15 @@ export default function GISPage({
         </table>
       </div>
 
-      {/* ─────────────── Map ─────────────── */}
+      {/* Map */}
       <div className="relative rounded-lg overflow-hidden border shadow-sm">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
           whenReady={
-            ((mapEvent) => {
-              mapRef.current = (mapEvent as any).target;
+            ((mapEvent: L.LeafletEvent) => {
+              mapRef.current = mapEvent.target as L.Map;
             }) as unknown as () => void
           }
         >
@@ -269,7 +262,7 @@ export default function GISPage({
         </div>
       </div>
 
-      {/* ─────────────── Modals ─────────────── */}
+      {/* Modals */}
       {openUpload && (
         <UploadGISModal
           open={openUpload}
