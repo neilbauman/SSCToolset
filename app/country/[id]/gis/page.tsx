@@ -80,8 +80,13 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(event) => {
-            mapRef.current = event.target;
+          whenReady={() => {
+            if (mapRef.current) return;
+            // The map instance becomes available internally after render
+            const mapEl = document.querySelector(".leaflet-container") as any;
+            if (mapEl?._leaflet_map) {
+              mapRef.current = mapEl._leaflet_map;
+            }
           }}
           className="rounded-md z-0"
         >
