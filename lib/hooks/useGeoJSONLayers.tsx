@@ -1,81 +1,84 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import L from "leaflet";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { GeoJSON } from "react-leaflet";
+import type { GeoJsonObject } from "geojson";
 
-type GISLayer = {
+/** GISLayer type definition */
+export interface GISLayer {
   id: string;
-  source?: { path?: string | null } | null;
-  admin_level_int: number;
-  admin_level?: string | null;
-};
-
-interface UseGeoJSONLayersProps {
-  supabase: any;
-  layers: GISLayer[];
-  mapRef: React.MutableRefObject<L.Map | null>;
-  visible: Record<number, boolean>;
+  layer_name: string;
+  admin_level: string | null;
+  admin_level_int: number | null;
+  source?: { path?: string; url?: string | null } | null;
+  crs?: string | null;
+  feature_count?: number | null;
 }
 
-export function useGeoJSONLayers({
-  supabase,
-  layers,
-  mapRef,
-  visible,
-}: UseGeoJSONLayersProps) {
+/** Hook parameters */
+interface UseGeoJSONLayersParams {
+  supabase: SupabaseClient<any>;
+  layers: GISLayer[];
+  mapRef: React.MutableRefObject<L.Map | null>;
+}
+
+/** Hook return type */
+export function useGeoJSONLayers({ supabase, layers, mapRef }: UseGeoJSONLayersParams) {
   const [geoJsonLayers, setGeoJsonLayers] = useState<JSX.Element[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!mapRef.current || !layers?.length) return;
+    if (!layers || layers.length === 0) {
+      setGeoJsonLayers([]);
+      return;
+    }
+
+    let cancelled = false;
 
     const loadLayers = async () => {
-      setLoading(true);
-      const newLayers: JSX.Element[] = [];
+      const loaded: JSX.Element[] = [];
 
       for (const layer of layers) {
-        if (!visible[layer.admin_level_int]) continue;
-        if (!layer.source?.path) continue;
-
         try {
-          const { data, error } = await supabase.storage
-            .from("gis_raw")
-            .download(layer.source.path);
+          if (!layer.source?.path) continue;
 
-          if (error || !data) continue;
+          const url = `https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/${layer.source.path}`;
+          const response = await fetch(url);
+          if (!response.ok) continue;
 
-          const text = await data.text();
-          const geojson = JSON.parse(text);
+          const geojson: GeoJsonObject = await response.json();
+          if (!geojson) continue;
 
-          newLayers.push(
+          loaded.push(
             <GeoJSON
               key={layer.id}
               data={geojson}
               style={{
-                color: "#C72B2B", // GSC Red
+                color: "#C72B2B",
                 weight: 1,
                 fillOpacity: 0.2,
+              }}
+              onEachFeature={(_, leafletLayer) => {
+                leafletLayer.bindTooltip(layer.layer_name);
               }}
             />
           );
         } catch (err) {
-          console.error("Error loading GeoJSON layer:", err);
+          console.error("Failed to load layer:", layer.layer_name, err);
         }
       }
 
-      setGeoJsonLayers(newLayers);
-      setLoading(false);
+      if (!cancelled) setGeoJsonLayers(loaded);
     };
 
     loadLayers();
-  }, [layers, visible, supabase, mapRef]);
 
-  const loadingIndicator = loading ? (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[9999] bg-white/80 px-3 py-1 rounded-md text-sm text-gray-700 shadow">
-      Loading layers…
-    </div>
-  ) : null;
+    return () => {
+      cancelled = true;
+    };
+  }, [layers, supabase]);
 
-  return { geoJsonLayers, loadingIndicator };
+  return { geoJsonLayers };
 }
+
+export default useGeoJSONLayers;
