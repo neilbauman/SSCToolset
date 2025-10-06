@@ -4,125 +4,67 @@ import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface UploadGISModalProps {
-  countryIso: string;
+  open: boolean;
   onClose: () => void;
-  onUploaded?: () => Promise<void> | void;
+  countryIso: string;
+  onUploaded: () => Promise<void> | void;
 }
 
 export default function UploadGISModal({
-  countryIso,
+  open,
   onClose,
+  countryIso,
   onUploaded,
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [adminLevel, setAdminLevel] = useState<string>("");
+  const [adminLevelInt, setAdminLevelInt] = useState<number | "">("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const GSC_RED = "var(--gsc-red)";
+
+  if (!open) return null;
+
   const handleUpload = async () => {
-    if (!file) return setError("Please select a file to upload.");
-    if (!adminLevel)
-      return setError("Please select an administrative level before uploading.");
-
-    setUploading(true);
-    setError(null);
-
     try {
-      // 1️⃣ Get active dataset version
-      const { data: versionData, error: versionError } = await supabase
-        .from("gis_dataset_versions")
-        .select("id")
-        .eq("country_iso", countryIso)
-        .eq("is_active", true)
-        .single();
+      setError(null);
+      if (!file) throw new Error("Please select a file to upload.");
+      if (adminLevelInt === "") throw new Error("Please select an admin level.");
 
-      if (versionError || !versionData)
-        throw new Error("No active dataset version found. Please create one first.");
+      setUploading(true);
 
-      const activeVersionId = versionData.id;
+      const ext = file.name.split(".").pop();
+      const filePath = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
 
-      // 2️⃣ Upload file to Supabase Storage
-      const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
-        .upload(path, file);
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
       if (uploadError) throw uploadError;
 
-      // 3️⃣ Parse admin level and format
-      const levelMatch = adminLevel.match(/ADM?(\d)/i);
-      const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      const format =
-        ext === "zip"
-          ? "shapefile"
-          : ext === "geojson" || ext === "json"
-          ? "json"
-          : "unknown";
-
-      // 4️⃣ Check for an existing layer
-      const { data: existing } = await supabase
+      const { error: insertError } = await supabase
         .from("gis_layers")
-        .select("id")
-        .eq("country_iso", countryIso)
-        .eq("dataset_version_id", activeVersionId)
-        .eq("admin_level_int", adminLevelInt)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      // 5️⃣ If exists → confirm, deactivate, and verify
-      if (existing) {
-        const confirmReplace = confirm(
-          `A layer for ${adminLevel} already exists. Replace it?`
-        );
-        if (!confirmReplace) {
-          setUploading(false);
-          return;
-        }
-
-        // 🔒 Force update to deactivate and confirm the change
-        const { data: deactivated, error: deactivateError } = await supabase
-          .from("gis_layers")
-          .update({ is_active: false })
-          .eq("id", existing.id)
-          .select("id, is_active");
-
-        if (deactivateError) throw deactivateError;
-        if (!deactivated?.length)
-          throw new Error("Deactivation failed for existing layer.");
-
-        // 🧹 If constraint still exists, remove the old record entirely
-        await new Promise((resolve) => setTimeout(resolve, 300)); // allow commit flush
-        const { error: cleanupError } = await supabase
-          .from("gis_layers")
-          .delete()
-          .eq("id", existing.id)
-          .eq("is_active", false);
-        if (cleanupError && !cleanupError.message.includes("0 rows")) {
-          console.warn("Cleanup skip:", cleanupError.message);
-        }
-      }
-
-      // 6️⃣ Insert new layer (guaranteed unique)
-      const { error: insertError } = await supabase.from("gis_layers").insert([
-        {
-          country_iso: countryIso,
-          layer_name: file.name,
-          admin_level: adminLevel,
-          admin_level_int: adminLevelInt,
-          format,
-          source: { path },
-          dataset_version_id: activeVersionId,
-          is_active: true,
-        },
-      ]);
+        .insert([
+          {
+            country_iso: countryIso,
+            layer_name: file.name,
+            format: ext,
+            source: { path: filePath },
+            admin_level: `ADM${adminLevelInt}`,
+            admin_level_int: adminLevelInt,
+            is_active: true,
+          },
+        ]);
 
       if (insertError) throw insertError;
 
-      alert(existing ? "Layer replaced successfully!" : "Upload successful!");
-      await onUploaded?.();
+      await onUploaded();
       onClose();
     } catch (err: any) {
-      console.error("Upload error:", err);
+      console.error("Upload error:", err.message);
       setError(err.message || "Upload failed.");
     } finally {
       setUploading(false);
@@ -135,51 +77,49 @@ export default function UploadGISModal({
       onClick={onClose}
     >
       <div
-        className="relative z-[2100] w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+        className="relative z-[2100] w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold text-[color:var(--gsc-gray)]">
-          Upload GIS Layer
-        </h2>
+        <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
 
-        {/* File Upload */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Choose File
+          Select File
         </label>
         <input
           type="file"
           accept=".geojson,.json,.zip"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="w-full text-sm mb-4"
+          className="w-full border rounded p-2 text-sm mb-3"
         />
 
-        {/* Admin Level Dropdown */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Admin Level
         </label>
         <select
-          value={adminLevel}
-          onChange={(e) => setAdminLevel(e.target.value)}
-          className="w-full rounded border p-2 text-sm mb-3"
+          value={adminLevelInt}
+          onChange={(e) =>
+            setAdminLevelInt(
+              e.target.value ? Number(e.target.value) : ""
+            )
+          }
+          className="w-full border rounded p-2 text-sm mb-3"
         >
-          <option value="">Select level</option>
-          <option value="ADM0">ADM0 – Country</option>
-          <option value="ADM1">ADM1 – Region / Province</option>
-          <option value="ADM2">ADM2 – Municipality</option>
-          <option value="ADM3">ADM3 – Barangay</option>
-          <option value="ADM4">ADM4</option>
-          <option value="ADM5">ADM5</option>
+          <option value="">Select level...</option>
+          <option value="0">ADM0 – National</option>
+          <option value="1">ADM1 – Region</option>
+          <option value="2">ADM2 – Province</option>
+          <option value="3">ADM3 – Municipality</option>
+          <option value="4">ADM4 – Barangay</option>
+          <option value="5">ADM5 – Local</option>
         </select>
 
-        {/* Error Message */}
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        {/* Buttons */}
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 mt-4">
           <button
             onClick={onClose}
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
             disabled={uploading}
-            className="rounded border border-[color:var(--gsc-light-gray)] px-4 py-2 text-sm text-[color:var(--gsc-gray)] hover:bg-[color:var(--gsc-light-gray)]"
           >
             Cancel
           </button>
@@ -187,7 +127,7 @@ export default function UploadGISModal({
             onClick={handleUpload}
             disabled={uploading}
             className="rounded px-4 py-2 text-sm text-white hover:opacity-90"
-            style={{ backgroundColor: "var(--gsc-red)" }}
+            style={{ backgroundColor: GSC_RED }}
           >
             {uploading ? "Uploading..." : "Upload"}
           </button>
