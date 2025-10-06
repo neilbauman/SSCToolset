@@ -58,7 +58,7 @@ export default function CountryGISPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // ✅ unwrap Next 15 promise-based params
+  // ✅ unwrap promise-based params (Next 15)
   const { id } = use(params);
   const countryIso = id;
 
@@ -254,9 +254,8 @@ export default function CountryGISPage({
     <SidebarLayout
       headerProps={{
         title: "GIS Datasets",
-        group: "gis",
-        description:
-          "Manage and visualize GIS layers for the selected country.",
+        group: "country-config", // ✅ correct for Country Config child
+        description: "Manage and visualize GIS layers for the selected country.",
         breadcrumbs: (
           <Breadcrumbs
             items={[
@@ -269,6 +268,7 @@ export default function CountryGISPage({
         ),
       }}
     >
+      {/* summary cards */}
       <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {[{ t: "Active Version", v: activeVersion?.title ?? "—", s: activeVersion?.year ? `Year ${activeVersion.year}` : "No year" },
           { t: "Active Layers", v: String(count), s: "ADM1–ADM5 supported" },
@@ -281,7 +281,7 @@ export default function CountryGISPage({
         ))}
       </div>
 
-      {/* map */}
+      {/* map and controls */}
       <div className="relative h-[70vh] rounded-2xl border bg-white shadow-sm">
         <div className="absolute left-3 top-3 z-[5000] rounded-xl border bg-white/95 p-3 shadow-lg backdrop-blur">
           <div className="mb-2 flex items-center gap-2">
@@ -290,7 +290,10 @@ export default function CountryGISPage({
           </div>
           <div className="grid grid-cols-2 gap-2">
             {LEVELS.map((l) => (
-              <label key={l} className="flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm">
+              <label
+                key={l}
+                className="flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm"
+              >
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-red-600"
@@ -327,6 +330,7 @@ export default function CountryGISPage({
         </div>
 
         <div ref={mapContainerRef} className="h-full w-full" />
+
         {isUploadOpen && (
           <UploadGISModal
             countryIso={countryIso}
@@ -367,7 +371,10 @@ export default function CountryGISPage({
             <tbody>
               {layers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-gray-500">
+                  <td
+                    colSpan={7}
+                    className="px-3 py-6 text-center text-sm text-gray-500"
+                  >
                     No layers found for active version.
                   </td>
                 </tr>
