@@ -1,6 +1,7 @@
-// Override Next.js' PageProps constraint for client components
+import type { CountryParams } from "./country";
+
 declare module "next" {
-  export interface PageProps {
-    params?: Record<string, string>;
+  interface PageProps {
+    params?: CountryParams | Promise<CountryParams>;
   }
 }
