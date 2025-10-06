@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
@@ -13,6 +13,7 @@ import type { GeoJsonObject } from "geojson";
 import "leaflet/dist/leaflet.css";
 import { Layers, Upload, Database } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
+import type { GISLayer } from "@/types/gis"; // ✅ unified type import
 
 type GISDatasetVersion = {
   id: string;
@@ -22,17 +23,6 @@ type GISDatasetVersion = {
   source: string | null;
   is_active: boolean | null;
   created_at: string;
-};
-
-type GISLayer = {
-  id: string;
-  dataset_version_id: string;
-  country_iso: string;
-  admin_level: string;
-  layer_name: string;
-  storage_path: string;
-  crs?: string | null;
-  format?: string | null;
 };
 
 export default function GISPage({ params }: { params: CountryParams }) {
@@ -65,6 +55,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ),
   };
 
+  // --- Load versions ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -80,17 +71,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })();
   }, [countryIso]);
 
+  // --- Load layers for version ---
   useEffect(() => {
     if (!selectedVersion) return;
     (async () => {
       const { data } = await supabase
         .from("gis_layers")
         .select("*")
-        .eq("dataset_version_id", selectedVersion.id);
+        .eq("dataset_version_id", selectedVersion.id)
+        .order("created_at", { ascending: true });
       setLayers(data || []);
     })();
   }, [selectedVersion]);
 
+  // --- Fetch GeoJSON ---
   async function fetchGeoJSON(layer: GISLayer) {
     try {
       setLoadingIds((s) => new Set(s).add(layer.id));
@@ -229,6 +223,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
+      {/* Health */}
       <GISDataHealthPanel layers={layers} />
 
       {/* Map + Toggles */}
