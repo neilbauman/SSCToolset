@@ -25,9 +25,17 @@ type GISVersion = {
   created_at: string;
 };
 
+// Placeholder GIS layers (UI only)
+type GISLayer = {
+  id: string;
+  name: string;
+  level: string;
+  source?: string | null;
+  created_at?: string | null;
+};
+
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
-
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GISVersion | null>(null);
@@ -35,7 +43,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ Layer toggles (ADM0–ADM5)
+  // ✅ Placeholder layers (will be fetched later)
+  const [layers, setLayers] = useState<GISLayer[]>([
+    { id: "1", name: "National Boundary", level: "ADM0", source: "OCHA/HDX", created_at: "2025-10-06" },
+    { id: "2", name: "Region Boundaries", level: "ADM1", source: "OCHA/HDX", created_at: "2025-10-06" },
+  ]);
+
   const [layerToggles, setLayerToggles] = useState({
     ADM0: false,
     ADM1: false,
@@ -45,7 +58,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ADM5: false,
   });
 
-  // --- Dropdown close handler
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -56,7 +69,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- Fetch Country Info
+  // Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
@@ -65,22 +78,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // --- Fetch GIS Dataset Versions
+  // Fetch dataset versions
   const fetchVersions = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("gis_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching GIS versions:", error);
-      return;
-    }
-
     const list = (data ?? []) as GISVersion[];
     setVersions(list);
-
     const active = list.find((v) => v.is_active);
     setSelectedVersion(active || list[0] || null);
   };
@@ -89,7 +96,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
-  // --- Header Configuration
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
     group: "country-config" as const,
@@ -106,12 +112,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // --- Layer Toggle Handler
   const handleLayerToggle = (key: keyof typeof layerToggles) => {
     setLayerToggles((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // --- Inline Actions Menu
   const ActionsMenu = ({ v }: { v: GISVersion }) => {
     const isSelected = selectedVersion?.id === v.id;
     const isActive = !!v.is_active;
@@ -162,7 +166,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Dataset Versions Section --- */}
+      {/* --- Versions Section --- */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -242,6 +246,37 @@ export default function GISPage({ params }: { params: CountryParams }) {
       {/* --- Dataset Health --- */}
       <DatasetHealth totalUnits={versions.length} />
 
+      {/* --- GIS Layers within version --- */}
+      <div className="border rounded-lg p-4 shadow-sm mt-4 mb-6">
+        <h2 className="text-lg font-semibold mb-3">
+          GIS Layers (within {selectedVersion?.title ?? "selected"} version)
+        </h2>
+        {layers.length ? (
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="border px-2 py-1 text-left">Layer Name</th>
+                <th className="border px-2 py-1 text-left">Level</th>
+                <th className="border px-2 py-1 text-left">Source</th>
+                <th className="border px-2 py-1 text-left">Date Added</th>
+              </tr>
+            </thead>
+            <tbody>
+              {layers.map((l) => (
+                <tr key={l.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{l.name}</td>
+                  <td className="border px-2 py-1">{l.level}</td>
+                  <td className="border px-2 py-1">{l.source ?? "—"}</td>
+                  <td className="border px-2 py-1">{l.created_at ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500">No layers uploaded for this version</p>
+        )}
+      </div>
+
       {/* --- Layer Toggles Section --- */}
       <div className="border rounded-lg p-4 shadow-sm mt-4 mb-6">
         <h2 className="text-lg font-semibold mb-3">Layers (toggle visibility)</h2>
@@ -264,7 +299,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
         GIS visualization will appear here once layers are loaded.
       </div>
 
-      {/* --- Upload Modal --- */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
