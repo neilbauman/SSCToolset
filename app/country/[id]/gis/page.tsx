@@ -5,10 +5,11 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Map as MapIcon, Upload, Layers } from "lucide-react";
-import type { CountryParams } from "@/app/country/types";
+import { Upload } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+type CountryParams = { id: string };
 
 type GISLayer = {
   id: string;
@@ -29,8 +30,9 @@ type GISDatasetVersion = {
   country_iso: string;
 };
 
-export default function GISPage({ params }: { params: CountryParams }) {
+export default function GISPage({ params }: any) {
   const { id } = params;
+
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
