@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
-import GISDataHealthPanel, { GISLayer } from "@/components/country/GISDataHealthPanel";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
+import EditGISVersionModal from "@/components/country/EditGISVersionModal";
+import GISDataHealthPanel, { GISLayer } from "@/components/country/GISDataHealthPanel";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload, ExternalLink } from "lucide-react";
+import { Upload, ExternalLink, Pencil } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -29,6 +30,7 @@ export default function GISPage({ params }: any) {
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
+  const [openEditVersion, setOpenEditVersion] = useState(false);
 
   const [visible, setVisible] = useState<Record<number, boolean>>({
     0: false,
@@ -50,19 +52,20 @@ export default function GISPage({ params }: any) {
   });
 
   // ────────────── Load Versions ──────────────
-  useEffect(() => {
-    const loadVersions = async () => {
-      const { data, error } = await supabase
-        .from("gis_dataset_versions")
-        .select("*")
-        .eq("country_iso", id)
-        .order("created_at", { ascending: false });
+  const loadVersions = async () => {
+    const { data, error } = await supabase
+      .from("gis_dataset_versions")
+      .select("*")
+      .eq("country_iso", id)
+      .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setVersions(data);
-        setActiveVersion(data.find((v) => v.is_active) || data[0] || null);
-      }
-    };
+    if (!error && data) {
+      setVersions(data);
+      setActiveVersion(data.find((v) => v.is_active) || data[0] || null);
+    }
+  };
+
+  useEffect(() => {
     loadVersions();
   }, [id]);
 
@@ -211,7 +214,18 @@ export default function GISPage({ params }: any) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
         {/* Dataset Version Card */}
         <div className="p-4 rounded-lg border shadow-sm bg-white">
-          <p className="text-xs text-gray-500 uppercase">Dataset Version</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500 uppercase">Dataset Version</p>
+            {activeVersion && (
+              <button
+                onClick={() => setOpenEditVersion(true)}
+                className="text-[color:var(--gsc-blue)] hover:text-[color:var(--gsc-red)]"
+                title="Edit Version"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <div className="mt-1 flex items-center gap-2">
             <select
               value={activeVersion?.id || ""}
@@ -356,7 +370,21 @@ export default function GISPage({ params }: any) {
         <CreateGISVersionModal
           countryIso={id}
           onClose={() => setOpenNewVersion(false)}
-          onCreated={async () => window.location.reload()}
+          onCreated={async () => loadVersions()}
+        />
+      )}
+
+      {openEditVersion && activeVersion && (
+        <EditGISVersionModal
+          versionId={activeVersion.id}
+          currentValues={{
+            title: activeVersion.title,
+            year: activeVersion.year,
+            source_name: activeVersion.source_name,
+            source_url: activeVersion.source_url,
+          }}
+          onClose={() => setOpenEditVersion(false)}
+          onSaved={async () => loadVersions()}
         />
       )}
     </SidebarLayout>
