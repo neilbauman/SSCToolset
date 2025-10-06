@@ -89,21 +89,28 @@ export default function CountryGISPage({
   }, [countryIso]);
 
   // ───────────── Fetch Layers ─────────────
-  const fetchLayers = useCallback(async (versionId: string | null) => {
-    try {
-      const query = supabase.from("gis_layers").select("*").eq("country_iso", countryIso).eq("is_active", true);
-      if (versionId) query.eq("dataset_version_id", versionId);
-      const { data, error } = await query;
-      if (error) {
-        console.error("Supabase layers error:", error.message);
+  const fetchLayers = useCallback(
+    async (versionId: string | null) => {
+      try {
+        const query = supabase
+          .from("gis_layers")
+          .select("*")
+          .eq("country_iso", countryIso)
+          .eq("is_active", true);
+        if (versionId) query.eq("dataset_version_id", versionId);
+        const { data, error } = await query;
+        if (error) {
+          console.error("Supabase layers error:", error.message);
+          return [];
+        }
+        return data as GISLayer[];
+      } catch (err: any) {
+        console.error("Unexpected layer fetch error:", err.message);
         return [];
       }
-      return data as GISLayer[];
-    } catch (err: any) {
-      console.error("Unexpected layer fetch error:", err.message);
-      return [];
-    }
-  }, [countryIso]);
+    },
+    [countryIso]
+  );
 
   // ───────────── Load GeoJSON ─────────────
   const getGeoJSON = async (layer: GISLayer) => {
@@ -134,7 +141,9 @@ export default function CountryGISPage({
     if (!map) return;
     const gj = await getGeoJSON(layer);
     if (!gj) return;
-    console.log(`Loaded layer ${layer.layer_name} with ${gj.features?.length ?? 0} features`);
+    console.log(
+      `Loaded layer ${layer.layer_name} with ${gj.features?.length ?? 0} features`
+    );
     const group = L.layerGroup();
     const gl = L.geoJSON(gj, { style: LEVEL_STYLE(lvl), pane: "geojson" });
     gl.addTo(group);
@@ -166,7 +175,7 @@ export default function CountryGISPage({
 
   // ───────────── Initialize Map ─────────────
   useEffect(() => {
-    if (typeof window === "undefined") return; // ✅ prevent SSR crash
+    if (typeof window === "undefined") return;
 
     const m = L.map("map", { center: [12, 121], zoom: 5 });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -246,19 +255,11 @@ export default function CountryGISPage({
           </div>
           <div className="text-sm text-gray-500">ADM0–ADM5 supported</div>
         </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="text-xs uppercase text-gray-500">Country</div>
-          <div className="mt-1 text-base font-semibold">{countryIso}</div>
-          <div className="text-sm text-gray-500">SSC GIS</div>
-        </div>
-      </div>
-
-      {/* Layer controls + Upload */}
-      <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-gray-700" />
-            <h2 className="text-base font-semibold">Layer Visibility</h2>
+        <div className="rounded-2xl border bg-white p-4 shadow-sm flex justify-between items-center">
+          <div>
+            <div className="text-xs uppercase text-gray-500">Country</div>
+            <div className="mt-1 text-base font-semibold">{countryIso}</div>
+            <div className="text-sm text-gray-500">SSC GIS</div>
           </div>
           <button
             onClick={() => setOpenUpload(true)}
@@ -268,35 +269,10 @@ export default function CountryGISPage({
             Upload GIS
           </button>
         </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          {LEVELS.map((lvl) => (
-            <label key={lvl} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={visible[lvl]}
-                onChange={(e) =>
-                  setVisible((v) => ({ ...v, [lvl]: e.target.checked }))
-                }
-              />
-              <span>ADM{lvl}</span>
-            </label>
-          ))}
-        </div>
-
-        <button
-          onClick={fit}
-          className="mt-3 w-full rounded border px-2 py-1 text-xs hover:bg-gray-50"
-        >
-          Fit to Bounds
-        </button>
       </div>
 
-      {/* Map */}
-      <div id="map" className="h-[600px] w-full rounded-2xl border shadow-sm z-0"></div>
-
-      {/* Table */}
-      <div className="mt-4 overflow-x-auto rounded-2xl border bg-white shadow-sm">
+      {/* Dataset table */}
+      <div className="mb-4 overflow-x-auto rounded-2xl border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
@@ -325,6 +301,37 @@ export default function CountryGISPage({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Map */}
+      <div className="relative h-[600px] w-full overflow-hidden rounded-2xl border shadow-sm">
+        <div id="map" className="h-full w-full z-0 rounded-2xl" />
+
+        {/* Floating mini layer control */}
+        <div className="absolute left-4 top-4 z-[1000] rounded-xl bg-white/90 backdrop-blur p-3 shadow-md border border-gray-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="h-4 w-4 text-gray-700" />
+            <span className="text-sm font-semibold">Layers</span>
+          </div>
+          {LEVELS.map((lvl) => (
+            <label key={lvl} className="flex items-center gap-1 text-xs mb-1">
+              <input
+                type="checkbox"
+                checked={visible[lvl]}
+                onChange={(e) =>
+                  setVisible((v) => ({ ...v, [lvl]: e.target.checked }))
+                }
+              />
+              ADM{lvl}
+            </label>
+          ))}
+          <button
+            onClick={fit}
+            className="mt-2 w-full rounded border px-2 py-1 text-xs hover:bg-gray-50"
+          >
+            Fit
+          </button>
+        </div>
       </div>
 
       {/* Upload Modal */}
