@@ -25,7 +25,6 @@ type GISVersion = {
   created_at: string;
 };
 
-// Placeholder GIS layers (UI only)
 type GISLayer = {
   id: string;
   name: string;
@@ -39,15 +38,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GISVersion | null>(null);
+  const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // ✅ Placeholder layers (will be fetched later)
-  const [layers, setLayers] = useState<GISLayer[]>([
-    { id: "1", name: "National Boundary", level: "ADM0", source: "OCHA/HDX", created_at: "2025-10-06" },
-    { id: "2", name: "Region Boundaries", level: "ADM1", source: "OCHA/HDX", created_at: "2025-10-06" },
-  ]);
 
   const [layerToggles, setLayerToggles] = useState({
     ADM0: false,
@@ -58,7 +52,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ADM5: false,
   });
 
-  // Close dropdowns on outside click
+  // 🧠 Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -69,7 +63,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch country metadata
+  // 📥 Fetch country info
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
@@ -78,7 +72,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch dataset versions
+  // 📥 Fetch GIS dataset versions
   const fetchVersions = async () => {
     const { data } = await supabase
       .from("gis_dataset_versions")
@@ -89,12 +83,37 @@ export default function GISPage({ params }: { params: CountryParams }) {
     const list = (data ?? []) as GISVersion[];
     setVersions(list);
     const active = list.find((v) => v.is_active);
-    setSelectedVersion(active || list[0] || null);
+    const initial = active || list[0] || null;
+    setSelectedVersion(initial);
   };
 
+  // 📥 Fetch GIS layers for selected version
+  const fetchLayers = async (versionId: string) => {
+    const { data, error } = await supabase
+      .from("gis_layers")
+      .select("id,name,level,source,created_at")
+      .eq("dataset_version_id", versionId)
+      .order("level", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching GIS layers:", error);
+      setLayers([]);
+      return;
+    }
+
+    setLayers((data ?? []) as GISLayer[]);
+  };
+
+  // Initial load
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
+
+  // Fetch layers whenever version changes
+  useEffect(() => {
+    if (selectedVersion?.id) fetchLayers(selectedVersion.id);
+    else setLayers([]);
+  }, [selectedVersion]);
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Layers`,
@@ -244,7 +263,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       </div>
 
       {/* --- Dataset Health --- */}
-      <DatasetHealth totalUnits={versions.length} />
+      <DatasetHealth totalUnits={layers.length} />
 
       {/* --- GIS Layers within version --- */}
       <div className="border rounded-lg p-4 shadow-sm mt-4 mb-6">
@@ -266,7 +285,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 <tr key={l.id} className="hover:bg-gray-50">
                   <td className="border px-2 py-1">{l.name}</td>
                   <td className="border px-2 py-1">{l.level}</td>
-                  <td className="border px-2 py-1">{l.source ?? "—"}</td>
+                  <td className="border px-2 py-1">{typeof l.source === "string" ? l.source : JSON.stringify(l.source)}</td>
                   <td className="border px-2 py-1">{l.created_at ?? "—"}</td>
                 </tr>
               ))}
