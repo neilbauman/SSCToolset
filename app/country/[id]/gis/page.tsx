@@ -9,7 +9,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Plus } from "lucide-react";
 
-// ✅ Lazy-load Leaflet (for Next.js 15)
+// ✅ Lazy-load Leaflet (Next.js 15 safe)
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
   { ssr: false }
@@ -27,7 +27,6 @@ export default function GISPage() {
   const { id } = useParams();
   const mapRef = useRef<L.Map | null>(null);
 
-  // Layer toggles (ADM0–ADM5)
   const [layers, setLayers] = useState({
     ADM0: false,
     ADM1: false,
@@ -37,16 +36,10 @@ export default function GISPage() {
     ADM5: false,
   });
 
-  // Handle toggle click
-  const toggleLayer = (layer: keyof typeof layers) => {
+  const toggleLayer = (layer: keyof typeof layers) =>
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
-  };
 
-  // Placeholder GeoJSON (future: load from Supabase or /api)
-  const dummyGeoJson = {
-    type: "FeatureCollection",
-    features: [],
-  };
+  const dummyGeoJson = { type: "FeatureCollection", features: [] };
 
   return (
     <div className="flex h-screen">
@@ -77,7 +70,7 @@ export default function GISPage() {
         />
 
         <div className="flex-1 flex flex-row p-4 gap-4">
-          {/* Layer Control Panel */}
+          {/* Controls */}
           <div className="w-72 border rounded-lg bg-white shadow-sm p-4">
             <h3 className="font-semibold text-gray-800 mb-3">
               Layers (toggle to show)
@@ -105,22 +98,18 @@ export default function GISPage() {
             </Button>
           </div>
 
-          {/* Map Display */}
+          {/* Map */}
           <div className="flex-1 border rounded-lg overflow-hidden">
             <MapContainer
               center={[12.8797, 121.774]}
               zoom={6}
               style={{ height: "100%", width: "100%" }}
-              whenReady={(event) => {
-                mapRef.current = event.target;
-              }}
+              ref={mapRef}
             >
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-
-              {/* Render toggled layers */}
               {Object.entries(layers).map(([key, active]) =>
                 active ? (
                   <GeoJSON
