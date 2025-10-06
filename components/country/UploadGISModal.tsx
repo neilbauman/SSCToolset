@@ -22,33 +22,30 @@ export default function UploadGISModal({
   const handleUpload = async () => {
     try {
       if (!file) return setError("Please select a file to upload.");
-      if (!adminLevel) return setError("Please select an admin level.");
+      if (adminLevel === null)
+        return setError("Please select an admin level (ADM0–ADM5).");
 
       setUploading(true);
       setError(null);
 
-      // Build unique folder path
       const folder = `${countryIso}/${crypto.randomUUID()}`;
       const path = `${folder}/${file.name}`;
 
-      // Upload file to storage
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
         .upload(path, file);
-
       if (uploadError) throw uploadError;
 
-      // ✅ Deactivate any previous layer for this admin level
+      // Deactivate existing layer for this level
       const { error: deactivateError } = await supabase
         .from("gis_layers")
         .update({ is_active: false })
         .eq("country_iso", countryIso)
         .eq("admin_level_int", adminLevel)
         .eq("is_active", true);
-
       if (deactivateError) throw deactivateError;
 
-      // ✅ Insert new active layer
+      // Insert new layer
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
@@ -59,7 +56,6 @@ export default function UploadGISModal({
           is_active: true,
         },
       ]);
-
       if (insertError) throw insertError;
 
       await onUploaded();
@@ -104,6 +100,7 @@ export default function UploadGISModal({
           className="w-full rounded border p-2 text-sm mb-3"
         >
           <option value="">Select Level</option>
+          <option value={0}>ADM0</option>
           <option value={1}>ADM1</option>
           <option value={2}>ADM2</option>
           <option value={3}>ADM3</option>
