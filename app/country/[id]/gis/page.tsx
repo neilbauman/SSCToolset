@@ -21,7 +21,7 @@ type GISDatasetVersion = {
 
 type GISLayer = {
   id: string;
-  dataset_version_id: string;
+  dataset_version_id: string | null;
   layer_name: string;
   format: string;
   feature_count: number | null;
@@ -31,15 +31,15 @@ type GISLayer = {
   is_active: boolean;
 };
 
-const LEVELS = [1, 2, 3, 4, 5] as const;
+const LEVELS = [0, 1, 2, 3, 4, 5] as const;
 
 const LEVEL_STYLE = (lvl: number): L.PathOptions => ({
   color:
-    ["#e41a1c", "#377eb8", "#4daf4a", "#ff7f00", "#984ea3"][lvl - 1] ||
+    ["#000000", "#e41a1c", "#377eb8", "#4daf4a", "#ff7f00", "#984ea3"][lvl] ||
     "#000000",
-  weight: 1.5,
-  fillOpacity: 0.05,
-  opacity: 0.8,
+  weight: lvl === 0 ? 2 : 1.5,
+  fillOpacity: lvl === 0 ? 0.0 : 0.05,
+  opacity: 0.9,
 });
 
 export default function CountryGISPage({
@@ -55,6 +55,7 @@ export default function CountryGISPage({
   const [dataset, setDataset] = useState<GISDatasetVersion | null>(null);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [visible, setVisible] = useState<Record<number, boolean>>({
+    0: true,
     1: true,
     2: false,
     3: false,
@@ -88,13 +89,11 @@ export default function CountryGISPage({
   }, [countryIso]);
 
   // ───────────── Fetch Layers ─────────────
-  const fetchLayers = useCallback(async (versionId: string) => {
+  const fetchLayers = useCallback(async (versionId: string | null) => {
     try {
-      const { data, error } = await supabase
-        .from("gis_layers")
-        .select("*")
-        .eq("dataset_version_id", versionId)
-        .eq("is_active", true);
+      const query = supabase.from("gis_layers").select("*").eq("country_iso", countryIso).eq("is_active", true);
+      if (versionId) query.eq("dataset_version_id", versionId);
+      const { data, error } = await query;
       if (error) {
         console.error("Supabase layers error:", error.message);
         return [];
@@ -104,7 +103,7 @@ export default function CountryGISPage({
       console.error("Unexpected layer fetch error:", err.message);
       return [];
     }
-  }, []);
+  }, [countryIso]);
 
   // ───────────── Load GeoJSON ─────────────
   const getGeoJSON = async (layer: GISLayer) => {
@@ -188,12 +187,8 @@ export default function CountryGISPage({
     (async () => {
       setLoading(true);
       const v = await fetchActiveVersion();
-      if (!v) {
-        setLoading(false);
-        return;
-      }
       setDataset(v);
-      const ls = await fetchLayers(v.id);
+      const ls = await fetchLayers(v?.id ?? null);
       setLayers(ls);
       setLoading(false);
     })();
@@ -249,7 +244,7 @@ export default function CountryGISPage({
           <div className="mt-1 text-base font-semibold">
             {layers.length > 0 ? layers.length : "0"}
           </div>
-          <div className="text-sm text-gray-500">ADM1–ADM5 supported</div>
+          <div className="text-sm text-gray-500">ADM0–ADM5 supported</div>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-xs uppercase text-gray-500">Country</div>
@@ -298,7 +293,7 @@ export default function CountryGISPage({
       </div>
 
       {/* Map */}
-      <div id="map" className="h-[600px] w-full rounded-2xl border shadow-sm"></div>
+      <div id="map" className="h-[600px] w-full rounded-2xl border shadow-sm z-0"></div>
 
       {/* Table */}
       <div className="mt-4 overflow-x-auto rounded-2xl border bg-white shadow-sm">
@@ -318,7 +313,9 @@ export default function CountryGISPage({
               <tr key={l.id} className="border-t">
                 <td className="p-2">{l.layer_name}</td>
                 <td className="p-2">
-                  {l.admin_level_int ? `ADM${l.admin_level_int}` : "—"}
+                  {l.admin_level_int !== null
+                    ? `ADM${l.admin_level_int}`
+                    : "—"}
                 </td>
                 <td className="p-2">{l.format}</td>
                 <td className="p-2">{l.feature_count ?? "—"}</td>
