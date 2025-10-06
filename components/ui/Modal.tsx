@@ -1,36 +1,65 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import React, { useEffect } from "react";
+import { X } from "lucide-react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  children: ReactNode;
+  children: React.ReactNode;
+  title?: string;
+  width?: string; // optional override like "max-w-2xl"
 };
 
-export default function Modal({ open, onClose, children }: Props) {
+/**
+ * Universal modal container for SSC Toolset
+ * - Accessible, keyboard closable, and scroll-safe
+ * - Used by Upload, Edit, Confirm modals
+ */
+export default function Modal({
+  open,
+  onClose,
+  children,
+  title,
+  width = "max-w-lg",
+}: Props) {
+  // Close with Escape key
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && open) onClose();
     };
-    document.addEventListener("keydown", onEsc);
-    return () => document.removeEventListener("keydown", onEsc);
-  }, [onClose]);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg">
-        <div className="flex justify-end p-2">
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-        <div className="p-4">{children}</div>
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className={`bg-white rounded-lg shadow-lg p-6 relative w-full ${width} mx-4 max-h-[90vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Optional Title */}
+        {title && (
+          <h2 className="text-lg font-semibold mb-4 text-gray-800">
+            {title}
+          </h2>
+        )}
+
+        {/* Content */}
+        <div>{children}</div>
       </div>
     </div>
   );
