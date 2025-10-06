@@ -11,6 +11,7 @@ import type { CountryParams } from "@/app/country/types";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
+import { useGeoJSONLayers } from "@/lib/hooks/useGeoJSONLayers";
 
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
@@ -22,7 +23,7 @@ export default async function GISPage({ params }: any) {
   const [versions, setVersions] = useState<any[]>([]);
   const [activeVersion, setActiveVersion] = useState<any | null>(null);
   const [layers, setLayers] = useState<any[]>([]);
-  const [visible, setVisible] = useState<{ [key: number]: boolean }>({});
+  const [visible, setVisible] = useState<Record<number, boolean>>({});
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
   const [openEditVersion, setOpenEditVersion] = useState(false);
@@ -36,6 +37,7 @@ export default async function GISPage({ params }: any) {
         .select("*")
         .eq("country_iso", id)
         .order("created_at", { ascending: false });
+
       if (data) {
         setVersions(data);
         setActiveVersion(data.find((v) => v.is_active) || data[0] || null);
@@ -49,6 +51,7 @@ export default async function GISPage({ params }: any) {
     const fetchLayers = async () => {
       if (!activeVersion) return;
       setLoading(true);
+
       const { data, error } = await supabase
         .from("gis_layers")
         .select("*")
@@ -58,14 +61,18 @@ export default async function GISPage({ params }: any) {
 
       if (!error && data) {
         setLayers(data);
-        const initialVisibility: { [key: number]: boolean } = {};
+        const initialVisibility: Record<number, boolean> = {};
         data.forEach((l) => (initialVisibility[l.admin_level_int] = false));
         setVisible(initialVisibility);
       }
+
       setLoading(false);
     };
     fetchLayers();
   }, [id, activeVersion]);
+
+  // ─────────────── Use Hook to Fetch GeoJSON Data ───────────────
+  const geojsons = useGeoJSONLayers(layers, visible);
 
   // ─────────────── Header Props ───────────────
   const headerProps = {
@@ -208,16 +215,20 @@ export default async function GISPage({ params }: any) {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
           />
-          {layers.map(
-            (layer) =>
-              visible[layer.admin_level_int] && (
-                <GeoJSON
-                  key={layer.id}
-                  data={`https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/gis_raw/${layer.source?.path}`}
-                  style={{ color: "#C72B2B", weight: 1, fillOpacity: 0.2 }}
-                />
-              )
-          )}
+
+          {layers.map((layer) => {
+            if (!visible[layer.admin_level_int]) return null;
+            const data = geojsons[layer.id];
+            if (!data) return null;
+
+            return (
+              <GeoJSON
+                key={layer.id}
+                data={data}
+                style={{ color: "#C72B2B", weight: 1, fillOpacity: 0.2 }}
+              />
+            );
+          })}
         </MapContainer>
 
         <button
