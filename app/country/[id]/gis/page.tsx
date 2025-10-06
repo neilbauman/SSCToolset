@@ -4,29 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
-import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
+import GISDataHealthPanel, { GISLayer } from "@/components/country/GISDataHealthPanel";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Upload } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-/** NOTE: client component – keep params:any for Next 15 */
+/** Client-side GIS management page for a single country */
 export default function GISPage({ params }: any) {
   const { id } = params as { id: string };
 
-  // ───────────────────────── Types
-  type GISLayer = {
-    id: string;
-    layer_name: string;
-    admin_level: string | null;
-    admin_level_int: number | null;
-    source: { path?: string; url?: string } | null;
-    format: string | null;
-    crs: string | null;
-    feature_count: number | null;
-    created_at?: string;
-  };
-
+  // ────────────── Types ──────────────
   type GISDatasetVersion = {
     id: string;
     title: string;
@@ -35,13 +23,13 @@ export default function GISPage({ params }: any) {
     country_iso: string;
   };
 
-  // ───────────────────────── State
+  // ────────────── State ──────────────
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
-  // layer visibility by admin level int (0..5)
+  // Layer visibility (all off by default)
   const [visible, setVisible] = useState<Record<number, boolean>>({
     0: false,
     1: false,
@@ -62,7 +50,7 @@ export default function GISPage({ params }: any) {
     5: null,
   });
 
-  // ───────────────────────── Fetch dataset versions
+  // ────────────── Fetch dataset versions ──────────────
   useEffect(() => {
     const loadVersions = async () => {
       const { data, error } = await supabase
@@ -78,7 +66,7 @@ export default function GISPage({ params }: any) {
     loadVersions();
   }, [id]);
 
-  // ───────────────────────── Fetch layers for the active version
+  // ────────────── Fetch layers for active version ──────────────
   useEffect(() => {
     const loadLayers = async () => {
       if (!activeVersion) return;
@@ -131,7 +119,7 @@ export default function GISPage({ params }: any) {
     loadLayers();
   }, [activeVersion]);
 
-  // ───────────────────────── Init map
+  // ────────────── Initialize map ──────────────
   useEffect(() => {
     if (mapRef.current) return;
     const map = L.map("gis-map", {
@@ -145,12 +133,12 @@ export default function GISPage({ params }: any) {
     mapRef.current = map;
   }, []);
 
-  // ───────────────────────── Render layers; respect visibility
+  // ────────────── Render layers; respect visibility ──────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // clear all existing layer groups
+    // Clear existing layers
     Object.values(layerGroupsRef.current).forEach((g) => g?.remove());
     layerGroupsRef.current = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null };
 
@@ -167,7 +155,7 @@ export default function GISPage({ params }: any) {
 
     const addLayer = async (l: GISLayer) => {
       const lvl = l.admin_level_int ?? 0;
-      if (!visible[lvl]) return; // skip if toggled off
+      if (!visible[lvl]) return;
       const url = l.source?.url;
       if (!url) return;
 
@@ -188,7 +176,6 @@ export default function GISPage({ params }: any) {
     (async () => {
       for (const l of layers) await addLayer(l);
 
-      // Fit to combined bounds of visible layers (if any)
       if (addedBounds.length) {
         const base = new L.LatLngBounds(
           addedBounds[0].getSouthWest(),
@@ -200,7 +187,7 @@ export default function GISPage({ params }: any) {
     })();
   }, [layers, visible]);
 
-  // ───────────────────────── UI props
+  // ────────────── UI header props ──────────────
   const headerProps = {
     title: "GIS Datasets",
     group: "country-config" as const,
@@ -217,13 +204,12 @@ export default function GISPage({ params }: any) {
     ),
   };
 
-  const toggleLevel = (lvl: number) =>
-    setVisible((v) => ({ ...v, [lvl]: !v[lvl] }));
+  const toggleLevel = (lvl: number) => setVisible((v) => ({ ...v, [lvl]: !v[lvl] }));
 
-  // ───────────────────────── Render
+  // ────────────── Render ──────────────
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary row */}
+      {/* Summary cards row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
         <div className="p-4 rounded-lg border shadow-sm bg-white">
           <p className="text-xs text-gray-500 uppercase">Dataset Version</p>
@@ -245,7 +231,6 @@ export default function GISPage({ params }: any) {
             <button
               className="px-3 py-1 text-sm text-white rounded"
               style={{ backgroundColor: "var(--gsc-blue)" }}
-              title="Create version (future)"
             >
               + New
             </button>
@@ -279,7 +264,7 @@ export default function GISPage({ params }: any) {
         </div>
       </div>
 
-      {/* Data Health Summary */}
+      {/* GIS Data Health Summary */}
       <GISDataHealthPanel layers={layers} />
 
       {/* Layer table */}
@@ -318,7 +303,7 @@ export default function GISPage({ params }: any) {
         </table>
       </div>
 
-      {/* Visibility control bar */}
+      {/* Visibility controls */}
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium text-gray-700">Layers:</span>
         {[0, 1, 2, 3, 4, 5].map((lvl) => (
