@@ -6,7 +6,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import UploadGISLayerModal from "@/components/country/UploadGISLayerModal";
+import UploadGISLayerModal from "@/components/country/UploadGISModal";
 import EditGISLayerModal from "@/components/country/EditGISLayerModal";
 
 import { Database, Layers, Plus, MoreVertical } from "lucide-react";
