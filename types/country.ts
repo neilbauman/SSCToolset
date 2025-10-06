@@ -11,6 +11,6 @@ export interface Country {
   adm3_label?: string | null;
   adm4_label?: string | null;
   adm5_label?: string | null;
-  dataset_sources?: any;
-  extra_metadata?: any;
+  dataset_sources?: Record<string, any>;
+  extra_metadata?: Record<string, any>;
 }
