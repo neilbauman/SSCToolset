@@ -1,185 +1,164 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import dynamic from "next/dynamic";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Button } from "@/components/ui/Button";
 import UploadGISModal from "@/components/country/UploadGISModal";
+import PageHeader from "@/components/layout/PageHeader";
+import SidebarLayout from "@/components/layout/SidebarLayout";
+import type { Database } from "@/lib/types/database";
+import { toast } from "sonner";
 
-type GISDatasetVersion = {
-  id: string;
-  country_iso: string;
-  title: string;
-  year: number;
-  is_active: boolean;
-  dataset_date: string | null;
-  source: string | null;
-};
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
+const ZoomControl = dynamic(() => import("react-leaflet").then(m => m.ZoomControl), { ssr: false });
 
-type LayerData = {
-  name: string;
-  level: string;
-  geojson: any;
-};
+type GISDataset = Database["public"]["Tables"]["gis_dataset_versions"]["Row"];
 
-export default function GISPage({ params }: { params: { id: string } }) {
-  const countryIso = params.id.toUpperCase();
-  const [datasets, setDatasets] = useState<GISDatasetVersion[]>([]);
-  const [selectedLayers, setSelectedLayers] = useState<Record<string, boolean>>({
+interface Props {
+  params: { id: string };
+}
+
+export default function GISPage({ params }: Props) {
+  const { id: countryIso } = params;
+  const [datasets, setDatasets] = useState<GISDataset[]>([]);
+  const [activeDataset, setActiveDataset] = useState<GISDataset | null>(null);
+  const [layers, setLayers] = useState<Record<string, boolean>>({
     ADM1: false,
     ADM2: false,
     ADM3: false,
     ADM4: false,
   });
-  const [layerData, setLayerData] = useState<LayerData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showUpload, setShowUpload] = useState(false);
-  const mapRef = useRef<L.Map | null>(null);
+  const [geojsonData, setGeojsonData] = useState<Record<string, any | null>>({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const mapRef = useRef<any>(null);
 
+  // Fetch dataset versions
   useEffect(() => {
-    loadDatasets();
+    async function fetchDatasets() {
+      const { data, error } = await supabase
+        .from("gis_dataset_versions")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .order("year", { ascending: false });
+
+      if (error) {
+        console.error(error);
+        toast.error("Failed to load GIS datasets.");
+        return;
+      }
+
+      setDatasets(data || []);
+      const active = data?.find(d => d.is_active);
+      if (active) setActiveDataset(active);
+    }
+
+    fetchDatasets();
   }, [countryIso]);
 
-  async function loadDatasets() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("gis_dataset_versions")
-      .select("*")
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
+  // Toggle layer
+  async function handleLayerToggle(layer: string) {
+    const newState = !layers[layer];
+    setLayers(prev => ({ ...prev, [layer]: newState }));
 
-    if (error) {
-      console.error(error);
-    } else {
-      setDatasets(data || []);
-    }
-    setLoading(false);
-  }
+    if (newState) {
+      try {
+        const filePath = `${countryIso}/gis/${layer}.geojson`;
+        const { data, error } = await supabase.storage.from("gis").download(filePath);
+        if (error) throw error;
 
-  // Load GeoJSON when layer toggles
-  useEffect(() => {
-    (async () => {
-      const activeLevels = Object.keys(selectedLayers).filter(
-        (key) => selectedLayers[key]
-      );
-      if (activeLevels.length === 0) return setLayerData([]);
-
-      const loaded: LayerData[] = [];
-      for (const level of activeLevels) {
-        const { data, error } = await supabase
-          .from("admin_boundaries")
-          .select("geojson, level, name")
-          .eq("country_iso", countryIso)
-          .eq("level", level)
-          .limit(1);
-
-        if (!error && data?.length) {
-          loaded.push({
-            name: data[0].name,
-            level: data[0].level,
-            geojson: data[0].geojson,
-          });
-        }
+        const text = await data.text();
+        const json = JSON.parse(text);
+        setGeojsonData(prev => ({ ...prev, [layer]: json }));
+      } catch (err: any) {
+        console.error(err);
+        toast.error(`Failed to load ${layer} layer.`);
       }
-      setLayerData(loaded);
-    })();
-  }, [selectedLayers, countryIso]);
-
-  function toggleLayer(level: string) {
-    setSelectedLayers((prev) => ({
-      ...prev,
-      [level]: !prev[level],
-    }));
-  }
-
-  if (loading) {
-    return (
-      <div className="p-8 text-gray-500 text-center">
-        Loading GIS datasets for {countryIso}...
-      </div>
-    );
+    } else {
+      setGeojsonData(prev => ({ ...prev, [layer]: null }));
+    }
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-semibold">GIS Layers for {countryIso}</h2>
-          <p className="text-sm text-gray-500">
-            Manage and visualize uploaded administrative boundary layers.
-          </p>
-        </div>
-        <Button onClick={() => setShowUpload(true)}>Upload GIS Dataset</Button>
-      </div>
+    <SidebarLayout>
+      <div className="flex flex-col h-full">
+        <PageHeader
+          title={`GIS Layers for ${countryIso.toUpperCase()}`}
+          description="Manage and visualize uploaded administrative boundary layers."
+          action={
+            <Button className="bg-[color:var(--gsc-red)] text-white" onClick={() => setModalOpen(true)}>
+              Upload GIS Dataset
+            </Button>
+          }
+        />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Sidebar controls */}
-        <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">
-            Layers (toggle to show)
-          </h3>
-          {Object.keys(selectedLayers).map((level) => (
-            <label
-              key={level}
-              className="flex items-center justify-between text-sm"
-            >
-              <span>{level}</span>
-              <input
-                type="checkbox"
-                checked={selectedLayers[level]}
-                onChange={() => toggleLayer(level)}
-              />
-            </label>
-          ))}
+        <div className="flex flex-1 gap-4 mt-4">
+          {/* Sidebar for Layers */}
+          <div className="w-72 p-4 bg-white border rounded-lg overflow-y-auto">
+            <h4 className="font-semibold mb-2">Layers (toggle to show)</h4>
+            <div className="space-y-2 mb-4">
+              {Object.keys(layers).map(layer => (
+                <label key={layer} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={layers[layer]}
+                    onChange={() => handleLayerToggle(layer)}
+                  />
+                  {layer}
+                </label>
+              ))}
+            </div>
 
-          <div className="mt-4 border-t pt-3">
-            <h4 className="text-xs text-gray-500 font-semibold mb-1">
-              Available Datasets
-            </h4>
-            <ul className="text-xs text-gray-600 space-y-1 max-h-32 overflow-y-auto">
-              {datasets.map((d) => (
-                <li key={d.id}>
-                  <span className="font-medium">{d.title}</span> ({d.year}){" "}
-                  {d.is_active && (
-                    <span className="text-green-600 font-semibold">● Active</span>
-                  )}
+            <h4 className="font-semibold mb-1">Available Datasets</h4>
+            {datasets.length === 0 && <p className="text-xs text-gray-500">No datasets uploaded yet.</p>}
+            <ul className="text-sm space-y-1">
+              {datasets.map(ds => (
+                <li key={ds.id} className="flex items-center justify-between">
+                  <span>
+                    {ds.title} ({ds.year})
+                  </span>
+                  {ds.is_active && <span className="text-green-600 text-xs">● Active</span>}
                 </li>
               ))}
             </ul>
           </div>
+
+          {/* Map Display */}
+          <div className="flex-1">
+            <MapContainer
+              center={[12.8797, 121.774]} // Philippines center
+              zoom={6}
+              scrollWheelZoom={true}
+              style={{ height: "600px", width: "100%" }}
+              whenReady={(event) => {
+                mapRef.current = event.target;
+              }}
+              zoomControl={false}
+              className="rounded-lg z-0"
+            >
+              <ZoomControl position="topright" />
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {Object.entries(geojsonData)
+                .filter(([_, data]) => !!data)
+                .map(([key, data]) => (
+                  <GeoJSON key={key} data={data!} />
+                ))}
+            </MapContainer>
+          </div>
         </div>
 
-        {/* Map view */}
-        <div className="md:col-span-3">
-          <MapContainer
-            center={[12.8797, 121.774]}
-            zoom={6}
-            style={{ height: "600px", width: "100%" }}
-            className="rounded-lg z-0"
-            ref={mapRef}
-            whenReady={() => {
-              const map = mapRef.current;
-              if (!map) return;
-            }}
-          >
-            <TileLayer
-              attribution='&copy; OpenStreetMap contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {layerData.map((layer, idx) => (
-              <GeoJSON key={idx} data={layer.geojson} />
-            ))}
-          </MapContainer>
-        </div>
+        <UploadGISModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          countryIso={countryIso}
+          onUploaded={() => window.location.reload()}
+        />
       </div>
-
-      <UploadGISModal
-        open={showUpload}
-        onClose={() => setShowUpload(false)}
-        countryIso={countryIso}
-        onUploaded={loadDatasets}
-      />
-    </div>
+    </SidebarLayout>
   );
 }
