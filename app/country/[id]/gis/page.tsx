@@ -19,7 +19,10 @@ const TileLayer = dynamic(
 );
 
 export default function GISPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const idParam = params?.id;
+  const id = Array.isArray(idParam) ? idParam[0] : idParam; // ✅ ensures string type
+
   const mapRef = useRef<L.Map | null>(null);
   const [layers, setLayers] = useState<Record<string, boolean>>({
     ADM0: false,
@@ -43,7 +46,7 @@ export default function GISPage() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
         <PageHeader
-          title={`GIS Layers for ${id?.toUpperCase()}`}
+          title={`GIS Layers for ${id?.toUpperCase() || "Country"}`}
           group="country-config"
           description="Manage and visualize uploaded administrative boundary layers."
           breadcrumbs={
