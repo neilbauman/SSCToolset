@@ -30,9 +30,11 @@ const GeoJSON = dynamic(
   { ssr: false }
 );
 
-type PageProps = { params: CountryParams };
+interface GISPageProps {
+  params: CountryParams;
+}
 
-export default async function GISPage({ params }: PageProps) {
+export default function GISPage({ params }: GISPageProps) {
   const { id } = params;
   const mapRef = useRef<L.Map | null>(null);
 
@@ -98,10 +100,8 @@ export default async function GISPage({ params }: PageProps) {
     return palette[lvl ?? 0] || "#999";
   };
 
-  // Toggle visibility for admin level
-  const toggleVisibility = (level: number) => {
+  const toggleVisibility = (level: number) =>
     setVisible((prev) => ({ ...prev, [level]: !prev[level] }));
-  };
 
   const headerProps = {
     title: "GIS Layers",
@@ -121,7 +121,7 @@ export default async function GISPage({ params }: PageProps) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top bar: version info + actions */}
+      {/* Top bar */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-3">
         <div>
           {activeVersion ? (
@@ -173,10 +173,8 @@ export default async function GISPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Data Health Panel */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Layer table */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
         <table className="min-w-full text-sm text-left">
           <thead className="bg-gray-50 text-gray-700">
@@ -215,14 +213,13 @@ export default async function GISPage({ params }: PageProps) {
         </table>
       </div>
 
-      {/* Map */}
       <div className="relative border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(mapEvent) => {
-            mapRef.current = (mapEvent as any).target;
+          whenReady={(mapEvent: any) => {
+            mapRef.current = mapEvent.target;
           }}
         >
           <TileLayer
@@ -240,7 +237,7 @@ export default async function GISPage({ params }: PageProps) {
             return (
               <GeoJSON
                 key={layer.id}
-                data={undefined as any} // loaded dynamically client-side
+                data={undefined as any}
                 style={{ color: getColor(lvl), weight: 1, fillOpacity: 0.2 }}
                 onAdd={async (event) => {
                   try {
@@ -258,7 +255,6 @@ export default async function GISPage({ params }: PageProps) {
         </MapContainer>
       </div>
 
-      {/* Modals */}
       {openUpload && (
         <UploadGISModal
           open={openUpload}
