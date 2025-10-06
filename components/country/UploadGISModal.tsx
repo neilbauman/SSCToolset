@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import ModalBase from "@/components/ui/ModalBase";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type UploadGISModalProps = {
+interface UploadGISModalProps {
   countryIso: string;
   onClose: () => void;
-  onUploaded: () => void;
-};
+  onUploaded: () => Promise<void> | void;
+}
 
 export default function UploadGISModal({
   countryIso,
@@ -20,83 +19,89 @@ export default function UploadGISModal({
   const [error, setError] = useState<string | null>(null);
 
   const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    setError(null);
-
     try {
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${countryIso}/${Date.now()}.${fileExt}`;
+      if (!file) {
+        setError("Please select a file to upload.");
+        return;
+      }
 
-      // Upload file to Supabase Storage bucket
+      setUploading(true);
+      setError(null);
+
+      // Create a unique path within the gis_raw bucket
+      const folder = `${countryIso}/${crypto.randomUUID()}`;
+      const path = `${folder}/${file.name}`;
+
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
-        .upload(filePath, file);
+        .upload(path, file);
 
-      if (uploadError) {
-        setError(uploadError.message);
-        setUploading(false);
-        return;
-      }
+      if (uploadError) throw uploadError;
 
-      // Call Edge Function to process file
-      const { error: functionError } = await supabase.functions.invoke(
-        "convert-gis",
+      // Record layer entry in DB
+      const { error: dbError } = await supabase.from("gis_layers").insert([
         {
-          body: { country_iso: countryIso, path: filePath },
-        }
-      );
+          country_iso: countryIso,
+          layer_name: file.name,
+          format: file.name.endsWith(".zip") ? "zip" : "json",
+          source: { path },
+          is_active: true,
+        },
+      ]);
 
-      if (functionError) {
-        setError(functionError.message);
-        setUploading(false);
-        return;
-      }
+      if (dbError) throw dbError;
 
-      setUploading(false);
-      onUploaded();
+      await onUploaded();
       onClose();
-    } catch (e: any) {
-      console.error(e);
-      setError(e.message || "Upload failed.");
+    } catch (err: any) {
+      console.error("Upload error:", err.message);
+      setError(err.message || "Upload failed");
+    } finally {
       setUploading(false);
     }
   };
 
   return (
-    <ModalBase open={true} title="Upload GIS Layer" onClose={onClose}>
-      <div className="relative z-[9999] w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
-        <div className="mb-3 text-lg font-semibold">Upload GIS Layer</div>
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/30"
+      onClick={onClose}
+    >
+      <div
+        className="relative z-[2100] w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
 
         <input
           type="file"
-          accept=".geojson,.zip,.json"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="mb-3 w-full text-sm"
+          accept=".geojson,.json,.zip"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="w-full rounded border p-2 text-sm"
         />
 
         {error && (
-          <div className="mb-3 rounded bg-red-100 p-2 text-sm text-red-600">
+          <p className="mt-2 text-sm text-red-600">
             {error}
-          </div>
+          </p>
         )}
 
-        <div className="flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            disabled={uploading}
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
-            disabled={uploading || !file}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={uploading}
+            className={`rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60`}
           >
             {uploading ? "Uploading..." : "Upload"}
           </button>
         </div>
       </div>
-    </ModalBase>
+    </div>
   );
 }
