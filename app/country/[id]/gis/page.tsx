@@ -25,8 +25,17 @@ type GISDatasetVersion = {
   created_at: string;
 };
 
+type Country = {
+  iso_code: string;
+  name: string;
+  lat?: number;
+  lon?: number;
+};
+
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
+
+  const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GISDatasetVersion | null>(null);
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -38,6 +47,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openLayerUpload, setOpenLayerUpload] = useState(false);
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [deleteLayer, setDeleteLayer] = useState<GISLayer | null>(null);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
 
   const headerProps = {
     title: `${countryIso.toUpperCase()} – GIS Layers`,
@@ -48,12 +58,30 @@ export default function GISPage({ params }: { params: CountryParams }) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso.toUpperCase(), href: `/country/${countryIso}` },
+          { label: country?.name ?? countryIso.toUpperCase(), href: `/country/${countryIso}` },
           { label: "GIS" },
         ]}
       />
     ),
   };
+
+  // --- Fetch country info for centering ---
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("name, lat, lon")
+        .eq("iso_code", countryIso)
+        .single();
+
+      if (data) {
+        setCountry(data);
+        if (data.lat && data.lon) setMapCenter([data.lat, data.lon]);
+      } else {
+        setMapCenter([0, 0]);
+      }
+    })();
+  }, [countryIso]);
 
   // --- Load dataset versions ---
   useEffect(() => {
@@ -228,15 +256,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Health */}
       <GISDataHealthPanel layers={layers} />
 
       {/* Map + Toggles */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
         <div className="lg:col-span-2 border rounded-lg overflow-hidden shadow-sm">
           <MapContainer
-            center={[0, 0]}
-            zoom={4}
+            center={mapCenter}
+            zoom={5}
             style={{ height: "600px", width: "100%" }}
             className="rounded-md z-0"
           >
@@ -309,10 +336,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         onClose={() => setOpenUpload(false)}
         countryIso={countryIso}
         datasetVersionId={selectedVersion?.id || ""}
-        onUploaded={() => {
-          setOpenUpload(false);
-          selectedVersion && setSelectedVersion({ ...selectedVersion });
-        }}
+        onUploaded={() => setOpenUpload(false)}
       />
       {openLayerUpload && selectedVersion && (
         <UploadGISModal
