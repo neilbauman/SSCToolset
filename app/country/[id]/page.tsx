@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
-import Link from "next/link";
-import { Map, Users, Database, AlertCircle } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Map, Users, Database, AlertCircle } from "lucide-react";
+import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import CountryMetadataCard from "@/components/country/CountryMetadataCard";
 import ManageJoinsCard from "@/components/country/ManageJoinsCard";
@@ -16,9 +17,6 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import ActiveJoinSummaryCard from "@/components/country/ActiveJoinSummaryCard";
 
-import type { CountryParams } from "@/app/country/types";
-
-// SSR-safe Leaflet imports
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -28,7 +26,6 @@ const TileLayer = dynamic(
   { ssr: false }
 );
 
-// Badge for dataset statuses
 function StatusBadge({
   status,
 }: {
@@ -47,10 +44,14 @@ function StatusBadge({
   );
 }
 
-type PageProps = { params: CountryParams };
-
-export default async function CountryConfigLandingPage({ params }: PageProps) {
-  const { id } = params;
+export default function CountryConfigLandingPage() {
+  const params = useParams();
+  const id =
+    typeof params?.id === "string"
+      ? params.id
+      : Array.isArray(params?.id)
+      ? params.id[0]
+      : "";
 
   const [country, setCountry] = useState<any>(null);
   const [adminCount, setAdminCount] = useState(0);
@@ -66,7 +67,6 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
-  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -76,22 +76,19 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
         .single();
       if (data) setCountry(data);
     };
-    fetchCountry();
+    if (id) fetchCountry();
   }, [id]);
 
-  // Fetch dataset statuses
   useEffect(() => {
     const fetchStatuses = async () => {
       const { data: admins } = await supabase
         .from("admin_units")
         .select("level")
         .eq("country_iso", id);
-
       const { data: pop } = await supabase
         .from("population_data")
         .select("pcode, population")
         .eq("country_iso", id);
-
       const { data: gis } = await supabase
         .from("gis_layers")
         .select("crs")
@@ -102,10 +99,9 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
       setGisCount(gis?.length || 0);
       setStatusData({ admins, pop, gis });
     };
-    fetchStatuses();
+    if (id) fetchStatuses();
   }, [id]);
 
-  // Fetch joins (all + active)
   useEffect(() => {
     const fetchJoins = async () => {
       const { data, error } = await supabase
@@ -119,7 +115,7 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
         setActiveJoin(active || null);
       }
     };
-    fetchJoins();
+    if (id) fetchJoins();
   }, [id]);
 
   const computeStatus = (key: string) => {
@@ -209,7 +205,6 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top row: Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
@@ -231,99 +226,60 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
         />
       </div>
 
-      {/* Active Join summary card */}
       <ActiveJoinSummaryCard
         countryIso={id}
         activeJoin={activeJoin}
         statusData={statusData}
       />
 
-      {/* Dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mt-6">
-        {datasets.map((d) => {
-          let activeInfo: string | null = null;
-
-          // New JSON-based datasets
-          if (activeJoin?.datasets) {
-            const found = activeJoin.datasets.find((x: any) => x.type === d.key);
-            if (found)
-              activeInfo = `${found.title ?? d.key} ${
-                found.year ? `(${found.year})` : ""
-              }`;
-          } else {
-            // Legacy fallbacks
-            if (d.key === "admins" && activeJoin?.admin_datasets?.[0]) {
-              activeInfo = `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`;
-            }
-            if (d.key === "population" && activeJoin?.population_datasets?.[0]) {
-              activeInfo = `${activeJoin.population_datasets[0].title} (${activeJoin.population_datasets[0].year})`;
-            }
-            if (d.key === "gis" && activeJoin?.gis_datasets?.[0]) {
-              activeInfo = `${activeJoin.gis_datasets[0].title} (${activeJoin.gis_datasets[0].year})`;
-            }
-          }
-
-          return (
-            <div
-              key={d.key}
-              className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  {d.icon}
-                  <Link href={d.href}>
-                    <h3 className="text-lg font-semibold hover:underline">
-                      {d.title}
-                    </h3>
-                  </Link>
-                </div>
-                <StatusBadge status={d.status} />
-              </div>
-              <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-
-              {d.count > 0 ? (
-                <p className="text-sm text-gray-500 mb-1">📊 Total: {d.count}</p>
-              ) : (
-                <p className="italic text-gray-400 mb-1">
-                  No data uploaded yet
-                </p>
-              )}
-
-              {/* Active join info */}
-              <p className="text-xs text-gray-600 mb-3">
-                <strong>Active Join:</strong> {activeInfo || "—"}
-              </p>
-
-              <div className="flex gap-2">
-                <button className="px-2 py-1 text-sm border rounded">
-                  Download Template
-                </button>
-                {d.onUpload && (
-                  <button
-                    onClick={d.onUpload}
-                    className="px-2 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
-                  >
-                    Upload Data
-                  </button>
-                )}
-                <Link
-                  href={d.href}
-                  className="px-2 py-1 text-sm bg-[color:var(--gsc-blue)] text-white rounded hover:opacity-90"
-                >
-                  View
+        {datasets.map((d) => (
+          <div
+            key={d.key}
+            className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {d.icon}
+                <Link href={d.href}>
+                  <h3 className="text-lg font-semibold hover:underline">
+                    {d.title}
+                  </h3>
                 </Link>
               </div>
+              <StatusBadge status={d.status} />
             </div>
-          );
-        })}
+            <p className="text-sm text-gray-600 mb-2">{d.description}</p>
+            <p className="text-sm text-gray-500 mb-1">
+              📊 Total: {d.count || "—"}
+            </p>
+            <div className="flex gap-2">
+              <button className="px-2 py-1 text-sm border rounded">
+                Download Template
+              </button>
+              {d.onUpload && (
+                <button
+                  onClick={d.onUpload}
+                  className="px-2 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
+                >
+                  Upload Data
+                </button>
+              )}
+              <Link
+                href={d.href}
+                className="px-2 py-1 text-sm bg-[color:var(--gsc-blue)] text-white rounded hover:opacity-90"
+              >
+                View
+              </Link>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Manage Joins card */}
       <div className="mt-6">
         <ManageJoinsCard countryIso={id} joins={allJoins} />
       </div>
 
-      {/* Modals */}
       <UploadAdminUnitsModal
         open={openAdminUpload}
         onClose={() => setOpenAdminUpload(false)}
@@ -376,14 +332,6 @@ export default async function CountryConfigLandingPage({ params }: PageProps) {
             setCountry({
               ...country,
               ...updated,
-              adm0_label: updated.admLabels.adm0,
-              adm1_label: updated.admLabels.adm1,
-              adm2_label: updated.admLabels.adm2,
-              adm3_label: updated.admLabels.adm3,
-              adm4_label: updated.admLabels.adm4,
-              adm5_label: updated.admLabels.adm5,
-              dataset_sources: updated.datasetSources,
-              extra_metadata: updated.extra ?? {},
             });
           }}
         />
