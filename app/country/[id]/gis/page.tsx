@@ -39,9 +39,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
     mapRef,
   });
 
+  // ✅ Header configuration
   const headerProps = {
     title: `${countryIso.toUpperCase()} – GIS Layers`,
-    groupKey: "country-config",
+    group: "country-config" as const, // ✅ fixed key
     description: "Manage and visualize geospatial boundary datasets.",
     breadcrumbs: (
       <Breadcrumbs
@@ -57,7 +58,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top actions */}
+      {/* --- Top actions --- */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-blue)] flex items-center gap-2">
           <Layers className="w-5 h-5" /> GIS Layers
@@ -70,10 +71,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </button>
       </div>
 
-      {/* Data health */}
+      {/* --- Data health panel --- */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Map container */}
+      {/* --- Map container --- */}
       <div className="border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
           center={[12.8797, 121.774]}
@@ -92,7 +93,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </MapContainer>
       </div>
 
-      {/* Upload modal (always rendered, controlled by `open`) */}
+      {/* --- Upload modal --- */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
