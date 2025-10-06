@@ -5,10 +5,13 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload } from "lucide-react";
+import { Layers, Upload, RotateCcw, Clipboard } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+const SUPABASE_REF = "ergsggprgtlsrrsmwtkf";
+const GSC_RED = "#C72B2B";
 
 type GISDatasetVersion = {
   id: string;
@@ -62,57 +65,50 @@ export default function CountryGISPage({
     4: false,
     5: false,
   });
-  const [loading, setLoading] = useState(true);
   const [openUpload, setOpenUpload] = useState(false);
+  const [replaceLevel, setReplaceLevel] = useState<number | null>(null);
+  const [zoomLocked, setZoomLocked] = useState(true);
 
   // ───────────── Fetch Active Dataset Version ─────────────
   const fetchActiveVersion = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("gis_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from("gis_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      if (error) {
-        console.error("Supabase error:", error.message);
-        return null;
-      }
-      return data as GISDatasetVersion | null;
-    } catch (err: any) {
-      console.error("Unexpected fetch error:", err.message);
+    if (error) {
+      console.error("Supabase error:", error.message);
       return null;
     }
+    return data as GISDatasetVersion | null;
   }, [countryIso]);
 
   // ───────────── Fetch Layers ─────────────
   const fetchLayers = useCallback(
     async (versionId: string | null) => {
-      try {
-        const query = supabase
-          .from("gis_layers")
-          .select("*")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true);
-        if (versionId) query.eq("dataset_version_id", versionId);
-        const { data, error } = await query;
-        if (error) {
-          console.error("Supabase layers error:", error.message);
-          return [];
-        }
-        return data as GISLayer[];
-      } catch (err: any) {
-        console.error("Unexpected layer fetch error:", err.message);
+      const query = supabase
+        .from("gis_layers")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .eq("is_active", true);
+      if (versionId) query.eq("dataset_version_id", versionId);
+      const { data, error } = await query;
+      if (error) {
+        console.error("Supabase layers error:", error.message);
         return [];
       }
+      return (data as GISLayer[]).sort(
+        (a, b) => (a.admin_level_int ?? 99) - (b.admin_level_int ?? 99)
+      );
     },
     [countryIso]
   );
 
-  // ───────────── Load GeoJSON ─────────────
+  // ───────────── Load GeoJSON + Feature Count ─────────────
   const getGeoJSON = async (layer: GISLayer) => {
     try {
       const rawPath = layer.source?.path || "";
@@ -128,7 +124,17 @@ export default function CountryGISPage({
       }
 
       const text = await data.text();
-      return JSON.parse(text);
+      const gj = JSON.parse(text);
+      const count = gj.features?.length ?? 0;
+
+      if (!layer.feature_count || layer.feature_count !== count) {
+        await supabase
+          .from("gis_layers")
+          .update({ feature_count: count })
+          .eq("id", layer.id);
+      }
+
+      return gj;
     } catch (err: any) {
       console.error("GeoJSON parse error:", err.message);
       return null;
@@ -141,9 +147,6 @@ export default function CountryGISPage({
     if (!map) return;
     const gj = await getGeoJSON(layer);
     if (!gj) return;
-    console.log(
-      `Loaded layer ${layer.layer_name} with ${gj.features?.length ?? 0} features`
-    );
     const group = L.layerGroup();
     const gl = L.geoJSON(gj, { style: LEVEL_STYLE(lvl), pane: "geojson" });
     gl.addTo(group);
@@ -177,7 +180,7 @@ export default function CountryGISPage({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const m = L.map("map", { center: [12, 121], zoom: 5 });
+    const m = L.map("map", { center: [12, 121], zoom: 5, scrollWheelZoom: false });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(m);
@@ -191,15 +194,26 @@ export default function CountryGISPage({
     };
   }, []);
 
+  const toggleZoomLock = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (zoomLocked) {
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable();
+    } else {
+      map.scrollWheelZoom.disable();
+      map.touchZoom.disable();
+    }
+    setZoomLocked(!zoomLocked);
+  };
+
   // ───────────── Load Active Dataset & Layers ─────────────
   useEffect(() => {
     (async () => {
-      setLoading(true);
       const v = await fetchActiveVersion();
       setDataset(v);
       const ls = await fetchLayers(v?.id ?? null);
       setLayers(ls);
-      setLoading(false);
     })();
   }, [fetchActiveVersion, fetchLayers]);
 
@@ -217,6 +231,12 @@ export default function CountryGISPage({
       fit();
     })();
   }, [visible, layers]);
+
+  const handleCopy = (path: string) => {
+    const fullUrl = `https://${SUPABASE_REF}.supabase.co/storage/v1/object/public/gis_raw/${path}`;
+    navigator.clipboard.writeText(fullUrl);
+    alert("Copied to clipboard!");
+  };
 
   // ───────────── Render ─────────────
   return (
@@ -241,12 +261,22 @@ export default function CountryGISPage({
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-xs uppercase text-gray-500">Active Version</div>
-          <div className="mt-1 text-base font-semibold">
-            {dataset?.title || "No active version"}
-          </div>
-          <div className="text-sm text-gray-500">
-            {dataset?.year ? dataset.year : "No year"}
-          </div>
+          {dataset ? (
+            <>
+              <div className="mt-1 text-base font-semibold">{dataset.title}</div>
+              <div className="text-sm text-gray-500">
+                {dataset.year ? dataset.year : "No year"}
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-sm text-gray-500 italic">
+              No active dataset version
+              <br />
+              <span className="text-xs text-gray-400">
+                Layers are not yet grouped into a version
+              </span>
+            </div>
+          )}
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-xs uppercase text-gray-500">Active Layers</div>
@@ -263,7 +293,8 @@ export default function CountryGISPage({
           </div>
           <button
             onClick={() => setOpenUpload(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm text-white shadow-sm hover:bg-red-700"
+            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white shadow-sm"
+            style={{ backgroundColor: GSC_RED }}
           >
             <Upload className="h-4 w-4" />
             Upload GIS
@@ -276,27 +307,50 @@ export default function CountryGISPage({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
-              <th className="p-2 text-left">Name</th>
-              <th className="p-2 text-left">Level</th>
-              <th className="p-2 text-left">Format</th>
+              <th className="p-2 text-left w-16">Level</th>
+              <th className="p-2 text-left">Layer</th>
               <th className="p-2 text-left">Features</th>
               <th className="p-2 text-left">CRS</th>
+              <th className="p-2 text-left">Format</th>
               <th className="p-2 text-left">Source</th>
+              <th className="p-2 text-left w-12"></th>
             </tr>
           </thead>
           <tbody>
             {layers.map((l) => (
-              <tr key={l.id} className="border-t">
-                <td className="p-2">{l.layer_name}</td>
-                <td className="p-2">
-                  {l.admin_level_int !== null
-                    ? `ADM${l.admin_level_int}`
-                    : "—"}
+              <tr key={l.id} className="border-t hover:bg-gray-50">
+                <td className="p-2 font-medium">
+                  {l.admin_level_int !== null ? `ADM${l.admin_level_int}` : "—"}
                 </td>
-                <td className="p-2">{l.format}</td>
+                <td className="p-2">{l.layer_name}</td>
                 <td className="p-2">{l.feature_count ?? "—"}</td>
                 <td className="p-2">{l.crs ?? "—"}</td>
-                <td className="p-2 break-all">{l.source?.path ?? "—"}</td>
+                <td className="p-2">{l.format}</td>
+                <td className="p-2">
+                  {l.source?.path ? (
+                    <button
+                      onClick={() => handleCopy(l.source.path)}
+                      title="Copy public URL"
+                      className="flex items-center gap-1 text-xs text-white px-2 py-1 rounded"
+                      style={{ backgroundColor: GSC_RED }}
+                    >
+                      <Clipboard className="h-3 w-3" />
+                      Copy
+                    </button>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="p-2 text-right">
+                  <button
+                    onClick={() => setReplaceLevel(l.admin_level_int ?? null)}
+                    title="Replace layer"
+                    className="text-gray-600 hover:text-[color:var(--gsc-red)]"
+                    style={{ color: GSC_RED }}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -307,7 +361,7 @@ export default function CountryGISPage({
       <div className="relative h-[600px] w-full overflow-hidden rounded-2xl border shadow-sm">
         <div id="map" className="h-full w-full z-0 rounded-2xl" />
 
-        {/* Floating mini layer control */}
+        {/* Floating mini control */}
         <div className="absolute left-4 top-4 z-[1000] rounded-xl bg-white/90 backdrop-blur p-3 shadow-md border border-gray-200">
           <div className="flex items-center gap-2 mb-2">
             <Layers className="h-4 w-4 text-gray-700" />
@@ -331,16 +385,26 @@ export default function CountryGISPage({
           >
             Fit
           </button>
+          <button
+            onClick={toggleZoomLock}
+            className="mt-2 w-full rounded border px-2 py-1 text-xs hover:bg-gray-50"
+          >
+            {zoomLocked ? "🔒 Zoom Locked" : "🔓 Unlock Zoom"}
+          </button>
         </div>
       </div>
 
       {/* Upload Modal */}
-      {openUpload && (
+      {(openUpload || replaceLevel !== null) && (
         <UploadGISModal
           countryIso={countryIso}
-          onClose={() => setOpenUpload(false)}
+          onClose={() => {
+            setOpenUpload(false);
+            setReplaceLevel(null);
+          }}
           onUploaded={async () => {
             setOpenUpload(false);
+            setReplaceLevel(null);
             const v = await fetchActiveVersion();
             if (v) {
               const ls = await fetchLayers(v.id);
