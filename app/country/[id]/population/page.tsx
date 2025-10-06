@@ -42,21 +42,22 @@ type PopulationRow = {
   name?: string | null;
 };
 
-export default function PopulationPage({ params }: any) {
-  const { id: countryIso } = params as CountryParams;
+export default function PopulationPage({ params }: { params: CountryParams }) {
+  const { id: countryIso } = params;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<PopulationVersion | null>(null);
   const [rows, setRows] = useState<PopulationRow[]>([]);
+
   const [openUpload, setOpenUpload] = useState(false);
   const [openEdit, setOpenEdit] = useState<PopulationVersion | null>(null);
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
 
-  // simple dropdown state keyed by version id
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -67,6 +68,7 @@ export default function PopulationPage({ params }: any) {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -79,6 +81,7 @@ export default function PopulationPage({ params }: any) {
     fetchCountry();
   }, [countryIso]);
 
+  // Fetch all versions
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("population_dataset_versions")
@@ -94,25 +97,19 @@ export default function PopulationPage({ params }: any) {
     const list = (data ?? []) as PopulationVersion[];
     setVersions(list);
 
-    // prefer active; else first
     const active = list.find((v) => v.is_active);
     const initial = active || list[0] || null;
-    setSelectedVersion(initial || null);
+    setSelectedVersion(initial);
     if (initial) fetchRows(initial.id);
     else setRows([]);
   };
 
+  // Fetch population rows for selected version
   const fetchRows = async (versionId: string) => {
-    // population_data links via dataset_id (FK to population_datasets) or version id?
-    // Current schema has population_data with dataset_id and country_iso + pcode + population.
-    // We’ll assume each population_data row carries dataset_id that belongs to the selected version.
-    // For simplicity, select by a view: join by dataset_id from population_datasets where dataset_version_id = selectedVersion.id
-
     const { data: ds, error: dsErr } = await supabase
       .from("population_datasets")
       .select("id")
       .eq("dataset_version_id", versionId)
-      .limit(1)
       .maybeSingle();
 
     if (dsErr) {
@@ -138,14 +135,16 @@ export default function PopulationPage({ params }: any) {
       setRows([]);
       return;
     }
+
     setRows((data ?? []) as PopulationRow[]);
   };
 
+  // Initial load
   useEffect(() => {
     fetchVersions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryIso]);
 
+  // Header configuration for SidebarLayout
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population`,
     group: "country-config" as const,
@@ -162,70 +161,39 @@ export default function PopulationPage({ params }: any) {
     ),
   };
 
+  // Select version handler
   const handleSelectVersion = (v: PopulationVersion) => {
     setSelectedVersion(v);
     fetchRows(v.id);
   };
 
+  // Activate version
   const handleMakeActive = async (versionId: string) => {
-    // clear all, set one
-    const { error: e1 } = await supabase
-      .from("population_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-    if (e1) console.error(e1);
-
-    const { error: e2 } = await supabase
-      .from("population_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", versionId);
-    if (e2) console.error(e2);
-
+    await supabase.from("population_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("population_dataset_versions").update({ is_active: true }).eq("id", versionId);
     await fetchVersions();
   };
 
+  // Delete version and related data
   const handleDeleteVersion = async (versionId: string) => {
-    // hard delete: remove datasets & data for this version
-    // 1) find datasets for the version
-    const { data: ds, error: dsErr } = await supabase
+    const { data: ds } = await supabase
       .from("population_datasets")
       .select("id")
       .eq("dataset_version_id", versionId);
 
-    if (dsErr) {
-      console.error("Error resolving datasets to delete:", dsErr);
-      return;
-    }
-
     const datasetIds = (ds ?? []).map((d) => d.id);
     if (datasetIds.length) {
-      const { error: delDataErr } = await supabase
-        .from("population_data")
-        .delete()
-        .in("dataset_id", datasetIds);
-      if (delDataErr) console.error("Error deleting population_data:", delDataErr);
-
-      const { error: delDsErr } = await supabase
-        .from("population_datasets")
-        .delete()
-        .in("id", datasetIds);
-      if (delDsErr) console.error("Error deleting population_datasets:", delDsErr);
+      await supabase.from("population_data").delete().in("dataset_id", datasetIds);
+      await supabase.from("population_datasets").delete().in("id", datasetIds);
     }
 
-    // finally delete version
-    const { error: delVerErr } = await supabase
-      .from("population_dataset_versions")
-      .delete()
-      .eq("id", versionId);
-
-    if (delVerErr) console.error("Error deleting version:", delVerErr);
-
+    await supabase.from("population_dataset_versions").delete().eq("id", versionId);
     setOpenDelete(null);
     await fetchVersions();
   };
 
+  // Download CSV template
   const downloadTemplate = () => {
-    // empty, headers only
     const csv = "pcode,population\n";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -238,6 +206,7 @@ export default function PopulationPage({ params }: any) {
 
   const totalRecords = rows.length;
 
+  // Inline menu for each version
   const ActionsMenu = ({ v }: { v: PopulationVersion }) => {
     const isSelected = selectedVersion?.id === v.id;
     const isActive = !!v.is_active;
@@ -250,6 +219,7 @@ export default function PopulationPage({ params }: any) {
         >
           Actions <MoreVertical className="w-4 h-4" />
         </button>
+
         {openMenuFor === v.id && (
           <div className="absolute right-0 mt-2 w-40 rounded border bg-white shadow z-10">
             {!isSelected && (
@@ -300,12 +270,11 @@ export default function PopulationPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions Section */}
+      {/* --- Versions Section --- */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Dataset Versions
+            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
             <button
@@ -340,10 +309,7 @@ export default function PopulationPage({ params }: any) {
                 const isSelected = selectedVersion?.id === v.id;
                 const isActive = !!v.is_active;
                 return (
-                  <tr
-                    key={v.id}
-                    className={`hover:bg-gray-50 ${isSelected ? "bg-blue-50" : ""}`}
-                  >
+                  <tr key={v.id} className={`hover:bg-gray-50 ${isSelected ? "bg-blue-50" : ""}`}>
                     <td className="border px-2 py-1">{v.title || "—"}</td>
                     <td className="border px-2 py-1">{v.year ?? "—"}</td>
                     <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
@@ -372,16 +338,14 @@ export default function PopulationPage({ params }: any) {
         )}
       </div>
 
-      {/* Dataset Health */}
+      {/* --- Dataset Health --- */}
       <DatasetHealth totalUnits={totalRecords} />
 
-      {/* Population Records */}
+      {/* --- Population Records --- */}
       <div className="border rounded-lg p-4 shadow-sm mt-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">
-            Population Records {selectedVersion?.title ? `– ${selectedVersion.title}` : ""}
-          </h2>
-        </div>
+        <h2 className="text-lg font-semibold mb-3">
+          Population Records {selectedVersion?.title ? `– ${selectedVersion.title}` : ""}
+        </h2>
 
         {rows.length ? (
           <table className="w-full text-sm border">
@@ -409,15 +373,13 @@ export default function PopulationPage({ params }: any) {
         )}
       </div>
 
-      {/* Modals */}
-      {openUpload && (
-        <UploadPopulationModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
-          countryIso={countryIso}
-          onUploaded={fetchVersions}
-        />
-      )}
+      {/* --- Modals --- */}
+      <UploadPopulationModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={countryIso}
+        onUploaded={fetchVersions}
+      />
 
       {openEdit && (
         <EditPopulationVersionModal
@@ -434,7 +396,7 @@ export default function PopulationPage({ params }: any) {
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          message={`This will permanently remove the version "${openDelete.title ?? ""}" and all of its population records. This cannot be undone.`}
+          message={`This will permanently remove the version "${openDelete.title ?? ""}" and all related data. This cannot be undone.`}
           onClose={() => setOpenDelete(null)}
           onConfirm={async () => {
             await handleDeleteVersion(openDelete.id);
