@@ -107,16 +107,16 @@ export default function CountryGISPage({
   // ───────────── Load GeoJSON ─────────────
   const getGeoJSON = async (layer: GISLayer) => {
     try {
-      const path = layer.source?.path;
-      if (!path) return null;
+      const rawPath = layer.source?.path || "";
+      // ✅ Clean up any prefix like "gis_raw/" or "gis/"
+      const cleanPath = rawPath.replace(/^gis_raw\//, "").replace(/^gis\//, "");
 
-      // ✅ read directly from gis_raw (your active bucket)
       const { data, error } = await supabase.storage
         .from("gis_raw")
-        .download(path);
+        .download(cleanPath);
 
       if (error) {
-        console.error("Storage error:", error.message);
+        console.error("Storage error:", error.message, "→ path:", cleanPath);
         return null;
       }
 
@@ -134,7 +134,7 @@ export default function CountryGISPage({
     if (!map) return;
     const gj = await getGeoJSON(layer);
     if (!gj) return;
-    console.log(`Loaded layer ${layer.layer_name} with ${gj.features?.length} features`);
+    console.log(`Loaded layer ${layer.layer_name} with ${gj.features?.length ?? 0} features`);
     const group = L.layerGroup();
     const gl = L.geoJSON(gj, { style: LEVEL_STYLE(lvl), pane: "geojson" });
     gl.addTo(group);
