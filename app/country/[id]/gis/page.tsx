@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload, Pencil } from "lucide-react";
+import { Upload, Pencil } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
@@ -18,6 +18,7 @@ const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { 
 
 export default async function GISPage({ params }: any) {
   const { id } = await params;
+
   const [versions, setVersions] = useState<any[]>([]);
   const [activeVersion, setActiveVersion] = useState<any | null>(null);
   const [layers, setLayers] = useState<any[]>([]);
@@ -26,7 +27,6 @@ export default async function GISPage({ params }: any) {
   const [openNewVersion, setOpenNewVersion] = useState(false);
   const [openEditVersion, setOpenEditVersion] = useState(false);
   const [loading, setLoading] = useState(false);
-  const mapRef = useRef<L.Map | null>(null);
 
   // ─────────────── Fetch dataset versions ───────────────
   useEffect(() => {
@@ -59,9 +59,7 @@ export default async function GISPage({ params }: any) {
       if (!error && data) {
         setLayers(data);
         const initialVisibility: { [key: number]: boolean } = {};
-        data.forEach((l) => {
-          initialVisibility[l.admin_level_int] = false; // off by default
-        });
+        data.forEach((l) => (initialVisibility[l.admin_level_int] = false));
         setVisible(initialVisibility);
       }
       setLoading(false);
@@ -205,14 +203,7 @@ export default async function GISPage({ params }: any) {
 
       {/* Map */}
       <div className="relative border rounded-lg overflow-hidden shadow-sm">
-        <MapContainer
-          center={[12.8797, 121.774]}
-          zoom={5}
-          style={{ height: "600px", width: "100%" }}
-          whenReady={(e) => {
-            mapRef.current = e.target;
-          }}
-        >
+        <MapContainer center={[12.8797, 121.774]} zoom={5} style={{ height: "600px", width: "100%" }}>
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
@@ -223,15 +214,12 @@ export default async function GISPage({ params }: any) {
                 <GeoJSON
                   key={layer.id}
                   data={`https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/gis_raw/${layer.source?.path}`}
-                  style={{
-                    color: "#C72B2B",
-                    weight: 1,
-                    fillOpacity: 0.2,
-                  }}
+                  style={{ color: "#C72B2B", weight: 1, fillOpacity: 0.2 }}
                 />
               )
           )}
         </MapContainer>
+
         <button
           onClick={() => setOpenUpload(true)}
           className="absolute bottom-4 right-4 px-4 py-2 text-sm text-white rounded shadow-lg hover:opacity-90"
