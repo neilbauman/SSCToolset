@@ -30,9 +30,8 @@ type GISDatasetVersion = {
 
 type GISLayer = {
   id: string;
-  name: string;
-  level: string;
-  source?: string | null;
+  dataset_version_id: string;
+  admin_level: string;
   created_at: string;
 };
 
@@ -49,7 +48,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // close dropdowns on outside click
+  // close dropdowns
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -94,19 +93,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
     else setLayers([]);
   };
 
-  // fetch layers
+  // fetch layers for selected version
   const fetchLayers = async (versionId: string) => {
     const { data, error } = await supabase
       .from("gis_layers")
-      .select("id,name,level,source,created_at")
+      .select("id,dataset_version_id,admin_level,created_at")
       .eq("dataset_version_id", versionId)
-      .order("level", { ascending: true });
+      .order("admin_level", { ascending: true });
 
     if (error) {
       console.error("Error fetching layers:", error);
       setLayers([]);
       return;
     }
+
     setLayers((data ?? []) as GISLayer[]);
   };
 
@@ -114,7 +114,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
-  // activate version
   const handleMakeActive = async (versionId: string) => {
     await supabase
       .from("gis_dataset_versions")
@@ -127,16 +126,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
     await fetchVersions();
   };
 
-  // delete version
   const handleDeleteVersion = async (versionId: string) => {
     await supabase.from("gis_dataset_versions").delete().eq("id", versionId);
     setOpenDelete(null);
     await fetchVersions();
   };
 
-  // download template
   const downloadTemplate = () => {
-    const csv = "name,level,source\nADM0,National Boundary,OCHA\n";
+    const csv = "admin_level\nADM0\nADM1\nADM2\nADM3\nADM4\nADM5\n";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -217,11 +214,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions table */}
+      {/* Versions Section */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Layers className="w-5 h-5 text-green-600" /> GIS Dataset Versions
+            <Database className="w-5 h-5 text-green-600" /> GIS Dataset Versions
           </h2>
           <div className="flex gap-2">
             <button
@@ -285,10 +282,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Dataset health */}
+      {/* Dataset Health */}
       <DatasetHealth totalUnits={layers.length} />
 
-      {/* Layer list */}
+      {/* Layers Panel */}
       <div className="border rounded-lg p-4 shadow-sm mt-4">
         <h2 className="text-lg font-semibold mb-3">Layers in Selected Version</h2>
 
@@ -296,18 +293,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-2 py-1 text-left">Name</th>
-                <th className="border px-2 py-1 text-left">Level</th>
-                <th className="border px-2 py-1 text-left">Source</th>
+                <th className="border px-2 py-1 text-left">Admin Level</th>
                 <th className="border px-2 py-1 text-left">Created</th>
               </tr>
             </thead>
             <tbody>
               {layers.map((layer) => (
                 <tr key={layer.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{layer.name}</td>
-                  <td className="border px-2 py-1">{layer.level}</td>
-                  <td className="border px-2 py-1">{layer.source || "—"}</td>
+                  <td className="border px-2 py-1">{layer.admin_level}</td>
                   <td className="border px-2 py-1">
                     {new Date(layer.created_at).toLocaleDateString()}
                   </td>
@@ -320,7 +313,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Upload modal */}
+      {/* Upload & Delete Modals */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
@@ -328,7 +321,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
         onUploaded={fetchVersions}
       />
 
-      {/* Delete modal */}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
