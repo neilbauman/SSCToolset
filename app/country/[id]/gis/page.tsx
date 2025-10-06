@@ -15,7 +15,6 @@ import L from "leaflet";
 
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
 
 export default function GISPage({
   params,
@@ -29,15 +28,16 @@ export default function GISPage({
   }, [params]);
 
   if (!resolvedParams) return null;
-
   const id = resolvedParams.id;
-  const mapRef = useRef<L.Map | null>(null);
 
+  const mapRef = useRef<L.Map | null>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [activeVersion, setActiveVersion] = useState<any>(null);
   const [layers, setLayers] = useState<any[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
+
+  // Visibility defaults: all off
   const [visible, setVisible] = useState<Record<number, boolean>>({
     0: false,
     1: false,
@@ -47,7 +47,9 @@ export default function GISPage({
     5: false,
   });
 
+  // ───────────────────────────────
   // Fetch dataset versions
+  // ───────────────────────────────
   useEffect(() => {
     const fetchVersions = async () => {
       const { data } = await supabase
@@ -65,7 +67,9 @@ export default function GISPage({
     fetchVersions();
   }, [id]);
 
-  // Fetch layers
+  // ───────────────────────────────
+  // Fetch layers for active version
+  // ───────────────────────────────
   useEffect(() => {
     const fetchLayers = async () => {
       if (!activeVersion) return;
@@ -75,6 +79,7 @@ export default function GISPage({
         .eq("country_iso", id)
         .eq("dataset_version_id", activeVersion.id)
         .order("admin_level_int", { ascending: true });
+
       if (data) setLayers(data);
     };
     fetchLayers();
@@ -89,8 +94,10 @@ export default function GISPage({
     if (data) setVersions(data);
   };
 
-  // useGeoJSONLayers Hook
-  const { geoJsonLayers } = useGeoJSONLayers({
+  // ───────────────────────────────
+  // GeoJSON rendering hook
+  // ───────────────────────────────
+  const { geoJsonLayers, loadingIndicator } = useGeoJSONLayers({
     supabase,
     layers,
     mapRef,
@@ -118,9 +125,12 @@ export default function GISPage({
     ),
   };
 
+  // ───────────────────────────────
+  // Render
+  // ───────────────────────────────
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Summary cards */}
+      {/* ─────────────── Summary Cards ─────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* Dataset Version */}
         <div className="rounded-lg border p-4 shadow-sm">
@@ -128,16 +138,15 @@ export default function GISPage({
             <span className="text-xs font-semibold uppercase text-gray-500">
               Dataset Version
             </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setOpenNewVersion(true)}
-                className="flex items-center gap-1 rounded px-2 py-1 text-sm text-white hover:opacity-90"
-                style={{ backgroundColor: GSC_RED }}
-              >
-                + New
-              </button>
-            </div>
+            <button
+              onClick={() => setOpenNewVersion(true)}
+              className="flex items-center gap-1 rounded px-2 py-1 text-sm text-white hover:opacity-90"
+              style={{ backgroundColor: GSC_RED }}
+            >
+              + New
+            </button>
           </div>
+
           <select
             value={activeVersion?.id || ""}
             onChange={(e) => {
@@ -152,15 +161,16 @@ export default function GISPage({
               </option>
             ))}
           </select>
+
           {activeVersion?.source_name && (
             <p className="text-sm mt-2">
-              Source:{" "}
+              <strong>Source: </strong>
               {activeVersion.source_url ? (
                 <a
                   href={activeVersion.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
+                  className="text-[color:var(--gsc-blue)] hover:underline"
                 >
                   {activeVersion.source_name}
                 </a>
@@ -180,7 +190,7 @@ export default function GISPage({
           <p className="text-sm text-gray-500">ADM0–ADM5 supported</p>
         </div>
 
-        {/* Country info */}
+        {/* Country */}
         <div className="rounded-lg border p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-gray-500 mb-1">
             Country
@@ -190,10 +200,10 @@ export default function GISPage({
         </div>
       </div>
 
-      {/* Data Health Summary */}
+      {/* ─────────────── Data Health Panel ─────────────── */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Layers Table */}
+      {/* ─────────────── Layer Table ─────────────── */}
       <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-gray-700">
@@ -227,24 +237,27 @@ export default function GISPage({
         </table>
       </div>
 
-      {/* Map */}
+      {/* ─────────────── Map ─────────────── */}
       <div className="relative rounded-lg overflow-hidden border shadow-sm">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(e) => {
-            mapRef.current = e.target;
-          }}
+          whenReady={
+            ((mapEvent) => {
+              mapRef.current = (mapEvent as any).target;
+            }) as unknown as () => void
+          }
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
           />
+          {loadingIndicator}
           {geoJsonLayers}
         </MapContainer>
 
-        {/* Upload button floating bottom-right */}
+        {/* Floating upload button */}
         <div className="absolute bottom-4 right-4">
           <button
             onClick={() => setOpenUpload(true)}
@@ -256,15 +269,13 @@ export default function GISPage({
         </div>
       </div>
 
-      {/* Modals */}
+      {/* ─────────────── Modals ─────────────── */}
       {openUpload && (
         <UploadGISModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={id}
-          onUploaded={async () => {
-            window.location.reload();
-          }}
+          onUploaded={async () => window.location.reload()}
         />
       )}
 
