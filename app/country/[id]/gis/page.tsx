@@ -1,93 +1,64 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Map, Upload, Layers } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadGISModal from "@/components/country/UploadGISModal";
-import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
-import type { CountryParams, GISLayer } from "@/types";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 
-const MapContainer = dynamic(
-  () => import("react-leaflet").then((m) => m.MapContainer),
-  { ssr: false }
-);
-const TileLayer = dynamic(
-  () => import("react-leaflet").then((m) => m.TileLayer),
-  { ssr: false }
-);
-const GeoJSON = dynamic(
-  () => import("react-leaflet").then((m) => m.GeoJSON),
-  { ssr: false }
-);
+import UploadGISModal from "@/components/country/UploadGISModal";
+import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
+import { useGeoJSONLayers } from "@/lib/hooks/useGeoJSONLayers";
 
-const GSC_RED = "#630710";
-const GSC_BLUE = "#004b87";
+import type { CountryParams, GISLayer } from "@/types";
+
+// Leaflet components (dynamically loaded for SSR safety)
+const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
 
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id } = params;
-  const [layers, setLayers] = useState<GISLayer[]>([]);
-  const [geojsonData, setGeojsonData] = useState<Record<string, any>>({});
-  const [openUpload, setOpenUpload] = useState(false);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
-  // Fetch active GIS layers
+  const [layers, setLayers] = useState<GISLayer[]>([]);
+  const [openUpload, setOpenUpload] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Fetch GIS layers from Supabase
   useEffect(() => {
     const fetchLayers = async () => {
       const { data, error } = await supabase
         .from("gis_layers")
         .select("*")
         .eq("country_iso", id)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .order("admin_level_int", { ascending: true });
 
-      if (!error && data) {
-        setLayers(data);
-      } else {
-        console.error("Error loading GIS layers:", error);
-      }
+      if (error) console.error("Error fetching GIS layers:", error);
+      else if (data) setLayers(data as GISLayer[]);
+      setLoading(false);
     };
+
     fetchLayers();
   }, [id]);
 
-  // Fetch GeoJSON for each layer
-  useEffect(() => {
-    const fetchGeoJSONs = async () => {
-      for (const layer of layers) {
-        if (!layer.source?.path) continue;
-
-        const url = `https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/gis_raw/${layer.source.path}`;
-        try {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`Fetch failed for ${layer.layer_name}`);
-          const json = await res.json();
-
-          // Validate minimal GeoJSON structure
-          if (json.type && json.features) {
-            setGeojsonData((prev) => ({ ...prev, [layer.id]: json }));
-          } else {
-            console.warn("Invalid GeoJSON structure:", layer.layer_name);
-          }
-        } catch (err) {
-          console.error("Error parsing GeoJSON:", layer.layer_name, err);
-        }
-      }
-    };
-
-    if (layers.length) fetchGeoJSONs();
-  }, [layers]);
+  // ✅ Load layers onto the map
+  const { geoJsonLayers } = useGeoJSONLayers(supabase, layers, mapRef);
 
   const headerProps = {
-    title: `GIS Layers – ${id}`,
-    group: "gis-config",
+    title: `${id.toUpperCase()} – GIS Layers`,
+    group: "country-config" as const, // ✅ Consistent group type
     description: "Manage and visualize GIS boundary datasets for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
-          { label: "Countries", href: "/country" },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
           { label: id.toUpperCase(), href: `/country/${id}` },
-          { label: "GIS" },
+          { label: "GIS Layers" },
         ]}
       />
     ),
@@ -95,61 +66,92 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Toolbar */}
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[color:var(--gsc-blue)]">
+        <h2 className="text-lg font-semibold text-[color:var(--gsc-blue)] flex items-center gap-2">
+          <Layers className="w-5 h-5 text-[color:var(--gsc-red)]" />
           GIS Layers
         </h2>
         <button
           onClick={() => setOpenUpload(true)}
-          className="px-3 py-2 rounded-md text-sm text-white"
-          style={{ backgroundColor: GSC_RED }}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90 transition"
         >
-          Upload GIS
+          <Upload className="w-4 h-4" />
+          Upload New Layer
         </button>
       </div>
 
-      {/* Data health summary */}
+      {/* Health summary */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* Map */}
-      <div className="rounded-lg overflow-hidden border shadow-sm">
+      {/* Map Visualization */}
+      <div className="border rounded-lg shadow-sm overflow-hidden mb-6">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(e) => {
-            mapRef.current = e.target;
+          whenReady={(event) => {
+            mapRef.current = event.target;
           }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution="© OpenStreetMap contributors"
+            attribution="&copy; OpenStreetMap contributors"
           />
-          {layers.map(
-            (l) =>
-              geojsonData[l.id] && (
-                <GeoJSON
-                  key={l.id}
-                  data={geojsonData[l.id]}
-                  style={{
-                    color: GSC_RED,
-                    weight: 1,
-                    fillOpacity: 0.2,
-                  }}
-                />
-              )
-          )}
+
+          {/* Render valid GeoJSON layers */}
+          {geoJsonLayers.map((layer, idx) => (
+            <GeoJSON
+              key={layer.id ?? idx}
+              data={layer.data}
+              style={{
+                color: "#C72B2B",
+                weight: 1,
+                opacity: 0.8,
+              }}
+              onEachFeature={(feature, leafletLayer) => {
+                leafletLayer.bindPopup(
+                  `<strong>${layer.layer_name}</strong><br/>Features: ${layer.feature_count ?? "?"}`
+                );
+              }}
+            />
+          ))}
         </MapContainer>
       </div>
 
+      {/* Layers table */}
+      <div className="overflow-x-auto mb-4 border rounded-lg bg-white shadow-sm">
+        <table className="min-w-full text-sm text-left">
+          <thead className="bg-gray-50 text-gray-700 uppercase text-xs border-b">
+            <tr>
+              <th className="px-3 py-2">Layer Name</th>
+              <th className="px-3 py-2">Admin Level</th>
+              <th className="px-3 py-2">Format</th>
+              <th className="px-3 py-2">CRS</th>
+              <th className="px-3 py-2 text-right">Features</th>
+            </tr>
+          </thead>
+          <tbody>
+            {layers.map((l) => (
+              <tr key={l.id} className="border-t hover:bg-gray-50">
+                <td className="px-3 py-2">{l.layer_name}</td>
+                <td className="px-3 py-2">{l.admin_level || "—"}</td>
+                <td className="px-3 py-2">{l.format || "—"}</td>
+                <td className="px-3 py-2">{l.crs || "—"}</td>
+                <td className="px-3 py-2 text-right">{l.feature_count ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {/* Upload modal */}
-      {openUpload && (
-        <UploadGISModal
-          onClose={() => setOpenUpload(false)}
-          countryIso={id}
-          onUploaded={() => window.location.reload()}
-        />
-      )}
+      <UploadGISModal
+        open={openUpload}
+        onClose={() => setOpenUpload(false)}
+        countryIso={id}
+        onUploaded={async () => window.location.reload()}
+      />
     </SidebarLayout>
   );
 }
