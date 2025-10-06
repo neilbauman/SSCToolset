@@ -1,14 +1,17 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Map, Users, Database, AlertCircle } from "lucide-react";
-import dynamic from "next/dynamic";
-import "leaflet/dist/leaflet.css";
-import Link from "next/link";
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import {
+  Map,
+  Users,
+  Database,
+  AlertCircle
+} from "lucide-react";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import CountryMetadataCard from "@/components/country/CountryMetadataCard";
 import ManageJoinsCard from "@/components/country/ManageJoinsCard";
@@ -16,7 +19,9 @@ import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import ActiveJoinSummaryCard from "@/components/country/ActiveJoinSummaryCard";
+import type { CountryParams } from "@/app/country/types";
 
+// --- Dynamic Leaflet imports (SSR-safe) ---
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -26,6 +31,7 @@ const TileLayer = dynamic(
   { ssr: false }
 );
 
+// --- Status badge component ---
 function StatusBadge({
   status,
 }: {
@@ -44,21 +50,15 @@ function StatusBadge({
   );
 }
 
-export default function CountryConfigLandingPage() {
-  const params = useParams();
-  const id =
-    typeof params?.id === "string"
-      ? params.id
-      : Array.isArray(params?.id)
-      ? params.id[0]
-      : "";
+// === Main Country Configuration Page ===
+export default function CountryConfigLandingPage({ params }: { params: CountryParams }) {
+  const { id } = params;
 
   const [country, setCountry] = useState<any>(null);
   const [adminCount, setAdminCount] = useState(0);
   const [popCount, setPopCount] = useState(0);
   const [gisCount, setGisCount] = useState(0);
   const [statusData, setStatusData] = useState<any>(null);
-
   const [activeJoin, setActiveJoin] = useState<any>(null);
   const [allJoins, setAllJoins] = useState<any[]>([]);
 
@@ -67,6 +67,7 @@ export default function CountryConfigLandingPage() {
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
+  // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -76,9 +77,10 @@ export default function CountryConfigLandingPage() {
         .single();
       if (data) setCountry(data);
     };
-    if (id) fetchCountry();
+    fetchCountry();
   }, [id]);
 
+  // --- Fetch dataset statuses ---
   useEffect(() => {
     const fetchStatuses = async () => {
       const { data: admins } = await supabase
@@ -99,25 +101,26 @@ export default function CountryConfigLandingPage() {
       setGisCount(gis?.length || 0);
       setStatusData({ admins, pop, gis });
     };
-    if (id) fetchStatuses();
+    fetchStatuses();
   }, [id]);
 
+  // --- Fetch joins ---
   useEffect(() => {
     const fetchJoins = async () => {
       const { data, error } = await supabase
         .from("dataset_joins")
         .select("*")
         .eq("country_iso", id);
-
       if (!error && data) {
         setAllJoins(data);
         const active = data.find((j: any) => j.is_active);
         setActiveJoin(active || null);
       }
     };
-    if (id) fetchJoins();
+    fetchJoins();
   }, [id]);
 
+  // --- Compute dataset status ---
   const computeStatus = (key: string) => {
     if (key === "admins") {
       const admins = statusData?.admins || [];
@@ -144,6 +147,7 @@ export default function CountryConfigLandingPage() {
     return "empty";
   };
 
+  // --- Dataset definitions ---
   const datasets = [
     {
       key: "admins",
@@ -183,11 +187,11 @@ export default function CountryConfigLandingPage() {
       count: 0,
       status: "empty" as const,
       icon: <AlertCircle className="w-6 h-6 text-blue-600" />,
-      onUpload: undefined,
       href: "#",
     },
   ] as const;
 
+  // --- Header props ---
   const headerProps = {
     title: `${country?.name ?? id} – Country Configuration`,
     group: "country-config" as const,
@@ -203,8 +207,10 @@ export default function CountryConfigLandingPage() {
     ),
   };
 
+  // --- Render ---
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Top Row: Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
@@ -226,13 +232,15 @@ export default function CountryConfigLandingPage() {
         />
       </div>
 
+      {/* Active Join summary card */}
       <ActiveJoinSummaryCard
         countryIso={id}
         activeJoin={activeJoin}
         statusData={statusData}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mt-6">
+      {/* Dataset cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => (
           <div
             key={d.key}
@@ -251,12 +259,9 @@ export default function CountryConfigLandingPage() {
             </div>
             <p className="text-sm text-gray-600 mb-2">{d.description}</p>
             <p className="text-sm text-gray-500 mb-1">
-              📊 Total: {d.count || "—"}
+              {d.count > 0 ? `📊 Total: ${d.count}` : "No data uploaded yet"}
             </p>
-            <div className="flex gap-2">
-              <button className="px-2 py-1 text-sm border rounded">
-                Download Template
-              </button>
+            <div className="flex gap-2 mt-2">
               {d.onUpload && (
                 <button
                   onClick={d.onUpload}
@@ -276,28 +281,33 @@ export default function CountryConfigLandingPage() {
         ))}
       </div>
 
+      {/* Manage joins card */}
       <div className="mt-6">
         <ManageJoinsCard countryIso={id} joins={allJoins} />
       </div>
 
-      <UploadAdminUnitsModal
-        open={openAdminUpload}
-        onClose={() => setOpenAdminUpload(false)}
-        countryIso={id}
-        onUploaded={() => window.location.reload()}
-      />
-      <UploadPopulationModal
-        open={openPopUpload}
-        onClose={() => setOpenPopUpload(false)}
-        countryIso={id}
-        onUploaded={() => window.location.reload()}
-      />
-      <UploadGISModal
-        open={openGISUpload}
-        onClose={() => setOpenGISUpload(false)}
-        countryIso={id}
-        onUploaded={() => window.location.reload()}
-      />
+      {/* Modals */}
+      {openAdminUpload && (
+        <UploadAdminUnitsModal
+          onClose={() => setOpenAdminUpload(false)}
+          countryIso={id}
+          onUploaded={() => window.location.reload()}
+        />
+      )}
+      {openPopUpload && (
+        <UploadPopulationModal
+          onClose={() => setOpenPopUpload(false)}
+          countryIso={id}
+          onUploaded={() => window.location.reload()}
+        />
+      )}
+      {openGISUpload && (
+        <UploadGISModal
+          onClose={() => setOpenGISUpload(false)}
+          countryIso={id}
+          onUploaded={() => window.location.reload()}
+        />
+      )}
       {country && (
         <EditMetadataModal
           open={openMeta}
