@@ -16,19 +16,25 @@ export default function CreateGISVersionModal({
 }: CreateGISVersionModalProps) {
   const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | "">("");
-  const [source, setSource] = useState("");
+  const [sourceName, setSourceName] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const GSC_RED = "#C72B2B";
+  const GSC_RED = "#630710";
+  const GSC_BLUE = "#004b87";
 
   const handleCreate = async () => {
     try {
-      if (!title) return setError("Please enter a dataset title.");
+      if (!title.trim()) return setError("Please enter a dataset title.");
+      if (sourceUrl && !/^https?:\/\//i.test(sourceUrl)) {
+        return setError("Source URL must start with http:// or https://");
+      }
+
       setCreating(true);
       setError(null);
 
-      // Deactivate old active version
+      // Deactivate old active version for this country
       await supabase
         .from("gis_dataset_versions")
         .update({ is_active: false })
@@ -43,7 +49,8 @@ export default function CreateGISVersionModal({
             country_iso: countryIso,
             title,
             year: year || null,
-            source: source || null,
+            source_name: sourceName || null,
+            source_url: sourceUrl || null,
             is_active: true,
           },
         ]);
@@ -69,8 +76,11 @@ export default function CreateGISVersionModal({
         className="relative z-[2100] w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold">Create New GIS Version</h2>
+        <h2 className="mb-4 text-lg font-semibold text-[color:var(--gsc-blue)]">
+          Create New GIS Version
+        </h2>
 
+        {/* Title */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Title
         </label>
@@ -81,6 +91,7 @@ export default function CreateGISVersionModal({
           placeholder="e.g. NAMRIA Dataset"
         />
 
+        {/* Year */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Year
         </label>
@@ -92,19 +103,38 @@ export default function CreateGISVersionModal({
           placeholder="e.g. 2024"
         />
 
+        <hr className="my-4 border-gray-200" />
+
+        <h3 className="text-sm font-medium text-gray-800 mb-2">
+          Source Information (Optional)
+        </h3>
+
+        {/* Source Name */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Source (optional)
+          Source Name
         </label>
         <input
           className="w-full rounded border p-2 text-sm mb-3"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          placeholder="e.g. PSA / NAMRIA"
+          value={sourceName}
+          onChange={(e) => setSourceName(e.target.value)}
+          placeholder="e.g. Philippine Statistics Authority / NAMRIA"
+        />
+
+        {/* Source URL */}
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Source URL
+        </label>
+        <input
+          className="w-full rounded border p-2 text-sm mb-3"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          placeholder="e.g. https://data.gov.ph/dataset/..."
         />
 
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        <div className="flex justify-end gap-3">
+        {/* Actions */}
+        <div className="flex justify-end gap-3 mt-4">
           <button
             onClick={onClose}
             className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
