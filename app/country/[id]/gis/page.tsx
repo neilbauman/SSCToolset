@@ -3,15 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
 import DatasetHealth from "@/components/country/DatasetHealth";
 import UploadGISModal from "@/components/country/UploadGISModal";
-import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal"; // temporary generic edit modal
-
-import { Layers, Upload, FileDown, MoreVertical, Map as MapIcon } from "lucide-react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Layers, Upload, FileDown, MoreVertical } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
+
+type Country = {
+  iso_code: string;
+  name: string;
+};
 
 type GISVersion = {
   id: string;
@@ -27,17 +28,24 @@ type GISVersion = {
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
 
+  const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<GISVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GISVersion | null>(null);
-
   const [openUpload, setOpenUpload] = useState(false);
-  const [openEdit, setOpenEdit] = useState<GISVersion | null>(null);
-  const [openDelete, setOpenDelete] = useState<GISVersion | null>(null);
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
-
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Close dropdown on outside click
+  // ✅ Layer toggles (ADM0–ADM5)
+  const [layerToggles, setLayerToggles] = useState({
+    ADM0: false,
+    ADM1: false,
+    ADM2: false,
+    ADM3: false,
+    ADM4: false,
+    ADM5: false,
+  });
+
+  // --- Dropdown close handler
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -48,7 +56,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch GIS dataset versions
+  // --- Fetch Country Info
+  useEffect(() => {
+    const fetchCountry = async () => {
+      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
+      if (data) setCountry(data as Country);
+    };
+    fetchCountry();
+  }, [countryIso]);
+
+  // --- Fetch GIS Dataset Versions
   const fetchVersions = async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -65,41 +82,36 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setVersions(list);
 
     const active = list.find((v) => v.is_active);
-    const initial = active || list[0] || null;
-    setSelectedVersion(initial);
+    setSelectedVersion(active || list[0] || null);
   };
 
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
 
-  // Activate version
-  const handleMakeActive = async (versionId: string) => {
-    await supabase.from("gis_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("gis_dataset_versions").update({ is_active: true }).eq("id", versionId);
-    await fetchVersions();
+  // --- Header Configuration
+  const headerProps = {
+    title: `${country?.name ?? countryIso} – GIS Layers`,
+    group: "country-config" as const,
+    description: "Manage and visualize uploaded administrative boundary layers.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "GIS" },
+        ]}
+      />
+    ),
   };
 
-  // Delete version
-  const handleDeleteVersion = async (versionId: string) => {
-    await supabase.from("gis_dataset_versions").delete().eq("id", versionId);
-    setOpenDelete(null);
-    await fetchVersions();
+  // --- Layer Toggle Handler
+  const handleLayerToggle = (key: keyof typeof layerToggles) => {
+    setLayerToggles((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Download template placeholder
-  const downloadTemplate = () => {
-    const csv = "layer_name,year,source\n";
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Country_Config_GIS_Template.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Inline menu
+  // --- Inline Actions Menu
   const ActionsMenu = ({ v }: { v: GISVersion }) => {
     const isSelected = selectedVersion?.id === v.id;
     const isActive = !!v.is_active;
@@ -130,57 +142,27 @@ export default function GISPage({ params }: { params: CountryParams }) {
               <button
                 className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
                 onClick={async () => {
-                  await handleMakeActive(v.id);
+                  await supabase
+                    .from("gis_dataset_versions")
+                    .update({ is_active: false })
+                    .eq("country_iso", countryIso);
+                  await supabase.from("gis_dataset_versions").update({ is_active: true }).eq("id", v.id);
+                  await fetchVersions();
                   setOpenMenuFor(null);
                 }}
               >
                 Make Active
               </button>
             )}
-            <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-              onClick={() => {
-                setOpenEdit(v);
-                setOpenMenuFor(null);
-              }}
-            >
-              Edit
-            </button>
-            <button
-              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-              onClick={() => {
-                setOpenDelete(v);
-                setOpenMenuFor(null);
-              }}
-            >
-              Delete
-            </button>
           </div>
         )}
       </div>
     );
   };
 
-  // Sidebar header configuration
-  const headerProps = {
-    title: `${countryIso.toUpperCase()} – GIS Datasets`,
-    group: "country-config" as const,
-    description: "Manage GIS boundary dataset versions for this country.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: "/country" },
-          { label: countryIso.toUpperCase(), href: `/country/${countryIso}` },
-          { label: "GIS Layers" },
-        ]}
-      />
-    ),
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Versions Table --- */}
+      {/* --- Dataset Versions Section --- */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -188,7 +170,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </h2>
           <div className="flex gap-2">
             <button
-              onClick={downloadTemplate}
+              onClick={() => {
+                const csv = "layer,source,year\n";
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Country_Config_GIS_Template.csv";
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
               className="flex items-center text-sm border px-3 py-1 rounded hover:bg-gray-50"
             >
               <FileDown className="w-4 h-4 mr-1" /> Download Template
@@ -248,44 +239,38 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* --- Dataset Health Placeholder --- */}
+      {/* --- Dataset Health --- */}
       <DatasetHealth totalUnits={versions.length} />
 
-      {/* --- Map Placeholder (to be restored later) --- */}
-      <div className="border rounded-lg p-4 shadow-sm mt-4 text-center text-gray-500 italic">
-        GIS visualization will appear here once datasets are linked.
+      {/* --- Layer Toggles Section --- */}
+      <div className="border rounded-lg p-4 shadow-sm mt-4 mb-6">
+        <h2 className="text-lg font-semibold mb-3">Layers (toggle visibility)</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+          {Object.keys(layerToggles).map((key) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={layerToggles[key as keyof typeof layerToggles]}
+                onChange={() => handleLayerToggle(key as keyof typeof layerToggles)}
+              />
+              {key}
+            </label>
+          ))}
+        </div>
       </div>
 
-      {/* --- Modals --- */}
+      {/* --- Map Placeholder --- */}
+      <div className="border rounded-lg p-8 text-center text-gray-500 italic">
+        GIS visualization will appear here once layers are loaded.
+      </div>
+
+      {/* --- Upload Modal --- */}
       <UploadGISModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
         countryIso={countryIso}
         onUploaded={fetchVersions}
       />
-
-      {openEdit && (
-        <EditPopulationVersionModal
-          open={!!openEdit}
-          onClose={() => setOpenEdit(null)}
-          version={openEdit}
-          onSave={async () => {
-            await fetchVersions();
-            setOpenEdit(null);
-          }}
-        />
-      )}
-
-      {openDelete && (
-        <ConfirmDeleteModal
-          open={!!openDelete}
-          message={`This will permanently remove the dataset version "${openDelete.title ?? ""}". This cannot be undone.`}
-          onClose={() => setOpenDelete(null)}
-          onConfirm={async () => {
-            await handleDeleteVersion(openDelete.id);
-          }}
-        />
-      )}
     </SidebarLayout>
   );
 }
