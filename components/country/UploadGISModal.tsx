@@ -23,7 +23,8 @@ export default function UploadGISModal({
 
   const handleUpload = async () => {
     if (!file) return setError("Please select a file to upload.");
-    if (!adminLevel) return setError("Please select an administrative level.");
+    if (!adminLevel)
+      return setError("Please select an administrative level before uploading.");
 
     setUploading(true);
     setError(null);
@@ -56,13 +57,23 @@ export default function UploadGISModal({
       const levelMatch = adminLevel.match(/ADM?(\d)/i);
       const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
 
-      // 4️⃣ Insert layer record linked to the active version
+      // 4️⃣ Determine format based on file extension
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const format =
+        ext === "zip"
+          ? "shapefile"
+          : ext === "geojson" || ext === "json"
+          ? "json"
+          : "unknown";
+
+      // 5️⃣ Insert layer record linked to the active version
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
           layer_name: file.name,
           admin_level: adminLevel,
           admin_level_int: adminLevelInt,
+          format, // ✅ required field added
           source: { path },
           dataset_version_id: activeVersionId,
           is_active: true,
@@ -93,6 +104,7 @@ export default function UploadGISModal({
       >
         <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
 
+        {/* File Upload */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Choose File
         </label>
@@ -103,6 +115,7 @@ export default function UploadGISModal({
           className="w-full text-sm mb-4"
         />
 
+        {/* Admin Level Dropdown */}
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Admin Level
         </label>
@@ -120,8 +133,10 @@ export default function UploadGISModal({
           <option value="ADM5">ADM5</option>
         </select>
 
+        {/* Error Message */}
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
+        {/* Action Buttons */}
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
