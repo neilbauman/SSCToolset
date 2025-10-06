@@ -27,7 +27,11 @@ const TileLayer = dynamic(
   { ssr: false }
 );
 
-function StatusBadge({ status }: { status: "uploaded" | "partial" | "missing" | "empty" }) {
+function StatusBadge({
+  status,
+}: {
+  status: "uploaded" | "partial" | "missing" | "empty";
+}) {
   const styles: Record<string, string> = {
     uploaded: "bg-green-100 text-green-700",
     partial: "bg-yellow-100 text-yellow-700",
@@ -174,7 +178,8 @@ export default function CountryConfigLandingPage({ params }: any) {
     {
       key: "other",
       title: "Other Datasets",
-      description: "Additional country-specific datasets that extend the baseline.",
+      description:
+        "Additional country-specific datasets that extend the baseline.",
       count: 0,
       status: "empty" as const,
       icon: <AlertCircle className="w-6 h-6 text-blue-600" />,
@@ -216,7 +221,10 @@ export default function CountryConfigLandingPage({ params }: any) {
             />
           </MapContainer>
         </div>
-        <CountryMetadataCard country={country} onEdit={() => setOpenMeta(true)} />
+        <CountryMetadataCard
+          country={country}
+          onEdit={() => setOpenMeta(true)}
+        />
       </div>
 
       {/* Active Join summary card */}
@@ -231,12 +239,15 @@ export default function CountryConfigLandingPage({ params }: any) {
         {datasets.map((d) => {
           let activeInfo: string | null = null;
 
-          // If using new JSON
+          // New JSON-based datasets
           if (activeJoin?.datasets) {
             const found = activeJoin.datasets.find((x: any) => x.type === d.key);
-            if (found) activeInfo = `${found.title ?? d.key} ${found.year ? `(${found.year})` : ""}`;
+            if (found)
+              activeInfo = `${found.title ?? d.key} ${
+                found.year ? `(${found.year})` : ""
+              }`;
           } else {
-            // Fallback to old columns
+            // Legacy fallbacks
             if (d.key === "admins" && activeJoin?.admin_datasets?.[0]) {
               activeInfo = `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`;
             }
@@ -249,12 +260,17 @@ export default function CountryConfigLandingPage({ params }: any) {
           }
 
           return (
-            <div key={d.key} className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
+            <div
+              key={d.key}
+              className="border rounded-lg p-5 shadow-sm hover:shadow-md transition"
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   {d.icon}
                   <Link href={d.href}>
-                    <h3 className="text-lg font-semibold hover:underline">{d.title}</h3>
+                    <h3 className="text-lg font-semibold hover:underline">
+                      {d.title}
+                    </h3>
                   </Link>
                 </div>
                 <StatusBadge status={d.status} />
@@ -264,7 +280,9 @@ export default function CountryConfigLandingPage({ params }: any) {
               {d.count > 0 ? (
                 <p className="text-sm text-gray-500 mb-1">📊 Total: {d.count}</p>
               ) : (
-                <p className="italic text-gray-400 mb-1">No data uploaded yet</p>
+                <p className="italic text-gray-400 mb-1">
+                  No data uploaded yet
+                </p>
               )}
 
               {/* Active join info */}
@@ -273,7 +291,9 @@ export default function CountryConfigLandingPage({ params }: any) {
               </p>
 
               <div className="flex gap-2">
-                <button className="px-2 py-1 text-sm border rounded">Download Template</button>
+                <button className="px-2 py-1 text-sm border rounded">
+                  Download Template
+                </button>
                 {d.onUpload && (
                   <button
                     onClick={d.onUpload}
@@ -312,15 +332,18 @@ export default function CountryConfigLandingPage({ params }: any) {
         countryIso={id}
         onUploaded={() => window.location.reload()}
       />
-      <UploadGISModal
-  open={openGISUpload}
-  onClose={() => setOpenGISUpload(false)}
-  countryIso={id}
-  onUploaded={async () => {
-    // Re-fetch GIS dataset versions or refresh the page
-    window.location.reload();
-  }}
-/>
+
+      {/* ✅ fixed GIS modal (no invalid `open` prop) */}
+      {openGISUpload && (
+        <UploadGISModal
+          countryIso={id}
+          onClose={() => setOpenGISUpload(false)}
+          onUploaded={async () => {
+            window.location.reload();
+          }}
+        />
+      )}
+
       {country && (
         <EditMetadataModal
           open={openMeta}
