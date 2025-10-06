@@ -18,7 +18,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [layers, setLayers] = useState<any[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
 
-  // ✅ Fetch GIS layers for this country
+  // ✅ Fetch GIS layers
   useEffect(() => {
     const fetchLayers = async () => {
       const { data, error } = await supabase
@@ -26,13 +26,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
         .select("*")
         .eq("country_iso", id)
         .eq("is_active", true);
-
       if (!error && data) setLayers(data);
     };
     fetchLayers();
   }, [id]);
 
-  // ✅ Use the new hook
+  // ✅ Hook for rendering layers
   const { geoJsonLayers } = useGeoJSONLayers({
     supabase,
     layers,
@@ -57,6 +56,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Top actions */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-blue)] flex items-center gap-2">
           <Layers className="w-5 h-5" /> GIS Layers
@@ -69,17 +69,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </button>
       </div>
 
-      {/* ✅ Data Health Summary */}
+      {/* Data health */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* ✅ Map Container */}
+      {/* Map container */}
       <MapContainer
         center={[12.8797, 121.774]}
         zoom={5}
         style={{ height: "600px", width: "100%" }}
-        whenReady={(event) => {
-          mapRef.current = event.target;
-        }}
+        ref={mapRef as any} // ✅ direct ref instead of whenReady
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -88,7 +86,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         {geoJsonLayers}
       </MapContainer>
 
-      {/* ✅ Upload Modal */}
+      {/* Upload modal */}
       {openUpload && (
         <UploadGISModal
           open={openUpload}
