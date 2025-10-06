@@ -11,12 +11,12 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import type { GISLayer, CountryParams } from "@/types";
 
-interface PageProps {
-  params: Promise<CountryParams> | CountryParams;
+interface GISPageProps {
+  params: CountryParams;
 }
 
-export default function GISPage({ params }: PageProps) {
-  const { id } = params as CountryParams;
+export default function GISPage({ params }: GISPageProps) {
+  const { id } = params;
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
@@ -74,7 +74,7 @@ export default function GISPage({ params }: PageProps) {
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(mapEvent: any) => {
+          whenReady={(mapEvent) => {
             mapRef.current = mapEvent.target;
           }}
         >
