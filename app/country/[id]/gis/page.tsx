@@ -13,7 +13,7 @@ import type { GeoJsonObject } from "geojson";
 import "leaflet/dist/leaflet.css";
 import { Layers, Upload, Database } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
-import type { GISLayer } from "@/types/gis"; // ✅ unified type import
+import type { GISLayer } from "@/types/gis";
 
 type GISDatasetVersion = {
   id: string;
@@ -89,7 +89,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     try {
       setLoadingIds((s) => new Set(s).add(layer.id));
 
-      const path = (layer as any).path; // ✅ unified field
+      const path = (layer as any).path;
       if (!path) throw new Error("Layer missing path field");
 
       const { data, error } = await supabase.storage.from("gis_raw").download(path);
@@ -250,7 +250,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   <GeoJSON
                     key={l.id}
                     data={data}
-                    style={{ color: colors[l.admin_level] || "#630710", weight: 1.2 }}
+                    style={{
+                      color: l.admin_level ? colors[l.admin_level] ?? "#630710" : "#630710",
+                      weight: 1.2,
+                    }}
                     onEachFeature={(f, layer) => {
                       const n = f.properties?.name || f.properties?.NAME || "Unnamed";
                       const p = f.properties?.pcode || f.properties?.PCODE || "";
