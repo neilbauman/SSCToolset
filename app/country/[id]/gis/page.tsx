@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import React, { useState, useRef } from "react";
 import dynamic from "next/dynamic";
-import Sidebar from "@/components/layout/Sidebar";
-import PageHeader from "@/components/layout/PageHeader";
-import Breadcrumbs from "@/components/layout/Breadcrumbs";
+import { useParams } from "next/navigation";
+import Sidebar from "@/components/ui/Sidebar";
+import PageHeader from "@/components/ui/PageHeader";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Button } from "@/components/ui/Button";
+import { Plus } from "lucide-react";
 
-// Leaflet must be loaded dynamically (Next.js SSR-safe)
+// ✅ Lazy-load Leaflet (for Next.js 15)
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
   { ssr: false }
@@ -16,85 +18,122 @@ const TileLayer = dynamic(
   () => import("react-leaflet").then((mod) => mod.TileLayer),
   { ssr: false }
 );
+const GeoJSON = dynamic(
+  () => import("react-leaflet").then((mod) => mod.GeoJSON),
+  { ssr: false }
+);
 
 export default function GISPage() {
   const { id } = useParams();
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
-  // Layer toggle state for ADM levels
+  // Layer toggles (ADM0–ADM5)
   const [layers, setLayers] = useState({
-    adm0: false,
-    adm1: false,
-    adm2: false,
-    adm3: false,
-    adm4: false,
-    adm5: false,
+    ADM0: false,
+    ADM1: false,
+    ADM2: false,
+    ADM3: false,
+    ADM4: false,
+    ADM5: false,
   });
 
-  const toggleLayer = (key: keyof typeof layers) =>
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  // Handle toggle click
+  const toggleLayer = (layer: keyof typeof layers) => {
+    setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
+  };
+
+  // Placeholder GeoJSON (future: load from Supabase or /api)
+  const dummyGeoJson = {
+    type: "FeatureCollection",
+    features: [],
+  };
 
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="w-64 border-r bg-gray-50">
+      <aside className="w-64 border-r bg-gray-50 overflow-y-auto">
         <Sidebar />
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col">
         <PageHeader
-          title={`GIS Layers for ${Array.isArray(id) ? id[0].toUpperCase() : id?.toUpperCase()}`}
+          title={`GIS Layers for ${Array.isArray(id) ? id[0] : id?.toUpperCase()}`}
           group="country-config"
           description="Manage and visualize uploaded administrative boundary layers."
           breadcrumbs={
             <Breadcrumbs
               items={[
+                { label: "Home", href: "/" },
                 { label: "Country Configuration", href: "/country" },
-                { label: `${Array.isArray(id) ? id[0].toUpperCase() : id?.toUpperCase()}` },
+                {
+                  label: `${Array.isArray(id) ? id[0].toUpperCase() : id?.toUpperCase()}`,
+                  href: `/country/${id}`,
+                },
                 { label: "GIS Layers" },
               ]}
             />
           }
         />
 
-        {/* Layout: Left Panel (Layer Toggles) + Map */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Layer Controls */}
-          <div className="w-64 border-r p-4 bg-white overflow-y-auto">
-            <h3 className="font-semibold text-gray-700 mb-3">Layer Visibility</h3>
+        <div className="flex-1 flex flex-row p-4 gap-4">
+          {/* Layer Control Panel */}
+          <div className="w-72 border rounded-lg bg-white shadow-sm p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">
+              Layers (toggle to show)
+            </h3>
             <div className="space-y-2">
-              {Object.entries(layers).map(([key, value]) => (
+              {Object.keys(layers).map((layer) => (
                 <label
-                  key={key}
-                  className="flex items-center justify-between text-sm cursor-pointer"
+                  key={layer}
+                  className="flex items-center justify-between text-sm"
                 >
-                  <span className="capitalize">{key.toUpperCase()}</span>
+                  <span>{layer}</span>
                   <input
                     type="checkbox"
-                    checked={value}
-                    onChange={() => toggleLayer(key as keyof typeof layers)}
+                    checked={layers[layer as keyof typeof layers]}
+                    onChange={() => toggleLayer(layer as keyof typeof layers)}
                   />
                 </label>
               ))}
             </div>
+
+            <hr className="my-4" />
+            <Button className="w-full flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" />
+              Upload GIS Dataset
+            </Button>
           </div>
 
-          {/* Map Section */}
-          <div className="flex-1 relative bg-gray-100">
+          {/* Map Display */}
+          <div className="flex-1 border rounded-lg overflow-hidden">
             <MapContainer
               center={[12.8797, 121.774]}
               zoom={6}
               style={{ height: "100%", width: "100%" }}
               whenReady={(event) => {
-                mapRef.current = event.target; // ✅ fixed type-safe handler
+                mapRef.current = event.target;
               }}
             >
               <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              {/* Future: Add vector layers for ADM0–ADM5 here */}
+
+              {/* Render toggled layers */}
+              {Object.entries(layers).map(([key, active]) =>
+                active ? (
+                  <GeoJSON
+                    key={key}
+                    data={dummyGeoJson}
+                    style={{
+                      color: "#630710",
+                      weight: 1,
+                      fillOpacity: 0.05,
+                    }}
+                  />
+                ) : null
+              )}
             </MapContainer>
           </div>
         </div>
