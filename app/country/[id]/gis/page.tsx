@@ -3,8 +3,8 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Layers, Map as MapIcon } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Layers, Map as MapIcon } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -41,7 +41,11 @@ const LEVEL_STYLE = (lvl: number): L.PathOptions => ({
   opacity: 0.8,
 });
 
-export default function CountryGISPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CountryGISPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const countryIso = id.toUpperCase();
 
@@ -82,35 +86,30 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
   }, [countryIso]);
 
   // ───────────── Fetch Layers ─────────────
-  const fetchLayers = useCallback(
-    async (versionId: string) => {
-      try {
-        const { data, error } = await supabase
-          .from("gis_layers")
-          .select("*")
-          .eq("dataset_version_id", versionId)
-          .eq("is_active", true);
-        if (error) {
-          console.error("Supabase layers error:", error.message);
-          return [];
-        }
-        return data as GISLayer[];
-      } catch (err: any) {
-        console.error("Unexpected layer fetch error:", err.message);
+  const fetchLayers = useCallback(async (versionId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("gis_layers")
+        .select("*")
+        .eq("dataset_version_id", versionId)
+        .eq("is_active", true);
+      if (error) {
+        console.error("Supabase layers error:", error.message);
         return [];
       }
-    },
-    []
-  );
+      return data as GISLayer[];
+    } catch (err: any) {
+      console.error("Unexpected layer fetch error:", err.message);
+      return [];
+    }
+  }, []);
 
   // ───────────── Load GeoJSON ─────────────
   const getGeoJSON = async (layer: GISLayer) => {
     try {
       const path = layer.source?.path;
       if (!path) return null;
-      const { data, error } = await supabase.storage
-        .from("gis")
-        .download(path);
+      const { data, error } = await supabase.storage.from("gis").download(path);
       if (error) {
         console.error("Storage error:", error.message);
         return null;
@@ -127,23 +126,16 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
   const addLevel = async (lvl: number, layer: GISLayer) => {
     const map = mapRef.current;
     if (!map) return;
-
     const gj = await getGeoJSON(layer);
     if (!gj) return;
-
     console.log(`Loaded layer ${layer.layer_name} with ${gj.features?.length} features`);
-
     const group = L.layerGroup();
-    const gl = L.geoJSON(gj, {
-      style: LEVEL_STYLE(lvl),
-      pane: "geojson",
-    });
+    const gl = L.geoJSON(gj, { style: LEVEL_STYLE(lvl), pane: "geojson" });
     gl.addTo(group);
     group.addTo(map);
     layerGroups.current[lvl] = group;
   };
 
-  // ───────────── Clear Layer ─────────────
   const clearLevel = (lvl: number) => {
     const map = mapRef.current;
     if (!map) return;
@@ -154,7 +146,6 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // ───────────── Fit Bounds ─────────────
   const fit = () => {
     const map = mapRef.current;
     if (!map) return;
@@ -169,6 +160,9 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
 
   // ───────────── Initialize Map ─────────────
   useEffect(() => {
+    // ✅ Prevent SSR crash (window is not defined)
+    if (typeof window === "undefined") return;
+
     const m = L.map("map", { center: [12, 121], zoom: 5 });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
@@ -204,18 +198,12 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
     (async () => {
       const map = mapRef.current;
       if (!map) return;
-
       for (const lvl of LEVELS) {
         const layer = layers.find((l) => l.admin_level_int === lvl);
         if (!layer) continue;
-
-        if (visible[lvl]) {
-          await addLevel(lvl, layer);
-        } else {
-          clearLevel(lvl);
-        }
+        if (visible[lvl]) await addLevel(lvl, layer);
+        else clearLevel(lvl);
       }
-
       fit();
     })();
   }, [visible, layers]);
@@ -307,7 +295,9 @@ export default function CountryGISPage({ params }: { params: Promise<{ id: strin
             {layers.map((l) => (
               <tr key={l.id} className="border-t">
                 <td className="p-2">{l.layer_name}</td>
-                <td className="p-2">{l.admin_level_int ? `ADM${l.admin_level_int}` : "—"}</td>
+                <td className="p-2">
+                  {l.admin_level_int ? `ADM${l.admin_level_int}` : "—"}
+                </td>
                 <td className="p-2">{l.format}</td>
                 <td className="p-2">{l.feature_count ?? "—"}</td>
                 <td className="p-2">{l.crs ?? "—"}</td>
