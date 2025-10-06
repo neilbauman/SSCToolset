@@ -3,7 +3,14 @@
 import { use, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Layers, Map as MapIcon, Eye, EyeOff, Maximize, Loader2 } from "lucide-react";
+import {
+  Layers,
+  Map as MapIcon,
+  Eye,
+  EyeOff,
+  Maximize,
+  Loader2,
+} from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -51,7 +58,7 @@ export default function CountryGISPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // ✅ unwrap new Next 15 Promise-based params
+  // ✅ unwrap Next 15 promise-based params
   const { id } = use(params);
   const countryIso = id;
 
@@ -73,7 +80,7 @@ export default function CountryGISPage({
     5: false,
   });
 
-  // ────────────── Map setup ──────────────
+  // ───────── Map setup ─────────
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) return;
     const m = L.map(mapContainerRef.current, {
@@ -84,13 +91,14 @@ export default function CountryGISPage({
     });
     L.control.zoom({ position: "bottomright" }).addTo(m);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       maxZoom: 19,
     }).addTo(m);
     mapRef.current = m;
   }, []);
 
-  // ────────────── Data loaders ──────────────
+  // ───────── Data loaders ─────────
   const fetchActiveVersion = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_dataset_versions")
@@ -121,7 +129,9 @@ export default function CountryGISPage({
       if (!l?.source?.path) return null;
       if (cache.current.has(l.id)) return cache.current.get(l.id)!;
       const tryB = async (b: "gis" | "gis_raw") => {
-        const { data, error } = await supabase.storage.from(b).download(l.source!.path!);
+        const { data, error } = await supabase.storage
+          .from(b)
+          .download(l.source!.path!);
         if (error || !data) return null;
         try {
           return JSON.parse(await data.text());
@@ -151,7 +161,7 @@ export default function CountryGISPage({
     refresh();
   }, [refresh]);
 
-  // ────────────── Group by admin level ──────────────
+  // ───────── Group by admin level ─────────
   const layersByLevel = useMemo(() => {
     const out: Record<number, GISLayer[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
     for (const l of layers) {
@@ -239,28 +249,26 @@ export default function CountryGISPage({
 
   const count = useMemo(() => layers.filter((l) => l.is_active).length, [layers]);
 
-  // ────────────── Render ──────────────
+  // ───────── Render ─────────
   return (
-    <SidebarLayout>
-      <div className="flex items-center justify-between pb-4">
-        <Breadcrumbs
-          items={[
-            { label: "Dashboard", href: "/" },
-            { label: "Countries", href: "/country" },
-            { label: countryIso.toUpperCase(), href: `/country/${countryIso}` },
-            { label: "GIS", href: `/country/${countryIso}/gis` },
-          ]}
-        />
-        <button
-          onClick={() => setUploadOpen(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-white hover:bg-red-700"
-        >
-          <Layers className="h-4 w-4" />
-          Upload GIS
-        </button>
-      </div>
-
-      {/* summary cards */}
+    <SidebarLayout
+      headerProps={{
+        title: "GIS Datasets",
+        group: "country",
+        description:
+          "Manage and visualize GIS layers for the selected country.",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/" },
+              { label: "Countries", href: "/country" },
+              { label: countryIso.toUpperCase(), href: `/country/${countryIso}` },
+              { label: "GIS", href: `/country/${countryIso}/gis` },
+            ]}
+          />
+        ),
+      }}
+    >
       <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {[{ t: "Active Version", v: activeVersion?.title ?? "—", s: activeVersion?.year ? `Year ${activeVersion.year}` : "No year" },
           { t: "Active Layers", v: String(count), s: "ADM1–ADM5 supported" },
@@ -273,7 +281,7 @@ export default function CountryGISPage({
         ))}
       </div>
 
-      {/* map and overlay */}
+      {/* map */}
       <div className="relative h-[70vh] rounded-2xl border bg-white shadow-sm">
         <div className="absolute left-3 top-3 z-[5000] rounded-xl border bg-white/95 p-3 shadow-lg backdrop-blur">
           <div className="mb-2 flex items-center gap-2">
@@ -400,8 +408,7 @@ export default function CountryGISPage({
                             className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
                             onClick={() => lvl && toggle(lvl)}
                           >
-                            {on ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                            Toggle
+                            {on ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} Toggle
                           </button>
                         </div>
                       </td>
