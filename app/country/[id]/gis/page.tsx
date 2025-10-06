@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
+import { useParams } from "next/navigation";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -9,11 +10,7 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import { Layers, Plus } from "lucide-react";
-import type {
-  CountryParams,
-  GISDatasetVersion,
-  GISLayer,
-} from "@/app/country/types";
+import type { GISDatasetVersion, GISLayer } from "@/app/country/types";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -30,27 +27,17 @@ const GeoJSON = dynamic(
   { ssr: false }
 );
 
-interface GISPageProps {
-  params: CountryParams;
-}
-
-export default function GISPage({ params }: GISPageProps) {
-  const { id } = params;
+export default function GISPage() {
+  const params = useParams();
+  const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
   const mapRef = useRef<L.Map | null>(null);
 
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [visible, setVisible] = useState<Record<number, boolean>>({
-    0: false,
-    1: false,
-    2: false,
-    3: false,
-    4: false,
-    5: false,
+    0: false, 1: false, 2: false, 3: false, 4: false, 5: false,
   });
   const [versions, setVersions] = useState<GISDatasetVersion[]>([]);
-  const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(
-    null
-  );
+  const [activeVersion, setActiveVersion] = useState<GISDatasetVersion | null>(null);
   const [openUpload, setOpenUpload] = useState(false);
   const [openNewVersion, setOpenNewVersion] = useState(false);
 
@@ -69,7 +56,7 @@ export default function GISPage({ params }: GISPageProps) {
         if (active) setActiveVersion(active);
       }
     };
-    fetchVersions();
+    if (id) fetchVersions();
   }, [id]);
 
   // Fetch GIS layers
@@ -84,18 +71,12 @@ export default function GISPage({ params }: GISPageProps) {
 
       if (!error && data) setLayers(data);
     };
-    fetchLayers();
+    if (id) fetchLayers();
   }, [id]);
 
-  // Compute layer color
   const getColor = (lvl: number | null) => {
     const palette = [
-      "#630710", // GSC Red for ADM0
-      "#004b87", // Blue
-      "#2e7d32", // Green
-      "#d35400", // Orange
-      "#374151", // Gray
-      "#f5f2ee", // Beige
+      "#630710", "#004b87", "#2e7d32", "#d35400", "#374151", "#f5f2ee",
     ];
     return palette[lvl ?? 0] || "#999";
   };
