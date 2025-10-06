@@ -6,8 +6,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload, Pencil } from "lucide-react";
-import type { CountryParams } from "@/app/country/types";
+import { Upload } from "lucide-react";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import CreateGISVersionModal from "@/components/country/CreateGISVersionModal";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
@@ -18,8 +17,20 @@ const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapCont
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
 
-export default function GISPage({ params }: { params: CountryParams }) {
-  const { id } = params;
+export default function GISPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(null);
+
+  useEffect(() => {
+    params.then((p) => setResolvedParams(p));
+  }, [params]);
+
+  if (!resolvedParams) return null;
+
+  const id = resolvedParams.id;
   const mapRef = useRef<L.Map | null>(null);
 
   const [versions, setVersions] = useState<any[]>([]);
