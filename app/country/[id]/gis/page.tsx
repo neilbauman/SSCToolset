@@ -114,7 +114,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     await fetchVersions();
   };
 
-  // Delete version
   const handleDeleteVersion = async (versionId: string) => {
     await supabase.from("gis_layers").delete().eq("dataset_version_id", versionId);
     await supabase.from("gis_dataset_versions").delete().eq("id", versionId);
@@ -140,7 +139,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Versions Section --- */}
+      {/* --- Dataset Versions --- */}
       <section className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -197,9 +196,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                       <button
                         className="text-blue-700 hover:underline flex items-center gap-1"
                         onClick={() =>
-                          setMenuOpenFor(
-                            menuOpenFor === v.id ? null : v.id
-                          )
+                          setMenuOpenFor(menuOpenFor === v.id ? null : v.id)
                         }
                       >
                         Actions <MoreVertical className="w-4 h-4" />
@@ -296,8 +293,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[12.8797, 121.774]} // default center (Philippines)
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(event) => {
-            mapRef.current = event.target;
+          whenReady={() => {
+            // @ts-ignore – Leaflet typing bug workaround
+            mapRef.current = (window as any).L?.map || null;
           }}
           className="rounded-md z-0"
         >
