@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Map as MapIcon } from "lucide-react";
+import { Layers } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -109,11 +109,17 @@ export default function CountryGISPage({
     try {
       const path = layer.source?.path;
       if (!path) return null;
-      const { data, error } = await supabase.storage.from("gis").download(path);
+
+      // ✅ read directly from gis_raw (your active bucket)
+      const { data, error } = await supabase.storage
+        .from("gis_raw")
+        .download(path);
+
       if (error) {
         console.error("Storage error:", error.message);
         return null;
       }
+
       const text = await data.text();
       return JSON.parse(text);
     } catch (err: any) {
@@ -160,8 +166,7 @@ export default function CountryGISPage({
 
   // ───────────── Initialize Map ─────────────
   useEffect(() => {
-    // ✅ Prevent SSR crash (window is not defined)
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return; // ✅ prevent SSR crash
 
     const m = L.map("map", { center: [12, 121], zoom: 5 });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
