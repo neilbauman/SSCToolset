@@ -55,7 +55,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // --- Load versions ---
+  // --- Load dataset versions ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -84,12 +84,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })();
   }, [selectedVersion]);
 
-  // --- Fetch GeoJSON ---
+  // --- Fetch GeoJSON from Supabase storage ---
   async function fetchGeoJSON(layer: GISLayer) {
     try {
       setLoadingIds((s) => new Set(s).add(layer.id));
-      const { data, error } = await supabase.storage.from("gis_raw").download(layer.storage_path);
+
+      const path = (layer as any).path; // ✅ unified field
+      if (!path) throw new Error("Layer missing path field");
+
+      const { data, error } = await supabase.storage.from("gis_raw").download(path);
       if (error || !data) throw error || new Error("No file");
+
       const parsed = JSON.parse(await data.text()) as GeoJsonObject;
       setGeojsonByLayer((m) => ({ ...m, [layer.id]: parsed }));
     } catch (err: any) {
@@ -123,7 +128,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Versions */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -168,7 +173,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Layers */}
+      {/* Version Layers */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
