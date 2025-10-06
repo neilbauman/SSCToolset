@@ -28,7 +28,7 @@ export default function UploadGISModal({
     setError(null);
 
     try {
-      // 1️⃣ Get the active version ID
+      // 1️⃣ Get the active dataset version
       const { data: versionData, error: versionError } = await supabase
         .from("gis_dataset_versions")
         .select("id")
@@ -55,7 +55,7 @@ export default function UploadGISModal({
       const levelMatch = adminLevel.match(/ADM?(\d)/i);
       const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
 
-      // 4️⃣ Determine file format
+      // 4️⃣ Determine format based on file extension
       const ext = file.name.split(".").pop()?.toLowerCase();
       const format =
         ext === "zip"
@@ -64,7 +64,7 @@ export default function UploadGISModal({
           ? "json"
           : "unknown";
 
-      // 5️⃣ Check if a layer already exists at same level
+      // 5️⃣ Check for existing layer at same level
       const { data: existing } = await supabase
         .from("gis_layers")
         .select("id")
@@ -83,7 +83,7 @@ export default function UploadGISModal({
           return;
         }
 
-        // 6️⃣ Deactivate old layer before inserting new one
+        // 6️⃣ Deactivate the existing layer before inserting new one
         const { error: deactivateError } = await supabase
           .from("gis_layers")
           .update({ is_active: false })
@@ -93,12 +93,12 @@ export default function UploadGISModal({
         if (deactivateError) throw deactivateError;
       }
 
-      // 7️⃣ Insert new layer record linked to active version
+      // 7️⃣ Insert new layer record linked to the active version
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
           layer_name: file.name,
-          admin_level,
+          admin_level: adminLevel, // ✅ corrected reference
           admin_level_int: adminLevelInt,
           format,
           source: { path },
