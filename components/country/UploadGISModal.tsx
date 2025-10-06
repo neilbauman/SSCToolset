@@ -14,7 +14,7 @@ type Props = {
 
 const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
 
-export default function UploadGISLayerModal({
+export default function UploadGISModal({
   open,
   onClose,
   countryIso,
