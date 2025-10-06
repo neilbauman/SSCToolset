@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-interface UploadGISModalProps {
+export interface UploadGISModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
@@ -17,44 +17,45 @@ export default function UploadGISModal({
   onUploaded,
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [adminLevelInt, setAdminLevelInt] = useState<number | "">("");
+  const [adminLevel, setAdminLevel] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const GSC_RED = "var(--gsc-red)";
+  const GSC_RED = "#630710";
+  const GSC_LIGHT_GRAY = "#e5e7eb";
 
   if (!open) return null;
 
   const handleUpload = async () => {
     try {
-      setError(null);
-      if (!file) throw new Error("Please select a file to upload.");
-      if (adminLevelInt === "") throw new Error("Please select an admin level.");
+      if (!file) return setError("Please select a file.");
+      if (!adminLevel) return setError("Please select an admin level (ADM0–ADM5).");
 
       setUploading(true);
+      setError(null);
 
-      const ext = file.name.split(".").pop();
-      const filePath = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
-
+      const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+        .upload(path, file);
 
       if (uploadError) throw uploadError;
 
+      // Determine admin level integer
+      const match = adminLevel.match(/ADM(\d)/);
+      const adminLevelInt = match ? parseInt(match[1]) : null;
+
+      // Insert into gis_layers table
       const { error: insertError } = await supabase
         .from("gis_layers")
         .insert([
           {
             country_iso: countryIso,
             layer_name: file.name,
-            format: ext,
-            source: { path: filePath },
-            admin_level: `ADM${adminLevelInt}`,
+            admin_level: adminLevel,
             admin_level_int: adminLevelInt,
+            format: file.name.endsWith(".json") ? "GeoJSON" : "Unknown",
+            source: { path },
             is_active: true,
           },
         ]);
@@ -64,7 +65,7 @@ export default function UploadGISModal({
       await onUploaded();
       onClose();
     } catch (err: any) {
-      console.error("Upload error:", err.message);
+      console.error("UploadGISModal error:", err.message);
       setError(err.message || "Upload failed.");
     } finally {
       setUploading(false);
@@ -80,45 +81,44 @@ export default function UploadGISModal({
         className="relative z-[2100] w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold">Upload GIS Layer</h2>
-
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Select File
-        </label>
-        <input
-          type="file"
-          accept=".geojson,.json,.zip"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="w-full border rounded p-2 text-sm mb-3"
-        />
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">
+          Upload GIS Layer
+        </h2>
 
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Admin Level
         </label>
         <select
-          value={adminLevelInt}
-          onChange={(e) =>
-            setAdminLevelInt(
-              e.target.value ? Number(e.target.value) : ""
-            )
-          }
-          className="w-full border rounded p-2 text-sm mb-3"
+          value={adminLevel}
+          onChange={(e) => setAdminLevel(e.target.value)}
+          className="w-full rounded border p-2 text-sm mb-3"
         >
-          <option value="">Select level...</option>
-          <option value="0">ADM0 – National</option>
-          <option value="1">ADM1 – Region</option>
-          <option value="2">ADM2 – Province</option>
-          <option value="3">ADM3 – Municipality</option>
-          <option value="4">ADM4 – Barangay</option>
-          <option value="5">ADM5 – Local</option>
+          <option value="">Select admin level</option>
+          <option value="ADM0">ADM0 (Country)</option>
+          <option value="ADM1">ADM1 (Region)</option>
+          <option value="ADM2">ADM2 (Province)</option>
+          <option value="ADM3">ADM3 (District)</option>
+          <option value="ADM4">ADM4 (Sub-District)</option>
+          <option value="ADM5">ADM5 (Village)</option>
         </select>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          GeoJSON File
+        </label>
+        <input
+          type="file"
+          accept=".json,.geojson"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full text-sm mb-3"
+        />
 
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
         <div className="flex justify-end gap-3 mt-4">
           <button
             onClick={onClose}
-            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            className="rounded border px-4 py-2 text-sm"
+            style={{ borderColor: GSC_LIGHT_GRAY }}
             disabled={uploading}
           >
             Cancel
