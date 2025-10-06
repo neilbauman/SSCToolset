@@ -1,99 +1,109 @@
 "use client";
 
-import ModalBase from "@/components/ui/ModalBase";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type EditGISLayerModalProps = {
-  layer: {
-    id: string;
-    layer_name: string;
-    admin_level_int?: number | null;
-    admin_level?: string | null;
-    crs?: string | null;
-    source?: any;
-  };
-  onClose: () => void;
-  onSaved: () => void;
+type GISLayer = {
+  id: string;
+  admin_level: string | null;
+  source?: any | null;
 };
 
-export default function EditGISLayerModal({
-  layer,
-  onClose,
-  onSaved,
-}: EditGISLayerModalProps) {
-  const [layerName, setLayerName] = useState(layer.layer_name || "");
-  const [adminLevel, setAdminLevel] = useState<number | "">(layer.admin_level_int ?? "");
-  const [isSaving, setIsSaving] = useState(false);
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  layer: GISLayer;
+  onSaved?: () => void;
+};
+
+const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
+
+export default function EditGISLayerModal({ open, onClose, layer, onSaved }: Props) {
+  const [adminLevel, setAdminLevel] = useState<string>(layer.admin_level || "ADM1");
+  const [layerName, setLayerName] = useState<string>(layer?.source?.name || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setAdminLevel(layer.admin_level || "ADM1");
+      setLayerName(layer?.source?.name || "");
+      setBusy(false);
+      setError(null);
+    }
+  }, [open, layer]);
+
+  const disabled = useMemo(() => !layerName || busy, [layerName, busy]);
 
   const handleSave = async () => {
-    setIsSaving(true);
-    const { error } = await supabase
-      .from("gis_layers")
-      .update({
-        layer_name: layerName,
-        admin_level_int: adminLevel === "" ? null : Number(adminLevel),
-      })
-      .eq("id", layer.id);
+    try {
+      setBusy(true);
+      setError(null);
 
-    setIsSaving(false);
-    if (error) {
-      console.error(error);
-      return;
+      const newSource = { ...(layer.source || {}), name: layerName };
+      const { error: upErr } = await supabase
+        .from("gis_layers")
+        .update({ admin_level: adminLevel, source: newSource })
+        .eq("id", layer.id);
+
+      if (upErr) throw upErr;
+      onSaved?.();
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Failed to save layer.");
+    } finally {
+      setBusy(false);
     }
-    onSaved();
-    onClose();
   };
 
+  if (!open) return null;
+
   return (
-    <ModalBase open={true} title="Edit GIS Layer" onClose={onClose}>
-      <div className="relative z-[9999] w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-        <div className="mb-3 text-lg font-semibold">Edit GIS Layer</div>
+    <Modal open={open} onClose={onClose}>
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Edit GIS Layer</h3>
+        {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">{error}</div>}
 
-        <label className="block mb-2 text-sm font-medium text-gray-700">
-          Layer Name
-        </label>
-        <input
-          type="text"
-          className="mb-3 w-full rounded border px-3 py-2 text-sm"
-          value={layerName}
-          onChange={(e) => setLayerName(e.target.value)}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Admin Level</span>
+            <select
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={adminLevel}
+              onChange={(e) => setAdminLevel(e.target.value)}
+            >
+              {LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="block mb-2 text-sm font-medium text-gray-700">
-          Admin Level
-        </label>
-        <select
-          className="mb-4 w-full rounded border px-3 py-2 text-sm"
-          value={adminLevel}
-          onChange={(e) =>
-            setAdminLevel(e.target.value === "" ? "" : Number(e.target.value))
-          }
-        >
-          <option value="">Unassigned</option>
-          {[1, 2, 3, 4, 5].map((l) => (
-            <option key={l} value={l}>
-              ADM{l}
-            </option>
-          ))}
-        </select>
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Layer Name *</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={layerName}
+              onChange={(e) => setLayerName(e.target.value)}
+            />
+          </label>
+        </div>
 
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-          >
+        <div className="flex justify-end gap-2 pt-4">
+          <button className="border rounded px-3 py-1 text-sm" onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
             onClick={handleSave}
-            disabled={isSaving}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={disabled}
           >
-            {isSaving ? "Saving..." : "Save Changes"}
+            {busy ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
-    </ModalBase>
+    </Modal>
   );
 }
