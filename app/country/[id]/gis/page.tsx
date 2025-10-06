@@ -70,7 +70,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     (async () => {
       const { data } = await supabase
         .from("countries")
-        .select("name, lat, lon")
+        .select("iso_code, name, lat, lon")
         .eq("iso_code", countryIso)
         .single();
 
@@ -117,7 +117,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     try {
       setLoadingIds((s) => new Set(s).add(layer.id));
 
-      const path = (layer as any).path;
+      const path = (layer as any).path || layer.storage_path;
       if (!path) throw new Error("Layer missing path field");
 
       const { data, error } = await supabase.storage.from("gis_raw").download(path);
