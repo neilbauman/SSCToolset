@@ -3,8 +3,9 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import UploadGISModal from "@/components/country/UploadGISModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers } from "lucide-react";
+import { Layers, Upload } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -61,6 +62,7 @@ export default function CountryGISPage({
     5: false,
   });
   const [loading, setLoading] = useState(true);
+  const [openUpload, setOpenUpload] = useState(false);
 
   // ───────────── Fetch Active Dataset Version ─────────────
   const fetchActiveVersion = useCallback(async () => {
@@ -108,7 +110,6 @@ export default function CountryGISPage({
   const getGeoJSON = async (layer: GISLayer) => {
     try {
       const rawPath = layer.source?.path || "";
-      // ✅ Clean up any prefix like "gis_raw/" or "gis/"
       const cleanPath = rawPath.replace(/^gis_raw\//, "").replace(/^gis\//, "");
 
       const { data, error } = await supabase.storage
@@ -257,31 +258,47 @@ export default function CountryGISPage({
         </div>
       </div>
 
-      {/* Map */}
-      <div id="map" className="h-[600px] w-full rounded-2xl border shadow-sm"></div>
+      {/* Layer controls + Upload */}
+      <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-gray-700" />
+            <h2 className="text-base font-semibold">Layer Visibility</h2>
+          </div>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm text-white shadow-sm hover:bg-red-700"
+          >
+            <Upload className="h-4 w-4" />
+            Upload GIS
+          </button>
+        </div>
 
-      {/* Layer controls */}
-      <div className="absolute left-6 top-24 z-[500] rounded-xl border bg-white p-3 shadow-md">
-        <div className="mb-2 font-semibold text-sm">Layers</div>
-        {LEVELS.map((lvl) => (
-          <label key={lvl} className="mb-1 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={visible[lvl]}
-              onChange={(e) =>
-                setVisible((v) => ({ ...v, [lvl]: e.target.checked }))
-              }
-            />
-            <span className="capitalize">ADM{lvl}</span>
-          </label>
-        ))}
+        <div className="grid grid-cols-3 gap-2">
+          {LEVELS.map((lvl) => (
+            <label key={lvl} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={visible[lvl]}
+                onChange={(e) =>
+                  setVisible((v) => ({ ...v, [lvl]: e.target.checked }))
+                }
+              />
+              <span>ADM{lvl}</span>
+            </label>
+          ))}
+        </div>
+
         <button
           onClick={fit}
-          className="mt-2 w-full rounded border px-2 py-1 text-xs hover:bg-gray-50"
+          className="mt-3 w-full rounded border px-2 py-1 text-xs hover:bg-gray-50"
         >
-          Fit
+          Fit to Bounds
         </button>
       </div>
+
+      {/* Map */}
+      <div id="map" className="h-[600px] w-full rounded-2xl border shadow-sm"></div>
 
       {/* Table */}
       <div className="mt-4 overflow-x-auto rounded-2xl border bg-white shadow-sm">
@@ -312,6 +329,22 @@ export default function CountryGISPage({
           </tbody>
         </table>
       </div>
+
+      {/* Upload Modal */}
+      {openUpload && (
+        <UploadGISModal
+          countryIso={countryIso}
+          onClose={() => setOpenUpload(false)}
+          onUploaded={async () => {
+            setOpenUpload(false);
+            const v = await fetchActiveVersion();
+            if (v) {
+              const ls = await fetchLayers(v.id);
+              setLayers(ls);
+            }
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
