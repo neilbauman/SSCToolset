@@ -6,6 +6,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import type { FeatureCollection } from "geojson";
 
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import UploadGISModal from "@/components/country/UploadGISModal";
@@ -16,7 +17,7 @@ import { Database, Layers, Upload, Pencil, Trash2 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types";
 
-// Helper component: stores the map instance safely
+// ✅ Helper: safely initializes and stores the map reference
 function MapInitializer({ mapRef }: { mapRef: React.MutableRefObject<any> }) {
   const map = useMap();
   useEffect(() => {
@@ -273,7 +274,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
             {layers.map((layer) => (
               <GeoJSON
                 key={layer.id}
-                data={{ type: "FeatureCollection", features: [] }}
+                data={{ type: "FeatureCollection", features: [] } as FeatureCollection}
                 style={{ color: "#630710", weight: 1 }}
               />
             ))}
