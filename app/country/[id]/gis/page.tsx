@@ -18,7 +18,6 @@ import {
   Upload,
   Pencil,
   Trash2,
-  Globe,
 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types";
@@ -110,7 +109,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchVersions();
   }, [countryIso]);
 
-  // Layout Header
+  // Delete Layer
+  const handleDeleteLayer = async (layerId: string) => {
+    const { error } = await supabase.from("gis_layers").delete().eq("id", layerId);
+    if (error) console.error("Error deleting layer:", error);
+    await fetchLayers(selectedVersion?.id || "");
+  };
+
+  const totalLayers = layers.length;
+
+  // Header Configuration
   const headerProps = {
     title: `${country?.name ?? countryIso} – GIS Datasets`,
     group: "country-config" as const,
@@ -126,15 +134,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
       />
     ),
   };
-
-  // Delete Layer
-  const handleDeleteLayer = async (layerId: string) => {
-    const { error } = await supabase.from("gis_layers").delete().eq("id", layerId);
-    if (error) console.error("Error deleting layer:", error);
-    await fetchLayers(selectedVersion?.id || "");
-  };
-
-  const totalLayers = layers.length;
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -262,8 +261,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
             zoom={2}
             style={{ height: "600px", width: "100%" }}
             className="z-0"
-            whenReady={(map) => {
-              mapRef.current = map.target;
+            whenReady={(event: any) => {
+              mapRef.current = event.target;
             }}
           >
             <TileLayer
