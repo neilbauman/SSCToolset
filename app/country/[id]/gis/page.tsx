@@ -8,18 +8,19 @@ import PageHeader from "@/components/ui/PageHeader";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Plus } from "lucide-react";
+import type { FeatureCollection, Geometry } from "geojson";
 
-// ✅ Lazy-load Leaflet (Next.js 15 safe)
+// ✅ Dynamically import Leaflet parts (Next.js 15 compatible)
 const MapContainer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.MapContainer),
+  () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
 );
 const TileLayer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.TileLayer),
+  () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
 );
 const GeoJSON = dynamic(
-  () => import("react-leaflet").then((mod) => mod.GeoJSON),
+  () => import("react-leaflet").then((m) => m.GeoJSON),
   { ssr: false }
 );
 
@@ -39,7 +40,14 @@ export default function GISPage() {
   const toggleLayer = (layer: keyof typeof layers) =>
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
 
-  const dummyGeoJson = { type: "FeatureCollection", features: [] };
+  // ✅ Type-safe empty GeoJSON (no more TS errors)
+  const dummyGeoJson: FeatureCollection<Geometry> = {
+    type: "FeatureCollection",
+    features: [],
+  };
+
+  const countryCode =
+    typeof id === "string" ? id.toUpperCase() : Array.isArray(id) ? id[0].toUpperCase() : "N/A";
 
   return (
     <div className="flex h-screen">
@@ -48,10 +56,10 @@ export default function GISPage() {
         <Sidebar />
       </aside>
 
-      {/* Main Content */}
+      {/* Main */}
       <main className="flex-1 flex flex-col">
         <PageHeader
-          title={`GIS Layers for ${Array.isArray(id) ? id[0] : id?.toUpperCase()}`}
+          title={`GIS Layers for ${countryCode}`}
           group="country-config"
           description="Manage and visualize uploaded administrative boundary layers."
           breadcrumbs={
@@ -59,10 +67,7 @@ export default function GISPage() {
               items={[
                 { label: "Home", href: "/" },
                 { label: "Country Configuration", href: "/country" },
-                {
-                  label: `${Array.isArray(id) ? id[0].toUpperCase() : id?.toUpperCase()}`,
-                  href: `/country/${id}`,
-                },
+                { label: countryCode, href: `/country/${id}` },
                 { label: "GIS Layers" },
               ]}
             />
@@ -70,7 +75,7 @@ export default function GISPage() {
         />
 
         <div className="flex-1 flex flex-row p-4 gap-4">
-          {/* Controls */}
+          {/* Left Controls */}
           <div className="w-72 border rounded-lg bg-white shadow-sm p-4">
             <h3 className="font-semibold text-gray-800 mb-3">
               Layers (toggle to show)
