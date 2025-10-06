@@ -8,7 +8,7 @@ import Sidebar from "@/components/ui/Sidebar";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 
-// ✅ Lazy-load React Leaflet to avoid SSR errors
+// ✅ Lazy-load React Leaflet to avoid SSR issues
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
   { ssr: false }
@@ -21,7 +21,7 @@ const TileLayer = dynamic(
 export default function GISPage() {
   const params = useParams();
   const idParam = params?.id;
-  const id = Array.isArray(idParam) ? idParam[0] : idParam; // ✅ ensures string type
+  const id = Array.isArray(idParam) ? idParam[0] : idParam;
 
   const mapRef = useRef<L.Map | null>(null);
   const [layers, setLayers] = useState<Record<string, boolean>>({
@@ -93,10 +93,12 @@ export default function GISPage() {
           {/* Map */}
           <div className="flex-1 rounded-lg overflow-hidden border bg-white shadow-sm">
             <MapContainer
-              center={[12.8797, 121.774]} // Philippines center
+              center={[12.8797, 121.774]} // 🇵🇭 Center of Philippines
               zoom={6}
               style={{ height: "100%", width: "100%" }}
-              whenCreated={(map) => (mapRef.current = map)} // ✅ type-safe
+              whenReady={(map) => {
+                mapRef.current = map.target; // ✅ use whenReady instead of whenCreated
+              }}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
