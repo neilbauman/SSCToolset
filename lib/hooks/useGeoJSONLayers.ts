@@ -1,43 +1,72 @@
-import { useState, useEffect } from "react";
+"use client";
 
-/**
- * Fetches and caches GeoJSON data for visible GIS layers.
- * Keeps build type-safe and rendering clean.
- */
-export function useGeoJSONLayers(
-  layers: any[],
-  visible: Record<number, boolean>
-) {
-  const [geojsons, setGeojsons] = useState<Record<string, any>>({});
+import { useEffect, useState } from "react";
+import L from "leaflet";
+import { GeoJSON } from "react-leaflet";
+
+type GISLayer = {
+  id: string;
+  source?: { path?: string | null } | null;
+  admin_level_int: number;
+  admin_level?: string | null;
+};
+
+interface UseGeoJSONLayersProps {
+  supabase: any;
+  layers: GISLayer[];
+  mapRef: React.MutableRefObject<L.Map | null>;
+  visible: Record<number, boolean>;
+}
+
+export function useGeoJSONLayers({
+  supabase,
+  layers,
+  mapRef,
+  visible,
+}: UseGeoJSONLayersProps) {
+  const [geoJsonLayers, setGeoJsonLayers] = useState<JSX.Element[]>([]);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      const results: Record<string, any> = {};
+    if (!mapRef.current || !layers?.length) return;
 
-      await Promise.all(
-        layers.map(async (layer) => {
-          // only fetch visible layers
-          if (!visible[layer.admin_level_int]) return;
+    const loadLayers = async () => {
+      const newLayers: JSX.Element[] = [];
 
-          const url = `https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/gis_raw/${layer.source?.path}`;
+      for (const layer of layers) {
+        if (!visible[layer.admin_level_int]) continue;
+        if (!layer.source?.path) continue;
 
-          try {
-            const res = await fetch(url);
-            if (res.ok) {
-              const data = await res.json();
-              results[layer.id] = data;
-            }
-          } catch (err) {
-            console.error(`Failed to load GeoJSON for ${layer.layer_name}`, err);
-          }
-        })
-      );
+        try {
+          const { data, error } = await supabase.storage
+            .from("gis_raw")
+            .download(layer.source.path);
 
-      setGeojsons(results);
+          if (error || !data) continue;
+
+          const text = await data.text();
+          const geojson = JSON.parse(text);
+
+          newLayers.push(
+            <GeoJSON
+              key={layer.id}
+              data={geojson}
+              style={{
+                color: "#C72B2B",
+                weight: 1,
+                fillOpacity: 0.2,
+              }}
+            />
+          );
+        } catch (err) {
+          console.error("Error loading GeoJSON layer:", err);
+        }
+      }
+
+      setGeoJsonLayers(newLayers);
     };
 
-    fetchAll();
-  }, [layers, visible]);
+    loadLayers();
+  }, [layers, visible, supabase, mapRef]);
 
-  return geojsons;
+  return { geoJsonLayers };
 }
