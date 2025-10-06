@@ -41,18 +41,16 @@ export default function UploadGISModal({
 
       const activeVersionId = versionData.id;
 
-      // 2️⃣ Upload file to Supabase Storage
+      // 2️⃣ Upload to storage
       const path = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("gis_raw")
         .upload(path, file);
       if (uploadError) throw uploadError;
 
-      // 3️⃣ Extract admin level integer (if known)
+      // 3️⃣ Parse admin level and format
       const levelMatch = adminLevel.match(/ADM?(\d)/i);
       const adminLevelInt = levelMatch ? parseInt(levelMatch[1]) : null;
-
-      // 4️⃣ Determine file format
       const ext = file.name.split(".").pop()?.toLowerCase();
       const format =
         ext === "zip"
@@ -61,7 +59,7 @@ export default function UploadGISModal({
           ? "json"
           : "unknown";
 
-      // 5️⃣ Check if layer already exists for same ADM level
+      // 4️⃣ Check for existing layer
       const { data: existing } = await supabase
         .from("gis_layers")
         .select("id")
@@ -71,6 +69,7 @@ export default function UploadGISModal({
         .eq("is_active", true)
         .maybeSingle();
 
+      // 5️⃣ If exists → confirm and deactivate before inserting new
       if (existing) {
         const confirmReplace = confirm(
           `A layer for ${adminLevel} already exists. Replace it?`
@@ -80,15 +79,31 @@ export default function UploadGISModal({
           return;
         }
 
-        // 6️⃣ Deactivate the old layer before inserting new one
         const { error: deactivateError } = await supabase
           .from("gis_layers")
           .update({ is_active: false })
           .eq("id", existing.id);
         if (deactivateError) throw deactivateError;
+
+        // Confirm deactivation committed before continuing
+        let confirmDone = false;
+        for (let i = 0; i < 5; i++) {
+          const { data: stillActive } = await supabase
+            .from("gis_layers")
+            .select("id")
+            .eq("id", existing.id)
+            .eq("is_active", true);
+          if (!stillActive?.length) {
+            confirmDone = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 300)); // small wait
+        }
+        if (!confirmDone)
+          throw new Error("Could not confirm previous layer was deactivated.");
       }
 
-      // 7️⃣ Insert new layer (catch unique constraint errors gracefully)
+      // 6️⃣ Insert new layer
       const { error: insertError } = await supabase.from("gis_layers").insert([
         {
           country_iso: countryIso,
@@ -102,17 +117,11 @@ export default function UploadGISModal({
         },
       ]);
 
-      if (insertError) {
-        if (insertError.message.includes("duplicate key value")) {
-          alert("A layer already exists and could not be replaced automatically. Please refresh the page.");
-        } else {
-          throw insertError;
-        }
-      } else {
-        alert(existing ? "Layer replaced successfully!" : "Upload successful!");
-        await onUploaded?.();
-        onClose();
-      }
+      if (insertError) throw insertError;
+
+      alert(existing ? "Layer replaced successfully!" : "Upload successful!");
+      await onUploaded?.();
+      onClose();
     } catch (err: any) {
       console.error("Upload error:", err);
       setError(err.message || "Upload failed.");
@@ -166,7 +175,7 @@ export default function UploadGISModal({
         {/* Error Message */}
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        {/* Buttons */}
+        {/* Action Buttons */}
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
