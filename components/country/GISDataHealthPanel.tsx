@@ -1,19 +1,7 @@
 "use client";
 
 import React from "react";
-
-/** Shared type, imported by page.tsx as well */
-export interface GISLayer {
-  id: string;
-  layer_name: string;
-  admin_level: string | null;
-  admin_level_int: number | null;
-  source?: { path?: string; url?: string };
-  format?: string | null;
-  crs?: string | null;
-  feature_count?: number | null;
-  created_at?: string;
-}
+import type { GISLayer } from "@/types"; // ✅ use the shared interface
 
 interface Props {
   layers: GISLayer[];
