@@ -1,287 +1,182 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Modal from "@/components/ui/Modal";
 
-type Source = { name: string; url?: string };
-type ExtraEntry = { label: string; value: string; url?: string };
+type AdminLabels = {
+  adm0: string;
+  adm1: string;
+  adm2: string;
+  adm3: string;
+  adm4: string;
+  adm5: string;
+};
 
-type Metadata = {
+type MetadataForm = {
   iso_code: string;
   name: string;
-  admLabels: {
-    adm0: string;
-    adm1: string;
-    adm2: string;
-    adm3: string;
-    adm4: string;
-    adm5: string;
-  };
-  datasetSources: Source[];
-  extra: Record<string, ExtraEntry>;
+  admLabels: AdminLabels;
+  datasetSources: string[];
+  extra: Record<string, any>;
 };
+
+interface EditMetadataModalProps {
+  open: boolean;
+  onClose: () => void;
+  metadata: MetadataForm;
+  onSave: (updated: MetadataForm) => Promise<void> | void;
+}
 
 export default function EditMetadataModal({
   open,
   onClose,
   metadata,
   onSave,
-}: {
-  open: boolean;
-  onClose: () => void;
-  metadata: Metadata;
-  onSave: (m: Metadata) => Promise<void>;
-}) {
-  const [form, setForm] = useState<Metadata>(metadata);
-
-  const [newLabel, setNewLabel] = useState("");
-  const [newValue, setNewValue] = useState("");
-  const [newUrl, setNewUrl] = useState("");
+}: EditMetadataModalProps) {
+  const [form, setForm] = useState<MetadataForm>(metadata);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (metadata) setForm(metadata);
-  }, [metadata, open]);
+    if (open) {
+      setForm(metadata);
+    }
+  }, [open, metadata]);
+
+  const handleChange = (
+    key: keyof MetadataForm,
+    value: string | string[] | Record<string, any>
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const handleAdmLabelChange = (key: keyof AdminLabels, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      admLabels: {
+        ...prev.admLabels,
+        [key]: value,
+      },
+    }));
+  };
 
   const handleSave = async () => {
-    await onSave(form);
-    onClose();
-  };
-
-  const handleUpdateExtra = (
-    key: string,
-    field: keyof ExtraEntry,
-    value: string
-  ) => {
-    const current = form.extra[key] || { label: "", value: "" };
-    const updated: ExtraEntry = { ...current, [field]: value };
-    setForm({ ...form, extra: { ...form.extra, [key]: updated } });
-  };
-
-  const handleRemoveExtra = (key: string) => {
-    const updated = { ...form.extra };
-    delete updated[key];
-    setForm({ ...form, extra: updated });
-  };
-
-  const handleAddExtra = () => {
-    if (!newLabel.trim()) return;
-    const newKey = newLabel.toLowerCase().replace(/\s+/g, "_");
-    setForm({
-      ...form,
-      extra: {
-        ...form.extra,
-        [newKey]: { label: newLabel.trim(), value: newValue, url: newUrl || undefined },
-      },
-    });
-    setNewLabel("");
-    setNewValue("");
-    setNewUrl("");
+    setSaving(true);
+    try {
+      await onSave(form);
+      onClose();
+    } catch (err) {
+      console.error("Error saving metadata:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-3xl overflow-y-auto max-h-[90vh]">
-        <h2 className="text-lg font-semibold mb-4">Edit Metadata</h2>
+    <Modal open={open} onClose={onClose}>
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Edit Country Metadata</h2>
 
-        {/* Country basics */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium">ISO Code</label>
+        {/* Country Info */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="text-sm">
+            <span className="block font-medium mb-1">ISO Code</span>
             <input
               type="text"
               value={form.iso_code}
-              onChange={(e) =>
-                setForm({ ...form, iso_code: e.target.value })
-              }
-              className="mt-1 block w-full border rounded px-3 py-2 text-sm"
+              onChange={(e) => handleChange("iso_code", e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
+              disabled
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Country Name</label>
+          </label>
+
+          <label className="text-sm">
+            <span className="block font-medium mb-1">Country Name</span>
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="mt-1 block w-full border rounded px-3 py-2 text-sm"
+              onChange={(e) => handleChange("name", e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
             />
-          </div>
+          </label>
         </div>
 
-        {/* Admin labels */}
-        <div className="grid grid-cols-3 gap-4 mt-4">
-          {Object.entries(form.admLabels).map(([lvl, val]) => (
-            <div key={lvl}>
-              <label className="block text-sm font-medium uppercase">
-                {lvl}
+        {/* Administrative Labels */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-gray-700">
+            Administrative Labels
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {Object.entries(form.admLabels).map(([key, value]) => (
+              <label key={key} className="text-sm">
+                <span className="block font-medium mb-1 uppercase">{key}</span>
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => handleAdmLabelChange(key as keyof AdminLabels, e.target.value)}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  placeholder={`Label for ${key}`}
+                />
               </label>
-              <input
-                type="text"
-                value={val}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    admLabels: { ...form.admLabels, [lvl]: e.target.value },
-                  })
-                }
-                className="mt-1 block w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Dataset sources */}
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold mb-2">Dataset Sources</h3>
-          {form.datasetSources.map((src, i) => (
-            <div key={i} className="flex gap-2 mb-2">
-              <input
-                type="text"
-                placeholder="Name"
-                value={src.name}
-                onChange={(e) => {
-                  const updated = [...form.datasetSources];
-                  updated[i] = { ...updated[i], name: e.target.value };
-                  setForm({ ...form, datasetSources: updated });
-                }}
-                className="border px-3 py-1 rounded flex-1 text-sm"
-              />
-              <input
-                type="url"
-                placeholder="URL"
-                value={src.url || ""}
-                onChange={(e) => {
-                  const updated = [...form.datasetSources];
-                  updated[i] = { ...updated[i], url: e.target.value };
-                  setForm({ ...form, datasetSources: updated });
-                }}
-                className="border px-3 py-1 rounded flex-1 text-sm"
-              />
-            </div>
-          ))}
-          <button
-            onClick={() =>
-              setForm({
-                ...form,
-                datasetSources: [
-                  ...form.datasetSources,
-                  { name: "", url: "" },
-                ],
-              })
-            }
-            className="text-sm text-blue-600 hover:underline"
-          >
-            + Add Source
-          </button>
-        </div>
-
-        {/* Extra metadata */}
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold mb-2">Extra Metadata</h3>
-          {Object.entries(form.extra).map(([k, v]) => (
-            <div key={k} className="grid grid-cols-4 gap-2 mb-2">
-              <div>
-                <label className="block text-xs text-gray-500">Key</label>
-                <input
-                  type="text"
-                  value={k}
-                  readOnly
-                  className="border px-3 py-1 rounded text-sm bg-gray-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Label</label>
-                <input
-                  type="text"
-                  value={v.label}
-                  onChange={(e) => handleUpdateExtra(k, "label", e.target.value)}
-                  className="border px-3 py-1 rounded text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Value</label>
-                <input
-                  type="text"
-                  value={v.value}
-                  onChange={(e) => handleUpdateExtra(k, "value", e.target.value)}
-                  className="border px-3 py-1 rounded text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">URL (optional)</label>
-                <input
-                  type="url"
-                  value={v.url || ""}
-                  onChange={(e) => handleUpdateExtra(k, "url", e.target.value)}
-                  className="border px-3 py-1 rounded text-sm"
-                />
-              </div>
-              <button
-                onClick={() => handleRemoveExtra(k)}
-                className="col-span-4 text-red-600 text-xs mt-1"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-
-          {/* Add new extra */}
-          <div className="grid grid-cols-4 gap-2 mt-3">
-            <div>
-              <label className="block text-xs text-gray-500">Label</label>
-              <input
-                type="text"
-                placeholder="Label"
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                className="border px-3 py-1 rounded text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500">Value</label>
-              <input
-                type="text"
-                placeholder="Value"
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                className="border px-3 py-1 rounded text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500">URL (optional)</label>
-              <input
-                type="url"
-                placeholder="URL"
-                value={newUrl}
-                onChange={(e) => setNewUrl(e.target.value)}
-                className="border px-3 py-1 rounded text-sm"
-              />
-            </div>
+            ))}
           </div>
-          <button
-            onClick={handleAddExtra}
-            className="text-sm text-blue-600 hover:underline mt-2"
-          >
-            + Add Extra Metadata
-          </button>
+        </div>
+
+        {/* Dataset Sources */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-gray-700">
+            Dataset Sources
+          </h3>
+          <textarea
+            value={form.datasetSources.join("\n")}
+            onChange={(e) => handleChange("datasetSources", e.target.value.split("\n"))}
+            rows={4}
+            className="w-full border rounded px-2 py-1 text-sm font-mono"
+            placeholder="List one source per line (e.g., OCHA, NSO, UNHCR)"
+          />
+        </div>
+
+        {/* Extra Metadata (JSON) */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-gray-700">Extra Metadata (JSON)</h3>
+          <textarea
+            value={JSON.stringify(form.extra, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value);
+                handleChange("extra", parsed);
+              } catch {
+                // ignore invalid JSON input for now
+              }
+            }}
+            rows={6}
+            className="w-full border rounded px-2 py-1 text-sm font-mono"
+            placeholder='{"key": "value"}'
+          />
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-2 mt-6">
+        <div className="flex justify-end gap-2 pt-3">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
+            className="border rounded px-3 py-1 text-sm hover:bg-gray-50"
+            disabled={saving}
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-blue)] text-white hover:opacity-90"
+            disabled={saving}
+            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm hover:opacity-90 disabled:opacity-50"
           >
-            Save
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
