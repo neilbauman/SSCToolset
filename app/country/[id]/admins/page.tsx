@@ -33,7 +33,7 @@ type AdminVersion = {
   title: string;
   year: number | null;
   dataset_date: string | null;
-  source: any;
+  source: string | null;
   is_active: boolean;
   created_at: string;
   notes: string | null;
@@ -63,6 +63,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
+  // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -75,6 +76,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
+  // --- Fetch Versions ---
   const loadVersions = async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
@@ -89,6 +91,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
     const list = data ?? [];
     setVersions(list);
+
     const active = list.find((v) => v.is_active);
     const initial = active || list[0] || null;
     setSelectedVersion(initial);
@@ -98,22 +101,47 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
+  // --- Fetch Admin Units (Chunked Loader for Large Datasets) ---
   useEffect(() => {
-    const fetchUnits = async () => {
+    const fetchAllUnits = async () => {
       if (!selectedVersion) {
         setUnits([]);
         return;
       }
-      const { data, error } = await supabase
-        .from("admin_units")
-        .select("id,pcode,name,level,parent_pcode")
-        .eq("dataset_version_id", selectedVersion.id)
-        .order("pcode", { ascending: true });
-      if (!error) setUnits(data ?? []);
+
+      console.log("Fetching admin units in chunks for version:", selectedVersion.id);
+
+      const allData: AdminUnit[] = [];
+      const chunk = 10000;
+      let from = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("admin_units")
+          .select("id,pcode,name,level,parent_pcode")
+          .eq("dataset_version_id", selectedVersion.id)
+          .order("pcode", { ascending: true })
+          .range(from, from + chunk - 1);
+
+        if (error) {
+          console.error("Error fetching chunk:", error);
+          break;
+        }
+        if (!data || data.length === 0) break;
+
+        allData.push(...data);
+        if (data.length < chunk) break; // no more rows
+        from += chunk;
+      }
+
+      console.log(`Fetched ${allData.length} admin units total`);
+      setUnits(allData);
     };
-    fetchUnits();
+
+    fetchAllUnits();
   }, [selectedVersion]);
 
+  // --- Tree Build ---
   const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     const map: Record<string, TreeNode> = {};
     const roots: TreeNode[] = [];
@@ -127,6 +155,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   };
   const treeData = buildTree(units);
 
+  // --- Tree Toggle ---
   const toggleExpand = (pcode: string) => {
     const next = new Set(expanded);
     next.has(pcode) ? next.delete(pcode) : next.add(pcode);
@@ -154,6 +183,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     </div>
   );
 
+  // --- Delete Version ---
   const handleDeleteVersion = async (versionId: string) => {
     try {
       const { data: units } = await supabase
@@ -172,6 +202,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     }
   };
 
+  // --- Activate Version ---
   const handleActivateVersion = async (version: AdminVersion) => {
     await supabase
       .from("admin_dataset_versions")
@@ -184,19 +215,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
-  const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
-    if (!editingVersion) return;
-    await supabase
-      .from("admin_dataset_versions")
-      .update(updated)
-      .eq("id", editingVersion.id);
-    setEditingVersion(null);
-    await loadVersions();
-  };
-
+  // --- Template Download URL ---
   const templateUrl =
     "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
 
+  // --- Render ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
@@ -258,7 +281,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               {versions.map((v) => (
                 <tr
                   key={v.id}
-                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                  className={`hover:bg-gray-50 ${
+                    v.is_active ? "bg-green-50" : ""
+                  }`}
                 >
                   <td
                     className={`border px-2 py-1 cursor-pointer ${
@@ -270,31 +295,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                   </td>
                   <td className="border px-2 py-1">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">
-                    {(() => {
-                      if (!v.source) return "—";
-                      try {
-                        const s =
-                          typeof v.source === "string"
-                            ? JSON.parse(v.source)
-                            : v.source;
-                        return s.url ? (
-                          <a
-                            href={s.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-700 hover:underline"
-                          >
-                            {s.name || "Source Link"}
-                          </a>
-                        ) : (
-                          s.name || "—"
-                        );
-                      } catch {
-                        return v.source;
-                      }
-                    })()}
-                  </td>
+                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
                   <td className="border px-2 py-1">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
