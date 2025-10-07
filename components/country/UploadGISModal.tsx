@@ -4,12 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-/**
- * UploadGISModal
- * Uploads a new GIS layer for a dataset version.
- * CRS is now automatically set to EPSG:4326 (WGS 84) for all uploads.
- */
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -33,7 +27,6 @@ export default function UploadGISModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset modal state when closed
   useEffect(() => {
     if (!open) {
       setAdminLevel("ADM1");
@@ -50,29 +43,44 @@ export default function UploadGISModal({
     try {
       setBusy(true);
       setError(null);
-      if (!file) throw new Error("Please choose a file to upload.");
+      if (!file) throw new Error("Please choose a file.");
 
-      // Upload to Supabase Storage
-      const storagePath = `${countryIso}/gis/${Date.now()}-${file.name}`;
-      const { error: upErr } = await supabase.storage
+      // Generate structured path: <ISO>/<UUID>/<filename>
+      const fullKey = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
+
+      // Upload file
+      const { data: uploadData, error: upErr } = await supabase.storage
         .from("gis_raw")
-        .upload(storagePath, file, { upsert: true });
+        .upload(fullKey, file, { upsert: true });
+
       if (upErr) throw upErr;
 
-      // Insert metadata row
+      // Get actual returned path from Supabase
+      const fullPath = uploadData?.path;
+      if (!fullPath) throw new Error("Upload succeeded but no path returned from Supabase.");
+
+      // Build metadata payload for DB
+      const format = file.name.endsWith(".zip")
+        ? "shapefile"
+        : file.name.endsWith(".gpkg")
+        ? "gpkg"
+        : "geojson";
+
       const payload = {
         dataset_version_id: datasetVersionId,
         country_iso: countryIso,
         admin_level: adminLevel,
-        storage_path: storagePath,
-        crs: "EPSG:4326", // ✅ standardized CRS
+        layer_name: file.name,
+        storage_path: fullPath,
+        format,
+        crs: "EPSG:4326", // default CRS
         source: {
+          bucket: "gis_raw",
+          path: fullPath,
           name: layerName,
           originalFilename: file.name,
           mimeType: file.type,
           size: file.size,
-          bucket: "gis_raw",
-          path: storagePath,
         },
       };
 
@@ -101,7 +109,6 @@ export default function UploadGISModal({
           </div>
         )}
 
-        {/* Basic metadata fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             <span className="block mb-1 font-medium">Admin Level</span>
@@ -124,27 +131,20 @@ export default function UploadGISModal({
               className="w-full border rounded px-2 py-1 text-sm"
               value={layerName}
               onChange={(e) => setLayerName(e.target.value)}
-              placeholder="e.g., National Boundaries 2020"
+              placeholder="e.g., National Boundaries 2025"
             />
           </label>
         </div>
 
-        {/* File input */}
         <label className="text-sm block">
           <span className="block mb-1 font-medium">File *</span>
           <input
             type="file"
-            accept=".geojson,.json,.zip"
+            accept=".geojson,.json,.zip,.gpkg"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
         </label>
 
-        {/* Note about CRS */}
-        <p className="text-xs text-gray-500 italic">
-          All layers are assumed to use WGS 84 (EPSG:4326).
-        </p>
-
-        {/* Action buttons */}
         <div className="flex justify-end gap-2 pt-4">
           <button className="border rounded px-3 py-1 text-sm" onClick={onClose} disabled={busy}>
             Cancel
