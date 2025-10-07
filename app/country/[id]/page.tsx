@@ -328,6 +328,8 @@ export default function CountryConfigLandingPage({ params }: any) {
       />
       {openGISUpload && (
         <UploadGISModal
+          open={openGISUpload}                    // ✅ added
+          datasetVersionId={""}                   // ✅ placeholder
           countryIso={id}
           onClose={() => setOpenGISUpload(false)}
           onUploaded={reloadPage}
