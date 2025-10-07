@@ -3,20 +3,8 @@
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Layers, Database, Upload, ChevronDown, ChevronRight, Edit3, Trash2, CheckCircle2, Download } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-import {
-  Layers,
-  Database,
-  Upload,
-  ChevronDown,
-  ChevronRight,
-  Edit3,
-  Trash2,
-  CheckCircle2,
-  Download,
-} from "lucide-react";
-
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
@@ -57,7 +45,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
-  const [loadingUnits, setLoadingUnits] = useState(false);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openUpload, setOpenUpload] = useState(false);
@@ -67,11 +54,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("*")
-        .eq("iso_code", countryIso)
-        .single();
+      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
@@ -102,33 +85,31 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units via RPC (no 1k row limit) ---
+  // --- Fetch Admin Units (client-side only to ensure apikey header) ---
   useEffect(() => {
-    const fetchAllUnits = async () => {
-      if (!selectedVersion) {
-        setUnits([]);
-        return;
+    if (!selectedVersion) return;
+
+    const fetchUnits = async () => {
+      try {
+        const { supabaseBrowser } = await import("@/lib/supabase/supabaseBrowser");
+        const supabase = supabaseBrowser;
+
+        const { data, error } = await supabase.rpc("get_admin_units_full", {
+          version_id: selectedVersion.id,
+        });
+
+        if (error) {
+          console.error("Error fetching admin units:", error);
+          return;
+        }
+
+        setUnits(data ?? []);
+      } catch (err) {
+        console.error("Unexpected error fetching units:", err);
       }
-
-      setLoadingUnits(true);
-      console.log("Fetching admin units via RPC for version:", selectedVersion.id);
-
-      const { data, error } = await supabase.rpc("get_admin_units_full", {
-        version_id: selectedVersion.id,
-      });
-
-      setLoadingUnits(false);
-
-      if (error) {
-        console.error("Error fetching admin units:", error);
-        return;
-      }
-
-      console.log(`Fetched ${data?.length ?? 0} admin units`);
-      setUnits(data || []);
     };
 
-    fetchAllUnits();
+    fetchUnits();
   }, [selectedVersion]);
 
   // --- Tree Build ---
@@ -137,8 +118,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     const roots: TreeNode[] = [];
     for (const row of rows) map[row.pcode] = { ...row, children: [] };
     for (const row of rows) {
-      if (row.parent_pcode && map[row.parent_pcode])
-        map[row.parent_pcode].children.push(map[row.pcode]);
+      if (row.parent_pcode && map[row.parent_pcode]) map[row.parent_pcode].children.push(map[row.pcode]);
       else roots.push(map[row.pcode]);
     }
     return roots;
@@ -156,11 +136,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       <div className="flex items-center gap-1">
         {node.children.length > 0 ? (
           <button onClick={() => toggleExpand(node.pcode)}>
-            {expanded.has(node.pcode) ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
+            {expanded.has(node.pcode) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
         ) : (
           <span className="w-4 h-4" />
@@ -168,22 +144,16 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <span className="font-medium">{node.name}</span>
         <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
       </div>
-      {expanded.has(node.pcode) &&
-        node.children.map((child) => renderTreeNode(child, depth + 1))}
+      {expanded.has(node.pcode) && node.children.map((child) => renderTreeNode(child, depth + 1))}
     </div>
   );
 
   // --- Delete Version ---
   const handleDeleteVersion = async (versionId: string) => {
     try {
-      const { data: units } = await supabase
-        .from("admin_units")
-        .select("id")
-        .eq("dataset_version_id", versionId);
+      const { data: units } = await supabase.from("admin_units").select("id").eq("dataset_version_id", versionId);
       const unitIds = (units ?? []).map((u) => u.id);
-      if (unitIds.length) {
-        await supabase.from("admin_units").delete().in("id", unitIds);
-      }
+      if (unitIds.length) await supabase.from("admin_units").delete().in("id", unitIds);
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
       setOpenDelete(null);
       await loadVersions();
@@ -194,27 +164,26 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
   // --- Activate Version ---
   const handleActivateVersion = async (version: AdminVersion) => {
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", version.id);
+    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", version.id);
     await loadVersions();
   };
 
-  // --- Template Download URL ---
+  // --- Save Edited Version ---
+  const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
+    if (!editingVersion) return;
+    await supabase.from("admin_dataset_versions").update(updated).eq("id", editingVersion.id);
+    setEditingVersion(null);
+    await loadVersions();
+  };
+
   const templateUrl =
     "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
 
-  // --- Render ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description:
-      "Manage hierarchical administrative units and dataset versions for this country.",
+    description: "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -269,44 +238,16 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             </thead>
             <tbody>
               {versions.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
-                >
+                <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
                   <td
-                    className={`border px-2 py-1 cursor-pointer ${
-                      selectedVersion?.id === v.id ? "font-semibold" : ""
-                    }`}
+                    className={`border px-2 py-1 cursor-pointer ${selectedVersion?.id === v.id ? "font-semibold" : ""}`}
                     onClick={() => setSelectedVersion(v)}
                   >
                     {v.title}
                   </td>
                   <td className="border px-2 py-1">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">
-                    {v.source ? (
-                      (() => {
-                        try {
-                          const src = JSON.parse(v.source);
-                          if (src.url)
-                            return (
-                              <a
-                                href={src.url}
-                                target="_blank"
-                                className="text-blue-600 underline"
-                              >
-                                {src.name || src.url}
-                              </a>
-                            );
-                          return src.name || v.source;
-                        } catch {
-                          return v.source;
-                        }
-                      })()
-                    ) : (
-                      "—"
-                    )}
-                  </td>
+                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
                   <td className="border px-2 py-1">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
@@ -319,17 +260,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                   <td className="border px-2 py-1 text-right">
                     <div className="flex justify-end gap-2">
                       {!v.is_active && (
-                        <button
-                          className="text-blue-600 hover:underline text-xs"
-                          onClick={() => handleActivateVersion(v)}
-                        >
+                        <button className="text-blue-600 hover:underline text-xs" onClick={() => handleActivateVersion(v)}>
                           Set Active
                         </button>
                       )}
-                      <button
-                        className="text-gray-600 hover:underline text-xs"
-                        onClick={() => setEditingVersion(v)}
-                      >
+                      <button className="text-gray-600 hover:underline text-xs" onClick={() => setEditingVersion(v)}>
                         <Edit3 className="inline w-4 h-4 mr-1" /> Edit
                       </button>
                       <button
@@ -359,30 +294,19 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </h2>
         <div className="flex gap-2">
           <button
-            className={`px-3 py-1 text-sm border rounded ${
-              viewMode === "table" ? "bg-blue-50 border-blue-400" : ""
-            }`}
+            className={`px-3 py-1 text-sm border rounded ${viewMode === "table" ? "bg-blue-50 border-blue-400" : ""}`}
             onClick={() => setViewMode("table")}
           >
             Table View
           </button>
           <button
-            className={`px-3 py-1 text-sm border rounded ${
-              viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""
-            }`}
+            className={`px-3 py-1 text-sm border rounded ${viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""}`}
             onClick={() => setViewMode("tree")}
           >
             Tree View
           </button>
         </div>
       </div>
-
-      {/* Loading Indicator */}
-      {loadingUnits && (
-        <p className="text-sm text-gray-500 italic mb-2">
-          Loading administrative units, please wait…
-        </p>
-      )}
 
       {/* Admin Units */}
       {viewMode === "table" ? (
@@ -408,9 +332,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </table>
       ) : (
         <div className="border rounded-lg p-3 bg-white shadow-sm">
-          {treeData.length ? (
-            treeData.map((node) => renderTreeNode(node))
-          ) : (
+          {treeData.length ? treeData.map((node) => renderTreeNode(node)) : (
             <p className="italic text-gray-500">No admin units found.</p>
           )}
         </div>
@@ -434,6 +356,52 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
+      )}
+
+      {/* Edit Version Modal */}
+      {editingVersion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
+            <label className="block mb-2 text-sm">
+              Title
+              <input
+                type="text"
+                value={editingVersion.title}
+                onChange={(e) => setEditingVersion({ ...editingVersion, title: e.target.value })}
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <label className="block mb-2 text-sm">
+              Source (Name)
+              <input
+                type="text"
+                value={editingVersion.source || ""}
+                onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value })}
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <label className="block mb-2 text-sm">
+              Notes
+              <textarea
+                value={editingVersion.notes || ""}
+                onChange={(e) => setEditingVersion({ ...editingVersion, notes: e.target.value })}
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={() => setEditingVersion(null)} className="px-3 py-1 text-sm border rounded">
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveEdit(editingVersion)}
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );
