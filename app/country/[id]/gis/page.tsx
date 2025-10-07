@@ -20,18 +20,12 @@ import type { GISLayer, GISDatasetVersion } from "@/types/gis";
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
 
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
   const [country, setCountry] = useState<any>(null);
-
   const [datasetVersions, setDatasetVersions] = useState<GISDatasetVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<GISDatasetVersion | null>(null);
-
   const [layers, setLayers] = useState<GISLayer[]>([]);
   const [geojsonById, setGeojsonById] = useState<Record<string, any>>({});
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
-
   const [visibleLevels, setVisibleLevels] = useState<Record<string, boolean>>({
     ADM0: true,
     ADM1: false,
@@ -61,20 +55,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
   // Fetch Versions
   // ---------------------------------------------------------------------------
   const fetchVersions = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("gis_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error loading versions:", error);
-      return;
+    if (data) {
+      setDatasetVersions(data);
+      const active = data.find((v) => v.is_active);
+      setSelectedVersion((prev) => active || prev || data[0] || null);
     }
-    const list = (data ?? []) as GISDatasetVersion[];
-    setDatasetVersions(list);
-    const active = list.find((v) => v.is_active);
-    setSelectedVersion((prev) => active || prev || list[0] || null);
   };
 
   useEffect(() => {
@@ -85,25 +76,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
   // Fetch Layers for selected version
   // ---------------------------------------------------------------------------
   const fetchLayers = async (versionId: string) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("gis_layers")
       .select("*")
       .eq("dataset_version_id", versionId)
       .order("admin_level_int", { ascending: true });
-
-    if (error) {
-      console.error("Error loading layers:", error);
-      return;
-    }
-    setLayers((data ?? []) as GISLayer[]);
+    if (data) setLayers(data);
   };
 
   useEffect(() => {
-    if (selectedVersion?.id) {
-      fetchLayers(selectedVersion.id);
-    } else {
-      setLayers([]);
-    }
+    if (selectedVersion?.id) fetchLayers(selectedVersion.id);
+    else setLayers([]);
   }, [selectedVersion?.id]);
 
   // ---------------------------------------------------------------------------
@@ -124,19 +107,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
             layer.storage_path ||
             layer.source?.path ||
             `${countryIso}/${layer.layer_name}`;
-
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/gis_raw/${path}`;
           const res = await fetch(url);
           if (!res.ok) throw new Error(`Failed to fetch ${layer.layer_name}`);
           const geojson = await res.json();
           setGeojsonById((m) => ({ ...m, [layer.id]: geojson }));
 
-          // center on ADM0 when it arrives
+          // center map on ADM0 once loaded
           if (layer.admin_level === "ADM0" && mapRef.current) {
             const bounds = L.geoJSON(geojson).getBounds();
-            if (bounds.isValid()) {
-              mapRef.current.fitBounds(bounds, { maxZoom: 6 });
-            }
+            if (bounds.isValid()) mapRef.current.fitBounds(bounds, { maxZoom: 6 });
           }
         } catch (e) {
           console.error("Layer fetch error:", e);
@@ -182,7 +162,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   const handleMakeActive = async (versionId: string) => {
-    // set all false, then one true
     await supabase.from("gis_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
     await supabase.from("gis_dataset_versions").update({ is_active: true }).eq("id", versionId);
     await fetchVersions();
@@ -204,7 +183,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setSelectedVersion(data as GISDatasetVersion);
   };
 
-  // Provide feature counts to the health panel using loaded GeoJSON (fallback to DB field)
   const layersForHealth = useMemo(() => {
     return layers.map((l) => {
       const gj = geojsonById[l.id];
@@ -357,7 +335,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* --- Health --- */}
       <GISDataHealthPanel layers={layersForHealth} />
 
       {/* --- Map --- */}
@@ -366,9 +343,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[11.0, 122.0]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(e) => {
-            // e: LeafletEvent (v5 typing expects no-arg handler, but works at runtime)
-            mapRef.current = e.target as unknown as L.Map;
+          whenReady={() => {
+            const map = mapRef.current;
+            if (!map && (window as any).L?.map) {
+              mapRef.current = (window as any).L.map;
+            }
           }}
           ref={mapRef as any}
         >
