@@ -31,28 +31,35 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [progress, setProgress] = useState("");
   const [view, setView] = useState<"table" | "tree">("table");
   const [expanded, setExpanded] = useState(new Set<string>());
-  const [edit, setEdit] = useState<any>(null);
-  const [del, setDel] = useState<any>(null);
+  const [editVersion, setEditVersion] = useState<any>(null);
+  const [deleteVersion, setDeleteVersion] = useState<any>(null);
   const [upload, setUpload] = useState(false);
 
-  // Country + Versions
+  // --- Fetch Country & Versions ---
+  const loadCountryAndVersions = async () => {
+    const { data: c } = await supabase
+      .from("countries")
+      .select("*")
+      .eq("iso_code", countryIso)
+      .single();
+    if (c) setCountry(c);
+
+    const { data: v } = await supabase
+      .from("admin_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+    if (v) {
+      setVersions(v);
+      setSelectedVersion(v.find((x) => x.is_active) || v[0]);
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      const c = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
-      if (c.data) setCountry(c.data);
-      const v = await supabase
-        .from("admin_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-      if (v.data) {
-        setVersions(v.data);
-        setSelectedVersion(v.data.find((x) => x.is_active) || v.data[0]);
-      }
-    })();
+    loadCountryAndVersions();
   }, [countryIso]);
 
-  // Fetch Admin Units
+  // --- Fetch Admin Units (with progress) ---
   useEffect(() => {
     if (!selectedVersion) return;
     (async () => {
@@ -83,13 +90,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     })();
   }, [selectedVersion]);
 
-  const toggle = (p: string) => {
-    const n = new Set(expanded);
-    n.has(p) ? n.delete(p) : n.add(p);
-    setExpanded(n);
-  };
-
-  const tree = (rows: any[]): any[] => {
+  // --- Tree Builder ---
+  const buildTree = (rows: any[]): any[] => {
     const map: any = {};
     const roots: any[] = [];
     rows.forEach((r) => (map[r.pcode] = { ...r, children: [] }));
@@ -100,20 +102,35 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     );
     return roots;
   };
+  const treeData = buildTree(units);
 
-  const tData = tree(units);
-
-  const handleSave = async (upd: any) => {
-    await supabase.from("admin_dataset_versions").update(upd).eq("id", edit.id);
-    setEdit(null);
-    const { data } = await supabase
-      .from("admin_dataset_versions")
-      .select("*")
-      .eq("country_iso", countryIso);
-    setVersions(data || []);
+  const toggleExpand = (p: string) => {
+    const n = new Set(expanded);
+    n.has(p) ? n.delete(p) : n.add(p);
+    setExpanded(n);
   };
 
-  const header = {
+  // --- Delete Version ---
+  const handleDeleteVersion = async (versionId: string) => {
+    try {
+      await supabase.from("admin_units").delete().eq("dataset_version_id", versionId);
+      await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
+      setDeleteVersion(null);
+      await loadCountryAndVersions();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
+  // --- Save Edit Version ---
+  const handleSaveEdit = async (v: any) => {
+    await supabase.from("admin_dataset_versions").update(v).eq("id", v.id);
+    setEditVersion(null);
+    await loadCountryAndVersions();
+  };
+
+  // --- Header ---
+  const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
     description: "Manage hierarchical administrative units and dataset versions for this country.",
@@ -130,8 +147,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   };
 
   return (
-    <SidebarLayout headerProps={header}>
-      {/* Versions */}
+    <SidebarLayout headerProps={headerProps}>
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between mb-3 items-center">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -179,7 +196,38 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                   </td>
                   <td className="border px-2 py-1 text-center">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1 text-center">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {(() => {
+                      try {
+                        const src = JSON.parse(v.source || "{}");
+                        if (src.url && src.name)
+                          return (
+                            <a
+                              href={src.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              {src.name}
+                            </a>
+                          );
+                        if (src.url)
+                          return (
+                            <a
+                              href={src.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              {src.url}
+                            </a>
+                          );
+                        return v.source || "—";
+                      } catch {
+                        return v.source || "—";
+                      }
+                    })()}
+                  </td>
                   <td className="border px-2 py-1 text-center">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
@@ -190,11 +238,19 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                     )}
                   </td>
                   <td className="border px-2 py-1 text-right flex gap-3 justify-end">
-                    <button onClick={() => setEdit(v)} title="Edit">
-                      <Edit3 className="w-4 h-4 text-gray-600 hover:text-blue-600" />
+                    <button
+                      onClick={() => setEditVersion(v)}
+                      title="Edit"
+                      className="text-gray-600 hover:text-blue-600"
+                    >
+                      <Edit3 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setDel(v)} title="Delete">
-                      <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)] hover:opacity-70" />
+                    <button
+                      onClick={() => setDeleteVersion(v)}
+                      title="Delete"
+                      className="text-[color:var(--gsc-red)] hover:opacity-70"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
                 </tr>
@@ -227,7 +283,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       </div>
 
-      {/* Table / Tree */}
+      {/* Table or Tree */}
       <div className="relative">
         {loading && (
           <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center z-10">
@@ -260,38 +316,41 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           </table>
         ) : (
           <div className="border rounded-lg p-3 bg-white shadow-sm">
-            {tData.length
-              ? tData.map((n) => (
-                  <div key={n.pcode} style={{ marginLeft: 16 }}>
-                    <div className="flex items-center gap-1">
-                      {n.children.length ? (
-                        <button onClick={() => toggle(n.pcode)}>
-                          {expanded.has(n.pcode) ? (
-                            <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4" />
-                          )}
-                        </button>
-                      ) : (
-                        <span className="w-4 h-4" />
-                      )}
-                      <span>{n.name}</span>
-                      <span className="text-gray-500 text-xs ml-1">{n.pcode}</span>
-                    </div>
-                    {expanded.has(n.pcode) &&
-                      n.children.map((c) => (
-                        <div key={c.pcode} className="ml-6">
-                          {c.name} <span className="text-gray-400">({c.pcode})</span>
-                        </div>
-                      ))}
+            {treeData.length ? (
+              treeData.map((n) => (
+                <div key={n.pcode} style={{ marginLeft: 16 }}>
+                  <div className="flex items-center gap-1">
+                    {n.children.length ? (
+                      <button onClick={() => toggleExpand(n.pcode)}>
+                        {expanded.has(n.pcode) ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="w-4 h-4" />
+                    )}
+                    <span>{n.name}</span>
+                    <span className="text-gray-500 text-xs ml-1">{n.pcode}</span>
                   </div>
-                ))
-              : "No admin units found."}
+                  {expanded.has(n.pcode) &&
+                    n.children.map((c) => (
+                      <div key={c.pcode} className="ml-6">
+                        {c.name}{" "}
+                        <span className="text-gray-400">({c.pcode})</span>
+                      </div>
+                    ))}
+                </div>
+              ))
+            ) : (
+              <p className="italic text-gray-500">No admin units found.</p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Modals */}
+      {/* Upload Modal */}
       {upload && (
         <UploadAdminUnitsModal
           open={upload}
@@ -300,46 +359,39 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onUploaded={() => window.location.reload()}
         />
       )}
-      {del && (
+
+      {/* Delete Modal */}
+      {deleteVersion && (
         <ConfirmDeleteModal
-          open={!!del}
-          message={`This will permanently delete "${del.title}" and all related units.`}
-          onClose={() => setDel(null)}
-          onConfirm={() => handleSave(del.id)}
+          open={!!deleteVersion}
+          message={`This will permanently delete "${deleteVersion.title}" and all related units.`}
+          onClose={() => setDeleteVersion(null)}
+          onConfirm={() => handleDeleteVersion(deleteVersion.id)}
         />
       )}
-      {edit && (
+
+      {/* Edit Modal */}
+      {editVersion && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
             <h3 className="text-lg font-semibold mb-3">Edit Dataset Version</h3>
             {["title", "source", "notes"].map((f) => (
               <label key={f} className="block mb-2 text-sm">
                 {f[0].toUpperCase() + f.slice(1)}
-                {f === "notes" ? (
-                  <textarea
-                    value={edit[f] || ""}
-                    onChange={(e) => setEdit({ ...edit, [f]: e.target.value })}
-                    className="border rounded w-full px-2 py-1 mt-1 text-sm"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={edit[f] || ""}
-                    onChange={(e) => setEdit({ ...edit, [f]: e.target.value })}
-                    className="border rounded w-full px-2 py-1 mt-1 text-sm"
-                  />
-                )}
+                <input
+                  type="text"
+                  value={editVersion[f] || ""}
+                  onChange={(e) => setEditVersion({ ...editVersion, [f]: e.target.value })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
               </label>
             ))}
             <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => setEdit(null)}
-                className="px-3 py-1 text-sm border rounded"
-              >
+              <button onClick={() => setEditVersion(null)} className="px-3 py-1 text-sm border rounded">
                 Cancel
               </button>
               <button
-                onClick={() => handleSave(edit)}
+                onClick={() => handleSaveEdit(editVersion)}
                 className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
               >
                 Save
