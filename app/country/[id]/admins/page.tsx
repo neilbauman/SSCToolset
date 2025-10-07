@@ -55,6 +55,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
+  const [progressText, setProgressText] = useState<string>("");
+
   // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
@@ -92,18 +94,29 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units (with pagination over 1000-row limit) ---
+  // --- Fetch Admin Units (with progress and dynamic count) ---
   useEffect(() => {
     if (!selectedVersion) return;
 
     const fetchUnits = async () => {
       try {
-        const { supabaseBrowser } = await import("@/lib/supabase/supabaseBrowser");
-        const supabase = supabaseBrowser;
+        setProgressText("Preparing to load records…");
 
+        // Step 1: Get total record count dynamically
+        const { count, error: countError } = await supabase
+          .from("admin_units")
+          .select("*", { count: "exact", head: true })
+          .eq("dataset_version_id", selectedVersion.id);
+
+        const total = countError ? null : count || null;
+        if (total) setProgressText(`Total records: ${total.toLocaleString()}. Starting fetch…`);
+        else setProgressText("Starting fetch…");
+
+        // Step 2: Paginate through all data
         const pageSize = 1000;
         let from = 0;
         let allData: any[] = [];
+        let progress = 0;
 
         while (true) {
           const { data, error } = await supabase
@@ -114,13 +127,23 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           if (!data?.length) break;
 
           allData = allData.concat(data);
+          progress += data.length;
+
+          if (total)
+            setProgressText(
+              `Loading ${progress.toLocaleString()} / ${total.toLocaleString()} rows…`
+            );
+          else setProgressText(`Loading ${progress.toLocaleString()} rows…`);
+
           if (data.length < pageSize) break;
           from += pageSize;
         }
 
         setUnits(allData);
+        setProgressText("");
       } catch (err) {
-        console.error("Unexpected error fetching units:", err);
+        console.error("Error fetching admin units:", err);
+        setProgressText("Error loading data.");
       }
     };
 
@@ -147,6 +170,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     next.has(pcode) ? next.delete(pcode) : next.add(pcode);
     setExpanded(next);
   };
+
   const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
     <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
       <div className="flex items-center gap-1">
@@ -321,8 +345,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       {/* Dataset Health */}
       <DatasetHealth totalUnits={totalUnits} />
 
-      {/* View Toggle */}
-      <div className="flex justify-between items-center mb-3">
+      {/* View Toggle + Progress */}
+      <div className="flex justify-between items-center mb-2">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
         </h2>
@@ -341,6 +365,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           </button>
         </div>
       </div>
+
+      {progressText && (
+        <div className="text-sm text-gray-600 font-medium mb-2 animate-pulse">
+          {progressText}
+        </div>
+      )}
 
       {/* Admin Units */}
       {viewMode === "table" ? (
@@ -369,77 +399,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           {treeData.length ? treeData.map((node) => renderTreeNode(node)) : (
             <p className="italic text-gray-500">No admin units found.</p>
           )}
-        </div>
-      )}
-
-      {/* Upload, Delete, Edit Modals */}
-      {openUpload && (
-        <UploadAdminUnitsModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
-          countryIso={countryIso}
-          onUploaded={loadVersions}
-        />
-      )}
-      {openDelete && (
-        <ConfirmDeleteModal
-          open={!!openDelete}
-          message={`This will permanently remove the version "${openDelete.title}" and all related admin units. This cannot be undone.`}
-          onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDeleteVersion(openDelete.id)}
-        />
-      )}
-      {editingVersion && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
-            <label className="block mb-2 text-sm">
-              Title
-              <input
-                type="text"
-                value={editingVersion.title}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, title: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <label className="block mb-2 text-sm">
-              Source (Name)
-              <input
-                type="text"
-                value={editingVersion.source || ""}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, source: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <label className="block mb-2 text-sm">
-              Notes
-              <textarea
-                value={editingVersion.notes || ""}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, notes: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => setEditingVersion(null)}
-                className="px-3 py-1 text-sm border rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveEdit(editingVersion)}
-                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
-              >
-                Save
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </SidebarLayout>
