@@ -33,7 +33,6 @@ const GeoJSON = dynamic(
 );
 
 type LayerWithRuntime = GISLayer & {
-  // cached derived fields
   _publicUrl?: string | null;
 };
 
@@ -59,40 +58,21 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   const [editingLayer, setEditingLayer] = useState<LayerWithRuntime | null>(null);
   const [openEditVersion, setOpenEditVersion] = useState(false);
 
-  // map ref (avoid whenReady typing issues)
+  // map ref
   const mapRef = useRef<LeafletMap | null>(null);
-
-  // header
-  const headerProps = {
-    title: `${countryIso} – GIS Datasets`,
-    group: "country-config" as const,
-    description: "Manage GIS dataset versions and layers for this country.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: `/country` },
-          { label: `${countryIso} GIS` },
-        ]}
-      />
-    ),
-  };
 
   // ---------- helpers ----------
 
   const resolvePublicUrl = (l: LayerWithRuntime): string | null => {
-    // Prefer explicit source json (bucket + path)
     const bucket = (l.source as any)?.bucket || "gis_raw";
     const rawPath =
       (l.source as any)?.path ||
-      // legacy fallbacks (rare)
       (l as any).path ||
       (l as any).storage_path ||
       null;
 
     if (!rawPath) return null;
 
-    // If you ever need to force a pattern: `${countryIso}/<uuid>/<filename>`
     const { data } = supabase.storage.from(bucket).getPublicUrl(rawPath);
     return data?.publicUrl ?? null;
   };
@@ -108,7 +88,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as GeoJsonObject;
 
-      // Accept only FeatureCollection; coerce otherwise
       const fc: FeatureCollection =
         (json as any)?.type === "FeatureCollection"
           ? (json as FeatureCollection)
@@ -116,7 +95,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
 
       setGeojsonById((m) => ({ ...m, [l.id]: fc }));
 
-      // derive feature_count to feed health
       const count = fc.features?.length ?? 0;
       setLayers((arr) =>
         arr.map((x) => (x.id === l.id ? { ...x, feature_count: count } : x))
@@ -133,14 +111,12 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   };
 
   const reloadAll = () => {
-    // soft refresh data without full page reload
     loadData();
   };
 
   // ---------- data loading ----------
 
   const loadData = async () => {
-    // Versions
     const { data: vData } = await supabase
       .from("gis_dataset_versions")
       .select("*")
@@ -152,7 +128,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     const active = v.find((x) => x.is_active) || v[0] || null;
     setActiveVersion(active || null);
 
-    // Layers for active version
     if (active) {
       const { data: lData } = await supabase
         .from("gis_layers")
@@ -168,12 +143,10 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
 
       setLayers(arr);
 
-      // default: all off to avoid heavy render; turn on ADM0 automatically
       const defaults: Record<string, boolean> = {};
       for (const l of arr) defaults[l.id] = (l.admin_level || "") === "ADM0";
       setVisible(defaults);
 
-      // prime ADM0 for centering
       const adm0 = arr.find((l) => l.admin_level === "ADM0");
       if (adm0) fetchGeo(adm0);
     } else {
@@ -185,34 +158,23 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
 
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryIso]);
 
-  // Center map to ADM0 when it finishes loading
+  // ---------- map centering ----------
   useEffect(() => {
     const adm0 = layers.find((l) => l.admin_level === "ADM0");
     if (!adm0) return;
     const fc = geojsonById[adm0.id];
     if (!fc || !mapRef.current) return;
-
-    // Compute bbox
-    const bounds = [];
-    for (const f of fc.features) {
-      // Use Leaflet to compute bounds quickly by injecting temp layer
-      // (safe because we have Leaflet on the page already)
-    }
     try {
-      // rough center fallback using Philippines if no bounds yet
       mapRef.current.setView([12.8797, 121.774], 5);
     } catch {
       /* noop */
     }
   }, [layers, geojsonById]);
 
-  // Health stats: re-use existing panel API
   const healthLayers = useMemo(() => layers as GISLayer[], [layers]);
 
-  // Visible + lazy-load on toggle
   const toggleVisible = (l: LayerWithRuntime, next: boolean) => {
     setVisible((m) => ({ ...m, [l.id]: next }));
     if (next && !geojsonById[l.id]) fetchGeo(l);
@@ -223,7 +185,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   return (
     <SidebarLayout
       headerProps={{
-        title: "PHL – GIS Datasets",
+        title: `${countryIso} – GIS Datasets`,
         group: "country-config",
         description: "Manage GIS dataset versions and layers for this country.",
         breadcrumbs: (
@@ -231,7 +193,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
             items={[
               { label: "Dashboard", href: "/dashboard" },
               { label: "Country Configuration", href: "/country" },
-              { label: "PHL GIS" },
+              { label: `${countryIso} GIS` },
             ]}
           />
         ),
@@ -285,7 +247,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                         className="text-blue-600 hover:underline"
                         onClick={() => {
                           setActiveVersion(v);
-                          // reload layers for this version
                           (async () => {
                             const { data } = await supabase
                               .from("gis_layers")
@@ -294,14 +255,17 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                               .eq("dataset_version_id", v.id)
                               .order("admin_level_int", { ascending: true });
 
-                            const arr: LayerWithRuntime[] = (data || []).map((x) => ({
-                              ...x,
-                              _publicUrl: resolvePublicUrl(x as any),
-                            })) as any;
+                            const arr: LayerWithRuntime[] = (data || []).map(
+                              (x) => ({
+                                ...x,
+                                _publicUrl: resolvePublicUrl(x as any),
+                              })
+                            ) as any;
 
                             setLayers(arr);
                             const defaults: Record<string, boolean> = {};
-                            for (const l of arr) defaults[l.id] = (l.admin_level || "") === "ADM0";
+                            for (const l of arr)
+                              defaults[l.id] = (l.admin_level || "") === "ADM0";
                             setVisible(defaults);
                             setGeojsonById({});
                           })();
@@ -321,7 +285,10 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               ))}
               {versions.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-4 text-center text-gray-500 italic">
+                  <td
+                    colSpan={5}
+                    className="px-3 py-4 text-center text-gray-500 italic"
+                  >
                     No versions yet. Click “Add New Version” to create one.
                   </td>
                 </tr>
@@ -339,7 +306,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
             className="px-3 py-1.5 rounded bg-[color:var(--gsc-red)] text-white text-sm"
             onClick={() => setOpenUpload(true)}
             disabled={!activeVersion}
-            title={activeVersion ? "" : "Select or create a version first"}
           >
             + Add GIS Layer
           </button>
@@ -362,13 +328,20 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               {layers.map((l) => {
                 const pub = l._publicUrl ?? resolvePublicUrl(l);
                 const count =
-                  typeof l.feature_count === "number" ? l.feature_count : (geojsonById[l.id]?.features?.length ?? 0);
+                  typeof l.feature_count === "number"
+                    ? l.feature_count
+                    : geojsonById[l.id]?.features?.length ?? 0;
                 return (
                   <tr key={l.id} className="border-t">
                     <td className="px-3 py-2">{l.admin_level || "—"}</td>
                     <td className="px-3 py-2">
                       {pub ? (
-                        <a href={pub} className="text-blue-700 hover:underline" target="_blank" rel="noreferrer">
+                        <a
+                          href={pub}
+                          className="text-blue-700 hover:underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           {l.layer_name}
                         </a>
                       ) : (
@@ -379,14 +352,11 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                     <td className="px-3 py-2">{l.crs || "—"}</td>
                     <td className="px-3 py-2">{count || "—"}</td>
                     <td className="px-3 py-2">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={!!visible[l.id]}
-                          onChange={(e) => toggleVisible(l, e.target.checked)}
-                        />
-                        <span className="text-xs text-gray-500">on</span>
-                      </label>
+                      <input
+                        type="checkbox"
+                        checked={!!visible[l.id]}
+                        onChange={(e) => toggleVisible(l, e.target.checked)}
+                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
@@ -395,14 +365,16 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                       >
                         Edit
                       </button>
-                      {/* You already have delete in the modal or elsewhere; keep as needed */}
                     </td>
                   </tr>
                 );
               })}
               {layers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-4 text-center text-gray-500 italic">
+                  <td
+                    colSpan={7}
+                    className="px-3 py-4 text-center text-gray-500 italic"
+                  >
                     No layers currently uploaded to this version.
                     <button
                       className="ml-2 px-2 py-1 rounded bg-[color:var(--gsc-red)] text-white text-xs"
@@ -430,7 +402,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
             zoom={5}
             style={{ height: "600px", width: "100%" }}
             className="rounded-md z-0"
-            // use ref instead of whenReady
             ref={mapRef as any}
           >
             <TileLayer
@@ -444,7 +415,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               const data = geojsonById[l.id];
               if (!data) return null;
 
-              // simple style per level
               const colors: Record<string, string> = {
                 ADM0: "#044389",
                 ADM1: "#8A2BE2",
@@ -458,7 +428,10 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                 <GeoJSON
                   key={l.id}
                   data={data}
-                  style={{ color: colors[l.admin_level || ""] || "#630710", weight: 1.2 }}
+                  style={{
+                    color: colors[l.admin_level || ""] || "#630710",
+                    weight: 1.2,
+                  }}
                   onEachFeature={(f, layer) => {
                     const name =
                       (f.properties as any)?.name ||
@@ -471,7 +444,9 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                       "";
                     layer.bindPopup(
                       `<div style="font-size:12px"><strong>${name}</strong>${
-                        pcode ? ` <span style="color:#666">(${pcode})</span>` : ""
+                        pcode
+                          ? ` <span style="color:#666">(${pcode})</span>`
+                          : ""
                       }</div>`
                     );
                   }}
@@ -498,7 +473,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
           open={!!editingLayer}
           onClose={() => setEditingLayer(null)}
           layer={editingLayer as any}
-          onSaved={reloadAll}
+          onUpdated={reloadAll} // ✅ fixed here
         />
       )}
 
