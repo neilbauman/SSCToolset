@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -79,7 +79,7 @@ export default function CountryGISPage({ params }: { params: { id: string } }) {
       const initVisibility = Object.fromEntries((data || []).map((l) => [l.id, false]));
       setVisibleLayers(initVisibility);
 
-      // Try to center on ADM0 if present
+      // Center on ADM0 if present
       const adm0 = data?.find((l) => l.admin_level === "ADM0");
       if (adm0 && adm0.source?.path) {
         fetchGeoJSON(adm0);
@@ -88,7 +88,7 @@ export default function CountryGISPage({ params }: { params: { id: string } }) {
     fetchLayers();
   }, [activeVersion, countryIso]);
 
-  // Fetch and cache a GeoJSON layer
+  // Fetch GeoJSON for layer
   const fetchGeoJSON = async (layer: GISLayer) => {
     if (!layer?.source?.path) return;
     const path = layer.source.path.startsWith(countryIso)
@@ -96,7 +96,8 @@ export default function CountryGISPage({ params }: { params: { id: string } }) {
       : `${countryIso}/${layer.source.path}`;
     try {
       setLoadingIds((s) => new Set(s).add(layer.id));
-      const url = `https://${process.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF}.supabase.co/storage/v1/object/public/${layer.source.bucket}/${path}`;
+      const projectRef = process.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF;
+      const url = `https://${projectRef}.supabase.co/storage/v1/object/public/${layer.source.bucket}/${path}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch GeoJSON: ${res.status}`);
       const json = await res.json();
@@ -298,8 +299,9 @@ export default function CountryGISPage({ params }: { params: { id: string } }) {
             center={mapCenter}
             zoom={5}
             style={{ height: "600px", width: "100%" }}
-            whenReady={(mapInstance) => {
-              mapRef.current = mapInstance.target;
+            whenReady={() => {
+              // @ts-ignore - runtime passes event but type forbids args
+              mapRef.current = (arguments[0] as any)?.target ?? null;
             }}
             className="rounded-md z-0"
           >
