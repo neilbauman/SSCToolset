@@ -11,9 +11,9 @@ import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Upload, Layers, Edit, Trash2 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer, GISDatasetVersion } from "@/types/gis";
-import { Upload, Map, Layers, Edit, Trash2 } from "lucide-react";
 
 export default function GISPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
@@ -35,8 +35,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openUpload, setOpenUpload] = useState(false);
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [deleteLayer, setDeleteLayer] = useState<GISLayer | null>(null);
-
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
   const mapRef = useRef<L.Map | null>(null);
 
   // --- Fetch country info
@@ -51,13 +51,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
   // --- Fetch dataset versions
   useEffect(() => {
     const loadVersions = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("gis_dataset_versions")
         .select("*")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
-
-      if (!error && data) {
+      if (data) {
         setDatasetVersions(data);
         const active = data.find((v) => v.is_active);
         setSelectedVersion(active || data[0] || null);
@@ -70,22 +69,22 @@ export default function GISPage({ params }: { params: CountryParams }) {
   useEffect(() => {
     const loadLayers = async () => {
       if (!selectedVersion) return;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("gis_layers")
         .select("*")
         .eq("dataset_version_id", selectedVersion.id)
         .order("admin_level_int", { ascending: true });
-
-      if (!error && data) setLayers(data);
+      if (data) setLayers(data);
     };
     loadLayers();
   }, [selectedVersion]);
 
-  // --- Fetch GeoJSON when a layer becomes visible
+  // --- Fetch GeoJSON for visible layers
   useEffect(() => {
     const loadVisibleLayers = async () => {
       for (const layer of layers) {
-        if (!visibleLevels[layer.admin_level ?? ""] || geojsonById[layer.id]) continue;
+        const level = layer.admin_level ?? "";
+        if (!visibleLevels[level] || geojsonById[layer.id]) continue;
 
         try {
           setLoadingIds((s) => new Set(s).add(layer.id));
@@ -99,13 +98,13 @@ export default function GISPage({ params }: { params: CountryParams }) {
           const geojson = await res.json();
           setGeojsonById((m) => ({ ...m, [layer.id]: geojson }));
 
-          // Auto-center on ADM0 when loaded
+          // Auto-center on ADM0
           if (layer.admin_level === "ADM0" && mapRef.current) {
-            const gLayer = L.geoJSON(geojson);
-            mapRef.current.fitBounds(gLayer.getBounds(), { maxZoom: 6 });
+            const bounds = L.geoJSON(geojson).getBounds();
+            mapRef.current.fitBounds(bounds, { maxZoom: 6 });
           }
         } catch (err) {
-          console.error(err);
+          console.error("Layer fetch error:", err);
         } finally {
           setLoadingIds((s) => {
             const copy = new Set(s);
@@ -200,9 +199,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       {/* --- Version Layers Table --- */}
       {layers.length > 0 && (
         <div className="border rounded-lg p-4 shadow-sm mb-4">
-          <h3 className="text-base font-semibold mb-2 text-[color:var(--gsc-blue)]">
-            Version Layers
-          </h3>
+          <h3 className="text-base font-semibold mb-2 text-[color:var(--gsc-blue)]">Version Layers</h3>
           <table className="w-full text-sm border">
             <thead className="bg-gray-100">
               <tr>
@@ -210,7 +207,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 <th className="border px-2 py-1 text-left">Level</th>
                 <th className="border px-2 py-1 text-left">Format</th>
                 <th className="border px-2 py-1 text-left">CRS</th>
-                <th className="border px-2 py-1 text-left">Visible</th>
+                <th className="border px-2 py-1 text-center">Visible</th>
                 <th className="border px-2 py-1 text-left">Actions</th>
               </tr>
             </thead>
@@ -230,16 +227,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   </td>
                   <td className="border px-2 py-1">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => setEditLayer(l)}
-                        className="text-blue-700 hover:underline flex items-center gap-1"
-                      >
+                      <button onClick={() => setEditLayer(l)} className="text-blue-700 hover:underline">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => setDeleteLayer(l)}
-                        className="text-red-700 hover:underline flex items-center gap-1"
-                      >
+                      <button onClick={() => setDeleteLayer(l)} className="text-red-700 hover:underline">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -260,7 +251,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[11.0, 122.0]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenCreated={(map) => (mapRef.current = map)}
+          whenReady={(event) => {
+            mapRef.current = event.target;
+          }}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org">OSM</a>'
@@ -278,10 +271,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
                       l.admin_level === "ADM0"
                         ? "#000"
                         : l.admin_level === "ADM1"
-                        ? "#630710"
+                        ? "#b30000"
+                        : l.admin_level === "ADM2"
+                        ? "#006400"
+                        : l.admin_level === "ADM3"
+                        ? "#1e90ff"
                         : "#999",
                     weight: 1,
-                    fillOpacity: 0.2,
+                    fillOpacity: 0.15,
                   }}
                 />
               )
