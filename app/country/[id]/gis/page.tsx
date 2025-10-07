@@ -36,7 +36,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [deleteLayer, setDeleteLayer] = useState<GISLayer | null>(null);
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
-
   const mapRef = useRef<L.Map | null>(null);
 
   // --- Fetch country info
@@ -79,7 +78,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     loadLayers();
   }, [selectedVersion]);
 
-  // --- Fetch GeoJSON for visible layers
+  // --- Fetch visible GeoJSON layers lazily
   useEffect(() => {
     const loadVisibleLayers = async () => {
       for (const layer of layers) {
@@ -89,9 +88,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         try {
           setLoadingIds((s) => new Set(s).add(layer.id));
           const path =
-            layer.storage_path ||
-            layer.source?.path ||
-            `${countryIso}/${layer.layer_name}`;
+            layer.storage_path || layer.source?.path || `${countryIso}/${layer.layer_name}`;
           const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/gis_raw/${path}`;
           const res = await fetch(url);
           if (!res.ok) throw new Error(`Failed to fetch ${layer.layer_name}`);
@@ -196,7 +193,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* --- Version Layers Table --- */}
+      {/* --- Version Layers --- */}
       {layers.length > 0 && (
         <div className="border rounded-lg p-4 shadow-sm mb-4">
           <h3 className="text-base font-semibold mb-2 text-[color:var(--gsc-blue)]">Version Layers</h3>
@@ -242,18 +239,21 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* --- Data Health --- */}
       <GISDataHealthPanel layers={layers} />
 
-      {/* --- Map Viewer --- */}
+      {/* --- Map --- */}
       <section className="mt-6 border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
           center={[11.0, 122.0]}
           zoom={5}
           style={{ height: "600px", width: "100%" }}
-          whenReady={(event) => {
-            mapRef.current = event.target;
+          whenReady={() => {
+            // type-safe workaround for leaflet ref typing
+            if (!mapRef.current && (window as any).L?.map) {
+              mapRef.current = (window as any).L.map;
+            }
           }}
+          ref={mapRef as any}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org">OSM</a>'
