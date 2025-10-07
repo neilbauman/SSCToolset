@@ -1,22 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-import DatasetHealth from "@/components/country/DatasetHealth";
-import UploadPopulationModal from "@/components/country/UploadPopulationModal";
-import UploadGISModal from "@/components/country/UploadGISModal";
-import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
-import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-
-import { Database, Layers, Upload, FileDown, MoreVertical } from "lucide-react";
+import { MapPinned, Layers, Users, Globe2, Edit3 } from "lucide-react";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
   iso_code: string;
   name: string;
+  population?: number | null;
+  area_km2?: number | null;
   adm0_label?: string;
   adm1_label?: string;
   adm2_label?: string;
@@ -25,276 +20,191 @@ type Country = {
   adm5_label?: string;
 };
 
-type DatasetVersion = {
-  id: string;
-  country_iso: string;
-  title: string | null;
-  year: number | null;
-  dataset_date: string | null;
-  source: string | null;
-  is_active: boolean | null;
-  created_at: string;
+type DatasetSummary = {
+  population_versions: number;
+  gis_versions: number;
+  last_update?: string | null;
 };
 
 export default function CountryPage({ params }: { params: CountryParams }) {
-  const { id: countryIso } = params;
-
+  const { id } = params;
   const [country, setCountry] = useState<Country | null>(null);
-  const [versions, setVersions] = useState<DatasetVersion[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<DatasetVersion | null>(null);
+  const [summary, setSummary] = useState<DatasetSummary | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [openUploadPop, setOpenUploadPop] = useState(false);
-  const [openUploadGIS, setOpenUploadGIS] = useState(false);
-  const [openEditVersion, setOpenEditVersion] = useState<DatasetVersion | null>(null);
-  const [openDeleteVersion, setOpenDeleteVersion] = useState<DatasetVersion | null>(null);
-
-  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // Close dropdown when clicking outside
+  // Fetch country + summary
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuFor(null);
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const { data: ctry } = await supabase
+          .from("countries")
+          .select("*")
+          .eq("iso_code", id)
+          .single();
+
+        const { data: popVers } = await supabase
+          .from("population_dataset_versions")
+          .select("id, created_at")
+          .eq("country_iso", id);
+
+        const { data: gisVers } = await supabase
+          .from("gis_dataset_versions")
+          .select("id, created_at")
+          .eq("country_iso", id);
+
+        const latest = [...(popVers ?? []), ...(gisVers ?? [])]
+          .map((v) => v.created_at)
+          .sort()
+          .pop();
+
+        setCountry(ctry as Country);
+        setSummary({
+          population_versions: popVers?.length ?? 0,
+          gis_versions: gisVers?.length ?? 0,
+          last_update: latest ?? null,
+        });
+      } catch (e) {
+        console.error("Failed to fetch country page data:", e);
+      } finally {
+        setLoading(false);
       }
     };
-    window.addEventListener("mousedown", handleClickOutside);
-    return () => window.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Fetch country info
-  useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase
-        .from("countries")
-        .select("*")
-        .eq("iso_code", countryIso)
-        .single();
-      if (data) setCountry(data as Country);
-    };
-    fetchCountry();
-  }, [countryIso]);
-
-  // Fetch dataset versions
-  const fetchVersions = async () => {
-    const { data, error } = await supabase
-      .from("population_dataset_versions")
-      .select("*")
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching dataset versions:", error);
-      return;
-    }
-
-    const list = (data ?? []) as DatasetVersion[];
-    setVersions(list);
-    const active = list.find((v) => v.is_active);
-    setSelectedVersion(active || list[0] || null);
-  };
-
-  useEffect(() => {
-    fetchVersions();
-  }, [countryIso]);
+    fetchData();
+  }, [id]);
 
   const headerProps = {
-    title: `${country?.name ?? countryIso} — Configuration`,
+    title: `${country?.name ?? id}`,
     group: "country-config" as const,
-    description: "Manage datasets, GIS layers, and population records for this country.",
+    description: "Country configuration overview and data management dashboard.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso },
+          { label: country?.name ?? id },
         ]}
       />
     ),
   };
 
-  const handleMakeActive = async (versionId: string) => {
-    await supabase.from("population_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("population_dataset_versions").update({ is_active: true }).eq("id", versionId);
-    await fetchVersions();
-  };
-
-  const handleDeleteVersion = async (versionId: string) => {
-    await supabase.from("population_dataset_versions").delete().eq("id", versionId);
-    setOpenDeleteVersion(null);
-    await fetchVersions();
-  };
-
-  const ActionsMenu = ({ v }: { v: DatasetVersion }) => {
-    const isActive = !!v.is_active;
-    const isSelected = selectedVersion?.id === v.id;
-
+  if (loading)
     return (
-      <div className="relative" ref={menuRef}>
-        <button
-          className="text-blue-700 hover:underline flex items-center gap-1"
-          onClick={() => setOpenMenuFor(openMenuFor === v.id ? null : v.id)}
-        >
-          Actions <MoreVertical className="w-4 h-4" />
-        </button>
-
-        {openMenuFor === v.id && (
-          <div className="absolute right-0 mt-2 w-40 rounded border bg-white shadow z-10">
-            {!isSelected && (
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                onClick={() => {
-                  setSelectedVersion(v);
-                  setOpenMenuFor(null);
-                }}
-              >
-                Select
-              </button>
-            )}
-            {!isActive && (
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                onClick={async () => {
-                  await handleMakeActive(v.id);
-                  setOpenMenuFor(null);
-                }}
-              >
-                Make Active
-              </button>
-            )}
-            <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-              onClick={() => {
-                setOpenEditVersion(v);
-                setOpenMenuFor(null);
-              }}
-            >
-              Edit
-            </button>
-            <button
-              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-              onClick={() => {
-                setOpenDeleteVersion(v);
-                setOpenMenuFor(null);
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        )}
-      </div>
+      <SidebarLayout headerProps={headerProps}>
+        <p className="italic text-gray-500">Loading country details…</p>
+      </SidebarLayout>
     );
-  };
+
+  if (!country)
+    return (
+      <SidebarLayout headerProps={headerProps}>
+        <p className="italic text-red-600">Country not found.</p>
+      </SidebarLayout>
+    );
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Dataset Versions --- */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setOpenUploadPop(true)}
-              className="flex items-center text-sm bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded hover:opacity-90"
-            >
-              <Upload className="w-4 h-4 mr-1" /> Upload Population
-            </button>
-            <button
-              onClick={() => setOpenUploadGIS(true)}
-              className="flex items-center text-sm bg-blue-600 text-white px-3 py-1 rounded hover:opacity-90"
-            >
-              <Layers className="w-4 h-4 mr-1" /> Add GIS Layer
-            </button>
+      {/* --- Summary Cards --- */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="border rounded-lg p-4 shadow-sm flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-500">Population Datasets</h3>
+            <p className="text-xl font-semibold">{summary?.population_versions ?? 0}</p>
           </div>
+          <Users className="w-6 h-6 text-[color:var(--gsc-blue)]" />
         </div>
 
-        {versions.length ? (
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border px-2 py-1 text-left">Title</th>
-                <th className="border px-2 py-1 text-left">Year</th>
-                <th className="border px-2 py-1 text-left">Date</th>
-                <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Status</th>
-                <th className="border px-2 py-1 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) => {
-                const isActive = !!v.is_active;
-                const isSelected = selectedVersion?.id === v.id;
-                return (
-                  <tr key={v.id} className={`hover:bg-gray-50 ${isSelected ? "bg-blue-50" : ""}`}>
-                    <td className="border px-2 py-1">{v.title || "—"}</td>
-                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                    <td className="border px-2 py-1">{v.dataset_date || "—"}</td>
-                    <td className="border px-2 py-1">{v.source || "—"}</td>
-                    <td className="border px-2 py-1">
-                      {isActive ? (
-                        <span className="inline-block text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-block text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">—</span>
-                      )}
-                    </td>
-                    <td className="border px-2 py-1">
-                      <ActionsMenu v={v} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <p className="italic text-gray-500">No dataset versions found.</p>
-        )}
+        <div className="border rounded-lg p-4 shadow-sm flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-500">GIS Versions</h3>
+            <p className="text-xl font-semibold">{summary?.gis_versions ?? 0}</p>
+          </div>
+          <Layers className="w-6 h-6 text-green-700" />
+        </div>
+
+        <div className="border rounded-lg p-4 shadow-sm flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-500">Last Update</h3>
+            <p className="text-lg font-semibold">
+              {summary?.last_update
+                ? new Date(summary.last_update).toLocaleDateString()
+                : "—"}
+            </p>
+          </div>
+          <Globe2 className="w-6 h-6 text-[color:var(--gsc-red)]" />
+        </div>
       </div>
 
-      {/* --- Dataset health panel --- */}
-      <DatasetHealth totalUnits={versions.length} />
+      {/* --- Country Metadata --- */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6">
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <MapPinned className="w-5 h-5 text-[color:var(--gsc-blue)]" /> Administrative Labels
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+          <p>
+            <span className="font-medium">ADM0:</span> {country.adm0_label ?? "—"}
+          </p>
+          <p>
+            <span className="font-medium">ADM1:</span> {country.adm1_label ?? "—"}
+          </p>
+          <p>
+            <span className="font-medium">ADM2:</span> {country.adm2_label ?? "—"}
+          </p>
+          <p>
+            <span className="font-medium">ADM3:</span> {country.adm3_label ?? "—"}
+          </p>
+          <p>
+            <span className="font-medium">ADM4:</span> {country.adm4_label ?? "—"}
+          </p>
+          <p>
+            <span className="font-medium">ADM5:</span> {country.adm5_label ?? "—"}
+          </p>
+        </div>
+      </div>
 
-      {/* --- Modals --- */}
-      <UploadPopulationModal
-        open={openUploadPop}
-        onClose={() => setOpenUploadPop(false)}
-        countryIso={countryIso}
-        onUploaded={fetchVersions}
-      />
+      {/* --- Navigation to Configuration Sections --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <a
+          href={`/country/${id}/population`}
+          className="block border rounded-lg p-4 shadow-sm hover:shadow-md transition bg-white"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Users className="w-5 h-5 text-[color:var(--gsc-blue)]" />
+            <h3 className="font-semibold text-[color:var(--gsc-blue)]">Population</h3>
+          </div>
+          <p className="text-sm text-gray-600">
+            Manage population datasets and review uploaded population data per administrative
+            level.
+          </p>
+        </a>
 
-      <UploadGISModal
-        open={openUploadGIS}
-        onClose={() => setOpenUploadGIS(false)}
-        countryIso={countryIso}
-        datasetVersionId={selectedVersion?.id || ""}
-        onUploaded={() => window.location.reload()}
-      />
+        <a
+          href={`/country/${id}/gis`}
+          className="block border rounded-lg p-4 shadow-sm hover:shadow-md transition bg-white"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="w-5 h-5 text-green-700" />
+            <h3 className="font-semibold text-green-700">GIS Layers</h3>
+          </div>
+          <p className="text-sm text-gray-600">
+            Upload and manage administrative boundary layers. Visualize and validate GeoJSON or
+            shapefile data for this country.
+          </p>
+        </a>
 
-      {openEditVersion && (
-        <EditPopulationVersionModal
-          open={!!openEditVersion}
-          onClose={() => setOpenEditVersion(null)}
-          version={openEditVersion}
-          onSave={async () => {
-            await fetchVersions();
-            setOpenEditVersion(null);
-          }}
-        />
-      )}
-
-      {openDeleteVersion && (
-        <ConfirmDeleteModal
-          open={!!openDeleteVersion}
-          message={`This will permanently remove "${openDeleteVersion.title ?? ""}" and related data.`}
-          onClose={() => setOpenDeleteVersion(null)}
-          onConfirm={async () => {
-            await handleDeleteVersion(openDeleteVersion.id);
-          }}
-        />
-      )}
+        <a
+          href={`/country/${id}/framework`}
+          className="block border rounded-lg p-4 shadow-sm hover:shadow-md transition bg-white"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Edit3 className="w-5 h-5 text-[color:var(--gsc-red)]" />
+            <h3 className="font-semibold text-[color:var(--gsc-red)]">Framework</h3>
+          </div>
+          <p className="text-sm text-gray-600">
+            Define severity classification frameworks, categories, and indicators for this country.
+          </p>
+        </a>
+      </div>
     </SidebarLayout>
   );
 }
