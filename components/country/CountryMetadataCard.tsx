@@ -2,80 +2,102 @@
 
 import { Pencil } from "lucide-react";
 
-type CountryMetadataCardProps = {
+interface CountryMetadataCardProps {
   country: any;
   onEdit: () => void;
-};
+}
 
-export default function CountryMetadataCard({ country, onEdit }: CountryMetadataCardProps) {
+/**
+ * Displays basic metadata for a country, including name, ISO, and admin labels.
+ * Used on the Country Configuration landing page.
+ */
+export default function CountryMetadataCard({
+  country,
+  onEdit,
+}: CountryMetadataCardProps) {
   if (!country) {
     return (
-      <div className="border rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-        <p className="italic text-gray-400">Loading metadata...</p>
+      <div className="border rounded-lg p-4 shadow-sm bg-gray-50">
+        <h3 className="text-lg font-semibold mb-2 text-gray-800">
+          Country Metadata
+        </h3>
+        <p className="text-sm text-gray-500 italic">Loading metadata...</p>
       </div>
     );
   }
 
+  const admLabels = [
+    { key: "adm0_label", label: "ADM0", value: country.adm0_label },
+    { key: "adm1_label", label: "ADM1", value: country.adm1_label },
+    { key: "adm2_label", label: "ADM2", value: country.adm2_label },
+    { key: "adm3_label", label: "ADM3", value: country.adm3_label },
+    { key: "adm4_label", label: "ADM4", value: country.adm4_label },
+    { key: "adm5_label", label: "ADM5", value: country.adm5_label },
+  ];
+
   return (
-    <div className="border rounded-lg p-4 shadow-sm flex flex-col justify-between">
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Country Metadata</h2>
-
-        {/* Core metadata */}
-        <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mb-2">
-          Core Metadata
+    <div className="border rounded-lg p-4 shadow-sm bg-white">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-lg font-semibold text-gray-800">
+          Country Metadata
         </h3>
-        <div className="pl-2 text-sm space-y-1">
-          <p><strong>ISO:</strong> {country.iso_code}</p>
-          <p><strong>Name:</strong> {country.name}</p>
-          <p><strong>ADM0 Label:</strong> {country.adm0_label}</p>
-          <p><strong>ADM1 Label:</strong> {country.adm1_label}</p>
-          <p><strong>ADM2 Label:</strong> {country.adm2_label}</p>
-          <p><strong>ADM3 Label:</strong> {country.adm3_label}</p>
-          <p><strong>ADM4 Label:</strong> {country.adm4_label}</p>
-          <p><strong>ADM5 Label:</strong> {country.adm5_label}</p>
-        </div>
-
-        {/* Extra metadata */}
-        <h3 className="text-base font-semibold text-[color:var(--gsc-red)] mt-4 mb-2">
-          Extra Metadata
-        </h3>
-        <div className="pl-2 text-sm space-y-1">
-          {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 ? (
-            Object.entries(country.extra_metadata).map(([k, v]) => {
-              const entry = v as { label: string; value: string; url?: string };
-              return (
-                <p key={k}>
-                  <strong>{entry.label}:</strong>{" "}
-                  {entry.url ? (
-                    <a
-                      href={entry.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-700 hover:underline"
-                    >
-                      {entry.value}
-                    </a>
-                  ) : (
-                    <span>{entry.value}</span>
-                  )}
-                </p>
-              );
-            })
-          ) : (
-            <p className="italic text-gray-400">None</p>
-          )}
-        </div>
+        <button
+          onClick={onEdit}
+          className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+        >
+          <Pencil className="w-4 h-4" /> Edit
+        </button>
       </div>
 
-      {/* Edit button */}
-      <button
-        onClick={onEdit}
-        className="mt-4 px-3 py-1.5 text-sm border rounded flex items-center gap-1 hover:bg-gray-50"
-      >
-        <Pencil className="w-4 h-4" /> Edit Metadata
-      </button>
+      {/* Basic Info */}
+      <div className="text-sm text-gray-700 space-y-1 mb-3">
+        <p>
+          <strong>Name:</strong> {country.name}
+        </p>
+        <p>
+          <strong>ISO Code:</strong> {country.iso_code}
+        </p>
+      </div>
+
+      {/* Administrative Labels */}
+      <div>
+        <h4 className="text-sm font-semibold mb-1 text-gray-700">
+          Administrative Labels
+        </h4>
+        <ul className="text-sm text-gray-600 grid grid-cols-2 gap-y-1">
+          {admLabels.map((l) => (
+            <li key={l.key}>
+              <strong>{l.label}:</strong> {l.value || "—"}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Dataset Sources */}
+      {country.dataset_sources && country.dataset_sources.length > 0 && (
+        <div className="mt-3">
+          <h4 className="text-sm font-semibold mb-1 text-gray-700">
+            Dataset Sources
+          </h4>
+          <ul className="list-disc list-inside text-sm text-gray-600">
+            {country.dataset_sources.map((src: string, i: number) => (
+              <li key={i}>{src}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Extra Metadata */}
+      {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 && (
+        <div className="mt-3">
+          <h4 className="text-sm font-semibold mb-1 text-gray-700">
+            Extra Metadata
+          </h4>
+          <pre className="text-xs bg-gray-50 border rounded p-2 overflow-x-auto">
+            {JSON.stringify(country.extra_metadata, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
