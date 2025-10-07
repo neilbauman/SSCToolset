@@ -27,9 +27,7 @@ export default function UploadAdminUnitsModal({
   const [notes, setNotes] = useState("");
 
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
@@ -38,7 +36,7 @@ export default function UploadAdminUnitsModal({
     if (e.target.files?.length) setFile(e.target.files[0]);
   };
 
-  // --- CSV Parsing ---
+  // --- Parse CSV file ---
   const parseCSV = async (): Promise<any[]> => {
     if (!file) throw new Error("No file selected");
 
@@ -52,11 +50,11 @@ export default function UploadAdminUnitsModal({
     });
   };
 
-  // --- Normalize header names (case + underscores + spaces) ---
+  // --- Normalize column names (case-insensitive, remove underscores/spaces) ---
   const normalizeKey = (key: string): string =>
     key.trim().toLowerCase().replace(/[_\s]+/g, "");
 
-  // --- Extract wide-format data into hierarchical rows ---
+  // --- Convert wide format (Adm1 Name, Adm1 Pcode, etc.) into rows ---
   const toAdminRows = (row: any) => {
     const records: any[] = [];
     const levels = [1, 2, 3, 4, 5];
@@ -80,7 +78,7 @@ export default function UploadAdminUnitsModal({
           pcode: String(pcode).trim(),
           level: `ADM${lvl}`,
           parent_pcode: parentPcode,
-          dataset_version_id: null, // temporarily null until version created
+          dataset_version_id: null, // placeholder until version created
           metadata: {},
         });
         parentPcode = String(pcode).trim();
@@ -100,10 +98,11 @@ export default function UploadAdminUnitsModal({
       setProgress(0);
       setError(null);
 
+      // Parse rows
       const rows = await parseCSV();
       if (!rows.length) throw new Error("CSV file is empty.");
 
-      // --- Create version record ---
+      // Create version entry
       const { data: version, error: versionError } = await supabase
         .from("admin_dataset_versions")
         .insert({
@@ -121,31 +120,32 @@ export default function UploadAdminUnitsModal({
         .select("*")
         .single();
 
-      if (versionError || !version)
-        throw new Error("Failed to create dataset version");
-
+      if (versionError || !version) throw new Error("Failed to create dataset version");
       const datasetVersionId = version.id;
 
-      // --- Flatten all admin records ---
+      // Flatten + deduplicate
       const flattened = rows.flatMap(toAdminRows);
-      if (!flattened.length)
-        throw new Error("No valid admin units found in CSV.");
+      if (!flattened.length) throw new Error("No valid admin units found in CSV.");
 
-      const total = flattened.length;
+      // Deduplicate by pcode
+      const unique = new Map();
+      for (const rec of flattened) unique.set(rec.pcode, rec);
+      const deduped = Array.from(unique.values());
+
+      const total = deduped.length;
       const chunkSize = 5000;
       let uploaded = 0;
 
+      // Upload in chunks
       for (let i = 0; i < total; i += chunkSize) {
-        const chunk = flattened.slice(i, i + chunkSize).map((r) => ({
+        const chunk = deduped.slice(i, i + chunkSize).map((r) => ({
           ...r,
           dataset_version_id: datasetVersionId,
         }));
 
-        const { error: insertError } = await supabase
-          .from("admin_units")
-          .insert(chunk);
-
+        const { error: insertError } = await supabase.from("admin_units").insert(chunk);
         if (insertError) throw insertError;
+
         uploaded += chunk.length;
         setProgress(Math.round((uploaded / total) * 100));
       }
