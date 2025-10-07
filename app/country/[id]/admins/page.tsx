@@ -5,7 +5,18 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-import { Layers, Database, Upload, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Layers,
+  Database,
+  Upload,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  Trash2,
+  CheckCircle2,
+  Download,
+} from "lucide-react";
+
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
@@ -50,88 +61,83 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
+  const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
-  // Fetch country metadata
+  // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
+      const { data } = await supabase
+        .from("countries")
+        .select("*")
+        .eq("iso_code", countryIso)
+        .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch versions
+  // --- Fetch Versions ---
+  const loadVersions = async () => {
+    const { data, error } = await supabase
+      .from("admin_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching admin versions:", error);
+      return;
+    }
+
+    const list = data ?? [];
+    setVersions(list);
+
+    const active = list.find((v) => v.is_active);
+    const initial = active || list[0] || null;
+    setSelectedVersion(initial);
+  };
+
   useEffect(() => {
-    const fetchVersions = async () => {
-      const { data, error } = await supabase
-        .from("admin_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching admin versions:", error);
-        return;
-      }
-
-      const list = data ?? [];
-      setVersions(list);
-
-      const active = list.find((v) => v.is_active);
-      const initial = active || list[0] || null;
-      setSelectedVersion(initial);
-    };
-    fetchVersions();
+    loadVersions();
   }, [countryIso]);
 
-  // Fetch admin units for selected version
+  // --- Fetch Admin Units ---
   useEffect(() => {
     const fetchUnits = async () => {
       if (!selectedVersion) {
         setUnits([]);
         return;
       }
-
       const { data, error } = await supabase
         .from("admin_units")
         .select("id,pcode,name,level,parent_pcode")
         .eq("dataset_version_id", selectedVersion.id)
         .order("pcode", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching admin units:", error);
-        return;
-      }
-
-      setUnits(data ?? []);
+      if (!error) setUnits(data ?? []);
     };
-
     fetchUnits();
   }, [selectedVersion]);
 
-  // Build tree structure
+  // --- Tree Build ---
   const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     const map: Record<string, TreeNode> = {};
     const roots: TreeNode[] = [];
     for (const row of rows) map[row.pcode] = { ...row, children: [] };
     for (const row of rows) {
-      if (row.parent_pcode && map[row.parent_pcode]) {
+      if (row.parent_pcode && map[row.parent_pcode])
         map[row.parent_pcode].children.push(map[row.pcode]);
-      } else roots.push(map[row.pcode]);
+      else roots.push(map[row.pcode]);
     }
     return roots;
   };
-
   const treeData = buildTree(units);
 
-  // Toggle expand/collapse in tree view
+  // --- Tree Toggle ---
   const toggleExpand = (pcode: string) => {
     const next = new Set(expanded);
     next.has(pcode) ? next.delete(pcode) : next.add(pcode);
     setExpanded(next);
   };
-
-  // Recursive render for tree nodes
   const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
     <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
       <div className="flex items-center gap-1">
@@ -149,45 +155,64 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <span className="font-medium">{node.name}</span>
         <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
       </div>
-
       {expanded.has(node.pcode) &&
         node.children.map((child) => renderTreeNode(child, depth + 1))}
     </div>
   );
 
-  // Delete dataset version (and related data)
+  // --- Delete Version ---
   const handleDeleteVersion = async (versionId: string) => {
     try {
       const { data: units } = await supabase
         .from("admin_units")
         .select("id")
         .eq("dataset_version_id", versionId);
-
       const unitIds = (units ?? []).map((u) => u.id);
-
       if (unitIds.length) {
         await supabase.from("admin_units").delete().in("id", unitIds);
       }
-
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
       setOpenDelete(null);
-
-      const { data: refreshed } = await supabase
-        .from("admin_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-
-      setVersions(refreshed ?? []);
+      await loadVersions();
     } catch (err) {
       console.error("Error deleting admin dataset version:", err);
     }
   };
 
+  // --- Activate Version ---
+  const handleActivateVersion = async (version: AdminVersion) => {
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", version.id);
+    await loadVersions();
+  };
+
+  // --- Save Edited Version ---
+  const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
+    if (!editingVersion) return;
+    await supabase
+      .from("admin_dataset_versions")
+      .update(updated)
+      .eq("id", editingVersion.id);
+    setEditingVersion(null);
+    await loadVersions();
+  };
+
+  // --- Template Download URL ---
+  const templateUrl =
+    "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
+
+  // --- Render ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description: "Manage hierarchical administrative units and dataset versions for this country.",
+    description:
+      "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -204,7 +229,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions Section */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -212,6 +237,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             Dataset Versions
           </h2>
           <div className="flex gap-2">
+            <a
+              href={templateUrl}
+              download
+              className="flex items-center text-sm text-blue-700 border px-3 py-1 rounded hover:bg-blue-50"
+            >
+              <Download className="w-4 h-4 mr-1" /> Template
+            </a>
             <button
               onClick={() => setOpenUpload(true)}
               className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
@@ -222,14 +254,15 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
 
         {versions.length ? (
-          <table className="w-full text-sm border">
+          <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-2 py-1 text-left">Title</th>
-                <th className="border px-2 py-1 text-left">Year</th>
-                <th className="border px-2 py-1 text-left">Date</th>
-                <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th className="px-2 py-1 text-left">Year</th>
+                <th className="px-2 py-1 text-left">Date</th>
+                <th className="px-2 py-1 text-left">Source</th>
+                <th className="px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -237,24 +270,52 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 <tr
                   key={v.id}
                   className={`hover:bg-gray-50 ${
-                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
+                    v.is_active ? "bg-green-50" : ""
                   }`}
-                  onClick={() => setSelectedVersion(v)}
                 >
-                  <td className="border px-2 py-1">{v.title}</td>
+                  <td
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-semibold" : ""
+                    }`}
+                    onClick={() => setSelectedVersion(v)}
+                  >
+                    {v.title}
+                  </td>
                   <td className="border px-2 py-1">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
                   <td className="border px-2 py-1">{v.source ?? "—"}</td>
                   <td className="border px-2 py-1">
                     {v.is_active ? (
-                      <span className="inline-block text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">
-                        Active
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
                       </span>
                     ) : (
-                      <span className="inline-block text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-                        —
-                      </span>
+                      "—"
                     )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
+                        >
+                          Set Active
+                        </button>
+                      )}
+                      <button
+                        className="text-gray-600 hover:underline text-xs"
+                        onClick={() => setEditingVersion(v)}
+                      >
+                        <Edit3 className="inline w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="inline w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -325,23 +386,17 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Upload Modal */}
       {openUpload && (
         <UploadAdminUnitsModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={async () => {
-            const { data } = await supabase
-              .from("admin_dataset_versions")
-              .select("*")
-              .eq("country_iso", countryIso)
-              .order("created_at", { ascending: false });
-            setVersions(data ?? []);
-          }}
+          onUploaded={loadVersions}
         />
       )}
 
+      {/* Delete Confirmation */}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -349,6 +404,61 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
+      )}
+
+      {/* Edit Version Modal */}
+      {editingVersion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
+            <label className="block mb-2 text-sm">
+              Title
+              <input
+                type="text"
+                defaultValue={editingVersion.title}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, title: e.target.value })
+                }
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <label className="block mb-2 text-sm">
+              Source
+              <input
+                type="text"
+                defaultValue={editingVersion.source || ""}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, source: e.target.value })
+                }
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <label className="block mb-2 text-sm">
+              Notes
+              <textarea
+                defaultValue={editingVersion.notes || ""}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, notes: e.target.value })
+                }
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setEditingVersion(null)}
+                className="px-3 py-1 text-sm border rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveEdit(editingVersion)}
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );
