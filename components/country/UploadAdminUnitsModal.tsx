@@ -26,7 +26,7 @@ export default function UploadAdminUnitsModal({
   const [sourceUrl, setSourceUrl] = useState("");
   const [notes, setNotes] = useState("");
 
-  const [progress, setProgress] = useState<number>(0);
+  const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">(
     "idle"
   );
@@ -38,7 +38,7 @@ export default function UploadAdminUnitsModal({
     if (e.target.files?.length) setFile(e.target.files[0]);
   };
 
-  // ---- CSV Parsing ----
+  // --- CSV Parsing ---
   const parseCSV = async (): Promise<any[]> => {
     if (!file) throw new Error("No file selected");
 
@@ -52,10 +52,46 @@ export default function UploadAdminUnitsModal({
     });
   };
 
-  // ---- Upload Handler ----
+  // --- Normalize header names (case + underscores + spaces) ---
+  const normalizeKey = (key: string): string =>
+    key.trim().toLowerCase().replace(/[_\s]+/g, "");
+
+  // --- Extract wide-format data into hierarchical rows ---
+  const toAdminRows = (row: any) => {
+    const records: any[] = [];
+    const levels = [1, 2, 3, 4, 5];
+    let parentPcode: string | null = null;
+
+    for (const lvl of levels) {
+      const nameKey = Object.keys(row).find(
+        (k) => normalizeKey(k) === `adm${lvl}name`
+      );
+      const pcodeKey = Object.keys(row).find(
+        (k) => normalizeKey(k) === `adm${lvl}pcode`
+      );
+
+      const name = nameKey ? row[nameKey] : null;
+      const pcode = pcodeKey ? row[pcodeKey] : null;
+
+      if (name && pcode) {
+        records.push({
+          country_iso: countryIso,
+          name: String(name).trim(),
+          pcode: String(pcode).trim(),
+          level: `ADM${lvl}`,
+          parent_pcode: parentPcode,
+          dataset_version_id: null, // temporarily null until version created
+          metadata: {},
+        });
+        parentPcode = String(pcode).trim();
+      }
+    }
+    return records;
+  };
+
   const handleUpload = async () => {
     if (!file || !title || !datasetDate) {
-      setError("Please fill all required fields and choose a file.");
+      setError("Please fill all required fields and select a file.");
       return;
     }
 
@@ -76,8 +112,8 @@ export default function UploadAdminUnitsModal({
           year,
           dataset_date: datasetDate,
           source: JSON.stringify({
-            name: sourceName,
-            url: sourceUrl,
+            name: sourceName || null,
+            url: sourceUrl || null,
           }),
           notes,
           is_active: false,
@@ -90,38 +126,21 @@ export default function UploadAdminUnitsModal({
 
       const datasetVersionId = version.id;
 
-      // --- Transform wide to hierarchical ---
-      const toAdminRows = (row: any) => {
-        const records: any[] = [];
-        const levels = [1, 2, 3, 4, 5];
-        let parentPcode: string | null = null;
-
-        for (const lvl of levels) {
-          const name = row[`Adm${lvl} Name`] || row[`ADM${lvl} Name`];
-          const pcode = row[`Adm${lvl} Pcode`] || row[`ADM${lvl} Pcode`];
-          if (name && pcode) {
-            records.push({
-              country_iso: countryIso,
-              name,
-              pcode,
-              level: `ADM${lvl}`,
-              parent_pcode: parentPcode,
-              dataset_version_id: datasetVersionId,
-              metadata: {},
-            });
-            parentPcode = pcode;
-          }
-        }
-        return records;
-      };
-
+      // --- Flatten all admin records ---
       const flattened = rows.flatMap(toAdminRows);
+      if (!flattened.length)
+        throw new Error("No valid admin units found in CSV.");
+
       const total = flattened.length;
       const chunkSize = 5000;
       let uploaded = 0;
 
       for (let i = 0; i < total; i += chunkSize) {
-        const chunk = flattened.slice(i, i + chunkSize);
+        const chunk = flattened.slice(i, i + chunkSize).map((r) => ({
+          ...r,
+          dataset_version_id: datasetVersionId,
+        }));
+
         const { error: insertError } = await supabase
           .from("admin_units")
           .insert(chunk);
@@ -163,51 +182,43 @@ export default function UploadAdminUnitsModal({
 
         <div className="space-y-3 text-sm">
           <div>
-            <label className="block font-medium mb-1">
-              File (CSV, wide format)
-            </label>
+            <label className="block mb-1 font-medium">Dataset Title *</label>
             <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileChange}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               className="w-full border rounded px-2 py-1"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block mb-1 font-medium">Title *</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full border rounded px-2 py-1"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 font-medium">Year</label>
+              <label className="block mb-1 font-medium">Year (optional)</label>
               <input
                 type="number"
                 value={year ?? ""}
-                onChange={(e) => setYear(parseInt(e.target.value) || null)}
+                onChange={(e) =>
+                  setYear(e.target.value ? parseInt(e.target.value) : null)
+                }
+                className="w-full border rounded px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="block mb-1 font-medium">Dataset Date *</label>
+              <input
+                type="date"
+                value={datasetDate}
+                onChange={(e) => setDatasetDate(e.target.value)}
                 className="w-full border rounded px-2 py-1"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block mb-1 font-medium">Dataset Date *</label>
-            <input
-              type="date"
-              value={datasetDate}
-              onChange={(e) => setDatasetDate(e.target.value)}
-              className="w-full border rounded px-2 py-1"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block mb-1 font-medium">Source Name</label>
+              <label className="block mb-1 font-medium">
+                Source Name (optional)
+              </label>
               <input
                 type="text"
                 value={sourceName}
@@ -216,7 +227,9 @@ export default function UploadAdminUnitsModal({
               />
             </div>
             <div>
-              <label className="block mb-1 font-medium">Source URL</label>
+              <label className="block mb-1 font-medium">
+                Source URL (optional)
+              </label>
               <input
                 type="url"
                 value={sourceUrl}
@@ -233,6 +246,18 @@ export default function UploadAdminUnitsModal({
               onChange={(e) => setNotes(e.target.value)}
               className="w-full border rounded px-2 py-1"
               rows={2}
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">
+              Select CSV File (wide format)
+            </label>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="w-full border rounded px-2 py-1"
             />
           </div>
 
@@ -282,7 +307,7 @@ export default function UploadAdminUnitsModal({
               </>
             ) : (
               <>
-                <Upload className="w-4 h-4" /> Upload
+                <Upload className="w-4 h-4" /> Upload CSV
               </>
             )}
           </button>
