@@ -17,7 +17,7 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import ActiveJoinSummaryCard from "@/components/country/ActiveJoinSummaryCard";
 import type { CountryParams } from "@/app/country/types";
 
-// ✅ SSR-safe dynamic Leaflet imports
+// ✅ Dynamically import Leaflet (no SSR)
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -26,6 +26,13 @@ const TileLayer = dynamic(
   () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
 );
+
+// ✅ Safe reload function
+function reloadPage() {
+  if (typeof window !== "undefined") {
+    window.location.reload();
+  }
+}
 
 function StatusBadge({
   status,
@@ -45,14 +52,15 @@ function StatusBadge({
   );
 }
 
-export default function CountryConfigLandingPage({ params }: { params: CountryParams }) {
-  const { id } = params;
+export default function CountryConfigLandingPage({ params }: any) {
+  const { id } = params as CountryParams;
 
   const [country, setCountry] = useState<any>(null);
   const [adminCount, setAdminCount] = useState(0);
   const [popCount, setPopCount] = useState(0);
   const [gisCount, setGisCount] = useState(0);
   const [statusData, setStatusData] = useState<any>(null);
+
   const [activeJoin, setActiveJoin] = useState<any>(null);
   const [allJoins, setAllJoins] = useState<any[]>([]);
 
@@ -61,7 +69,7 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
-  // ─── Country Fetch ────────────────────────────────────────────────
+  // ✅ Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data, error } = await supabase
@@ -69,12 +77,13 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
         .select("*")
         .eq("iso_code", id)
         .single();
-      if (!error && data) setCountry(data);
+      if (error) console.error("Country fetch failed:", error);
+      if (data) setCountry(data);
     };
     fetchCountry();
   }, [id]);
 
-  // ─── Dataset Status Fetch ────────────────────────────────────────
+  // ✅ Fetch dataset counts and statuses
   useEffect(() => {
     const fetchStatuses = async () => {
       const { data: admins } = await supabase
@@ -100,15 +109,15 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
     fetchStatuses();
   }, [id]);
 
-  // ─── Join Fetch ──────────────────────────────────────────────────
+  // ✅ Fetch joins
   useEffect(() => {
     const fetchJoins = async () => {
       const { data, error } = await supabase
         .from("dataset_joins")
         .select("*")
         .eq("country_iso", id);
-
-      if (!error && data) {
+      if (error) console.error("Join fetch failed:", error);
+      if (data) {
         setAllJoins(data);
         const active = data.find((j: any) => j.is_active);
         setActiveJoin(active || null);
@@ -117,10 +126,11 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
     fetchJoins();
   }, [id]);
 
-  // ─── Dataset Status Logic ────────────────────────────────────────
+  // ✅ Compute status safely
   const computeStatus = (key: string) => {
+    if (!statusData) return "empty";
     if (key === "admins") {
-      const admins = statusData?.admins || [];
+      const admins = statusData.admins || [];
       if (admins.length === 0) return "missing";
       const levels = new Set(admins.map((a: any) => a.level));
       const required = ["ADM0", "ADM1", "ADM2"];
@@ -128,7 +138,7 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
       return hasAll ? "uploaded" : "partial";
     }
     if (key === "population") {
-      const pop = statusData?.pop || [];
+      const pop = statusData.pop || [];
       if (pop.length === 0) return "missing";
       const invalid = pop.some(
         (p: any) => !p.pcode || !p.population || p.population <= 0
@@ -136,7 +146,7 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
       return invalid ? "partial" : "uploaded";
     }
     if (key === "gis") {
-      const gis = statusData?.gis || [];
+      const gis = statusData.gis || [];
       if (gis.length === 0) return "missing";
       const invalid = gis.some((g: any) => !g.crs || !g.crs.startsWith("EPSG:"));
       return invalid ? "partial" : "uploaded";
@@ -144,7 +154,6 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
     return "empty";
   };
 
-  // ─── Dataset Card Definitions ────────────────────────────────────
   const datasets = [
     {
       key: "admins",
@@ -189,7 +198,6 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
     },
   ] as const;
 
-  // ─── Header Props ────────────────────────────────────────────────
   const headerProps = {
     title: `${country?.name ?? id} – Country Configuration`,
     group: "country-config" as const,
@@ -205,58 +213,50 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
     ),
   };
 
-  // ─── Render ─────────────────────────────────────────────────────
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Top row: Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
-          <MapContainer
-            center={[12.8797, 121.774]}
-            zoom={5}
-            style={{ height: "400px", width: "100%" }}
-            className="rounded-md z-0"
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; OpenStreetMap contributors"
-            />
-          </MapContainer>
+          {/* ✅ Only render map client-side */}
+          {typeof window !== "undefined" && (
+            <MapContainer
+              center={[12.8797, 121.774]}
+              zoom={5}
+              style={{ height: "400px", width: "100%" }}
+              className="rounded-md z-0"
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org">OSM</a>'
+              />
+            </MapContainer>
+          )}
         </div>
-        <CountryMetadataCard country={country} onEdit={() => setOpenMeta(true)} />
+        <CountryMetadataCard
+          country={country}
+          onEdit={() => setOpenMeta(true)}
+        />
       </div>
 
-      {/* Active Join summary card */}
       <ActiveJoinSummaryCard
         countryIso={id}
         activeJoin={activeJoin}
         statusData={statusData}
       />
 
-      {/* Dataset cards */}
+      {/* Dataset Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mt-6">
         {datasets.map((d) => {
           let activeInfo: string | null = null;
-
           if (activeJoin?.datasets) {
             const found = activeJoin.datasets.find((x: any) => x.type === d.key);
             if (found)
               activeInfo = `${found.title ?? d.key} ${
                 found.year ? `(${found.year})` : ""
               }`;
-          } else {
-            if (d.key === "admins" && activeJoin?.admin_datasets?.[0]) {
-              activeInfo = `${activeJoin.admin_datasets[0].title} (${activeJoin.admin_datasets[0].year})`;
-            }
-            if (d.key === "population" && activeJoin?.population_datasets?.[0]) {
-              activeInfo = `${activeJoin.population_datasets[0].title} (${activeJoin.population_datasets[0].year})`;
-            }
-            if (d.key === "gis" && activeJoin?.gis_datasets?.[0]) {
-              activeInfo = `${activeJoin.gis_datasets[0].title} (${activeJoin.gis_datasets[0].year})`;
-            }
           }
-
           return (
             <div
               key={d.key}
@@ -274,7 +274,6 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
                 <StatusBadge status={d.status} />
               </div>
               <p className="text-sm text-gray-600 mb-2">{d.description}</p>
-
               {d.count > 0 ? (
                 <p className="text-sm text-gray-500 mb-1">📊 Total: {d.count}</p>
               ) : (
@@ -282,12 +281,9 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
                   No data uploaded yet
                 </p>
               )}
-
-              {/* Active join info */}
               <p className="text-xs text-gray-600 mb-3">
                 <strong>Active Join:</strong> {activeInfo || "—"}
               </p>
-
               <div className="flex gap-2">
                 <button className="px-2 py-1 text-sm border rounded">
                   Download Template
@@ -322,22 +318,21 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
         open={openAdminUpload}
         onClose={() => setOpenAdminUpload(false)}
         countryIso={id}
-        onUploaded={() => window.location.reload()}
+        onUploaded={reloadPage}
       />
       <UploadPopulationModal
         open={openPopUpload}
         onClose={() => setOpenPopUpload(false)}
         countryIso={id}
-        onUploaded={() => window.location.reload()}
+        onUploaded={reloadPage}
       />
-      <UploadGISModal
-        open={openGISUpload}
-        onClose={() => setOpenGISUpload(false)}
-        countryIso={id}
-        datasetVersionId=""
-        onUploaded={() => window.location.reload()}
-      />
-
+      {openGISUpload && (
+        <UploadGISModal
+          countryIso={id}
+          onClose={() => setOpenGISUpload(false)}
+          onUploaded={reloadPage}
+        />
+      )}
       {country && (
         <EditMetadataModal
           open={openMeta}
@@ -372,12 +367,6 @@ export default function CountryConfigLandingPage({ params }: { params: CountryPa
             setCountry({
               ...country,
               ...updated,
-              adm0_label: updated.admLabels.adm0,
-              adm1_label: updated.admLabels.adm1,
-              adm2_label: updated.admLabels.adm2,
-              adm3_label: updated.admLabels.adm3,
-              adm4_label: updated.admLabels.adm4,
-              adm5_label: updated.admLabels.adm5,
               dataset_sources: updated.datasetSources,
               extra_metadata: updated.extra ?? {},
             });
