@@ -1,28 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-import { Layers, Database, Upload, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Layers,
+  Database,
+  Upload,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  Trash2,
+  CheckCircle2,
+  Download,
+} from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
+// ---------- Types ----------
+type Country = { iso_code: string; name: string; };
 
 type AdminVersion = {
   id: string;
   country_iso: string | null;
   title: string;
   year: number | null;
-  dataset_date: string | null;
-  source: string | null;
+  dataset_date: string | null; // DATE in DB
+  source: string | null;       // plain text/URL
   is_active: boolean;
   created_at: string;
   notes: string | null;
@@ -32,106 +39,192 @@ type AdminUnit = {
   id: string;
   pcode: string;
   name: string;
-  level: string;
+  level: string; // "ADM1".."ADM5"
   parent_pcode: string | null;
 };
 
 type TreeNode = AdminUnit & { children: TreeNode[] };
 
+// ---------- Helpers ----------
+const isUrl = (s?: string | null) =>
+  !!s && /^https?:\/\/|^www\./i.test(s.trim());
+
+const SOURCE_CELL = ({ value }: { value: string | null }) => {
+  if (!value) return <span>—</span>;
+  const v = value.trim();
+  return isUrl(v) ? (
+    <a href={v.startsWith("http") ? v : `https://${v}`} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+      {v}
+    </a>
+  ) : (
+    <span>{v}</span>
+  );
+};
+
+// Build simple parent/child tree from flat rows
+const buildTree = (rows: AdminUnit[]): TreeNode[] => {
+  const map: Record<string, TreeNode> = {};
+  const roots: TreeNode[] = [];
+  for (const r of rows) map[r.pcode] = { ...r, children: [] };
+  for (const r of rows) {
+    if (r.parent_pcode && map[r.parent_pcode]) {
+      map[r.parent_pcode].children.push(map[r.pcode]);
+    } else {
+      roots.push(map[r.pcode]);
+    }
+  }
+  return roots;
+};
+
+// Generate wide CSV template (ADM1–ADM5)
+const downloadWideTemplate = () => {
+  const header = [
+    "ADM1 Name","ADM1 PCode",
+    "ADM2 Name","ADM2 PCode",
+    "ADM3 Name","ADM3 PCode",
+    "ADM4 Name","ADM4 PCode",
+    "ADM5 Name","ADM5 PCode",
+  ].join(",");
+  const csv = `${header}\n`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "admin_units_template_ADM1-ADM5.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+// ---------- Page ----------
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
 
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
-  const [units, setUnits] = useState<AdminUnit[]>([]);
-  const [viewMode, setViewMode] = useState<"table" | "tree">("table");
 
+  const [units, setUnits] = useState<AdminUnit[]>([]);
+  const [totalUnits, setTotalUnits] = useState<number>(0);
+
+  const [viewMode, setViewMode] = useState<"table" | "tree">("table");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
+  const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
-  // Fetch country metadata
+  // Progress UI for large fetches
+  const [loadingMsg, setLoadingMsg] = useState<string>("");
+  const [progress, setProgress] = useState<number>(0);
+  const isFetchingRef = useRef(false);
+
+  // ----- Fetch country -----
   useEffect(() => {
-    const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
+    (async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("iso_code,name")
+        .eq("iso_code", countryIso)
+        .maybeSingle();
       if (data) setCountry(data as Country);
-    };
-    fetchCountry();
+    })();
   }, [countryIso]);
 
-  // Fetch versions
-  useEffect(() => {
-    const fetchVersions = async () => {
-      const { data, error } = await supabase
-        .from("admin_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
+  // ----- Load versions -----
+  const loadVersions = async () => {
+    const { data, error } = await supabase
+      .from("admin_dataset_versions")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching admin versions:", error);
-        return;
-      }
-
-      const list = data ?? [];
-      setVersions(list);
-
-      const active = list.find((v) => v.is_active);
-      const initial = active || list[0] || null;
-      setSelectedVersion(initial);
-    };
-    fetchVersions();
-  }, [countryIso]);
-
-  // Fetch admin units for selected version
-  useEffect(() => {
-    const fetchUnits = async () => {
-      if (!selectedVersion) {
-        setUnits([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("admin_units")
-        .select("id,pcode,name,level,parent_pcode")
-        .eq("dataset_version_id", selectedVersion.id)
-        .order("pcode", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching admin units:", error);
-        return;
-      }
-
-      setUnits(data ?? []);
-    };
-
-    fetchUnits();
-  }, [selectedVersion]);
-
-  // Build tree structure
-  const buildTree = (rows: AdminUnit[]): TreeNode[] => {
-    const map: Record<string, TreeNode> = {};
-    const roots: TreeNode[] = [];
-    for (const row of rows) map[row.pcode] = { ...row, children: [] };
-    for (const row of rows) {
-      if (row.parent_pcode && map[row.parent_pcode]) {
-        map[row.parent_pcode].children.push(map[row.pcode]);
-      } else roots.push(map[row.pcode]);
+    if (error) {
+      console.error("Error fetching admin versions:", error);
+      return;
     }
-    return roots;
+
+    const list = data ?? [];
+    setVersions(list);
+    const active = list.find((v) => v.is_active);
+    const initial = active || list[0] || null;
+    setSelectedVersion(initial);
   };
 
-  const treeData = buildTree(units);
+  useEffect(() => { loadVersions(); }, [countryIso]);
 
-  // Toggle expand/collapse in tree view
+  // ----- Fetch units (paged, >1000) -----
+  useEffect(() => {
+    const fetchAll = async () => {
+      setUnits([]);
+      setTotalUnits(0);
+      setProgress(0);
+      setLoadingMsg("");
+
+      if (!selectedVersion) return;
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+
+      try {
+        // First: count only (fast HEAD request)
+        const countHead = await supabase
+          .from("admin_units")
+          .select("id", { count: "exact", head: true })
+          .eq("dataset_version_id", selectedVersion.id);
+
+        const total = countHead.count ?? 0;
+        setTotalUnits(total);
+
+        if (total === 0) {
+          setLoadingMsg("");
+          setProgress(100);
+          return;
+        }
+
+        const pageSize = 5000; // tuned for speed
+        const pages = Math.ceil(total / pageSize);
+        setLoadingMsg(`Loading ${total.toLocaleString()} records...`);
+
+        const all: AdminUnit[] = [];
+        for (let i = 0; i < pages; i++) {
+          const from = i * pageSize;
+          const to = Math.min(from + pageSize - 1, total - 1);
+          const { data, error } = await supabase
+            .from("admin_units")
+            .select("id,pcode,name,level,parent_pcode")
+            .eq("dataset_version_id", selectedVersion.id)
+            .order("pcode", { ascending: true })
+            .range(from, to);
+          if (error) throw error;
+          all.push(...(data as AdminUnit[]));
+
+          // progress
+          const pct = Math.round(((i + 1) / pages) * 100);
+          setProgress(pct);
+        }
+
+        setUnits(all);
+        setLoadingMsg("");
+      } catch (err) {
+        console.error("Error fetching units:", err);
+        setLoadingMsg("Failed to load records.");
+      } finally {
+        isFetchingRef.current = false;
+      }
+    };
+
+    fetchAll();
+  }, [selectedVersion]);
+
+  // ----- Tree helpers -----
+  const treeData = useMemo(() => buildTree(units), [units]);
   const toggleExpand = (pcode: string) => {
     const next = new Set(expanded);
     next.has(pcode) ? next.delete(pcode) : next.add(pcode);
     setExpanded(next);
   };
 
-  // Recursive render for tree nodes
   const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
     <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
       <div className="flex items-center gap-1">
@@ -149,41 +242,44 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <span className="font-medium">{node.name}</span>
         <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
       </div>
-
       {expanded.has(node.pcode) &&
-        node.children.map((child) => renderTreeNode(child, depth + 1))}
+        node.children.map((c: TreeNode) => renderTreeNode(c, depth + 1))}
     </div>
   );
 
-  // Delete dataset version (and related data)
+  // ----- Delete version (and units) -----
   const handleDeleteVersion = async (versionId: string) => {
     try {
-      const { data: units } = await supabase
+      const { data: unitIds } = await supabase
         .from("admin_units")
         .select("id")
         .eq("dataset_version_id", versionId);
-
-      const unitIds = (units ?? []).map((u) => u.id);
-
-      if (unitIds.length) {
-        await supabase.from("admin_units").delete().in("id", unitIds);
-      }
-
+      const ids = (unitIds ?? []).map((u) => u.id);
+      if (ids.length) await supabase.from("admin_units").delete().in("id", ids);
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
       setOpenDelete(null);
-
-      const { data: refreshed } = await supabase
-        .from("admin_dataset_versions")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-
-      setVersions(refreshed ?? []);
+      await loadVersions();
     } catch (err) {
-      console.error("Error deleting admin dataset version:", err);
+      console.error("Error deleting version:", err);
     }
   };
 
+  // ----- Activate version -----
+  const handleActivateVersion = async (v: AdminVersion) => {
+    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", v.id);
+    await loadVersions();
+  };
+
+  // ----- Save edited version (inline modal) -----
+  const handleSaveEdit = async (partial: Partial<AdminVersion>) => {
+    if (!editingVersion) return;
+    await supabase.from("admin_dataset_versions").update(partial).eq("id", editingVersion.id);
+    setEditingVersion(null);
+    await loadVersions();
+  };
+
+  // ----- Header props (fix GroupKey typing) -----
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
@@ -200,11 +296,23 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  const totalUnits = units.length;
-
+  // ---------- Render ----------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions Section */}
+      {/* Progress bar (top) */}
+      {loadingMsg && (
+        <div className="mb-3">
+          <div className="h-1.5 w-full bg-gray-200 rounded">
+            <div
+              className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-600 mt-1">{loadingMsg} {progress ? `${progress}%` : ""}</p>
+        </div>
+      )}
+
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -212,6 +320,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             Dataset Versions
           </h2>
           <div className="flex gap-2">
+            <button
+              onClick={downloadWideTemplate}
+              className="flex items-center text-sm text-blue-700 border px-3 py-1 rounded hover:bg-blue-50"
+            >
+              <Download className="w-4 h-4 mr-1" /> Template (ADM1–ADM5)
+            </button>
             <button
               onClick={() => setOpenUpload(true)}
               className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
@@ -222,39 +336,71 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
 
         {versions.length ? (
-          <table className="w-full text-sm border">
+          <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-2 py-1 text-left">Title</th>
-                <th className="border px-2 py-1 text-left">Year</th>
-                <th className="border px-2 py-1 text-left">Date</th>
-                <th className="border px-2 py-1 text-left">Source</th>
-                <th className="border px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th className="px-2 py-1 text-left">Year</th>
+                <th className="px-2 py-1 text-left">Date</th>
+                <th className="px-2 py-1 text-left">Source</th>
+                <th className="px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {versions.map((v) => (
                 <tr
                   key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
-                  }`}
-                  onClick={() => setSelectedVersion(v)}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
                 >
-                  <td className="border px-2 py-1">{v.title}</td>
+                  <td
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-semibold" : ""
+                    }`}
+                    onClick={() => setSelectedVersion(v)}
+                    title="Show units for this version"
+                  >
+                    {v.title}
+                  </td>
                   <td className="border px-2 py-1">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    <SOURCE_CELL value={v.source} />
+                  </td>
                   <td className="border px-2 py-1">
                     {v.is_active ? (
-                      <span className="inline-block text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">
-                        Active
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
                       </span>
                     ) : (
-                      <span className="inline-block text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-                        —
-                      </span>
+                      "—"
                     )}
+                  </td>
+                  <td className="border px-2 py-1">
+                    <div className="flex justify-end gap-3">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
+                        >
+                          Set Active
+                        </button>
+                      )}
+                      <button
+                        className="text-gray-700 hover:underline text-xs flex items-center"
+                        onClick={() => setEditingVersion(v)}
+                        title="Edit version metadata"
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(v)}
+                        title="Delete version & units"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -293,55 +439,56 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       </div>
 
-      {/* Admin Units */}
+      {/* Units */}
       {viewMode === "table" ? (
-        <table className="w-full text-sm border">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border px-2 py-1 text-left">Name</th>
-              <th className="border px-2 py-1 text-left">PCode</th>
-              <th className="border px-2 py-1 text-left">Level</th>
-              <th className="border px-2 py-1 text-left">Parent</th>
-            </tr>
-          </thead>
-          <tbody>
-            {units.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50">
-                <td className="border px-2 py-1">{u.name}</td>
-                <td className="border px-2 py-1">{u.pcode}</td>
-                <td className="border px-2 py-1">{u.level}</td>
-                <td className="border px-2 py-1">{u.parent_pcode ?? "—"}</td>
+        <div className="overflow-x-auto border rounded">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-2 py-1 text-left">Name</th>
+                <th className="px-2 py-1 text-left">PCode</th>
+                <th className="px-2 py-1 text-left">Level</th>
+                <th className="px-2 py-1 text-left">Parent</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {units.map((u) => (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="px-2 py-1">{u.name}</td>
+                  <td className="px-2 py-1">{u.pcode}</td>
+                  <td className="px-2 py-1">{u.level}</td>
+                  <td className="px-2 py-1">{u.parent_pcode ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!loadingMsg && totalUnits > 0 && units.length < totalUnits && (
+            <div className="p-2 text-xs text-gray-500">
+              Showing {units.length.toLocaleString()} of {totalUnits.toLocaleString()}…
+            </div>
+          )}
+        </div>
       ) : (
         <div className="border rounded-lg p-3 bg-white shadow-sm">
           {treeData.length ? (
-            treeData.map((node) => renderTreeNode(node))
+            treeData.map((n) => renderTreeNode(n))
           ) : (
             <p className="italic text-gray-500">No admin units found.</p>
           )}
         </div>
       )}
 
-      {/* Modals */}
+      {/* Upload Modal */}
       {openUpload && (
         <UploadAdminUnitsModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={async () => {
-            const { data } = await supabase
-              .from("admin_dataset_versions")
-              .select("*")
-              .eq("country_iso", countryIso)
-              .order("created_at", { ascending: false });
-            setVersions(data ?? []);
-          }}
+          onUploaded={loadVersions}
         />
       )}
 
+      {/* Delete Confirmation */}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -349,6 +496,72 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
+      )}
+
+      {/* Inline Edit Version Modal (stable) */}
+      {editingVersion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
+            <div className="space-y-2">
+              <label className="block text-sm">
+                Title
+                <input
+                  type="text"
+                  value={editingVersion.title}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, title: e.target.value })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                Year
+                <input
+                  type="number"
+                  value={editingVersion.year ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, year: e.target.value ? Number(e.target.value) : null })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                Dataset Date
+                <input
+                  type="date"
+                  value={editingVersion.dataset_date ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, dataset_date: e.target.value || null })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                Source (name or URL)
+                <input
+                  type="text"
+                  value={editingVersion.source ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value || null })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                Notes
+                <textarea
+                  value={editingVersion.notes ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, notes: e.target.value || null })}
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setEditingVersion(null)} className="px-3 py-1 text-sm border rounded">
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveEdit(editingVersion)}
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );
