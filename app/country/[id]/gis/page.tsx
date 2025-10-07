@@ -116,23 +116,25 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   /* ------------------------------------------------------------------------ */
-  /*                            GeoJSON Fetch Logic                           */
+  /*                          GeoJSON Public Fetch Logic                       */
   /* ------------------------------------------------------------------------ */
   const fetchGeoJSONForLayer = async (l: GISLayer) => {
     try {
       setLoadingIds((s) => new Set(s).add(l.id));
 
-      let bucket = l.source?.bucket ?? "gis_raw";
-      let rawPath = l.source?.path ?? l.storage_path ?? l.layer_name ?? "";
-
-      // Normalize path (remove leading / and duplicate bucket prefix)
+      const bucket = l.source?.bucket ?? "gis_raw";
+      const rawPath = l.source?.path ?? l.storage_path ?? l.layer_name ?? "";
       const normalized = rawPath.replace(/^\/?gis_raw\//, "");
-      console.log("🔍 Fetching GeoJSON", { bucket, rawPath, normalized });
 
-      const { data, error } = await supabase.storage.from(bucket).download(normalized);
-      if (error || !data) throw error ?? new Error("Download failed");
+      console.log("🌐 Fetching public GeoJSON", { bucket, rawPath, normalized });
 
-      const parsed = JSON.parse(await data.text());
+      // Construct the public URL directly (bypasses auth)
+      const publicUrl = `https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/${bucket}/${normalized}`;
+      const res = await fetch(publicUrl);
+
+      if (!res.ok) throw new Error(`Failed to fetch GeoJSON: ${res.status} ${res.statusText}`);
+
+      const parsed = await res.json();
       setGeojsonByLayer((m) => ({ ...m, [l.id]: parsed }));
     } catch (e) {
       console.error("GeoJSON load failed:", e);
@@ -354,7 +356,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
         />
       )}
       {editLayer && (
-        <EditGISLayerModal open={!!editLayer} onClose={() => setEditLayer(null)} layer={editLayer} onSaved={handleAfterSave} />
+        <EditGISLayerModal
+          open={!!editLayer}
+          onClose={() => setEditLayer(null)}
+          layer={editLayer}
+          onSaved={handleAfterSave}
+        />
       )}
       {deleteLayer && (
         <ConfirmDeleteModal
