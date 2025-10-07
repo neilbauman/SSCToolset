@@ -3,18 +3,24 @@
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Layers, Database, Upload, ChevronDown, ChevronRight, Edit3, Trash2, CheckCircle2, Download } from "lucide-react";
+import {
+  Layers,
+  Database,
+  Upload,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  Trash2,
+  CheckCircle2,
+  Download,
+} from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
-
+type Country = { iso_code: string; name: string };
 type AdminVersion = {
   id: string;
   country_iso: string | null;
@@ -26,7 +32,6 @@ type AdminVersion = {
   created_at: string;
   notes: string | null;
 };
-
 type AdminUnit = {
   id: string;
   pcode: string;
@@ -34,7 +39,6 @@ type AdminUnit = {
   level: string;
   parent_pcode: string | null;
 };
-
 type TreeNode = AdminUnit & { children: TreeNode[] };
 
 export default function AdminsPage({ params }: { params: CountryParams }) {
@@ -54,7 +58,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   // --- Fetch Country ---
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).single();
+      const { data } = await supabase
+        .from("countries")
+        .select("*")
+        .eq("iso_code", countryIso)
+        .single();
       if (data) setCountry(data as Country);
     };
     fetchCountry();
@@ -75,7 +83,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
     const list = data ?? [];
     setVersions(list);
-
     const active = list.find((v) => v.is_active);
     const initial = active || list[0] || null;
     setSelectedVersion(initial);
@@ -85,7 +92,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units (client-side only to ensure apikey header) ---
+  // --- Fetch Admin Units (with pagination over 1000-row limit) ---
   useEffect(() => {
     if (!selectedVersion) return;
 
@@ -94,16 +101,24 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         const { supabaseBrowser } = await import("@/lib/supabase/supabaseBrowser");
         const supabase = supabaseBrowser;
 
-        const { data, error } = await supabase.rpc("get_admin_units_full", {
-          version_id: selectedVersion.id,
-        });
+        const pageSize = 1000;
+        let from = 0;
+        let allData: any[] = [];
 
-        if (error) {
-          console.error("Error fetching admin units:", error);
-          return;
+        while (true) {
+          const { data, error } = await supabase
+            .rpc("get_admin_units_full", { version_id: selectedVersion.id })
+            .range(from, from + pageSize - 1);
+
+          if (error) throw error;
+          if (!data?.length) break;
+
+          allData = allData.concat(data);
+          if (data.length < pageSize) break;
+          from += pageSize;
         }
 
-        setUnits(data ?? []);
+        setUnits(allData);
       } catch (err) {
         console.error("Unexpected error fetching units:", err);
       }
@@ -112,13 +127,14 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchUnits();
   }, [selectedVersion]);
 
-  // --- Tree Build ---
+  // --- Build Tree ---
   const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     const map: Record<string, TreeNode> = {};
     const roots: TreeNode[] = [];
     for (const row of rows) map[row.pcode] = { ...row, children: [] };
     for (const row of rows) {
-      if (row.parent_pcode && map[row.parent_pcode]) map[row.parent_pcode].children.push(map[row.pcode]);
+      if (row.parent_pcode && map[row.parent_pcode])
+        map[row.parent_pcode].children.push(map[row.pcode]);
       else roots.push(map[row.pcode]);
     }
     return roots;
@@ -136,7 +152,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       <div className="flex items-center gap-1">
         {node.children.length > 0 ? (
           <button onClick={() => toggleExpand(node.pcode)}>
-            {expanded.has(node.pcode) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {expanded.has(node.pcode) ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </button>
         ) : (
           <span className="w-4 h-4" />
@@ -144,14 +164,18 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <span className="font-medium">{node.name}</span>
         <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
       </div>
-      {expanded.has(node.pcode) && node.children.map((child) => renderTreeNode(child, depth + 1))}
+      {expanded.has(node.pcode) &&
+        node.children.map((child) => renderTreeNode(child, depth + 1))}
     </div>
   );
 
   // --- Delete Version ---
   const handleDeleteVersion = async (versionId: string) => {
     try {
-      const { data: units } = await supabase.from("admin_units").select("id").eq("dataset_version_id", versionId);
+      const { data: units } = await supabase
+        .from("admin_units")
+        .select("id")
+        .eq("dataset_version_id", versionId);
       const unitIds = (units ?? []).map((u) => u.id);
       if (unitIds.length) await supabase.from("admin_units").delete().in("id", unitIds);
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
@@ -164,15 +188,24 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
   // --- Activate Version ---
   const handleActivateVersion = async (version: AdminVersion) => {
-    await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", version.id);
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", version.id);
     await loadVersions();
   };
 
   // --- Save Edited Version ---
   const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
     if (!editingVersion) return;
-    await supabase.from("admin_dataset_versions").update(updated).eq("id", editingVersion.id);
+    await supabase
+      .from("admin_dataset_versions")
+      .update(updated)
+      .eq("id", editingVersion.id);
     setEditingVersion(null);
     await loadVersions();
   };
@@ -183,7 +216,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description: "Manage hierarchical administrative units and dataset versions for this country.",
+    description:
+      "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -338,7 +372,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* Upload Modal */}
+      {/* Upload, Delete, Edit Modals */}
       {openUpload && (
         <UploadAdminUnitsModal
           open={openUpload}
@@ -347,8 +381,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onUploaded={loadVersions}
         />
       )}
-
-      {/* Delete Confirmation */}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -357,8 +389,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
-
-      {/* Edit Version Modal */}
       {editingVersion && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
@@ -368,7 +398,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               <input
                 type="text"
                 value={editingVersion.title}
-                onChange={(e) => setEditingVersion({ ...editingVersion, title: e.target.value })}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, title: e.target.value })
+                }
                 className="border rounded w-full px-2 py-1 mt-1 text-sm"
               />
             </label>
@@ -377,7 +409,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               <input
                 type="text"
                 value={editingVersion.source || ""}
-                onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value })}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, source: e.target.value })
+                }
                 className="border rounded w-full px-2 py-1 mt-1 text-sm"
               />
             </label>
@@ -385,12 +419,17 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               Notes
               <textarea
                 value={editingVersion.notes || ""}
-                onChange={(e) => setEditingVersion({ ...editingVersion, notes: e.target.value })}
+                onChange={(e) =>
+                  setEditingVersion({ ...editingVersion, notes: e.target.value })
+                }
                 className="border rounded w-full px-2 py-1 mt-1 text-sm"
               />
             </label>
             <div className="flex justify-end gap-2 mt-3">
-              <button onClick={() => setEditingVersion(null)} className="px-3 py-1 text-sm border rounded">
+              <button
+                onClick={() => setEditingVersion(null)}
+                className="px-3 py-1 text-sm border rounded"
+              >
                 Cancel
               </button>
               <button
