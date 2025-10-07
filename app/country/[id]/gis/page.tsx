@@ -8,6 +8,7 @@ import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import EditGISLayerModal from "@/components/country/EditGISLayerModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import EditGISVersionModal from "@/components/country/EditGISVersionModal";
 
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import L from "leaflet";
@@ -38,12 +39,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openUpload, setOpenUpload] = useState(false);
   const [editLayer, setEditLayer] = useState<GISLayer | null>(null);
   const [deleteLayer, setDeleteLayer] = useState<GISLayer | null>(null);
+  const [editVersion, setEditVersion] = useState<GISDatasetVersion | null>(null);
 
   const mapRef = useRef<L.Map | null>(null);
 
-  // ---------------------------------------------------------------------------
   // Fetch Country
-  // ---------------------------------------------------------------------------
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("countries").select("*").eq("iso_code", countryIso).maybeSingle();
@@ -51,30 +51,24 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })();
   }, [countryIso]);
 
-  // ---------------------------------------------------------------------------
   // Fetch Versions
-  // ---------------------------------------------------------------------------
   const fetchVersions = async () => {
     const { data } = await supabase
       .from("gis_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-
     if (data) {
       setDatasetVersions(data);
       const active = data.find((v) => v.is_active);
       setSelectedVersion((prev) => active || prev || data[0] || null);
     }
   };
-
   useEffect(() => {
     fetchVersions();
   }, [countryIso]);
 
-  // ---------------------------------------------------------------------------
-  // Fetch Layers for selected version
-  // ---------------------------------------------------------------------------
+  // Fetch Layers
   const fetchLayers = async (versionId: string) => {
     const { data } = await supabase
       .from("gis_layers")
@@ -83,25 +77,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
       .order("admin_level_int", { ascending: true });
     if (data) setLayers(data);
   };
-
   useEffect(() => {
     if (selectedVersion?.id) fetchLayers(selectedVersion.id);
     else setLayers([]);
   }, [selectedVersion?.id]);
 
-  // ---------------------------------------------------------------------------
-  // Lazy load GeoJSON for visible layers
-  // ---------------------------------------------------------------------------
+  // Lazy load visible layers
   useEffect(() => {
     (async () => {
       for (const layer of layers) {
         const level = layer.admin_level ?? "";
         if (!visibleLevels[level]) continue;
         if (geojsonById[layer.id]) continue;
-
         try {
           setLoadingIds((s) => new Set(s).add(layer.id));
-
           const path =
             (layer as any).path ||
             layer.storage_path ||
@@ -113,7 +102,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
           const geojson = await res.json();
           setGeojsonById((m) => ({ ...m, [layer.id]: geojson }));
 
-          // center map on ADM0 once loaded
           if (layer.admin_level === "ADM0" && mapRef.current) {
             const bounds = L.geoJSON(geojson).getBounds();
             if (bounds.isValid()) mapRef.current.fitBounds(bounds, { maxZoom: 6 });
@@ -131,29 +119,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })();
   }, [visibleLevels, layers, countryIso, geojsonById]);
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-  const headerProps = {
-    title: `${country?.name ?? countryIso} – GIS Layers`,
-    group: "country-config" as const,
-    description: "Manage, visualize, and validate GIS administrative boundaries.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "GIS" },
-        ]}
-      />
-    ),
-  };
-
-  const handleToggleVisibility = (level: string) => {
-    if (!level) return;
+  // Handlers
+  const handleToggleVisibility = (level: string) =>
     setVisibleLevels((prev) => ({ ...prev, [level]: !prev[level] }));
-  };
 
   const handleDelete = async (layer: GISLayer) => {
     await supabase.from("gis_layers").delete().eq("id", layer.id);
@@ -175,12 +143,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
       .insert({ country_iso: countryIso, title, is_active: false })
       .select("*")
       .single();
-    if (error) {
-      console.error("Error creating version:", error);
-      return;
+    if (!error && data) {
+      setDatasetVersions((prev) => [data as GISDatasetVersion, ...prev]);
+      setSelectedVersion(data as GISDatasetVersion);
     }
-    setDatasetVersions((prev) => [data as GISDatasetVersion, ...prev]);
-    setSelectedVersion(data as GISDatasetVersion);
   };
 
   const layersForHealth = useMemo(() => {
@@ -191,12 +157,27 @@ export default function GISPage({ params }: { params: CountryParams }) {
     });
   }, [layers, geojsonById]);
 
-  // ---------------------------------------------------------------------------
+  // Header
+  const headerProps = {
+    title: `${country?.name ?? countryIso} – GIS Layers`,
+    group: "country-config" as const,
+    description: "Manage, visualize, and validate GIS administrative boundaries.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "GIS" },
+        ]}
+      />
+    ),
+  };
+
   // Render
-  // ---------------------------------------------------------------------------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Dataset Versions --- */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -245,16 +226,27 @@ export default function GISPage({ params }: { params: CountryParams }) {
                       {v.created_at ? new Date(v.created_at).toLocaleDateString() : "—"}
                     </td>
                     <td className="border px-2 py-1">
-                      <button
-                        className="inline-flex items-center gap-1 text-blue-700 hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedVersion(v);
-                          fetchLayers(v.id);
-                        }}
-                      >
-                        <Eye className="w-4 h-4" /> View
-                      </button>
+                      <div className="flex gap-3">
+                        <button
+                          className="text-blue-700 hover:underline flex items-center gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedVersion(v);
+                            fetchLayers(v.id);
+                          }}
+                        >
+                          <Eye className="w-4 h-4" /> View
+                        </button>
+                        <button
+                          className="text-gray-700 hover:underline flex items-center gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditVersion(v);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" /> Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -266,11 +258,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* --- Version Layers --- */}
+      {/* Version Layers */}
       <div className="border rounded-lg p-4 shadow-sm mb-4">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-base font-semibold text-[color:var(--gsc-blue)]">Version Layers</h3>
-          {selectedVersion && (
+          {selectedVersion && layers.length > 0 && (
             <button
               onClick={() => setOpenUpload(true)}
               className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
@@ -308,10 +300,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   </td>
                   <td className="border px-2 py-1">
                     <div className="flex gap-2">
-                      <button onClick={() => setEditLayer(l)} className="text-blue-700 hover:underline" title="Edit">
+                      <button onClick={() => setEditLayer(l)} className="text-blue-700 hover:underline">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setDeleteLayer(l)} className="text-red-700 hover:underline" title="Delete">
+                      <button onClick={() => setDeleteLayer(l)} className="text-red-700 hover:underline">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -337,7 +329,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
       <GISDataHealthPanel layers={layersForHealth} />
 
-      {/* --- Map --- */}
+      {/* Map */}
       <section className="mt-6 border rounded-lg overflow-hidden shadow-sm">
         <MapContainer
           center={[11.0, 122.0]}
@@ -374,7 +366,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </MapContainer>
       </section>
 
-      {/* --- Modals --- */}
+      {/* Modals */}
       {openUpload && selectedVersion && (
         <UploadGISModal
           open={openUpload}
@@ -406,6 +398,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
           message={`Delete layer "${deleteLayer.layer_name}"? This cannot be undone.`}
           onClose={() => setDeleteLayer(null)}
           onConfirm={() => handleDelete(deleteLayer)}
+        />
+      )}
+
+      {editVersion && (
+        <EditGISVersionModal
+          open={!!editVersion}
+          version={editVersion}
+          onClose={() => setEditVersion(null)}
+          onSaved={fetchVersions}
         />
       )}
     </SidebarLayout>
