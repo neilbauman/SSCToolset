@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, UploadCloud, Loader2 } from "lucide-react";
+import { X, Upload } from "lucide-react";
 
-interface UploadAdminUnitsModalProps {
+interface Props {
   open: boolean;
   onClose: () => void;
   countryIso: string;
@@ -16,66 +17,109 @@ export default function UploadAdminUnitsModal({
   onClose,
   countryIso,
   onUploaded,
-}: UploadAdminUnitsModalProps) {
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | null>(null);
-  const [datasetDate, setDatasetDate] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   if (!open) return null;
 
+  const parseCsv = async (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => resolve(results.data),
+        error: (err) => reject(err),
+      });
+    });
+  };
+
   const handleUpload = async () => {
     if (!file) {
-      setError("Please select a file to upload.");
+      alert("Please select a CSV file first.");
       return;
     }
-
     setUploading(true);
-    setError(null);
+    setMessage(null);
 
     try {
-      // 1️⃣ Upload file to Supabase Storage
-      const path = `${countryIso}/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("admin_uploads")
-        .upload(path, file);
+      const csvData = await parseCsv(file);
+      if (!csvData.length) throw new Error("Empty CSV file.");
 
-      if (uploadError) throw uploadError;
+      // Create dataset version record
+      const { data: version, error: versionError } = await supabase
+        .from("admin_dataset_versions")
+        .insert({
+          country_iso: countryIso,
+          title: title || `Admin Units ${new Date().getFullYear()}`,
+          year,
+          dataset_date: new Date().toISOString().split("T")[0],
+          source: sourceName
+            ? sourceUrl
+              ? `${sourceName} (${sourceUrl})`
+              : sourceName
+            : null,
+          notes,
+          is_active: false,
+        })
+        .select("*")
+        .single();
 
-      // 2️⃣ Create dataset version entry
-      const source =
-        sourceName || sourceUrl
-          ? { name: sourceName || null, url: sourceUrl || null }
-          : null;
+      if (versionError) throw versionError;
+
+      // Normalize and insert admin units
+      const levels = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
+      const unitsMap = new Map();
+
+      for (const row of csvData) {
+        let parentPcode: string | null = null;
+
+        for (let i = 0; i < levels.length; i++) {
+          const level = levels[i];
+          const name = row[`${level.replace("ADM", "Adm")} Name`];
+          const pcode = row[`${level.replace("ADM", "Adm")} Pcode`];
+
+          if (pcode && !unitsMap.has(pcode)) {
+            unitsMap.set(pcode, {
+              country_iso: countryIso,
+              pcode,
+              name: name || null,
+              level,
+              parent_pcode: parentPcode,
+              dataset_version_id: version.id,
+              metadata: {},
+              source: sourceUrl
+                ? { name: sourceName || null, url: sourceUrl }
+                : sourceName
+                ? { name: sourceName }
+                : null,
+            });
+          }
+
+          if (pcode) parentPcode = pcode;
+        }
+      }
+
+      const units = Array.from(unitsMap.values());
+      if (!units.length) throw new Error("No valid admin units found in CSV.");
 
       const { error: insertError } = await supabase
-        .from("admin_dataset_versions")
-        .insert([
-          {
-            country_iso: countryIso,
-            title: title || file.name,
-            year,
-            dataset_date: datasetDate || null,
-            source,
-            notes,
-            is_active: false,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+        .from("admin_units")
+        .insert(units);
 
       if (insertError) throw insertError;
 
-      // ✅ Trigger refresh
+      setMessage(`✅ Uploaded ${units.length} administrative units successfully.`);
       onUploaded();
-      onClose();
     } catch (err: any) {
       console.error("Upload error:", err);
-      setError(err.message || "An error occurred during upload.");
+      setMessage(`❌ Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -83,129 +127,99 @@ export default function UploadAdminUnitsModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <h2 className="text-lg font-semibold mb-4 text-[color:var(--gsc-red)]">
-          Upload Administrative Units
-        </h2>
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-800">
+            Upload Administrative Units
+          </h2>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+          </button>
+        </div>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700">
-              File (CSV or GeoJSON)
-            </label>
-            <input
-              type="file"
-              accept=".csv,.geojson"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700">Title</label>
+          <label className="block text-sm">
+            <span className="text-gray-700">Dataset Title</span>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Administrative Boundaries 2025"
-              className="w-full border rounded px-2 py-1 text-sm"
+              className="w-full border rounded px-2 py-1 text-sm mt-1"
+              placeholder="e.g., PSA NAMRIA 2023"
             />
-          </div>
+          </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Year</label>
-              <input
-                type="number"
-                value={year ?? ""}
-                onChange={(e) =>
-                  setYear(e.target.value ? Number(e.target.value) : null)
-                }
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Dataset Date
-              </label>
-              <input
-                type="date"
-                value={datasetDate}
-                onChange={(e) => setDatasetDate(e.target.value)}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700">
-              Source Name
-            </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">Year (optional)</span>
             <input
-              type="text"
-              value={sourceName}
-              onChange={(e) => setSourceName(e.target.value)}
-              placeholder="e.g., Philippine Statistics Authority"
-              className="w-full border rounded px-2 py-1 text-sm"
+              type="number"
+              value={year || ""}
+              onChange={(e) => setYear(parseInt(e.target.value) || null)}
+              className="w-full border rounded px-2 py-1 text-sm mt-1"
+              placeholder="e.g., 2023"
             />
-          </div>
+          </label>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">
-              Source URL
+          <div className="flex gap-2">
+            <label className="block text-sm flex-1">
+              <span className="text-gray-700">Source Name (optional)</span>
+              <input
+                type="text"
+                value={sourceName}
+                onChange={(e) => setSourceName(e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm mt-1"
+                placeholder="e.g., PSA, OCHA, NSO"
+              />
             </label>
-            <input
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              placeholder="https://psa.gov.ph"
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
+
+            <label className="block text-sm flex-1">
+              <span className="text-gray-700">Source URL (optional)</span>
+              <input
+                type="url"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm mt-1"
+                placeholder="https://example.org"
+              />
+            </label>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">Notes</label>
+          <label className="block text-sm">
+            <span className="text-gray-700">Notes</span>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Additional notes about this dataset..."
+              className="w-full border rounded px-2 py-1 text-sm mt-1"
+              placeholder="Additional dataset context or metadata"
             />
-          </div>
+          </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
+          <label className="block text-sm">
+            <span className="text-gray-700">Select CSV File</span>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="mt-1 text-sm"
+            />
+          </label>
 
-        <div className="mt-5 flex justify-end gap-2">
           <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm border rounded text-gray-700 hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
             disabled={uploading}
-            className="px-3 py-1.5 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
+            onClick={handleUpload}
+            className={`mt-2 flex items-center justify-center gap-2 w-full rounded text-white py-2 ${
+              uploading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-[color:var(--gsc-red)] hover:opacity-90"
+            }`}
           >
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Uploading...
-              </>
-            ) : (
-              <>
-                <UploadCloud className="w-4 h-4" /> Upload
-              </>
-            )}
+            <Upload className="w-4 h-4" />
+            {uploading ? "Uploading..." : "Upload CSV"}
           </button>
+
+          {message && (
+            <p className="mt-2 text-sm text-center text-gray-700">{message}</p>
+          )}
         </div>
       </div>
     </div>
