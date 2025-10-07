@@ -3,137 +3,224 @@
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
   Layers,
   Database,
   Upload,
-  ChevronDown,
-  ChevronRight,
   Edit3,
   Trash2,
   CheckCircle2,
   Download,
-  Loader2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
+import EditAdminDatasetVersionModal from "@/components/country/EditAdminDatasetVersionModal";
 import type { CountryParams } from "@/app/country/types";
+
+type Country = {
+  iso_code: string;
+  name: string;
+};
+
+type AdminVersion = {
+  id: string;
+  country_iso: string | null;
+  title: string;
+  year: number | null;
+  dataset_date: string | null;
+  source: string | null;
+  is_active: boolean;
+  created_at: string;
+  notes: string | null;
+};
+
+type AdminUnit = {
+  id: string;
+  pcode: string;
+  name: string;
+  level: string;
+  parent_pcode: string | null;
+};
+
+type TreeNode = AdminUnit & { children: TreeNode[] };
 
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
-  const [country, setCountry] = useState<any>(null);
-  const [versions, setVersions] = useState<any[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<any>(null);
-  const [units, setUnits] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState("");
-  const [view, setView] = useState<"table" | "tree">("table");
-  const [expanded, setExpanded] = useState(new Set<string>());
-  const [editVersion, setEditVersion] = useState<any>(null);
-  const [deleteVersion, setDeleteVersion] = useState<any>(null);
-  const [upload, setUpload] = useState(false);
 
-  // --- Fetch Country & Versions ---
-  const loadCountryAndVersions = async () => {
-    const { data: c } = await supabase
-      .from("countries")
-      .select("*")
-      .eq("iso_code", countryIso)
-      .single();
-    if (c) setCountry(c);
+  const [country, setCountry] = useState<Country | null>(null);
+  const [versions, setVersions] = useState<AdminVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
+  const [units, setUnits] = useState<AdminUnit[]>([]);
+  const [viewMode, setViewMode] = useState<"table" | "tree">("tree");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-    const { data: v } = await supabase
+  const [openUpload, setOpenUpload] = useState(false);
+  const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
+  const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
+
+  // Fetch country metadata
+  useEffect(() => {
+    const fetchCountry = async () => {
+      const { data } = await supabase
+        .from("countries")
+        .select("*")
+        .eq("iso_code", countryIso)
+        .single();
+      if (data) setCountry(data as Country);
+    };
+    fetchCountry();
+  }, [countryIso]);
+
+  // Fetch dataset versions
+  const loadVersions = async () => {
+    const { data, error } = await supabase
       .from("admin_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-    if (v) {
-      setVersions(v);
-      setSelectedVersion(v.find((x) => x.is_active) || v[0]);
+
+    if (!error && data) {
+      setVersions(data);
+      const active = data.find((v) => v.is_active);
+      const initial = active || data[0] || null;
+      setSelectedVersion(initial);
     }
   };
 
   useEffect(() => {
-    loadCountryAndVersions();
+    loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units (with progress) ---
-  useEffect(() => {
-    if (!selectedVersion) return;
-    (async () => {
-      setLoading(true);
-      setProgress("Counting records…");
-      const { count } = await supabase
+  // Fetch admin units with pagination (for large datasets)
+  const fetchAllUnits = async (versionId: string) => {
+    const limit = 5000;
+    let from = 0;
+    let to = limit - 1;
+    let allRows: any[] = [];
+    while (true) {
+      const { data, error } = await supabase
         .from("admin_units")
-        .select("*", { count: "exact", head: true })
-        .eq("dataset_version_id", selectedVersion.id);
-      const total = count || 0;
-      setProgress(`Found ${total.toLocaleString()} records…`);
-      const page = 1000;
-      let from = 0,
-        all: any[] = [];
-      while (true) {
-        const { data } = await supabase
-          .rpc("get_admin_units_full", { version_id: selectedVersion.id })
-          .range(from, from + page - 1);
-        if (!data?.length) break;
-        all = all.concat(data);
-        from += page;
-        setProgress(`Loaded ${all.length.toLocaleString()} / ${total.toLocaleString()}…`);
-        if (data.length < page) break;
+        .select("id,pcode,name,level,parent_pcode")
+        .eq("dataset_version_id", versionId)
+        .range(from, to);
+      if (error) {
+        console.error("Error fetching admin units:", error);
+        break;
       }
-      setUnits(all);
-      setProgress("");
-      setLoading(false);
-    })();
+      if (!data || data.length === 0) break;
+      allRows = [...allRows, ...data];
+      if (data.length < limit) break;
+      from += limit;
+      to += limit;
+    }
+    setUnits(allRows);
+  };
+
+  useEffect(() => {
+    if (selectedVersion) fetchAllUnits(selectedVersion.id);
   }, [selectedVersion]);
 
-  // --- Tree Builder ---
-  const buildTree = (rows: any[]): any[] => {
-    const map: any = {};
-    const roots: any[] = [];
-    rows.forEach((r) => (map[r.pcode] = { ...r, children: [] }));
-    rows.forEach((r) =>
-      r.parent_pcode && map[r.parent_pcode]
-        ? map[r.parent_pcode].children.push(map[r.pcode])
-        : roots.push(map[r.pcode])
-    );
+  // Tree building
+  const buildTree = (rows: AdminUnit[]): TreeNode[] => {
+    const map: Record<string, TreeNode> = {};
+    const roots: TreeNode[] = [];
+    for (const row of rows) map[row.pcode] = { ...row, children: [] };
+    for (const row of rows) {
+      if (row.parent_pcode && map[row.parent_pcode])
+        map[row.parent_pcode].children.push(map[row.pcode]);
+      else roots.push(map[row.pcode]);
+    }
     return roots;
   };
+
   const treeData = buildTree(units);
 
-  const toggleExpand = (p: string) => {
-    const n = new Set(expanded);
-    n.has(p) ? n.delete(p) : n.add(p);
-    setExpanded(n);
+  const toggleExpand = (pcode: string) => {
+    const next = new Set(expanded);
+    next.has(pcode) ? next.delete(pcode) : next.add(pcode);
+    setExpanded(next);
   };
 
-  // --- Delete Version ---
+  // Activate a version
+  const handleActivateVersion = async (version: AdminVersion) => {
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", version.id);
+    await loadVersions();
+  };
+
+  // Delete a version (and its admin units)
   const handleDeleteVersion = async (versionId: string) => {
     try {
       await supabase.from("admin_units").delete().eq("dataset_version_id", versionId);
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
-      setDeleteVersion(null);
-      await loadCountryAndVersions();
+      setOpenDelete(null);
+      await loadVersions();
     } catch (err) {
-      console.error("Delete failed:", err);
+      console.error("Error deleting version:", err);
     }
   };
 
-  // --- Save Edit Version ---
-  const handleSaveEdit = async (v: any) => {
-    await supabase.from("admin_dataset_versions").update(v).eq("id", v.id);
-    setEditVersion(null);
-    await loadCountryAndVersions();
+  // Render tree recursively
+  const renderTreeNode = (n: TreeNode, depth = 0): JSX.Element => (
+    <div key={n.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
+      <div className="flex items-center gap-1">
+        {n.children.length > 0 ? (
+          <button onClick={() => toggleExpand(n.pcode)}>
+            {expanded.has(n.pcode) ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+        ) : (
+          <span className="w-4 h-4" />
+        )}
+        <span className="font-medium">{n.name}</span>
+        <span className="text-gray-400 text-xs ml-1">{n.pcode}</span>
+      </div>
+      {expanded.has(n.pcode) &&
+        n.children.map((c) => renderTreeNode(c, depth + 1))}
+    </div>
+  );
+
+  // Parse source JSON (for table rendering)
+  const renderSource = (src: string | null) => {
+    if (!src) return "—";
+    try {
+      const parsed = JSON.parse(src);
+      if (parsed.url) {
+        return (
+          <a
+            href={parsed.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            {parsed.name || parsed.url}
+          </a>
+        );
+      }
+      return parsed.name || "—";
+    } catch {
+      return src;
+    }
   };
 
-  // --- Header ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description: "Manage hierarchical administrative units and dataset versions for this country.",
+    description: "Manage hierarchical administrative units and dataset versions.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -146,11 +233,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     ),
   };
 
+  const totalUnits = units.length;
+
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <div className="flex justify-between mb-3 items-center">
+        <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
@@ -163,72 +252,44 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               <Download className="w-4 h-4 mr-1" /> Template
             </a>
             <button
-              onClick={() => setUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded hover:opacity-90"
             >
-              <Upload className="w-4 h-4 mr-1" /> Upload
+              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
             </button>
           </div>
         </div>
 
-        {versions.length ? (
-          <table className="w-full text-sm border">
+        {versions.length > 0 ? (
+          <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
               <tr>
                 <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1">Year</th>
-                <th className="px-2 py-1">Date</th>
-                <th className="px-2 py-1">Source</th>
-                <th className="px-2 py-1">Status</th>
+                <th className="px-2 py-1 text-left">Year</th>
+                <th className="px-2 py-1 text-left">Date</th>
+                <th className="px-2 py-1 text-left">Source</th>
+                <th className="px-2 py-1 text-left">Status</th>
                 <th className="px-2 py-1 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {versions.map((v) => (
-                <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${
+                    selectedVersion?.id === v.id ? "bg-blue-50" : ""
+                  }`}
+                >
                   <td
+                    className="border px-2 py-1 cursor-pointer"
                     onClick={() => setSelectedVersion(v)}
-                    className={`border px-2 py-1 cursor-pointer ${
-                      selectedVersion?.id === v.id ? "font-semibold" : ""
-                    }`}
                   >
                     {v.title}
                   </td>
-                  <td className="border px-2 py-1 text-center">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1 text-center">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">{renderSource(v.source)}</td>
                   <td className="border px-2 py-1">
-                    {(() => {
-                      try {
-                        const src = JSON.parse(v.source || "{}");
-                        if (src.url && src.name)
-                          return (
-                            <a
-                              href={src.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline"
-                            >
-                              {src.name}
-                            </a>
-                          );
-                        if (src.url)
-                          return (
-                            <a
-                              href={src.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline"
-                            >
-                              {src.url}
-                            </a>
-                          );
-                        return v.source || "—";
-                      } catch {
-                        return v.source || "—";
-                      }
-                    })()}
-                  </td>
-                  <td className="border px-2 py-1 text-center">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
                         <CheckCircle2 className="w-4 h-4" /> Active
@@ -237,167 +298,127 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                       "—"
                     )}
                   </td>
-                  <td className="border px-2 py-1 text-right flex gap-3 justify-end">
-                    <button
-                      onClick={() => setEditVersion(v)}
-                      title="Edit"
-                      className="text-gray-600 hover:text-blue-600"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteVersion(v)}
-                      title="Delete"
-                      className="text-[color:var(--gsc-red)] hover:opacity-70"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
+                        >
+                          Set Active
+                        </button>
+                      )}
+                      <button
+                        className="text-gray-600 hover:underline text-xs"
+                        onClick={() => setEditingVersion(v)}
+                      >
+                        <Edit3 className="inline w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="inline w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500">No dataset versions yet.</p>
+          <p className="italic text-gray-500">No dataset versions uploaded yet.</p>
         )}
       </div>
 
-      <DatasetHealth totalUnits={units.length} />
+      <DatasetHealth totalUnits={totalUnits} />
 
-      <div className="flex justify-between items-center mb-2">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
-        </h2>
-        <div className="flex gap-2">
-          {["table", "tree"].map((m) => (
+      {/* Admin Units */}
+      <div className="mt-4">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
+          </h2>
+          <div className="flex gap-2">
             <button
-              key={m}
-              onClick={() => setView(m as any)}
               className={`px-3 py-1 text-sm border rounded ${
-                view === m ? "bg-blue-50 border-blue-400" : ""
+                viewMode === "table" ? "bg-blue-50 border-blue-400" : ""
               }`}
+              onClick={() => setViewMode("table")}
             >
-              {m[0].toUpperCase() + m.slice(1)} View
+              Table View
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table or Tree */}
-      <div className="relative">
-        {loading && (
-          <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center z-10">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-700 mb-2" />
-            <span className="text-sm text-gray-700 font-medium">{progress}</span>
+            <button
+              className={`px-3 py-1 text-sm border rounded ${
+                viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""
+              }`}
+              onClick={() => setViewMode("tree")}
+            >
+              Tree View
+            </button>
           </div>
-        )}
+        </div>
 
-        {view === "table" ? (
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                {["Name", "PCode", "Level", "Parent"].map((h) => (
-                  <th key={h} className="border px-2 py-1 text-left">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{u.name}</td>
-                  <td className="border px-2 py-1">{u.pcode}</td>
-                  <td className="border px-2 py-1">{u.level}</td>
-                  <td className="border px-2 py-1">{u.parent_pcode ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="border rounded-lg p-3 bg-white shadow-sm">
+        {viewMode === "tree" ? (
+          <div className="border rounded-lg p-3 bg-white shadow-sm overflow-y-auto max-h-[70vh]">
             {treeData.length ? (
-              treeData.map((n) => (
-                <div key={n.pcode} style={{ marginLeft: 16 }}>
-                  <div className="flex items-center gap-1">
-                    {n.children.length ? (
-                      <button onClick={() => toggleExpand(n.pcode)}>
-                        {expanded.has(n.pcode) ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                      </button>
-                    ) : (
-                      <span className="w-4 h-4" />
-                    )}
-                    <span>{n.name}</span>
-                    <span className="text-gray-500 text-xs ml-1">{n.pcode}</span>
-                  </div>
-                  {expanded.has(n.pcode) &&
-                    n.children.map((c: any) => (
-                      <div key={c.pcode} className="ml-6">
-                        {c.name} <span className="text-gray-400">({c.pcode})</span>
-                      </div>
-                    ))}
-                </div>
-              ))
+              treeData.map((node) => renderTreeNode(node))
             ) : (
-              <p className="italic text-gray-500">No admin units found.</p>
+              <p className="italic text-gray-500">No administrative units found.</p>
             )}
           </div>
+        ) : (
+          <div className="overflow-x-auto max-h-[70vh] border rounded-lg">
+            <table className="w-full text-sm border">
+              <thead className="bg-gray-100 sticky top-0">
+                <tr>
+                  <th className="border px-2 py-1 text-left">Name</th>
+                  <th className="border px-2 py-1 text-left">PCode</th>
+                  <th className="border px-2 py-1 text-left">Level</th>
+                  <th className="border px-2 py-1 text-left">Parent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {units.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="border px-2 py-1">{u.name}</td>
+                    <td className="border px-2 py-1">{u.pcode}</td>
+                    <td className="border px-2 py-1">{u.level}</td>
+                    <td className="border px-2 py-1">{u.parent_pcode ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Upload Modal */}
-      {upload && (
+      {/* Modals */}
+      {openUpload && (
         <UploadAdminUnitsModal
-          open={upload}
-          onClose={() => setUpload(false)}
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={() => window.location.reload()}
+          onUploaded={loadVersions}
         />
       )}
 
-      {/* Delete Modal */}
-      {deleteVersion && (
+      {openDelete && (
         <ConfirmDeleteModal
-          open={!!deleteVersion}
-          message={`This will permanently delete "${deleteVersion.title}" and all related units.`}
-          onClose={() => setDeleteVersion(null)}
-          onConfirm={() => handleDeleteVersion(deleteVersion.id)}
+          open={!!openDelete}
+          message={`This will permanently remove "${openDelete.title}" and its records.`}
+          onClose={() => setOpenDelete(null)}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
 
-      {/* Edit Modal */}
-      {editVersion && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Edit Dataset Version</h3>
-            {["title", "source", "notes"].map((f) => (
-              <label key={f} className="block mb-2 text-sm">
-                {f[0].toUpperCase() + f.slice(1)}
-                <input
-                  type="text"
-                  value={editVersion[f] || ""}
-                  onChange={(e) => setEditVersion({ ...editVersion, [f]: e.target.value })}
-                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
-                />
-              </label>
-            ))}
-            <div className="flex justify-end gap-2 mt-3">
-              <button onClick={() => setEditVersion(null)} className="px-3 py-1 text-sm border rounded">
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveEdit(editVersion)}
-                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+      {editingVersion && (
+        <EditAdminDatasetVersionModal
+          open={!!editingVersion}
+          onClose={() => setEditingVersion(null)}
+          versionId={editingVersion.id}
+          onSaved={loadVersions}
+        />
       )}
     </SidebarLayout>
   );
