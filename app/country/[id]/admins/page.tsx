@@ -20,6 +20,7 @@ import {
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
+import EditAdminDatasetVersionModal from "@/components/country/EditAdminDatasetVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -33,7 +34,7 @@ type AdminVersion = {
   title: string;
   year: number | null;
   dataset_date: string | null;
-  source: string | null;
+  source: any;
   is_active: boolean;
   created_at: string;
   notes: string | null;
@@ -63,7 +64,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
-  // --- Fetch Country ---
+  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -76,7 +77,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // --- Fetch Versions ---
+  // Fetch versions
   const loadVersions = async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
@@ -101,24 +102,26 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units ---
+  // Fetch units for selected version
   useEffect(() => {
     const fetchUnits = async () => {
       if (!selectedVersion) {
         setUnits([]);
         return;
       }
+
       const { data, error } = await supabase
         .from("admin_units")
         .select("id,pcode,name,level,parent_pcode")
         .eq("dataset_version_id", selectedVersion.id)
         .order("pcode", { ascending: true });
+
       if (!error) setUnits(data ?? []);
     };
     fetchUnits();
   }, [selectedVersion]);
 
-  // --- Tree Build ---
+  // Tree utilities
   const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     const map: Record<string, TreeNode> = {};
     const roots: TreeNode[] = [];
@@ -132,7 +135,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   };
   const treeData = buildTree(units);
 
-  // --- Tree Toggle ---
   const toggleExpand = (pcode: string) => {
     const next = new Set(expanded);
     next.has(pcode) ? next.delete(pcode) : next.add(pcode);
@@ -160,7 +162,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     </div>
   );
 
-  // --- Delete Version ---
+  // Delete version
   const handleDeleteVersion = async (versionId: string) => {
     try {
       const { data: units } = await supabase
@@ -168,9 +170,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         .select("id")
         .eq("dataset_version_id", versionId);
       const unitIds = (units ?? []).map((u) => u.id);
-      if (unitIds.length) {
-        await supabase.from("admin_units").delete().in("id", unitIds);
-      }
+      if (unitIds.length) await supabase.from("admin_units").delete().in("id", unitIds);
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
       setOpenDelete(null);
       await loadVersions();
@@ -179,7 +179,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // --- Activate Version ---
+  // Activate version
   const handleActivateVersion = async (version: AdminVersion) => {
     await supabase
       .from("admin_dataset_versions")
@@ -192,22 +192,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
-  // --- Save Edited Version ---
-  const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
-    if (!editingVersion) return;
-    await supabase
-      .from("admin_dataset_versions")
-      .update(updated)
-      .eq("id", editingVersion.id);
-    setEditingVersion(null);
-    await loadVersions();
-  };
-
-  // --- Template Download URL ---
   const templateUrl =
     "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
 
-  // --- Render ---
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
@@ -266,59 +253,82 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               </tr>
             </thead>
             <tbody>
-              {versions.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    v.is_active ? "bg-green-50" : ""
-                  }`}
-                >
-                  <td
-                    className={`border px-2 py-1 cursor-pointer ${
-                      selectedVersion?.id === v.id ? "font-semibold" : ""
+              {versions.map((v) => {
+                const sourceDisplay =
+                  typeof v.source === "object"
+                    ? v.source?.name || v.source?.url || "—"
+                    : v.source || "—";
+                const sourceLink =
+                  typeof v.source === "object" && v.source?.url
+                    ? v.source.url
+                    : null;
+
+                return (
+                  <tr
+                    key={v.id}
+                    className={`hover:bg-gray-50 ${
+                      v.is_active ? "bg-green-50" : ""
                     }`}
-                    onClick={() => setSelectedVersion(v)}
                   >
-                    {v.title}
-                  </td>
-                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
-                  <td className="border px-2 py-1">
-                    {v.is_active ? (
-                      <span className="inline-flex items-center gap-1 text-green-700">
-                        <CheckCircle2 className="w-4 h-4" /> Active
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="border px-2 py-1 text-right">
-                    <div className="flex justify-end gap-2">
-                      {!v.is_active && (
-                        <button
-                          className="text-blue-600 hover:underline text-xs"
-                          onClick={() => handleActivateVersion(v)}
+                    <td
+                      className={`border px-2 py-1 cursor-pointer ${
+                        selectedVersion?.id === v.id ? "font-semibold" : ""
+                      }`}
+                      onClick={() => setSelectedVersion(v)}
+                    >
+                      {v.title}
+                    </td>
+                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                    <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                    <td className="border px-2 py-1">
+                      {sourceLink ? (
+                        <a
+                          href={sourceLink}
+                          target="_blank"
+                          className="text-blue-700 hover:underline"
                         >
-                          Set Active
-                        </button>
+                          {sourceDisplay}
+                        </a>
+                      ) : (
+                        sourceDisplay
                       )}
-                      <button
-                        className="text-gray-600 hover:underline text-xs"
-                        onClick={() => setEditingVersion(v)}
-                      >
-                        <Edit3 className="inline w-4 h-4 mr-1" /> Edit
-                      </button>
-                      <button
-                        className="text-[color:var(--gsc-red)] hover:underline text-xs"
-                        onClick={() => setOpenDelete(v)}
-                      >
-                        <Trash2 className="inline w-4 h-4 mr-1" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {v.is_active ? (
+                        <span className="inline-flex items-center gap-1 text-green-700">
+                          <CheckCircle2 className="w-4 h-4" /> Active
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="border px-2 py-1 text-right">
+                      <div className="flex justify-end gap-2">
+                        {!v.is_active && (
+                          <button
+                            className="text-blue-600 hover:underline text-xs"
+                            onClick={() => handleActivateVersion(v)}
+                          >
+                            Set Active
+                          </button>
+                        )}
+                        <button
+                          className="text-gray-600 hover:underline text-xs"
+                          onClick={() => setEditingVersion(v)}
+                        >
+                          <Edit3 className="inline w-4 h-4 mr-1" /> Edit
+                        </button>
+                        <button
+                          className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                          onClick={() => setOpenDelete(v)}
+                        >
+                          <Trash2 className="inline w-4 h-4 mr-1" /> Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -408,57 +418,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
       {/* Edit Version Modal */}
       {editingVersion && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
-            <label className="block mb-2 text-sm">
-              Title
-              <input
-                type="text"
-                defaultValue={editingVersion.title}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, title: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <label className="block mb-2 text-sm">
-              Source
-              <input
-                type="text"
-                defaultValue={editingVersion.source || ""}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, source: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <label className="block mb-2 text-sm">
-              Notes
-              <textarea
-                defaultValue={editingVersion.notes || ""}
-                onChange={(e) =>
-                  setEditingVersion({ ...editingVersion, notes: e.target.value })
-                }
-                className="border rounded w-full px-2 py-1 mt-1 text-sm"
-              />
-            </label>
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => setEditingVersion(null)}
-                className="px-3 py-1 text-sm border rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveEdit(editingVersion)}
-                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditAdminDatasetVersionModal
+          open={!!editingVersion}
+          onClose={() => setEditingVersion(null)}
+          versionId={editingVersion.id}
+          onSaved={loadVersions}
+        />
       )}
     </SidebarLayout>
   );
