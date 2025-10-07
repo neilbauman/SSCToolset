@@ -7,10 +7,6 @@ interface CountryMetadataCardProps {
   onEdit: () => void;
 }
 
-/**
- * Displays basic metadata for a country, including name, ISO, and admin labels.
- * Used on the Country Configuration landing page.
- */
 export default function CountryMetadataCard({
   country,
   onEdit,
@@ -35,7 +31,7 @@ export default function CountryMetadataCard({
     { key: "adm5_label", label: "ADM5", value: country.adm5_label },
   ];
 
-  // ✅ Normalize dataset_sources
+  // Normalize dataset_sources for consistent rendering
   const datasetSources = Array.isArray(country.dataset_sources)
     ? country.dataset_sources
     : typeof country.dataset_sources === "string"
@@ -43,6 +39,78 @@ export default function CountryMetadataCard({
     : typeof country.dataset_sources === "object" && country.dataset_sources !== null
     ? Object.values(country.dataset_sources)
     : [];
+
+  const formatSource = (src: any) => {
+    if (!src) return "—";
+    if (typeof src === "string") {
+      return isValidUrl(src) ? (
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:underline"
+        >
+          {src}
+        </a>
+      ) : (
+        src
+      );
+    }
+    if (typeof src === "object") {
+      const label = src.name || src.title || src.label || "Unnamed Source";
+      const url = src.url || src.link || src.href;
+      return url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:underline"
+        >
+          {label}
+        </a>
+      ) : (
+        label
+      );
+    }
+    return String(src);
+  };
+
+  const isValidUrl = (str: string) => {
+    try {
+      new URL(str);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const formatExtraMetadata = (extra: Record<string, any>) => {
+    return Object.entries(extra).map(([key, value]) => {
+      const label = value?.label || key;
+      const val = value?.value ?? value;
+
+      const valDisplay =
+        typeof val === "string" && isValidUrl(val) ? (
+          <a
+            href={val}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            {val}
+          </a>
+        ) : (
+          String(val)
+        );
+
+      return (
+        <div key={key} className="flex justify-between gap-2 border-b py-1">
+          <span className="font-medium text-gray-700">{label}</span>
+          <span className="text-gray-600 text-right">{valDisplay}</span>
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="border rounded-lg p-4 shadow-sm bg-white">
@@ -58,7 +126,10 @@ export default function CountryMetadataCard({
         </button>
       </div>
 
-      {/* Basic Info */}
+      {/* Core Metadata */}
+      <h4 className="text-sm font-semibold mb-1 text-[color:var(--gsc-red)]">
+        Core Metadata
+      </h4>
       <div className="text-sm text-gray-700 space-y-1 mb-3">
         <p>
           <strong>Name:</strong> {country.name}
@@ -88,13 +159,9 @@ export default function CountryMetadataCard({
           <h4 className="text-sm font-semibold mb-1 text-gray-700">
             Dataset Sources
           </h4>
-          <ul className="list-disc list-inside text-sm text-gray-600">
+          <ul className="list-disc list-inside text-sm text-gray-600 space-y-0.5">
             {datasetSources.map((src: any, i: number) => (
-              <li key={i}>
-                {typeof src === "string"
-                  ? src
-                  : src?.name || JSON.stringify(src)}
-              </li>
+              <li key={i}>{formatSource(src)}</li>
             ))}
           </ul>
         </div>
@@ -103,13 +170,13 @@ export default function CountryMetadataCard({
       {/* Extra Metadata */}
       {country.extra_metadata &&
         Object.keys(country.extra_metadata).length > 0 && (
-          <div className="mt-3">
-            <h4 className="text-sm font-semibold mb-1 text-gray-700">
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold mb-2 text-[color:var(--gsc-red)]">
               Extra Metadata
             </h4>
-            <pre className="text-xs bg-gray-50 border rounded p-2 overflow-x-auto">
-              {JSON.stringify(country.extra_metadata, null, 2)}
-            </pre>
+            <div className="bg-gray-50 border rounded p-2 text-sm">
+              {formatExtraMetadata(country.extra_metadata)}
+            </div>
           </div>
         )}
     </div>
