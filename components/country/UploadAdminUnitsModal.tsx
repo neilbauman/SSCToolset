@@ -133,7 +133,7 @@ export default function UploadAdminUnitsModal({
       const deduped = Array.from(unique.values());
 
       const total = deduped.length;
-      const chunkSize = 5000;
+      const chunkSize = 500;
       let uploaded = 0;
 
       // Upload in chunks
