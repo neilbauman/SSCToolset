@@ -20,7 +20,6 @@ import {
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
-import EditAdminDatasetVersionModal from "@/components/country/EditAdminDatasetVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = {
@@ -64,7 +63,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
-  // Fetch country
   useEffect(() => {
     const fetchCountry = async () => {
       const { data } = await supabase
@@ -77,7 +75,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchCountry();
   }, [countryIso]);
 
-  // Fetch versions
   const loadVersions = async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
@@ -92,7 +89,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
 
     const list = data ?? [];
     setVersions(list);
-
     const active = list.find((v) => v.is_active);
     const initial = active || list[0] || null;
     setSelectedVersion(initial);
@@ -102,26 +98,22 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // Fetch units for selected version
   useEffect(() => {
     const fetchUnits = async () => {
       if (!selectedVersion) {
         setUnits([]);
         return;
       }
-
       const { data, error } = await supabase
         .from("admin_units")
         .select("id,pcode,name,level,parent_pcode")
         .eq("dataset_version_id", selectedVersion.id)
         .order("pcode", { ascending: true });
-
       if (!error) setUnits(data ?? []);
     };
     fetchUnits();
   }, [selectedVersion]);
 
-  // Tree utilities
   const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     const map: Record<string, TreeNode> = {};
     const roots: TreeNode[] = [];
@@ -162,7 +154,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     </div>
   );
 
-  // Delete version
   const handleDeleteVersion = async (versionId: string) => {
     try {
       const { data: units } = await supabase
@@ -170,7 +161,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         .select("id")
         .eq("dataset_version_id", versionId);
       const unitIds = (units ?? []).map((u) => u.id);
-      if (unitIds.length) await supabase.from("admin_units").delete().in("id", unitIds);
+      if (unitIds.length) {
+        await supabase.from("admin_units").delete().in("id", unitIds);
+      }
       await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
       setOpenDelete(null);
       await loadVersions();
@@ -179,7 +172,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // Activate version
   const handleActivateVersion = async (version: AdminVersion) => {
     await supabase
       .from("admin_dataset_versions")
@@ -189,6 +181,16 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       .from("admin_dataset_versions")
       .update({ is_active: true })
       .eq("id", version.id);
+    await loadVersions();
+  };
+
+  const handleSaveEdit = async (updated: Partial<AdminVersion>) => {
+    if (!editingVersion) return;
+    await supabase
+      .from("admin_dataset_versions")
+      .update(updated)
+      .eq("id", editingVersion.id);
+    setEditingVersion(null);
     await loadVersions();
   };
 
@@ -253,82 +255,81 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               </tr>
             </thead>
             <tbody>
-              {versions.map((v) => {
-                const sourceDisplay =
-                  typeof v.source === "object"
-                    ? v.source?.name || v.source?.url || "—"
-                    : v.source || "—";
-                const sourceLink =
-                  typeof v.source === "object" && v.source?.url
-                    ? v.source.url
-                    : null;
-
-                return (
-                  <tr
-                    key={v.id}
-                    className={`hover:bg-gray-50 ${
-                      v.is_active ? "bg-green-50" : ""
+              {versions.map((v) => (
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                >
+                  <td
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-semibold" : ""
                     }`}
+                    onClick={() => setSelectedVersion(v)}
                   >
-                    <td
-                      className={`border px-2 py-1 cursor-pointer ${
-                        selectedVersion?.id === v.id ? "font-semibold" : ""
-                      }`}
-                      onClick={() => setSelectedVersion(v)}
-                    >
-                      {v.title}
-                    </td>
-                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                    <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                    <td className="border px-2 py-1">
-                      {sourceLink ? (
-                        <a
-                          href={sourceLink}
-                          target="_blank"
-                          className="text-blue-700 hover:underline"
-                        >
-                          {sourceDisplay}
-                        </a>
-                      ) : (
-                        sourceDisplay
-                      )}
-                    </td>
-                    <td className="border px-2 py-1">
-                      {v.is_active ? (
-                        <span className="inline-flex items-center gap-1 text-green-700">
-                          <CheckCircle2 className="w-4 h-4" /> Active
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="border px-2 py-1 text-right">
-                      <div className="flex justify-end gap-2">
-                        {!v.is_active && (
-                          <button
-                            className="text-blue-600 hover:underline text-xs"
-                            onClick={() => handleActivateVersion(v)}
+                    {v.title}
+                  </td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {(() => {
+                      if (!v.source) return "—";
+                      try {
+                        const s =
+                          typeof v.source === "string"
+                            ? JSON.parse(v.source)
+                            : v.source;
+                        return s.url ? (
+                          <a
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-700 hover:underline"
                           >
-                            Set Active
-                          </button>
-                        )}
+                            {s.name || "Source Link"}
+                          </a>
+                        ) : (
+                          s.name || "—"
+                        );
+                      } catch {
+                        return v.source;
+                      }
+                    })()}
+                  </td>
+                  <td className="border px-2 py-1">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
                         <button
-                          className="text-gray-600 hover:underline text-xs"
-                          onClick={() => setEditingVersion(v)}
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
                         >
-                          <Edit3 className="inline w-4 h-4 mr-1" /> Edit
+                          Set Active
                         </button>
-                        <button
-                          className="text-[color:var(--gsc-red)] hover:underline text-xs"
-                          onClick={() => setOpenDelete(v)}
-                        >
-                          <Trash2 className="inline w-4 h-4 mr-1" /> Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      )}
+                      <button
+                        className="text-gray-600 hover:underline text-xs"
+                        onClick={() => setEditingVersion(v)}
+                      >
+                        <Edit3 className="inline w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="inline w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         ) : (
@@ -413,16 +414,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           message={`This will permanently remove the version "${openDelete.title}" and all related admin units. This cannot be undone.`}
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
-        />
-      )}
-
-      {/* Edit Version Modal */}
-      {editingVersion && (
-        <EditAdminDatasetVersionModal
-          open={!!editingVersion}
-          onClose={() => setEditingVersion(null)}
-          versionId={editingVersion.id}
-          onSaved={loadVersions}
         />
       )}
     </SidebarLayout>
