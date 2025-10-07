@@ -335,10 +335,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                     <span className="text-gray-500 text-xs ml-1">{n.pcode}</span>
                   </div>
                   {expanded.has(n.pcode) &&
-                    n.children.map((c) => (
+                    n.children.map((c: any) => (
                       <div key={c.pcode} className="ml-6">
-                        {c.name}{" "}
-                        <span className="text-gray-400">({c.pcode})</span>
+                        {c.name} <span className="text-gray-400">({c.pcode})</span>
                       </div>
                     ))}
                 </div>
