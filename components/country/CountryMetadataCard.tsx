@@ -35,6 +35,15 @@ export default function CountryMetadataCard({
     { key: "adm5_label", label: "ADM5", value: country.adm5_label },
   ];
 
+  // ✅ Normalize dataset_sources
+  const datasetSources = Array.isArray(country.dataset_sources)
+    ? country.dataset_sources
+    : typeof country.dataset_sources === "string"
+    ? [country.dataset_sources]
+    : typeof country.dataset_sources === "object" && country.dataset_sources !== null
+    ? Object.values(country.dataset_sources)
+    : [];
+
   return (
     <div className="border rounded-lg p-4 shadow-sm bg-white">
       <div className="flex justify-between items-center mb-3">
@@ -74,30 +83,35 @@ export default function CountryMetadataCard({
       </div>
 
       {/* Dataset Sources */}
-      {country.dataset_sources && country.dataset_sources.length > 0 && (
+      {datasetSources.length > 0 && (
         <div className="mt-3">
           <h4 className="text-sm font-semibold mb-1 text-gray-700">
             Dataset Sources
           </h4>
           <ul className="list-disc list-inside text-sm text-gray-600">
-            {country.dataset_sources.map((src: string, i: number) => (
-              <li key={i}>{src}</li>
+            {datasetSources.map((src: any, i: number) => (
+              <li key={i}>
+                {typeof src === "string"
+                  ? src
+                  : src?.name || JSON.stringify(src)}
+              </li>
             ))}
           </ul>
         </div>
       )}
 
       {/* Extra Metadata */}
-      {country.extra_metadata && Object.keys(country.extra_metadata).length > 0 && (
-        <div className="mt-3">
-          <h4 className="text-sm font-semibold mb-1 text-gray-700">
-            Extra Metadata
-          </h4>
-          <pre className="text-xs bg-gray-50 border rounded p-2 overflow-x-auto">
-            {JSON.stringify(country.extra_metadata, null, 2)}
-          </pre>
-        </div>
-      )}
+      {country.extra_metadata &&
+        Object.keys(country.extra_metadata).length > 0 && (
+          <div className="mt-3">
+            <h4 className="text-sm font-semibold mb-1 text-gray-700">
+              Extra Metadata
+            </h4>
+            <pre className="text-xs bg-gray-50 border rounded p-2 overflow-x-auto">
+              {JSON.stringify(country.extra_metadata, null, 2)}
+            </pre>
+          </div>
+        )}
     </div>
   );
 }
