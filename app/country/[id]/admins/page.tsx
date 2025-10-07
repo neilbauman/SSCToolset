@@ -57,6 +57,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
+  const [loadingUnits, setLoadingUnits] = useState(false);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openUpload, setOpenUpload] = useState(false);
@@ -101,7 +102,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // --- Fetch Admin Units (Chunked Loader for Large Datasets) ---
+  // --- Fetch Admin Units via RPC (no 1k row limit) ---
   useEffect(() => {
     const fetchAllUnits = async () => {
       if (!selectedVersion) {
@@ -109,33 +110,22 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         return;
       }
 
-      console.log("Fetching admin units in chunks for version:", selectedVersion.id);
+      setLoadingUnits(true);
+      console.log("Fetching admin units via RPC for version:", selectedVersion.id);
 
-      const allData: AdminUnit[] = [];
-      const chunk = 10000;
-      let from = 0;
+      const { data, error } = await supabase.rpc("get_admin_units_full", {
+        version_id: selectedVersion.id,
+      });
 
-      while (true) {
-        const { data, error } = await supabase
-          .from("admin_units")
-          .select("id,pcode,name,level,parent_pcode")
-          .eq("dataset_version_id", selectedVersion.id)
-          .order("pcode", { ascending: true })
-          .range(from, from + chunk - 1);
+      setLoadingUnits(false);
 
-        if (error) {
-          console.error("Error fetching chunk:", error);
-          break;
-        }
-        if (!data || data.length === 0) break;
-
-        allData.push(...data);
-        if (data.length < chunk) break; // no more rows
-        from += chunk;
+      if (error) {
+        console.error("Error fetching admin units:", error);
+        return;
       }
 
-      console.log(`Fetched ${allData.length} admin units total`);
-      setUnits(allData);
+      console.log(`Fetched ${data?.length ?? 0} admin units`);
+      setUnits(data || []);
     };
 
     fetchAllUnits();
@@ -281,9 +271,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               {versions.map((v) => (
                 <tr
                   key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    v.is_active ? "bg-green-50" : ""
-                  }`}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
                 >
                   <td
                     className={`border px-2 py-1 cursor-pointer ${
@@ -295,7 +283,30 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                   </td>
                   <td className="border px-2 py-1">{v.year ?? "—"}</td>
                   <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {v.source ? (
+                      (() => {
+                        try {
+                          const src = JSON.parse(v.source);
+                          if (src.url)
+                            return (
+                              <a
+                                href={src.url}
+                                target="_blank"
+                                className="text-blue-600 underline"
+                              >
+                                {src.name || src.url}
+                              </a>
+                            );
+                          return src.name || v.source;
+                        } catch {
+                          return v.source;
+                        }
+                      })()
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="border px-2 py-1">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
@@ -365,6 +376,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           </button>
         </div>
       </div>
+
+      {/* Loading Indicator */}
+      {loadingUnits && (
+        <p className="text-sm text-gray-500 italic mb-2">
+          Loading administrative units, please wait…
+        </p>
+      )}
 
       {/* Admin Units */}
       {viewMode === "table" ? (
