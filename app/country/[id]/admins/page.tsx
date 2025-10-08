@@ -20,9 +20,7 @@ import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import type { CountryParams } from "@/app/country/types";
 
-// ---------- Types ----------
 type Country = { iso_code: string; name: string };
-
 type AdminVersion = {
   id: string;
   country_iso: string | null;
@@ -34,7 +32,6 @@ type AdminVersion = {
   created_at: string;
   notes: string | null;
 };
-
 type AdminUnit = {
   id: string;
   pcode: string;
@@ -42,12 +39,9 @@ type AdminUnit = {
   level: string;
   parent_pcode: string | null;
 };
-
 type TreeNode = AdminUnit & { children: TreeNode[] };
 
-// ---------- Helpers ----------
 const isUrl = (s?: string | null) => !!s && /^https?:\/\/|^www\./i.test(s.trim());
-
 const SOURCE_CELL = ({ value }: { value: string | null }) => {
   if (!value) return <span>—</span>;
   const v = value.trim();
@@ -64,21 +58,16 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
     <span>{v}</span>
   );
 };
-
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
   const map: Record<string, TreeNode> = {};
   const roots: TreeNode[] = [];
   for (const r of rows) map[r.pcode] = { ...r, children: [] };
   for (const r of rows) {
-    if (r.parent_pcode && map[r.parent_pcode]) {
-      map[r.parent_pcode].children.push(map[r.pcode]);
-    } else {
-      roots.push(map[r.pcode]);
-    }
+    if (r.parent_pcode && map[r.parent_pcode]) map[r.parent_pcode].children.push(map[r.pcode]);
+    else roots.push(map[r.pcode]);
   }
   return roots;
 };
-
 const downloadWideTemplate = () => {
   const header = [
     "ADM1 Name","ADM1 PCode",
@@ -87,8 +76,7 @@ const downloadWideTemplate = () => {
     "ADM4 Name","ADM4 PCode",
     "ADM5 Name","ADM5 PCode",
   ].join(",");
-  const csv = `${header}\n`;
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob([`${header}\n`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -99,24 +87,22 @@ const downloadWideTemplate = () => {
   URL.revokeObjectURL(url);
 };
 
-// ---------- Page ----------
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
   const [units, setUnits] = useState<AdminUnit[]>([]);
-  const [totalUnits, setTotalUnits] = useState<number>(0);
+  const [totalUnits, setTotalUnits] = useState(0);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
-  const [loadingMsg, setLoadingMsg] = useState<string>("");
-  const [progress, setProgress] = useState<number>(0);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [progress, setProgress] = useState(0);
   const isFetchingRef = useRef(false);
 
-  // ----- Fetch country -----
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -128,31 +114,25 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     })();
   }, [countryIso]);
 
-  // ----- Load versions -----
   const loadVersions = async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-
     if (error) {
-      console.error("Error fetching admin versions:", error);
+      console.error(error);
       return;
     }
-
     const list = data ?? [];
     setVersions(list);
     const active = list.find((v) => v.is_active);
-    const initial = active || list[0] || null;
-    setSelectedVersion(initial);
+    setSelectedVersion(active || list[0] || null);
   };
-
   useEffect(() => {
     loadVersions();
   }, [countryIso]);
 
-  // ----- Fetch units (paged) -----
   useEffect(() => {
     const fetchAll = async () => {
       setUnits([]);
@@ -161,7 +141,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       setLoadingMsg("");
       if (!selectedVersion || isFetchingRef.current) return;
       isFetchingRef.current = true;
-
       try {
         const countHead = await supabase
           .from("admin_units")
@@ -170,8 +149,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         const total = countHead.count ?? 0;
         setTotalUnits(total);
         if (total === 0) {
-          setLoadingMsg("");
           setProgress(100);
+          setLoadingMsg("");
           return;
         }
         const pageSize = 5000;
@@ -193,8 +172,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         }
         setUnits(all);
         setLoadingMsg("");
-      } catch (err) {
-        console.error("Error fetching units:", err);
+      } catch (e) {
+        console.error(e);
         setLoadingMsg("Failed to load records.");
       } finally {
         isFetchingRef.current = false;
@@ -203,61 +182,52 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchAll();
   }, [selectedVersion]);
 
-  // ----- Tree helpers -----
   const treeData = useMemo(() => buildTree(units), [units]);
-  const toggleExpand = (pcode: string) => {
+  const toggleExpand = (p: string) => {
     const next = new Set(expanded);
-    next.has(pcode) ? next.delete(pcode) : next.add(pcode);
+    next.has(p) ? next.delete(p) : next.add(p);
     setExpanded(next);
   };
-  const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
-    <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
+  const renderTreeNode = (n: TreeNode, d = 0): JSX.Element => (
+    <div key={n.pcode} style={{ marginLeft: d * 16 }} className="py-0.5">
       <div className="flex items-center gap-1">
-        {node.children.length > 0 ? (
-          <button onClick={() => toggleExpand(node.pcode)}>
-            {expanded.has(node.pcode) ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
+        {n.children.length > 0 ? (
+          <button onClick={() => toggleExpand(n.pcode)}>
+            {expanded.has(n.pcode) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
         ) : (
           <span className="w-4 h-4" />
         )}
-        <span className="font-medium">{node.name}</span>
-        <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
+        <span className="font-medium">{n.name}</span>
+        <span className="text-gray-500 text-xs ml-1">{n.pcode}</span>
       </div>
-      {expanded.has(node.pcode) &&
-        node.children.map((c) => renderTreeNode(c, depth + 1))}
+      {expanded.has(n.pcode) && n.children.map((c) => renderTreeNode(c, d + 1))}
     </div>
   );
 
-  // ----- Delete / Activate / Edit -----
-  const handleDeleteVersion = async (versionId: string) => {
+  const handleDeleteVersion = async (id: string) => {
     try {
-      const { data: unitIds } = await supabase
+      const { data: ids } = await supabase
         .from("admin_units")
         .select("id")
-        .eq("dataset_version_id", versionId);
-      const ids = (unitIds ?? []).map((u) => u.id);
-      if (ids.length) await supabase.from("admin_units").delete().in("id", ids);
-      await supabase.from("admin_dataset_versions").delete().eq("id", versionId);
+        .eq("dataset_version_id", id);
+      const delIds = (ids ?? []).map((u) => u.id);
+      if (delIds.length) await supabase.from("admin_units").delete().in("id", delIds);
+      await supabase.from("admin_dataset_versions").delete().eq("id", id);
       setOpenDelete(null);
       await loadVersions();
-    } catch (err) {
-      console.error("Error deleting version:", err);
+    } catch (e) {
+      console.error(e);
     }
   };
-
   const handleActivateVersion = async (v: AdminVersion) => {
     await supabase.from("admin_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
     await supabase.from("admin_dataset_versions").update({ is_active: true }).eq("id", v.id);
     await loadVersions();
   };
-
-  const handleSaveEdit = async (partial: Partial<AdminVersion>) => {
+  const handleSaveEdit = async (p: Partial<AdminVersion>) => {
     if (!editingVersion) return;
-    await supabase.from("admin_dataset_versions").update(partial).eq("id", editingVersion.id);
+    await supabase.from("admin_dataset_versions").update(p).eq("id", editingVersion.id);
     setEditingVersion(null);
     await loadVersions();
   };
@@ -265,7 +235,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description: "Manage hierarchical administrative units and dataset versions for this country.",
+    description:
+      "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -278,10 +249,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // ---------- Render ----------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Progress bar */}
       {loadingMsg && (
         <div className="mb-3">
           <div className="h-1.5 w-full bg-gray-200 rounded">
@@ -300,8 +269,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Dataset Versions
+            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
             <button
@@ -392,7 +360,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Dataset Health */}
       <DatasetHealth totalUnits={totalUnits} />
 
       {/* View Toggle */}
@@ -420,7 +387,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       </div>
 
-      {/* Units */}
       {viewMode === "table" ? (
         <div className="overflow-x-auto border rounded">
           <table className="w-full text-sm">
@@ -452,4 +418,32 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       ) : (
         <div className="border rounded-lg p-3 bg-white shadow-sm">
           {treeData.length ? (
-            treeData.map((n) => renderTree
+            treeData.map((n) => renderTreeNode(n))
+          ) : (
+            <p className="italic text-gray-500">No admin units found.</p>
+          )}
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      {openUpload && (
+        <UploadAdminUnitsModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={countryIso}
+          onUploaded={loadVersions}
+        />
+      )}
+
+      {/* Delete Confirmation */}
+      {openDelete && (
+        <ConfirmDeleteModal
+          open={!!openDelete}
+          message={`This will permanently remove the version "${openDelete.title}" and all related admin units. This cannot be undone.`}
+          onClose={() => setOpenDelete(null)}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
+        />
+      )}
+
+      {/* Inline Edit Modal */}
+     
