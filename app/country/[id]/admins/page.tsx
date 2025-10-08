@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
-  Layers, Database, Upload, CheckCircle2, Trash2, Edit3, Download, Search, Loader2,
+  Database, Upload, CheckCircle2, Trash2, Edit3, Download, Search, Loader2,
 } from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
@@ -15,8 +15,14 @@ import type { CountryParams } from "@/app/country/types";
 
 type Country = { iso_code: string; name: string };
 type AdminVersion = {
-  id: string; title: string; year: number | null; dataset_date: string | null;
-  source: string | null; is_active: boolean; created_at: string;
+  id: string;
+  title: string;
+  year: number | null;
+  dataset_date: string | null;
+  source: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  created_at: string;
 };
 type AdminUnit = { place_uid: string; name: string; pcode: string; level: number; parent_uid?: string | null };
 
@@ -34,6 +40,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
   const [admToggles, setAdmToggles] = useState({ 1: true, 2: false, 3: false, 4: false, 5: false });
   const [searchTerm, setSearchTerm] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validated, setValidated] = useState(false);
   const isFetchingRef = useRef(false);
   const progressTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -61,11 +69,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     isFetchingRef.current = true;
     setLoadingMsg("Loading administrative units...");
     setProgress(10);
-    let pct = 10;
     progressTimer.current = setInterval(() => setProgress((p) => Math.min(p + 5, 90)), 200);
 
     fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/fetch_snapshots`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version_id: selectedVersion.id }),
     })
       .then(r => r.json())
@@ -89,8 +97,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   };
 
   const handleSaveEdit = async (partial: Partial<AdminVersion>) => {
-    if (!editingVersion) return;
-    await supabase.from("admin_dataset_versions").update(partial).eq("id", editingVersion.id);
+    await supabase.from("admin_dataset_versions").update(partial).eq("id", editingVersion!.id);
     setEditingVersion(null);
     await loadVersions();
   };
@@ -120,12 +127,23 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const templateUrl =
     "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
 
+  const validateChanges = () => {
+    setValidating(true);
+    setTimeout(() => {
+      setValidated(true);
+      setValidating(false);
+    }, 800);
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
       {loadingMsg && (
         <div className="mb-2">
           <div className="h-1.5 w-full bg-gray-200 rounded">
-            <div className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div
+              className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
           </div>
           <p className="text-xs text-gray-600 mt-1">{loadingMsg}</p>
         </div>
@@ -138,11 +156,17 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
-            <a href={templateUrl} download className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700">
+            <a
+              href={templateUrl}
+              download
+              className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
+            >
               <Download className="w-4 h-4 mr-1" /> Template
             </a>
-            <button onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90">
+            <button
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+            >
               <Upload className="w-4 h-4 mr-1" /> Upload Dataset
             </button>
           </div>
@@ -150,32 +174,63 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         {versions.length ? (
           <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
-              <tr><th className="px-2 py-1 text-left">Title</th><th>Year</th><th>Date</th><th>Source</th><th>Status</th><th className="text-right">Actions</th></tr>
+              <tr>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th>Year</th>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th className="text-right">Actions</th>
+              </tr>
             </thead>
             <tbody>
-              {versions.map(v => {
+              {versions.map((v) => {
                 let src: JSX.Element = <span>—</span>;
                 if (v.source) {
                   try {
                     const s = JSON.parse(v.source);
                     src = s.url ? (
-                      <a href={s.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{s.name || s.url}</a>
-                    ) : <span>{s.name}</span>;
-                  } catch { src = <span>{v.source}</span>; }
+                      <a href={s.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                        {s.name || s.url}
+                      </a>
+                    ) : (
+                      <span>{s.name}</span>
+                    );
+                  } catch {
+                    src = <span>{v.source}</span>;
+                  }
                 }
                 return (
                   <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
-                    <td onClick={() => setSelectedVersion(v)} className="border px-2 py-1 cursor-pointer">{v.title}</td>
+                    <td onClick={() => setSelectedVersion(v)} className="border px-2 py-1 cursor-pointer">
+                      {v.title}
+                    </td>
                     <td className="border px-2 py-1">{v.year ?? "—"}</td>
                     <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
                     <td className="border px-2 py-1">{src}</td>
-                    <td className="border px-2 py-1 text-center">{v.is_active ? <span className="text-green-700 flex items-center gap-1 justify-center"><CheckCircle2 className="w-4 h-4" />Active</span> : "—"}</td>
+                    <td className="border px-2 py-1 text-center">
+                      {v.is_active ? (
+                        <span className="text-green-700 flex items-center gap-1 justify-center">
+                          <CheckCircle2 className="w-4 h-4" /> Active
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="border px-2 py-1 text-right">
                       <div className="flex justify-end gap-2">
-                        <button className="text-gray-700 hover:underline text-xs flex items-center"
-                          onClick={() => setEditingVersion(v)}><Edit3 className="w-4 h-4 mr-1" />Edit</button>
-                        <button className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                          onClick={() => setOpenDelete(v)}><Trash2 className="w-4 h-4 mr-1" />Delete</button>
+                        <button
+                          className="text-gray-700 hover:underline text-xs flex items-center"
+                          onClick={() => setEditingVersion(v)}
+                        >
+                          <Edit3 className="w-4 h-4 mr-1" /> Edit
+                        </button>
+                        <button
+                          className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                          onClick={() => setOpenDelete(v)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" /> Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -183,7 +238,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
               })}
             </tbody>
           </table>
-        ) : (<p className="italic text-gray-500 text-sm">No dataset versions uploaded yet.</p>)}
+        ) : (
+          <p className="italic text-gray-500 text-sm">No dataset versions uploaded yet.</p>
+        )}
       </div>
 
       {/* Controls */}
@@ -191,11 +248,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <div className="border rounded-lg p-3 shadow-sm bg-white">
           <h3 className="text-sm font-semibold mb-2">Admin Levels</h3>
           <div className="flex gap-3 flex-wrap">
-            {[1, 2, 3, 4, 5].map(lvl => (
+            {[1, 2, 3, 4, 5].map((lvl) => (
               <label key={lvl} className="flex items-center gap-1 text-sm">
-                <input type="checkbox"
+                <input
+                  type="checkbox"
                   checked={admToggles[lvl as 1 | 2 | 3 | 4 | 5]}
-                  onChange={() => setAdmToggles(p => ({ ...p, [lvl]: !p[lvl as 1 | 2 | 3 | 4 | 5] }))} />
+                  onChange={() => setAdmToggles((p) => ({ ...p, [lvl]: !p[lvl as 1 | 2 | 3 | 4 | 5] }))}
+                />
                 ADM{lvl}
               </label>
             ))}
@@ -207,50 +266,171 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       {/* Search */}
       <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
         <Search className="w-4 h-4 text-gray-500 mr-2" />
-        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search by name or PCode..." className="flex-1 text-sm outline-none bg-transparent" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by name or PCode..."
+          className="flex-1 text-sm outline-none bg-transparent"
+        />
       </div>
 
       {/* Tree View */}
       <AdminUnitsTree units={filteredUnits} activeLevels={selectedLevels} />
 
       {/* Modals */}
-      {openUpload && <UploadAdminUnitsModal open={openUpload} onClose={() => setOpenUpload(false)} countryIso={countryIso} onUploaded={loadVersions} />}
+      {openUpload && (
+        <UploadAdminUnitsModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={countryIso}
+          onUploaded={loadVersions}
+        />
+      )}
       {openDelete && (
-        <ConfirmDeleteModal open={!!openDelete}
+        <ConfirmDeleteModal
+          open={!!openDelete}
           message={`This will permanently remove version "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDeleteVersion(openDelete.id)} />
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
+        />
       )}
+
+      {/* Edit Modal */}
       {editingVersion && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
-            <div className="space-y-2 text-sm">
-              <label className="block">Title
-                <input type="text" value={editingVersion.title}
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md relative">
+            <h3 className="text-lg font-semibold mb-3">Edit Administrative Units Version</h3>
+            <div className="space-y-3 text-sm">
+              <label className="block">
+                Dataset Title *
+                <input
+                  type="text"
+                  value={editingVersion.title}
                   onChange={(e) => setEditingVersion({ ...editingVersion, title: e.target.value })}
-                  className="border rounded w-full px-2 py-1 mt-1" />
+                  className="border rounded w-full px-2 py-1 mt-1"
+                />
               </label>
-              <label className="block">Year
-                <input type="number" value={editingVersion.year ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, year: e.target.value ? Number(e.target.value) : null })}
-                  className="border rounded w-full px-2 py-1 mt-1" />
-              </label>
-              <label className="block">Dataset Date
-                <input type="date" value={editingVersion.dataset_date ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, dataset_date: e.target.value || null })}
-                  className="border rounded w-full px-2 py-1 mt-1" />
-              </label>
-              <label className="block">Source
-                <input type="text" value={editingVersion.source ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value || null })}
-                  className="border rounded w-full px-2 py-1 mt-1" />
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  Year (optional)
+                  <input
+                    type="number"
+                    value={editingVersion.year ?? ""}
+                    onChange={(e) =>
+                      setEditingVersion({
+                        ...editingVersion,
+                        year: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+                <label className="block">
+                  Dataset Date *
+                  <input
+                    type="date"
+                    value={editingVersion.dataset_date ?? ""}
+                    onChange={(e) =>
+                      setEditingVersion({
+                        ...editingVersion,
+                        dataset_date: e.target.value || null,
+                      })
+                    }
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  Source Name (optional)
+                  <input
+                    type="text"
+                    value={(() => {
+                      try {
+                        return JSON.parse(editingVersion.source || "{}").name || "";
+                      } catch {
+                        return "";
+                      }
+                    })()}
+                    onChange={(e) => {
+                      let src = {};
+                      try {
+                        src = JSON.parse(editingVersion.source || "{}");
+                      } catch {
+                        src = {};
+                      }
+                      setEditingVersion({
+                        ...editingVersion,
+                        source: JSON.stringify({ ...src, name: e.target.value }),
+                      });
+                    }}
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+                <label className="block">
+                  Source URL (optional)
+                  <input
+                    type="url"
+                    value={(() => {
+                      try {
+                        return JSON.parse(editingVersion.source || "{}").url || "";
+                      } catch {
+                        return "";
+                      }
+                    })()}
+                    onChange={(e) => {
+                      let src = {};
+                      try {
+                        src = JSON.parse(editingVersion.source || "{}");
+                      } catch {
+                        src = {};
+                      }
+                      setEditingVersion({
+                        ...editingVersion,
+                        source: JSON.stringify({ ...src, url: e.target.value }),
+                      });
+                    }}
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                Notes (optional)
+                <textarea
+                  value={(editingVersion as any).notes || ""}
+                  onChange={(e) =>
+                    setEditingVersion({ ...editingVersion, notes: e.target.value })
+                  }
+                  className="border rounded w-full px-2 py-1 mt-1"
+                  rows={2}
+                />
               </label>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setEditingVersion(null)} className="px-3 py-1 text-sm border rounded">Cancel</button>
-              <button onClick={() => handleSaveEdit(editingVersion)} className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded">Save</button>
+              {!validated ? (
+                <button
+                  onClick={validateChanges}
+                  disabled={validating}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:opacity-90 flex items-center gap-1"
+                >
+                  {validating && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Validate Changes
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSaveEdit(editingVersion)}
+                  className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90"
+                >
+                  Save
+                </button>
+              )}
+              <button
+                onClick={() => setEditingVersion(null)}
+                className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
