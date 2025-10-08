@@ -90,30 +90,45 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
   );
 };
 
-// Build full hierarchical tree by parent_pcode (ADM1→ADM5)
+// Build parent/child tree strictly by hierarchy:
+// - Only ADM1 are roots
+// - Children attach by parent_pcode (trimmed)
+// - Siblings sorted by PCode
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
   if (!rows.length) return [];
 
-  // Build a lookup map for all nodes
+  // Normalize records (trim codes to avoid mismatch-by-whitespace)
+  const normalized = rows.map((r) => ({
+    ...r,
+    pcode: r.pcode.trim(),
+    parent_pcode: r.parent_pcode ? r.parent_pcode.trim() : null,
+  }));
+
   const map: Record<string, TreeNode> = {};
   const roots: TreeNode[] = [];
 
-  // Initialize all nodes
-  for (const r of rows) {
+  // Create nodes
+  for (const r of normalized) {
     map[r.pcode] = { ...r, children: [] };
   }
 
-  // Connect children to their parents
-  for (const r of rows) {
+  // Attach children; ONLY ADM1 become roots
+  for (const r of normalized) {
     const node = map[r.pcode];
-    if (r.parent_pcode && map[r.parent_pcode]) {
-      map[r.parent_pcode].children.push(node);
+    if (r.level === "ADM1") {
+      roots.push(node);
+      continue;
+    }
+    const parentKey = r.parent_pcode;
+    if (parentKey && map[parentKey]) {
+      map[parentKey].children.push(node);
     } else {
+      // Fallback: if parent is missing, keep it visible but don't mix with ADM1
       roots.push(node);
     }
   }
 
-  // Optional: sort each level by PCode so they stay in the same order as CSV
+  // Sort siblings by PCode for a stable order
   const sortByPCode = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => a.pcode.localeCompare(b.pcode));
     nodes.forEach((n) => sortByPCode(n.children));
