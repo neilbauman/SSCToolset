@@ -22,7 +22,6 @@ import type { CountryParams } from "@/app/country/types";
 
 // ---------- Types ----------
 type Country = { iso_code: string; name: string };
-
 type AdminVersion = {
   id: string;
   country_iso: string | null;
@@ -34,7 +33,6 @@ type AdminVersion = {
   created_at: string;
   notes: string | null;
 };
-
 type AdminUnit = {
   id: string;
   pcode: string;
@@ -42,7 +40,6 @@ type AdminUnit = {
   level: string;
   parent_pcode: string | null;
 };
-
 type TreeNode = AdminUnit & { children: TreeNode[] };
 
 // ---------- Helpers ----------
@@ -113,12 +110,10 @@ const downloadWideTemplate = () => {
 // ---------- Page ----------
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
-
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminVersion[]>([]);
   const [selectedVersion, setSelectedVersion] =
     useState<AdminVersion | null>(null);
-
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [totalUnits, setTotalUnits] = useState<number>(0);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
@@ -128,29 +123,25 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(
     null
   );
-
   const [loadingMsg, setLoadingMsg] = useState("");
   const [progress, setProgress] = useState(0);
   const isFetchingRef = useRef(false);
 
-  // --- Level Toggles ---
+  // Admin Level Toggles
   const allLevels = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
   const [selectedLevels, setSelectedLevels] = useState<string[]>(["ADM1"]);
-
   const toggleLevel = (lvl: string) => {
     const idx = allLevels.indexOf(lvl);
     let next: string[] = [];
     if (selectedLevels.includes(lvl)) {
-      // deselect → remove all deeper
       next = allLevels.slice(0, idx);
     } else {
-      // select → ensure all parents
       next = allLevels.slice(0, idx + 1);
     }
     setSelectedLevels(next);
   };
 
-  // ----- Fetch country -----
+  // Country
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -162,7 +153,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     })();
   }, [countryIso]);
 
-  // ----- Load versions -----
+  // Versions
   const loadVersions = async () => {
     const { data } = await supabase
       .from("admin_dataset_versions")
@@ -178,7 +169,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // ----- Fetch units -----
+  // Units
   useEffect(() => {
     const fetchAll = async () => {
       setUnits([]);
@@ -190,7 +181,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           .select("id", { count: "exact", head: true })
           .eq("dataset_version_id", selectedVersion.id);
         setTotalUnits(count ?? 0);
-
         const pageSize = 5000;
         const pages = Math.ceil((count ?? 0) / pageSize);
         const all: AdminUnit[] = [];
@@ -216,62 +206,28 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchAll();
   }, [selectedVersion]);
 
-  // ----- Tree + Flatten helpers -----
   const treeData = useMemo(() => buildTree(units), [units]);
-
-  const flattenTree = (nodes: TreeNode[], depth = 0): any[] => {
+  const flattenTree = (nodes: TreeNode[]): any[] => {
     const rows: any[] = [];
     for (const n of nodes) {
-      if (!allLevels.includes(n.level)) continue;
-      const row: any = { [`${n.level}`]: n.name, [`${n.level}_pcode`]: n.pcode };
+      const row: any = { [`${n.level}`]: n.name };
       rows.push(row);
-      if (n.children?.length) rows.push(...flattenTree(n.children, depth + 1));
+      if (n.children?.length) rows.push(...flattenTree(n.children));
     }
     return rows;
   };
 
   const filteredTree = useMemo(() => {
-    // limit tree depth to deepest selected
     const maxDepth = selectedLevels.length;
-    const limitDepth = (nodes: TreeNode[], depth = 1): TreeNode[] => {
-      if (depth > maxDepth) return [];
-      return nodes.map((n) => ({
-        ...n,
-        children: limitDepth(n.children, depth + 1),
-      }));
-    };
+    const limitDepth = (nodes: TreeNode[], depth = 1): TreeNode[] =>
+      depth > maxDepth
+        ? []
+        : nodes.map((n) => ({
+            ...n,
+            children: limitDepth(n.children, depth + 1),
+          }));
     return limitDepth(treeData);
   }, [treeData, selectedLevels]);
-
-  // ----- Delete / Activate / Save -----
-  const handleDeleteVersion = async (id: string) => {
-    await supabase.from("admin_units").delete().eq("dataset_version_id", id);
-    await supabase.from("admin_dataset_versions").delete().eq("id", id);
-    setOpenDelete(null);
-    await loadVersions();
-  };
-
-  const handleActivateVersion = async (v: AdminVersion) => {
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso);
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", v.id);
-    await loadVersions();
-  };
-
-  const handleSaveEdit = async (partial: Partial<AdminVersion>) => {
-    if (!editingVersion) return;
-    await supabase
-      .from("admin_dataset_versions")
-      .update(partial)
-      .eq("id", editingVersion.id);
-    setEditingVersion(null);
-    await loadVersions();
-  };
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
@@ -283,20 +239,16 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          {
-            label: country?.name ?? countryIso,
-            href: `/country/${countryIso}`,
-          },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
           { label: "Admins" },
         ]}
       />
     ),
   };
 
-  // ---------- Render ----------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top Panel: Admin Toggles + Dataset Health */}
+      {/* Admin Toggle Panel + Health */}
       <div className="flex justify-between items-start mb-4 gap-4">
         <div className="border rounded-lg p-3 shadow-sm bg-white">
           <h3 className="font-semibold text-sm mb-2">Admin Levels</h3>
@@ -316,102 +268,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <DatasetHealth totalUnits={totalUnits} />
       </div>
 
-      {/* Dataset Versions */}
-      <div className="border rounded-lg p-4 shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Dataset Versions
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={downloadWideTemplate}
-              className="flex items-center text-sm text-blue-700 border px-3 py-1 rounded hover:bg-blue-50"
-            >
-              <Download className="w-4 h-4 mr-1" /> Template
-            </button>
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-            >
-              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-            </button>
-          </div>
-        </div>
-        {versions.length ? (
-          <table className="w-full text-sm border rounded">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1 text-left">Year</th>
-                <th className="px-2 py-1 text-left">Date</th>
-                <th className="px-2 py-1 text-left">Source</th>
-                <th className="px-2 py-1 text-left">Status</th>
-                <th className="px-2 py-1 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    v.is_active ? "bg-green-50" : ""
-                  }`}
-                >
-                  <td
-                    className="border px-2 py-1 cursor-pointer"
-                    onClick={() => setSelectedVersion(v)}
-                  >
-                    {v.title}
-                  </td>
-                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1">
-                    <SOURCE_CELL value={v.source} />
-                  </td>
-                  <td className="border px-2 py-1">
-                    {v.is_active ? (
-                      <span className="inline-flex items-center gap-1 text-green-700">
-                        <CheckCircle2 className="w-4 h-4" /> Active
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="border px-2 py-1 text-right">
-                    <div className="flex justify-end gap-2">
-                      {!v.is_active && (
-                        <button
-                          className="text-blue-600 hover:underline text-xs"
-                          onClick={() => handleActivateVersion(v)}
-                        >
-                          Set Active
-                        </button>
-                      )}
-                      <button
-                        className="text-gray-600 hover:underline text-xs"
-                        onClick={() => setEditingVersion(v)}
-                      >
-                        <Edit3 className="inline w-4 h-4 mr-1" /> Edit
-                      </button>
-                      <button
-                        className="text-[color:var(--gsc-red)] hover:underline text-xs"
-                        onClick={() => setOpenDelete(v)}
-                      >
-                        <Trash2 className="inline w-4 h-4 mr-1" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="italic text-gray-500">No dataset versions uploaded yet.</p>
-        )}
-      </div>
-
-      {/* View Toggle */}
+      {/* Table / Tree View */}
       <div className="flex justify-between items-center mb-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
@@ -423,7 +280,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             }`}
             onClick={() => setViewMode("table")}
           >
-            Table View
+            Table
           </button>
           <button
             className={`px-3 py-1 text-sm border rounded ${
@@ -431,12 +288,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             }`}
             onClick={() => setViewMode("tree")}
           >
-            Tree View
+            Tree
           </button>
         </div>
       </div>
 
-      {/* Units */}
       {viewMode === "table" ? (
         <div className="overflow-x-auto border rounded">
           <table className="w-full text-sm">
@@ -464,30 +320,64 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       ) : (
         <div className="border rounded-lg p-3 bg-white shadow-sm">
-          {filteredTree.length ? (
-            filteredTree.map((n) => (
-              <div key={n.pcode} className="pl-1">
-                {n.children.length > 0 ? (
-                  <button
-                    onClick={() => {
-                      const next = new Set(expanded);
-                      next.has(n.pcode)
-                        ? next.delete(n.pcode)
-                        : next.add(n.pcode);
-                      setExpanded(next);
-                    }}
-                  >
-                    {expanded.has(n.pcode) ? (
-                      <ChevronDown className="w-4 h-4 inline" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 inline" />
-                    )}
-                  </button>
-                ) : (
-                  <span className="inline-block w-4" />
-                )}
-                <span className="font-medium ml-1">{n.name}</span>
-                {expanded.has(n.pcode) &&
-                  n.children.map((c) => (
-                    <div key={c.pcode} className="ml-5">
-                      {c.name
+          {filteredTree.map((node) => (
+            <TreeNodeView
+              key={node.pcode}
+              node={node}
+              depth={0}
+              expanded={expanded}
+              setExpanded={setExpanded}
+            />
+          ))}
+        </div>
+      )}
+    </SidebarLayout>
+  );
+}
+
+// --- Recursive Tree Node Renderer ---
+function TreeNodeView({
+  node,
+  depth,
+  expanded,
+  setExpanded,
+}: {
+  node: TreeNode;
+  depth: number;
+  expanded: Set<string>;
+  setExpanded: (v: Set<string>) => void;
+}) {
+  const toggle = () => {
+    const next = new Set(expanded);
+    next.has(node.pcode) ? next.delete(node.pcode) : next.add(node.pcode);
+    setExpanded(next);
+  };
+  return (
+    <div style={{ marginLeft: depth * 16 }} className="py-0.5">
+      <div className="flex items-center gap-1">
+        {node.children.length > 0 ? (
+          <button onClick={toggle}>
+            {expanded.has(node.pcode) ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+        ) : (
+          <span className="w-4 h-4" />
+        )}
+        <span className="font-medium">{node.name}</span>
+      </div>
+      {expanded.has(node.pcode) &&
+        node.children.map((c) => (
+          <TreeNodeView
+            key={c.pcode}
+            node={c}
+            depth={depth + 1}
+            expanded={expanded}
+            setExpanded={setExpanded}
+          />
+        ))}
+    </div>
+  );
+}
