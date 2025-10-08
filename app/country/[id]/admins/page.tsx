@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
-  Layers, Database, Upload, CheckCircle2, Trash2, Edit3, Download, Search,
+  Layers, Database, Upload, CheckCircle2, Trash2, Edit3, Download, Search, Loader2,
 } from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
@@ -18,10 +18,7 @@ type AdminVersion = {
   id: string; title: string; year: number | null; dataset_date: string | null;
   source: string | null; is_active: boolean; created_at: string;
 };
-type AdminUnit = {
-  place_uid: string; name: string; pcode: string;
-  level: number; parent_uid?: string | null;
-};
+type AdminUnit = { place_uid: string; name: string; pcode: string; level: number; parent_uid?: string | null };
 
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
@@ -38,6 +35,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [admToggles, setAdmToggles] = useState({ 1: true, 2: false, 3: false, 4: false, 5: false });
   const [searchTerm, setSearchTerm] = useState("");
   const isFetchingRef = useRef(false);
+  const progressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const selectedLevels = useMemo(
     () => Object.entries(admToggles).filter(([_, v]) => v).map(([k]) => Number(k)),
@@ -62,7 +60,10 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     if (!selectedVersion || isFetchingRef.current) return;
     isFetchingRef.current = true;
     setLoadingMsg("Loading administrative units...");
-    setProgress(5);
+    setProgress(10);
+    let pct = 10;
+    progressTimer.current = setInterval(() => setProgress((p) => Math.min(p + 5, 90)), 200);
+
     fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/fetch_snapshots`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version_id: selectedVersion.id }),
@@ -71,15 +72,26 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       .then(data => {
         setUnits(data ?? []);
         setTotalUnits(data?.length ?? 0);
-        setProgress(100); setLoadingMsg("");
+        setProgress(100);
+        setLoadingMsg("");
       })
       .catch(() => setLoadingMsg("Failed to load data."))
-      .finally(() => (isFetchingRef.current = false));
+      .finally(() => {
+        isFetchingRef.current = false;
+        if (progressTimer.current) clearInterval(progressTimer.current);
+      });
   }, [selectedVersion]);
 
   const handleDeleteVersion = async (id: string) => {
     await supabase.from("admin_dataset_versions").delete().eq("id", id);
     setOpenDelete(null);
+    await loadVersions();
+  };
+
+  const handleSaveEdit = async (partial: Partial<AdminVersion>) => {
+    if (!editingVersion) return;
+    await supabase.from("admin_dataset_versions").update(partial).eq("id", editingVersion.id);
+    setEditingVersion(null);
     await loadVersions();
   };
 
@@ -113,7 +125,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       {loadingMsg && (
         <div className="mb-2">
           <div className="h-1.5 w-full bg-gray-200 rounded">
-            <div className="h-1.5 bg-[color:var(--gsc-red)] rounded" style={{ width: `${progress}%` }} />
+            <div className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
           <p className="text-xs text-gray-600 mt-1">{loadingMsg}</p>
         </div>
@@ -195,26 +207,53 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       {/* Search */}
       <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
         <Search className="w-4 h-4 text-gray-500 mr-2" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search by name or PCode..."
-          className="flex-1 text-sm outline-none bg-transparent"
-        />
+        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by name or PCode..." className="flex-1 text-sm outline-none bg-transparent" />
       </div>
 
-      {/* Tree View only */}
+      {/* Tree View */}
       <AdminUnitsTree units={filteredUnits} activeLevels={selectedLevels} />
 
+      {/* Modals */}
       {openUpload && <UploadAdminUnitsModal open={openUpload} onClose={() => setOpenUpload(false)} countryIso={countryIso} onUploaded={loadVersions} />}
       {openDelete && (
-        <ConfirmDeleteModal
-          open={!!openDelete}
+        <ConfirmDeleteModal open={!!openDelete}
           message={`This will permanently remove version "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDeleteVersion(openDelete.id)}
-        />
+          onConfirm={() => handleDeleteVersion(openDelete.id)} />
+      )}
+      {editingVersion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
+            <div className="space-y-2 text-sm">
+              <label className="block">Title
+                <input type="text" value={editingVersion.title}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, title: e.target.value })}
+                  className="border rounded w-full px-2 py-1 mt-1" />
+              </label>
+              <label className="block">Year
+                <input type="number" value={editingVersion.year ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, year: e.target.value ? Number(e.target.value) : null })}
+                  className="border rounded w-full px-2 py-1 mt-1" />
+              </label>
+              <label className="block">Dataset Date
+                <input type="date" value={editingVersion.dataset_date ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, dataset_date: e.target.value || null })}
+                  className="border rounded w-full px-2 py-1 mt-1" />
+              </label>
+              <label className="block">Source
+                <input type="text" value={editingVersion.source ?? ""}
+                  onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value || null })}
+                  className="border rounded w-full px-2 py-1 mt-1" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setEditingVersion(null)} className="px-3 py-1 text-sm border rounded">Cancel</button>
+              <button onClick={() => handleSaveEdit(editingVersion)} className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded">Save</button>
+            </div>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );
