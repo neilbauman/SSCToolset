@@ -90,45 +90,29 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
   );
 };
 
-// Build parent/child tree strictly by hierarchy:
-// - Only ADM1 are roots
-// - Children attach by parent_pcode (trimmed)
-// - Siblings sorted by PCode
+// Build parent/child tree from flat rows in correct hierarchical order
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
   if (!rows.length) return [];
 
-  // Normalize records (trim codes to avoid mismatch-by-whitespace)
-  const normalized = rows.map((r) => ({
-    ...r,
-    pcode: r.pcode.trim(),
-    parent_pcode: r.parent_pcode ? r.parent_pcode.trim() : null,
-  }));
-
+  // 1️⃣ Make a lookup map so all parents exist first
   const map: Record<string, TreeNode> = {};
-  const roots: TreeNode[] = [];
-
-  // Create nodes
-  for (const r of normalized) {
+  for (const r of rows) {
     map[r.pcode] = { ...r, children: [] };
   }
 
-  // Attach children; ONLY ADM1 become roots
-  for (const r of normalized) {
+  // 2️⃣ Connect each node to its parent (if exists)
+  const roots: TreeNode[] = [];
+  for (const r of rows) {
+    const parentCode = r.parent_pcode?.trim();
     const node = map[r.pcode];
-    if (r.level === "ADM1") {
-      roots.push(node);
-      continue;
-    }
-    const parentKey = r.parent_pcode;
-    if (parentKey && map[parentKey]) {
-      map[parentKey].children.push(node);
+    if (parentCode && map[parentCode]) {
+      map[parentCode].children.push(node);
     } else {
-      // Fallback: if parent is missing, keep it visible but don't mix with ADM1
-      roots.push(node);
+      roots.push(node); // no parent → root (usually ADM1)
     }
   }
 
-  // Sort siblings by PCode for a stable order
+  // 3️⃣ Optional: sort siblings by PCode for stable order
   const sortByPCode = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => a.pcode.localeCompare(b.pcode));
     nodes.forEach((n) => sortByPCode(n.children));
@@ -137,7 +121,6 @@ const buildTree = (rows: AdminUnit[]): TreeNode[] => {
 
   return roots;
 };
-
 
 // Generate wide CSV template (ADM1–ADM5)
 const downloadWideTemplate = () => {
