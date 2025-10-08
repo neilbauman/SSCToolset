@@ -90,30 +90,21 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
   );
 };
 
-// Build parent/child tree from flat rows, ensuring correct level order and alphabetical sorting
+// Build full hierarchical tree by parent_pcode (ADM1→ADM5)
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
   if (!rows.length) return [];
 
-  // Sort by level (ADM1→ADM5) first, then by pcode
-  const levelOrder: Record<string, number> = {
-    ADM1: 1,
-    ADM2: 2,
-    ADM3: 3,
-    ADM4: 4,
-    ADM5: 5,
-  };
-  const sorted = [...rows].sort((a, b) => {
-    const la = levelOrder[a.level] || 0;
-    const lb = levelOrder[b.level] || 0;
-    return la !== lb ? la - lb : a.pcode.localeCompare(b.pcode);
-  });
-
-  // Build tree
+  // Build a lookup map for all nodes
   const map: Record<string, TreeNode> = {};
   const roots: TreeNode[] = [];
 
-  for (const r of sorted) map[r.pcode] = { ...r, children: [] };
-  for (const r of sorted) {
+  // Initialize all nodes
+  for (const r of rows) {
+    map[r.pcode] = { ...r, children: [] };
+  }
+
+  // Connect children to their parents
+  for (const r of rows) {
     const node = map[r.pcode];
     if (r.parent_pcode && map[r.parent_pcode]) {
       map[r.parent_pcode].children.push(node);
@@ -122,15 +113,16 @@ const buildTree = (rows: AdminUnit[]): TreeNode[] => {
     }
   }
 
-  // Recursively sort children alphabetically by name
-  const sortChildren = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => a.name.localeCompare(b.name));
-    nodes.forEach((n) => sortChildren(n.children));
+  // Optional: sort each level by PCode so they stay in the same order as CSV
+  const sortByPCode = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => a.pcode.localeCompare(b.pcode));
+    nodes.forEach((n) => sortByPCode(n.children));
   };
-  sortChildren(roots);
+  sortByPCode(roots);
 
   return roots;
 };
+
 
 // Generate wide CSV template (ADM1–ADM5)
 const downloadWideTemplate = () => {
