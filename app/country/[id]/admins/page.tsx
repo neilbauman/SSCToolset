@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Loader2, Table, TreeDeciduous } from "lucide-react";
+import { Layers, Loader2, Table, TreeDeciduous, Upload } from "lucide-react";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
@@ -38,6 +38,7 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
   const [progress, setProgress] = useState(0);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [uploadOpen, setUploadOpen] = useState(false);
   const pageSize = 1000;
 
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -124,7 +125,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
     setExpanded((prev) => ({ ...prev, [pcode]: !prev[pcode] }));
   };
 
-  // ✅ FIXED: buildTree now returns React.ReactNode[] (flattened properly)
   const buildTree = (units: AdminUnit[]): React.ReactNode[] => {
     const map: Record<string, AdminUnit[]> = {};
     units.forEach((u) => {
@@ -213,7 +213,12 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
             <Layers className="h-5 w-5 text-gray-500" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
-            <UploadAdminUnitsModal countryIso={countryIso} onUploaded={fetchVersions} />
+            <button
+              onClick={() => setUploadOpen(true)}
+              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1"
+            >
+              <Upload className="h-4 w-4" /> Upload
+            </button>
             <button
               onClick={downloadTemplate}
               className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200"
@@ -319,6 +324,14 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
       )}
 
       <DatasetHealth datasetVersionId={activeVersionId} />
+
+      {/* Upload Modal */}
+      <UploadAdminUnitsModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        countryIso={countryIso}
+        onUploaded={fetchVersions}
+      />
     </div>
   );
 }
