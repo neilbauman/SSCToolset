@@ -90,36 +90,18 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
   );
 };
 
+// Build simple parent/child tree from flat rows
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
-  // Sort rows first by level number (ADM1..ADM5), then by pcode
-  const levelOrder = { ADM1: 1, ADM2: 2, ADM3: 3, ADM4: 4, ADM5: 5 };
-  const sorted = [...rows].sort((a, b) => {
-    const la = levelOrder[a.level] || 0;
-    const lb = levelOrder[b.level] || 0;
-    return la !== lb ? la - lb : a.pcode.localeCompare(b.pcode);
-  });
-
   const map: Record<string, TreeNode> = {};
   const roots: TreeNode[] = [];
-
-  for (const r of sorted) map[r.pcode] = { ...r, children: [] };
-
-  for (const r of sorted) {
-    const node = map[r.pcode];
+  for (const r of rows) map[r.pcode] = { ...r, children: [] };
+  for (const r of rows) {
     if (r.parent_pcode && map[r.parent_pcode]) {
-      map[r.parent_pcode].children.push(node);
+      map[r.parent_pcode].children.push(map[r.pcode]);
     } else {
-      roots.push(node);
+      roots.push(map[r.pcode]);
     }
   }
-
-  // Sort children alphabetically by name for nice visual order
-  const sortChildren = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => a.name.localeCompare(b.name));
-    nodes.forEach((n) => sortChildren(n.children));
-  };
-  sortChildren(roots);
-
   return roots;
 };
 
