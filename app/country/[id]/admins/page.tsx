@@ -51,9 +51,38 @@ const isUrl = (s?: string | null) =>
 
 const SOURCE_CELL = ({ value }: { value: string | null }) => {
   if (!value) return <span>—</span>;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && parsed.name) {
+      const name = parsed.name;
+      const url = parsed.url;
+      return url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 hover:underline"
+        >
+          {name}
+        </a>
+      ) : (
+        <span>{name}</span>
+      );
+    }
+  } catch {
+    // Not JSON, fall through
+  }
+
   const v = value.trim();
-  return isUrl(v) ? (
-    <a href={v.startsWith("http") ? v : `https://${v}`} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+  const isUrl = /^https?:\/\//i.test(v);
+  return isUrl ? (
+    <a
+      href={v}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-700 hover:underline"
+    >
       {v}
     </a>
   ) : (
