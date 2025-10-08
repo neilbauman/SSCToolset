@@ -90,47 +90,53 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
   );
 };
 
- // --- Tree Build ---
-  const buildTree = (rows: AdminUnit[]): TreeNode[] => {
-    const map: Record<string, TreeNode> = {};
-    const roots: TreeNode[] = [];
-    for (const row of rows) map[row.pcode] = { ...row, children: [] };
-    for (const row of rows) {
-      if (row.parent_pcode && map[row.parent_pcode])
-        map[row.parent_pcode].children.push(map[row.pcode]);
-      else roots.push(map[row.pcode]);
-    }
-    return roots;
-  };
-  const treeData = buildTree(units);
+// Build parent/child tree strictly by hierarchy:
+// - Only ADM1 are roots
+// - Children attach by parent_pcode (trimmed)
+// - Siblings sorted by PCode
+const buildTree = (rows: AdminUnit[]): TreeNode[] => {
+  if (!rows.length) return [];
 
-  // --- Tree Toggle ---
-  const toggleExpand = (pcode: string) => {
-    const next = new Set(expanded);
-    next.has(pcode) ? next.delete(pcode) : next.add(pcode);
-    setExpanded(next);
+  // Normalize records (trim codes to avoid mismatch-by-whitespace)
+  const normalized = rows.map((r) => ({
+    ...r,
+    pcode: r.pcode.trim(),
+    parent_pcode: r.parent_pcode ? r.parent_pcode.trim() : null,
+  }));
+
+  const map: Record<string, TreeNode> = {};
+  const roots: TreeNode[] = [];
+
+  // Create nodes
+  for (const r of normalized) {
+    map[r.pcode] = { ...r, children: [] };
+  }
+
+  // Attach children; ONLY ADM1 become roots
+  for (const r of normalized) {
+    const node = map[r.pcode];
+    if (r.level === "ADM1") {
+      roots.push(node);
+      continue;
+    }
+    const parentKey = r.parent_pcode;
+    if (parentKey && map[parentKey]) {
+      map[parentKey].children.push(node);
+    } else {
+      // Fallback: if parent is missing, keep it visible but don't mix with ADM1
+      roots.push(node);
+    }
+  }
+
+  // Sort siblings by PCode for a stable order
+  const sortByPCode = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => a.pcode.localeCompare(b.pcode));
+    nodes.forEach((n) => sortByPCode(n.children));
   };
-  const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
-    <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
-      <div className="flex items-center gap-1">
-        {node.children.length > 0 ? (
-          <button onClick={() => toggleExpand(node.pcode)}>
-            {expanded.has(node.pcode) ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-          </button>
-        ) : (
-          <span className="w-4 h-4" />
-        )}
-        <span className="font-medium">{node.name}</span>
-        <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
-      </div>
-      {expanded.has(node.pcode) &&
-        node.children.map((child) => renderTreeNode(child, depth + 1))}
-    </div>
-  );
+  sortByPCode(roots);
+
+  return roots;
+};
 
 
 // Generate wide CSV template (ADM1–ADM5)
