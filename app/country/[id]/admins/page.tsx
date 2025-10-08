@@ -39,7 +39,8 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const pageSize = 1000;
 
-  const progressTimer = useRef<NodeJS.Timer | null>(null);
+  // ✅ FIXED: Correctly typed for browser setInterval / clearInterval
+  const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ---- Utility: render source as link or text ----
   const renderSource = (src: string | null) => {
