@@ -21,7 +21,7 @@ import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import type { CountryParams } from "@/app/country/types";
 
 // ---------- Types ----------
-type Country = { iso_code: string; name: string; };
+type Country = { iso_code: string; name: string };
 
 type AdminVersion = {
   id: string;
@@ -29,7 +29,7 @@ type AdminVersion = {
   title: string;
   year: number | null;
   dataset_date: string | null; // DATE in DB
-  source: string | null;       // plain text/URL
+  source: string | null;       // name or url, or JSON string {name,url}
   is_active: boolean;
   created_at: string;
   notes: string | null;
@@ -46,24 +46,14 @@ type AdminUnit = {
 type TreeNode = AdminUnit & { children: TreeNode[] };
 
 // ---------- Helpers ----------
-const isUrl = (s?: string | null) =>
-  !!s && /^https?:\/\/|^www\./i.test(s.trim());
-
 const SOURCE_CELL = ({ value }: { value: string | null }) => {
   if (!value) return <span>—</span>;
-
   try {
     const parsed = JSON.parse(value);
     if (parsed && typeof parsed === "object" && parsed.name) {
-      const name = parsed.name;
-      const url = parsed.url;
+      const { name, url } = parsed as { name: string; url?: string };
       return url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-700 hover:underline"
-        >
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">
           {name}
         </a>
       ) : (
@@ -71,58 +61,51 @@ const SOURCE_CELL = ({ value }: { value: string | null }) => {
       );
     }
   } catch {
-    // Not JSON, fall through
+    /* fall through if not JSON */
   }
-
-  const v = value.trim();
-  const isUrl = /^https?:\/\//i.test(v);
-  return isUrl ? (
-    <a
-      href={v}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-700 hover:underline"
-    >
-      {v}
-    </a>
-  ) : (
-    <span>{v}</span>
-  );
+  return <span>{value.trim()}</span>;
 };
 
-// Build parent/child tree from flat rows in correct hierarchical order
+// Build parent/child tree then sort siblings by PCode
 const buildTree = (rows: AdminUnit[]): TreeNode[] => {
   if (!rows.length) return [];
-
-  // 1️⃣ Make a lookup map so all parents exist first
   const map: Record<string, TreeNode> = {};
-  for (const r of rows) {
-    map[r.pcode] = { ...r, children: [] };
-  }
+  for (const r of rows) map[r.pcode] = { ...r, children: [] };
 
-  // 2️⃣ Connect each node to its parent (if exists)
   const roots: TreeNode[] = [];
   for (const r of rows) {
-    const parentCode = r.parent_pcode?.trim();
-    const node = map[r.pcode];
-    if (parentCode && map[parentCode]) {
-      map[parentCode].children.push(node);
+    if (r.parent_pcode && map[r.parent_pcode]) {
+      map[r.parent_pcode].children.push(map[r.pcode]);
     } else {
-      roots.push(node); // no parent → root (usually ADM1)
+      roots.push(map[r.pcode]);
     }
   }
 
-  // 3️⃣ Optional: sort siblings by PCode for stable order
   const sortByPCode = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => a.pcode.localeCompare(b.pcode));
     nodes.forEach((n) => sortByPCode(n.children));
   };
   sortByPCode(roots);
-
   return roots;
 };
 
-// Generate wide CSV template (ADM1–ADM5)
+// Flatten the hierarchy: one row per full path (leaf) with ADM1..ADM5 columns
+type Row = Record<string, string>; // { ADM1: "X", ADM2: "Y", ... }
+const flattenHierarchy = (nodes: TreeNode[]): Row[] => {
+  const out: Row[] = [];
+  const dfs = (node: TreeNode, path: Row) => {
+    const next = { ...path, [node.level]: node.name };
+    if (node.children.length) {
+      node.children.forEach((c) => dfs(c, next));
+    } else {
+      out.push(next);
+    }
+  };
+  nodes.forEach((n) => dfs(n, {}));
+  return out;
+};
+
+// Wide CSV template (ADM1–ADM5)
 const downloadWideTemplate = () => {
   const header = [
     "ADM1 Name","ADM1 PCode",
@@ -131,8 +114,7 @@ const downloadWideTemplate = () => {
     "ADM4 Name","ADM4 PCode",
     "ADM5 Name","ADM5 PCode",
   ].join(",");
-  const csv = `${header}\n`;
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob([`${header}\n`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -166,6 +148,16 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [progress, setProgress] = useState<number>(0);
   const isFetchingRef = useRef(false);
 
+  // Admin level toggles (auto-include parents)
+  const allLevels = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
+  const [selectedLevels, setSelectedLevels] = useState<string[]>(["ADM1"]);
+  const toggleLevel = (lvl: string) => {
+    const idx = allLevels.indexOf(lvl);
+    setSelectedLevels((prev) =>
+      prev.includes(lvl) ? allLevels.slice(0, idx) : allLevels.slice(0, idx + 1)
+    );
+  };
+
   // ----- Fetch country -----
   useEffect(() => {
     (async () => {
@@ -197,7 +189,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     const initial = active || list[0] || null;
     setSelectedVersion(initial);
   };
-
   useEffect(() => { loadVersions(); }, [countryIso]);
 
   // ----- Fetch units (paged, >1000) -----
@@ -213,13 +204,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       isFetchingRef.current = true;
 
       try {
-        // First: count only (fast HEAD request)
-        const countHead = await supabase
+        const head = await supabase
           .from("admin_units")
           .select("id", { count: "exact", head: true })
           .eq("dataset_version_id", selectedVersion.id);
 
-        const total = countHead.count ?? 0;
+        const total = head.count ?? 0;
         setTotalUnits(total);
 
         if (total === 0) {
@@ -228,7 +218,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           return;
         }
 
-        const pageSize = 5000; // tuned for speed
+        const pageSize = 5000;
         const pages = Math.ceil(total / pageSize);
         setLoadingMsg(`Loading ${total.toLocaleString()} records...`);
 
@@ -243,11 +233,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             .order("pcode", { ascending: true })
             .range(from, to);
           if (error) throw error;
-          all.push(...(data as AdminUnit[]));
 
-          // progress
-          const pct = Math.round(((i + 1) / pages) * 100);
-          setProgress(pct);
+          all.push(...((data as AdminUnit[]) ?? []));
+          setProgress(Math.round(((i + 1) / pages) * 100));
         }
 
         setUnits(all);
@@ -263,35 +251,29 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchAll();
   }, [selectedVersion]);
 
-  // ----- Tree helpers -----
+  // ---------- Tree & table data ----------
   const treeData = useMemo(() => buildTree(units), [units]);
-  const toggleExpand = (pcode: string) => {
-    const next = new Set(expanded);
-    next.has(pcode) ? next.delete(pcode) : next.add(pcode);
-    setExpanded(next);
-  };
 
-  const renderTreeNode = (node: TreeNode, depth = 0): JSX.Element => (
-    <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
-      <div className="flex items-center gap-1">
-        {node.children.length > 0 ? (
-          <button onClick={() => toggleExpand(node.pcode)}>
-            {expanded.has(node.pcode) ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-          </button>
-        ) : (
-          <span className="w-4 h-4" />
-        )}
-        <span className="font-medium">{node.name}</span>
-        <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
-      </div>
-      {expanded.has(node.pcode) &&
-        node.children.map((c: TreeNode) => renderTreeNode(c, depth + 1))}
-    </div>
-  );
+  // Limit depth for tree view by selectedLevels (ADM1..N)
+  const limitedTree = useMemo(() => {
+    const maxDepth = selectedLevels.length; // 1..5
+    const limit = (nodes: TreeNode[], depth = 1): TreeNode[] =>
+      depth > maxDepth
+        ? []
+        : nodes.map((n) => ({ ...n, children: limit(n.children, depth + 1) }));
+    return limit(treeData);
+  }, [treeData, selectedLevels]);
+
+  // Flatten to rows for table; include only selected level columns
+  const flatRows = useMemo(() => {
+    const rows = flattenHierarchy(treeData);
+    // Fill ragged paths and keep only selected columns
+    return rows.map((r) => {
+      const out: Row = {};
+      selectedLevels.forEach((lvl) => (out[lvl] = r[lvl] ?? "—"));
+      return out;
+    });
+  }, [treeData, selectedLevels]);
 
   // ----- Delete version (and units) -----
   const handleDeleteVersion = async (versionId: string) => {
@@ -325,7 +307,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
-  // ----- Header props (fix GroupKey typing) -----
+  // ----- Header props (keep as-is) -----
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
@@ -358,7 +340,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* Dataset Versions */}
+      {/* Dataset Versions (unchanged) */}
       <div className="border rounded-lg p-4 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -457,8 +439,25 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Dataset Health */}
-      <DatasetHealth totalUnits={totalUnits} />
+      {/* Admin toggle panel + Dataset Health (side by side) */}
+      <div className="flex justify-between items-start mb-4 gap-4">
+        <div className="border rounded-lg p-3 shadow-sm bg-white">
+          <h3 className="font-semibold text-sm mb-2">Admin Levels</h3>
+          <div className="flex gap-3 flex-wrap">
+            {allLevels.map((lvl) => (
+              <label key={lvl} className="flex items-center gap-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedLevels.includes(lvl)}
+                  onChange={() => toggleLevel(lvl)}
+                />
+                {lvl}
+              </label>
+            ))}
+          </div>
+        </div>
+        <DatasetHealth totalUnits={totalUnits} />
+      </div>
 
       {/* View Toggle */}
       <div className="flex justify-between items-center mb-3">
@@ -467,17 +466,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </h2>
         <div className="flex gap-2">
           <button
-            className={`px-3 py-1 text-sm border rounded ${
-              viewMode === "table" ? "bg-blue-50 border-blue-400" : ""
-            }`}
+            className={`px-3 py-1 text-sm border rounded ${viewMode === "table" ? "bg-blue-50 border-blue-400" : ""}`}
             onClick={() => setViewMode("table")}
           >
             Table View
           </button>
           <button
-            className={`px-3 py-1 text-sm border rounded ${
-              viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""
-            }`}
+            className={`px-3 py-1 text-sm border rounded ${viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""}`}
             onClick={() => setViewMode("tree")}
           >
             Tree View
@@ -491,19 +486,17 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-100">
               <tr>
-                <th className="px-2 py-1 text-left">Name</th>
-                <th className="px-2 py-1 text-left">PCode</th>
-                <th className="px-2 py-1 text-left">Level</th>
-                <th className="px-2 py-1 text-left">Parent</th>
+                {selectedLevels.map((lvl) => (
+                  <th key={lvl} className="px-2 py-1 text-left">{lvl}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {units.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-2 py-1">{u.name}</td>
-                  <td className="px-2 py-1">{u.pcode}</td>
-                  <td className="px-2 py-1">{u.level}</td>
-                  <td className="px-2 py-1">{u.parent_pcode ?? "—"}</td>
+              {flatRows.map((row, i) => (
+                <tr key={i} className="hover:bg-gray-50">
+                  {selectedLevels.map((lvl) => (
+                    <td key={lvl} className="px-2 py-1 border">{row[lvl] ?? "—"}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -516,8 +509,38 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       ) : (
         <div className="border rounded-lg p-3 bg-white shadow-sm">
-          {treeData.length ? (
-            treeData.map((n) => renderTreeNode(n))
+          {/* limit depth by selectedLevels; expand/collapse per node */}
+          {limitedTree.length ? (
+            limitedTree.map((root) => {
+              const renderNode = (node: TreeNode, depth = 0): JSX.Element => (
+                <div key={node.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
+                  <div className="flex items-center gap-1">
+                    {node.children.length > 0 ? (
+                      <button
+                        onClick={() => {
+                          const next = new Set(expanded);
+                          next.has(node.pcode) ? next.delete(node.pcode) : next.add(node.pcode);
+                          setExpanded(next);
+                        }}
+                      >
+                        {expanded.has(node.pcode) ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="w-4 h-4" />
+                    )}
+                    <span className="font-medium">{node.name}</span>
+                    <span className="text-gray-500 text-xs ml-1">{node.pcode}</span>
+                  </div>
+                  {expanded.has(node.pcode) &&
+                    node.children.map((c) => renderNode(c, depth + 1))}
+                </div>
+              );
+              return renderNode(root, 0);
+            })
           ) : (
             <p className="italic text-gray-500">No admin units found.</p>
           )}
@@ -544,7 +567,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         />
       )}
 
-      {/* Inline Edit Version Modal (stable) */}
+      {/* Inline Edit Version Modal (unchanged) */}
       {editingVersion && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
@@ -564,7 +587,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 <input
                   type="number"
                   value={editingVersion.year ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, year: e.target.value ? Number(e.target.value) : null })}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      year: e.target.value ? Number(e.target.value) : null,
+                    })
+                  }
                   className="border rounded w-full px-2 py-1 mt-1 text-sm"
                 />
               </label>
@@ -573,7 +601,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 <input
                   type="date"
                   value={editingVersion.dataset_date ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, dataset_date: e.target.value || null })}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      dataset_date: e.target.value || null,
+                    })
+                  }
                   className="border rounded w-full px-2 py-1 mt-1 text-sm"
                 />
               </label>
@@ -582,7 +615,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 <input
                   type="text"
                   value={editingVersion.source ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, source: e.target.value || null })}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      source: e.target.value || null,
+                    })
+                  }
                   className="border rounded w-full px-2 py-1 mt-1 text-sm"
                 />
               </label>
@@ -590,7 +628,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 Notes
                 <textarea
                   value={editingVersion.notes ?? ""}
-                  onChange={(e) => setEditingVersion({ ...editingVersion, notes: e.target.value || null })}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      notes: e.target.value || null,
+                    })
+                  }
                   className="border rounded w-full px-2 py-1 mt-1 text-sm"
                 />
               </label>
