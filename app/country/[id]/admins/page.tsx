@@ -8,20 +8,16 @@ import {
   Layers,
   Database,
   Upload,
-  ChevronDown,
-  ChevronRight,
   Edit3,
   Trash2,
   CheckCircle2,
-  Download,
 } from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = { iso_code: string; name: string; };
-
+type Country = { iso_code: string; name: string };
 type AdminVersion = {
   id: string;
   country_iso: string | null;
@@ -33,7 +29,6 @@ type AdminVersion = {
   created_at: string;
   notes: string | null;
 };
-
 type AdminUnit = {
   place_uid: string;
   parent_uid: string | null;
@@ -46,22 +41,19 @@ type AdminUnit = {
 
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
-
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<AdminVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<AdminVersion | null>(null);
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
-
   const [levels, setLevels] = useState(["ADM1"]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loadingMsg, setLoadingMsg] = useState("");
   const [progress, setProgress] = useState(0);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
 
-  // -------- Fetch Country --------
+  // ---------- Fetch Country ----------
   useEffect(() => {
     supabase
       .from("countries")
@@ -71,7 +63,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data as Country));
   }, [countryIso]);
 
-  // -------- Load Versions --------
+  // ---------- Load Versions ----------
   const loadVersions = async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
@@ -85,7 +77,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   };
   useEffect(() => { loadVersions(); }, [countryIso]);
 
-  // -------- Fetch Units via Edge Function --------
+  // ---------- Fetch Units via Edge Function ----------
   useEffect(() => {
     if (!selectedVersion) return;
     const fetchUnits = async () => {
@@ -110,7 +102,29 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     fetchUnits();
   }, [selectedVersion]);
 
-  // -------- Build Hierarchical Map --------
+  // ---------- Delete version ----------
+  const handleDeleteVersion = async (versionId: string) => {
+    try {
+      const { error: unitsErr } = await supabase
+        .from("place_snapshots")
+        .delete()
+        .eq("dataset_version_id", versionId);
+      if (unitsErr) throw unitsErr;
+
+      const { error: verErr } = await supabase
+        .from("admin_dataset_versions")
+        .delete()
+        .eq("id", versionId);
+      if (verErr) throw verErr;
+
+      setOpenDelete(null);
+      await loadVersions();
+    } catch (err) {
+      console.error("Error deleting version:", err);
+    }
+  };
+
+  // ---------- Map + Level Control ----------
   const levelNames = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
   const levelMap = useMemo(() => {
     const map: Record<number, AdminUnit[]> = {};
@@ -121,7 +135,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     return map;
   }, [units]);
 
-  // -------- Toggle Admin Level --------
   const toggleLevel = (lvl: string) => {
     const next = levels.includes(lvl)
       ? levels.filter((l) => l !== lvl)
@@ -130,13 +143,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     setLevels(next);
   };
 
-  // -------- Table View Renderer --------
+  // ---------- Table View ----------
   const TableView = () => {
     const activeLevels = levelNames.filter((l) => levels.includes(l));
     if (!units.length) return <p className="italic text-gray-500">No data found.</p>;
-
-    // Map each depth row by its path order
     const byRoot = levelMap[1] || [];
+
     return (
       <div className="overflow-x-auto border rounded">
         <table className="w-full text-sm">
@@ -154,12 +166,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 return <tr key={adm1.place_uid}><td className="px-2 py-1">{adm1.name}</td></tr>;
               return children.map((adm2) => (
                 <tr key={adm2.place_uid}>
-                  {activeLevels.includes("ADM1") && (
-                    <td className="px-2 py-1">{adm1.name}</td>
-                  )}
-                  {activeLevels.includes("ADM2") && (
-                    <td className="px-2 py-1">{adm2.name}</td>
-                  )}
+                  {activeLevels.includes("ADM1") && <td className="px-2 py-1">{adm1.name}</td>}
+                  {activeLevels.includes("ADM2") && <td className="px-2 py-1">{adm2.name}</td>}
                   {activeLevels.length > 2 &&
                     activeLevels.slice(2).map((l) => <td key={l} className="px-2 py-1">—</td>)}
                 </tr>
@@ -171,12 +179,11 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     );
   };
 
-  // -------- Header Props --------
+  // ---------- Header ----------
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
-    description:
-      "Manage hierarchical administrative units and dataset versions for this country.",
+    description: "Manage hierarchical administrative units and dataset versions for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -189,7 +196,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // -------- Render --------
+  // ---------- Render ----------
   return (
     <SidebarLayout headerProps={headerProps}>
       {/* Progress Bar */}
@@ -239,9 +246,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
                 <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
                   <td
                     onClick={() => setSelectedVersion(v)}
-                    className={`border px-2 py-1 cursor-pointer ${
-                      selectedVersion?.id === v.id ? "font-semibold" : ""
-                    }`}
+                    className={`border px-2 py-1 cursor-pointer ${selectedVersion?.id === v.id ? "font-semibold" : ""}`}
                   >
                     {v.title}
                   </td>
@@ -287,11 +292,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           <div className="flex flex-wrap gap-2">
             {levelNames.map((l) => (
               <label key={l} className="flex items-center gap-1 text-sm">
-                <input
-                  type="checkbox"
-                  checked={levels.includes(l)}
-                  onChange={() => toggleLevel(l)}
-                />
+                <input type="checkbox" checked={levels.includes(l)} onChange={() => toggleLevel(l)} />
                 {l}
               </label>
             ))}
