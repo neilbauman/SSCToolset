@@ -14,7 +14,7 @@ interface Props {
 
 /**
  * Upload modal for Administrative Units (wide format CSV)
- * Schema-aware with source metadata and upload progress.
+ * Safe deduplication and hierarchy enforcement.
  */
 export default function UploadAdminUnitsModal({
   open,
@@ -46,39 +46,24 @@ export default function UploadAdminUnitsModal({
   const handleUpload = async () => {
     setError(null);
 
-    if (!form.file) {
-      setError("Please select a CSV file to upload.");
-      return;
-    }
-
-    if (!form.title.trim()) {
-      setError("Dataset title is required.");
-      return;
-    }
+    if (!form.file) return setError("Please select a CSV file to upload.");
+    if (!form.title.trim()) return setError("Dataset title is required.");
 
     setLoading(true);
     setProgress(5);
 
     try {
-      // Parse CSV
+      // --- Parse CSV ---
       const text = await form.file.text();
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-
-      if (!parsed.data || parsed.data.length === 0) {
-        throw new Error("No valid rows found in CSV.");
-      }
-
       const rows: any[] = parsed.data;
-      const total = rows.length;
-      const step = Math.ceil(total / 20);
 
-      // Create new dataset version
+      if (!rows || rows.length === 0) throw new Error("No valid rows found in CSV.");
+
+      // --- Create new dataset version ---
       const sourceJson =
         form.source_name || form.source_url
-          ? JSON.stringify({
-              name: form.source_name,
-              url: form.source_url,
-            })
+          ? JSON.stringify({ name: form.source_name, url: form.source_url })
           : null;
 
       const { data: version, error: vErr } = await supabase
@@ -98,25 +83,31 @@ export default function UploadAdminUnitsModal({
       if (vErr || !version) throw vErr || new Error("Failed to create dataset version.");
       setProgress(15);
 
-      // Flatten wide CSV → admin_units table structure
+      // --- Flatten wide CSV to normalized admin_units structure ---
+      const seen = new Set<string>();
       const adminRows: any[] = [];
-      for (const r of rows) {
+
+      for (const row of rows) {
         for (let level = 1; level <= 5; level++) {
-          const name = r[`ADM${level} Name`];
-          const pcode = r[`ADM${level} PCode`];
+          const name = row[`ADM${level} Name`]?.trim();
+          const pcode = row[`ADM${level} PCode`]?.trim();
           if (!name || !pcode) continue;
 
           const parentLevel = level - 1;
           const parentPcode =
-            parentLevel > 0 ? r[`ADM${parentLevel} PCode`] || null : null;
+            parentLevel > 0 ? row[`ADM${parentLevel} PCode`]?.trim() || null : null;
+
+          const key = `${version.id}_${pcode}`;
+          if (seen.has(key)) continue; // deduplicate
+          seen.add(key);
 
           adminRows.push({
             country_iso: countryIso,
+            dataset_version_id: version.id,
             pcode,
             name,
             level: `ADM${level}`,
             parent_pcode: parentPcode,
-            dataset_version_id: version.id,
             metadata: {},
           });
         }
@@ -124,15 +115,12 @@ export default function UploadAdminUnitsModal({
 
       if (adminRows.length === 0) throw new Error("No valid admin rows generated.");
 
-      // Batch insert
+      // --- Batch insert ---
       const batchSize = 1000;
       for (let i = 0; i < adminRows.length; i += batchSize) {
         const chunk = adminRows.slice(i, i + batchSize);
-        const { error: insertErr } = await supabase
-          .from("admin_units")
-          .insert(chunk);
+        const { error: insertErr } = await supabase.from("admin_units").insert(chunk);
         if (insertErr) throw insertErr;
-
         setProgress(Math.min(100, 15 + (i / adminRows.length) * 85));
       }
 
@@ -144,7 +132,7 @@ export default function UploadAdminUnitsModal({
       setError(err.message || "Upload failed.");
     } finally {
       setLoading(false);
-      setTimeout(() => setProgress(0), 2000);
+      setTimeout(() => setProgress(0), 1500);
     }
   };
 
@@ -242,9 +230,7 @@ export default function UploadAdminUnitsModal({
           </div>
         )}
 
-        {error && (
-          <p className="text-red-600 text-sm mt-2">{error}</p>
-        )}
+        {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
 
         <div className="flex justify-end gap-2 mt-4">
           <button
