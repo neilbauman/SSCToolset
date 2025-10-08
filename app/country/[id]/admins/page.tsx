@@ -80,9 +80,10 @@ export default function AdminsPage({ params }: { params: { id: string } }) {
     if (!openEdit) return;
     const { id, title, year, dataset_date, source_name, source_url, notes } =
       openEdit;
-    const source = source_name || source_url
-      ? JSON.stringify({ name: source_name, url: source_url })
-      : null;
+    const source =
+      source_name || source_url
+        ? JSON.stringify({ name: source_name, url: source_url })
+        : null;
     await supabase
       .from("admin_dataset_versions")
       .update({ title, year, dataset_date, source, notes })
@@ -101,7 +102,7 @@ export default function AdminsPage({ params }: { params: { id: string } }) {
 
   const headerProps = {
     title: "Administrative Units",
-    group: "data" as const,
+    group: "countries" as const,
   };
 
   return (
@@ -166,7 +167,9 @@ export default function AdminsPage({ params }: { params: { id: string } }) {
                     )}
                   </td>
                   <td className="text-center">
-                    {active ? "✅ Active" : (
+                    {active ? (
+                      "✅ Active"
+                    ) : (
                       <button
                         onClick={() => handleSetActive(v.id)}
                         className="text-blue-600 hover:underline"
