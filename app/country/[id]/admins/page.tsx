@@ -102,7 +102,7 @@ export default function AdminsPage({ params }: { params: { id: string } }) {
 
   const headerProps = {
     title: "Administrative Units",
-    group: "countries" as const,
+    group: "country-config" as const,
   };
 
   return (
