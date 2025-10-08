@@ -1,37 +1,22 @@
 "use client";
-
 import { useState } from "react";
 import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, Upload, CheckCircle2, AlertTriangle } from "lucide-react";
-
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  countryIso: string;
-  onUploaded: () => void;
-}
-
-type ParsedStats = {
-  totalRows: number;
-  uniquePcodes: number;
-  perLevel: Record<string, number>;
-};
+import { Loader2, Upload } from "lucide-react";
 
 export default function UploadAdminUnitsModal({
   open,
   onClose,
   countryIso,
   onUploaded,
-}: Props) {
+}: {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  onUploaded: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [validated, setValidated] = useState(false);
-  const [stats, setStats] = useState<ParsedStats | null>(null);
-  const [rows, setRows] = useState<any[]>([]);
-  const [versionId, setVersionId] = useState<string | null>(null);
-
   const [form, setForm] = useState({
     title: "",
     year: "",
@@ -44,185 +29,98 @@ export default function UploadAdminUnitsModal({
 
   if (!open) return null;
 
-  // ---------------- FILE HANDLER ----------------
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setForm({ ...form, file });
-    setValidated(false);
-    setStats(null);
-    setRows([]);
-  };
-
-  // ---------------- VALIDATE ----------------
-  const handleValidate = async () => {
-    setError(null);
-    if (!form.file) return setError("Please select a CSV file first.");
-    setLoading(true);
-
-    try {
-      const text = await form.file.text();
-      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-      const data: any[] = parsed.data;
-      if (!data?.length) throw new Error("No valid rows found in CSV.");
-
-      const seen = new Set<string>();
-      const perLevel: Record<string, number> = {
-        ADM1: 0,
-        ADM2: 0,
-        ADM3: 0,
-        ADM4: 0,
-        ADM5: 0,
-      };
-
-      for (const r of data) {
-        for (let lvl = 1; lvl <= 5; lvl++) {
-          const name = r[`ADM${lvl} Name`]?.trim();
-          const pcode = r[`ADM${lvl} PCode`]?.trim();
-          if (!name || !pcode) continue;
-          perLevel[`ADM${lvl}`]++;
-          seen.add(pcode);
-        }
-      }
-
-      setStats({
-        totalRows: data.length,
-        uniquePcodes: seen.size,
-        perLevel,
-      });
-      setRows(data);
-      setValidated(true);
-    } catch (err: any) {
-      console.error("Validation error:", err);
-      setError(err.message || "Failed to parse file.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ---------------- CONFIRM UPLOAD ----------------
   const handleUpload = async () => {
-    setError(null);
-    if (!validated || !rows.length)
-      return setError("Please validate the file before uploading.");
-    if (!form.title.trim())
-      return setError("Dataset title is required.");
-
+    if (!form.file || !form.title.trim()) return;
     setLoading(true);
-    setProgress(5);
+    setProgress(10);
 
-    try {
-      // 1️⃣ Create dataset version
-      const sourceJson =
-        form.source_name || form.source_url
-          ? JSON.stringify({ name: form.source_name, url: form.source_url })
-          : null;
+    const text = await form.file.text();
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+    const rows = parsed.data as any[];
 
-      const { data: version, error: vErr } = await supabase
-        .from("admin_dataset_versions")
-        .insert({
+    const sourceJson =
+      form.source_name || form.source_url
+        ? JSON.stringify({
+            name: form.source_name,
+            url: form.source_url,
+          })
+        : null;
+
+    const { data: version } = await supabase
+      .from("admin_dataset_versions")
+      .insert({
+        country_iso: countryIso,
+        title: form.title.trim(),
+        year: form.year ? parseInt(form.year) : null,
+        dataset_date: form.dataset_date || null,
+        source: sourceJson,
+        notes: form.notes || null,
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso)
+      .neq("id", version.id);
+
+    const adminRows: any[] = [];
+    rows.forEach((r) => {
+      for (let lvl = 1; lvl <= 5; lvl++) {
+        const name = r[`ADM${lvl} Name`];
+        const pcode = r[`ADM${lvl} PCode`];
+        if (!name || !pcode) continue;
+        const parent =
+          lvl > 1 ? r[`ADM${lvl - 1} PCode`] || null : null;
+        adminRows.push({
           country_iso: countryIso,
-          title: form.title.trim(),
-          year: form.year ? parseInt(form.year) : null,
-          dataset_date: form.dataset_date || null,
-          source: sourceJson,
-          notes: form.notes || null,
-          is_active: false,
-        })
-        .select()
-        .single();
-
-      if (vErr || !version)
-        throw vErr || new Error("Failed to create dataset version.");
-
-      setVersionId(version.id);
-      setProgress(15);
-
-      // 2️⃣ Flatten + deduplicate
-      const seen = new Set<string>();
-      const adminRows: any[] = [];
-
-      for (const row of rows) {
-        for (let level = 1; level <= 5; level++) {
-          const name = row[`ADM${level} Name`]?.trim();
-          const pcode = row[`ADM${level} PCode`]?.trim();
-          if (!name || !pcode) continue;
-
-          const parentLevel = level - 1;
-          const parentPcode =
-            parentLevel > 0 ? row[`ADM${parentLevel} PCode`]?.trim() || null : null;
-
-          const key = `${version.id}_${pcode}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-
-          adminRows.push({
-            country_iso: countryIso,
-            dataset_version_id: version.id,
-            pcode,
-            name,
-            level: `ADM${level}`,
-            parent_pcode: parentPcode,
-            metadata: {},
-          });
-        }
+          dataset_version_id: version.id,
+          name,
+          pcode,
+          level: `ADM${lvl}`,
+          parent_pcode: parent,
+        });
       }
+    });
 
-      if (!adminRows.length)
-        throw new Error("No valid admin rows generated.");
-
-      // 3️⃣ Batch insert
-      const batchSize = 1000;
-      for (let i = 0; i < adminRows.length; i += batchSize) {
-        const chunk = adminRows.slice(i, i + batchSize);
-        const { error: insertErr } = await supabase
-          .from("admin_units")
-          .insert(chunk);
-        if (insertErr) throw insertErr;
-        setProgress(Math.min(100, 15 + (i / adminRows.length) * 85));
-      }
-
-      setProgress(100);
-      onUploaded();
-      onClose();
-    } catch (err: any) {
-      console.error("Upload error:", err);
-      setError(err.message || "Upload failed.");
-    } finally {
-      setLoading(false);
-      setTimeout(() => setProgress(0), 1500);
+    const batchSize = 1000;
+    for (let i = 0; i < adminRows.length; i += batchSize) {
+      const chunk = adminRows.slice(i, i + batchSize);
+      await supabase.from("admin_units").insert(chunk);
+      setProgress(Math.round(((i + batchSize) / adminRows.length) * 100));
     }
+
+    setProgress(100);
+    setLoading(false);
+    onUploaded();
+    onClose();
   };
 
-  // ---------------- RENDER ----------------
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md relative">
+      <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
         <h3 className="text-lg font-semibold mb-3">
           Upload Administrative Units
         </h3>
-
-        <div className="space-y-3 text-sm">
+        <div className="space-y-2 text-sm">
           <label className="block">
             Dataset Title *
             <input
               type="text"
               value={form.title}
-              onChange={(e) =>
-                setForm({ ...form, title: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
               className="border rounded w-full px-2 py-1 mt-1"
             />
           </label>
-
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
-              Year (optional)
+              Year
               <input
                 type="number"
                 value={form.year}
-                onChange={(e) =>
-                  setForm({ ...form, year: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, year: e.target.value })}
                 className="border rounded w-full px-2 py-1 mt-1"
               />
             </label>
@@ -238,10 +136,9 @@ export default function UploadAdminUnitsModal({
               />
             </label>
           </div>
-
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
-              Source Name (optional)
+              Source Name
               <input
                 type="text"
                 value={form.source_name}
@@ -252,9 +149,9 @@ export default function UploadAdminUnitsModal({
               />
             </label>
             <label className="block">
-              Source URL (optional)
+              Source URL
               <input
-                type="url"
+                type="text"
                 value={form.source_url}
                 onChange={(e) =>
                   setForm({ ...form, source_url: e.target.value })
@@ -263,106 +160,57 @@ export default function UploadAdminUnitsModal({
               />
             </label>
           </div>
-
           <label className="block">
             Notes
             <textarea
               value={form.notes}
-              onChange={(e) =>
-                setForm({ ...form, notes: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
               className="border rounded w-full px-2 py-1 mt-1"
-              rows={2}
             />
           </label>
-
           <label className="block">
             Select CSV File (wide format)
             <input
               type="file"
               accept=".csv"
-              onChange={handleFileChange}
+              onChange={(e) =>
+                setForm({ ...form, file: e.target.files?.[0] || null })
+              }
               className="mt-1 w-full text-sm"
             />
           </label>
         </div>
-
-        {validated && stats && (
-          <div className="mt-4 p-3 border rounded bg-gray-50 text-sm">
-            <div className="flex items-center gap-2 mb-1 text-green-700 font-medium">
-              <CheckCircle2 className="w-4 h-4" /> File validated
-            </div>
-            <p>
-              <strong>{stats.uniquePcodes.toLocaleString()}</strong> unique
-              PCodes across{" "}
-              <strong>{stats.totalRows.toLocaleString()}</strong> CSV rows.
-            </p>
-            <div className="mt-2 text-xs text-gray-700">
-              {Object.entries(stats.perLevel).map(([lvl, count]) => (
-                <div key={lvl}>
-                  {lvl}: {count.toLocaleString()} entries
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {progress > 0 && (
           <div className="mt-3 w-full bg-gray-100 rounded-full h-2 overflow-hidden">
             <div
-              className="bg-[color:var(--gsc-green)] h-2 transition-all duration-300"
+              className="bg-[color:var(--gsc-green)] h-2 transition-all"
               style={{ width: `${progress}%` }}
             />
           </div>
         )}
-
-        {error && (
-          <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
-            <AlertTriangle className="w-4 h-4" /> {error}
-          </p>
-        )}
-
         <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+            className="px-3 py-1 text-sm border rounded"
             disabled={loading}
           >
             Cancel
           </button>
-          {!validated ? (
-            <button
-              onClick={handleValidate}
-              disabled={loading}
-              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:opacity-90 flex items-center gap-1"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Validating…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" /> Validate File
-                </>
-              )}
-            </button>
-          ) : (
-            <button
-              onClick={handleUpload}
-              disabled={loading}
-              className="px-3 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90 flex items-center gap-1"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Uploading…
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4" /> Confirm Upload
-                </>
-              )}
-            </button>
-          )}
+          <button
+            onClick={handleUpload}
+            disabled={loading}
+            className="px-3 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded flex items-center gap-1"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Uploading...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" /> Upload
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>
