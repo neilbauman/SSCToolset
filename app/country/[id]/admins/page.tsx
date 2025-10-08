@@ -99,7 +99,10 @@ export default function AdminsPage({ params }: { params: { id: string } }) {
       )
     : units;
 
-  const headerProps = { title: "Administrative Units" };
+  const headerProps = {
+    title: "Administrative Units",
+    group: "data" as const,
+  };
 
   return (
     <SidebarLayout headerProps={headerProps}>
