@@ -323,8 +323,8 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         <p className="text-gray-500 text-sm">No administrative units found.</p>
       )}
 
-      {/* DatasetHealth may auto-fetch context; omit invalid prop */}
-      <DatasetHealth />
+      {/* ✅ Provide required totalUnits prop */}
+      <DatasetHealth totalUnits={adminUnits.length} />
 
       <UploadAdminUnitsModal
         open={uploadOpen}
