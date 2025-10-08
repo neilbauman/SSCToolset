@@ -172,26 +172,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const totalUnits = snapshots.length;
 
   // ---------- Render ----------
-  const headerProps = {
-    title: `${country?.name ?? countryIso} – Administrative Boundaries`,
-    group: "country-config" as const,
-    description:
-      "Manage hierarchical administrative units and dataset versions for this country.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
-          { label: "Admins" },
-        ]}
-      />
-    ),
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Progress */}
+      {/* Progress bar */}
       {loadingMsg && (
         <div className="mb-2">
           <div className="h-1.5 bg-gray-200 rounded">
@@ -204,7 +187,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* Versions */}
+      {/* Dataset Versions */}
       <div className="border rounded-lg p-4 shadow-sm mb-5">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -213,4 +196,173 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           </h2>
           <button
             onClick={() => setOpenUpload(true)}
-            class
+            className="flex items-center text-sm bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded hover:opacity-90"
+          >
+            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+          </button>
+        </div>
+
+        {versions.length ? (
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th className="px-2 py-1 text-left">Year</th>
+                <th className="px-2 py-1 text-left">Date</th>
+                <th className="px-2 py-1 text-left">Source</th>
+                <th className="px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                >
+                  <td
+                    className="border px-2 py-1 cursor-pointer"
+                    onClick={() => setSelectedVersion(v)}
+                  >
+                    {v.title}
+                  </td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {v.is_active && (
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          onClick={() => handleActivateVersion(v)}
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          Set Active
+                        </button>
+                      )}
+                      <button
+                        className="text-gray-600 hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500">No dataset versions found.</p>
+        )}
+      </div>
+
+      {/* Toggles + Health */}
+      <div className="flex justify-between items-start mb-3">
+        <div className="border rounded-lg p-3 bg-white">
+          <p className="text-sm font-medium mb-2">Admin Levels</p>
+          <div className="flex gap-3">
+            {["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((l, i) => (
+              <label key={l} className="flex items-center gap-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={levelToggles[i]}
+                  onChange={() =>
+                    setLevelToggles((prev) =>
+                      prev.map((x, j) => (j === i ? !x : x))
+                    )
+                  }
+                />
+                {l}
+              </label>
+            ))}
+          </div>
+        </div>
+        <DatasetHealth totalUnits={totalUnits} />
+      </div>
+
+      {/* Table/Tree toggle */}
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
+        </h2>
+        <div className="flex gap-2">
+          <button
+            className={`px-3 py-1 text-sm border rounded ${
+              viewMode === "table" ? "bg-blue-50 border-blue-400" : ""
+            }`}
+            onClick={() => setViewMode("table")}
+          >
+            Table
+          </button>
+          <button
+            className={`px-3 py-1 text-sm border rounded ${
+              viewMode === "tree" ? "bg-blue-50 border-blue-400" : ""
+            }`}
+            onClick={() => setViewMode("tree")}
+          >
+            Tree
+          </button>
+        </div>
+      </div>
+
+      {/* Table View */}
+      {viewMode === "table" ? (
+        <div className="overflow-x-auto border rounded">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100">
+              <tr>
+                {["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"]
+                  .filter((_, i) => levelToggles[i])
+                  .map((lvl) => (
+                    <th key={lvl} className="px-2 py-1 text-left">
+                      {lvl}
+                    </th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  {r
+                    .filter((_, j) => levelToggles[j])
+                    .map((val, j) => (
+                      <td key={j} className="border px-2 py-1">
+                        {val ?? "—"}
+                      </td>
+                    ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="italic text-gray-500">Tree prototype coming soon.</div>
+      )}
+
+      {openUpload && (
+        <UploadAdminUnitsModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={countryIso}
+          onUploaded={() => window.location.reload()}
+        />
+      )}
+
+      {openDelete && (
+        <ConfirmDeleteModal
+          open={!!openDelete}
+          message={`This will permanently remove version "${openDelete.title}".`}
+          onClose={() => setOpenDelete(null)}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
+        />
+      )}
+    </SidebarLayout>
+  );
+}
