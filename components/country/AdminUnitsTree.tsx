@@ -4,15 +4,16 @@ import { useState, useMemo } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 
 interface AdminUnit {
-  id: string;
+  place_uid: string;
   name: string;
   pcode: string;
-  level: string;
-  parent_pcode?: string | null;
+  level: number;
+  parent_uid?: string | null;
 }
+
 interface Props {
   units: AdminUnit[];
-  activeLevels: string[];
+  activeLevels?: number[];
 }
 
 interface TreeNode extends AdminUnit {
