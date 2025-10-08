@@ -240,7 +240,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       </div>
 
       <DatasetHealth totalUnits={units.length} />
-      <AdminUnitsTree units={units} />
+      <AdminUnitsTree units={units} activeLevels={["ADM1"]} />
 
       {openUpload && (
         <UploadAdminUnitsModal
