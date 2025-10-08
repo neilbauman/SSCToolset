@@ -7,6 +7,7 @@ import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import React from "react";
 
 type AdminUnit = {
   id: string;
@@ -39,10 +40,8 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const pageSize = 1000;
 
-  // ✅ FIXED: Correctly typed for browser setInterval / clearInterval
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ---- Utility: render source as link or text ----
   const renderSource = (src: string | null) => {
     if (!src) return "—";
     const isUrl = /^https?:\/\//i.test(src);
@@ -60,7 +59,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
     );
   };
 
-  // ---- Fetch Dataset Versions ----
   const fetchVersions = useCallback(async () => {
     const { data, error } = await supabase
       .from("admin_dataset_versions")
@@ -75,7 +73,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
     }
   }, [countryIso]);
 
-  // ---- Fetch Admin Units (paged) ----
   const fetchAdminUnits = useCallback(
     async (versionId: string) => {
       setAdminUnits([]);
@@ -87,10 +84,9 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
       let totalFetched = 0;
       const allUnits: AdminUnit[] = [];
 
-      // smooth progress updates while paging
       if (progressTimer.current) clearInterval(progressTimer.current);
       progressTimer.current = setInterval(() => {
-        setProgress((p) => (p < 95 ? p + 1 : p)); // gently advance until 95%
+        setProgress((p) => (p < 95 ? p + 1 : p));
       }, 300);
 
       while (true) {
@@ -108,9 +104,10 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         if (data && data.length > 0) {
           allUnits.push(...data);
           totalFetched += data.length;
-          if (count) setProgress(Math.min(100, Math.round((totalFetched / count) * 100)));
+          if (count)
+            setProgress(Math.min(100, Math.round((totalFetched / count) * 100)));
         }
-        if (!data || data.length < pageSize) break; // last page
+        if (!data || data.length < pageSize) break;
         from += pageSize;
         to += pageSize;
       }
@@ -123,43 +120,48 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
     [countryIso]
   );
 
-  // ---- Handle Expand/Collapse ----
   const toggleExpand = (pcode: string) => {
     setExpanded((prev) => ({ ...prev, [pcode]: !prev[pcode] }));
   };
 
-  // ---- Build Tree ----
-  const buildTree = (units: AdminUnit[]) => {
+  // ✅ FIXED: buildTree now returns React.ReactNode[] (flattened properly)
+  const buildTree = (units: AdminUnit[]): React.ReactNode[] => {
     const map: Record<string, AdminUnit[]> = {};
     units.forEach((u) => {
       const parent = u.parent_pcode ?? "root";
       if (!map[parent]) map[parent] = [];
       map[parent].push(u);
     });
-    const renderNode = (pcode: string, level = 0): JSX.Element[] => {
+
+    const renderNode = (pcode: string, level = 0): React.ReactNode[] => {
       const children = map[pcode] || [];
-      return children.flatMap((child) => [
-        <tr key={child.id} className="border-b">
-          <td className="px-3 py-2">
-            <div
-              className="flex items-center cursor-pointer"
-              style={{ marginLeft: `${level * 1.25}rem` }}
-              onClick={() => toggleExpand(child.pcode)}
-            >
-              {map[child.pcode]?.length > 0 && (
-                <span className="mr-1 text-gray-500">
-                  {expanded[child.pcode] ? "▾" : "▸"}
-                </span>
-              )}
-              {child.name}
-            </div>
-          </td>
-          <td className="px-3 py-2 text-sm text-gray-700">{child.level}</td>
-          <td className="px-3 py-2 text-sm text-gray-700">{child.pcode}</td>
-        </tr>,
-        expanded[child.pcode] ? renderNode(child.pcode, level + 1) : [],
-      ]);
+      const rows: React.ReactNode[] = [];
+      children.forEach((child) => {
+        rows.push(
+          <tr key={child.id} className="border-b">
+            <td className="px-3 py-2">
+              <div
+                className="flex items-center cursor-pointer"
+                style={{ marginLeft: `${level * 1.25}rem` }}
+                onClick={() => toggleExpand(child.pcode)}
+              >
+                {map[child.pcode]?.length > 0 && (
+                  <span className="mr-1 text-gray-500">
+                    {expanded[child.pcode] ? "▾" : "▸"}
+                  </span>
+                )}
+                {child.name}
+              </div>
+            </td>
+            <td className="px-3 py-2 text-sm text-gray-700">{child.level}</td>
+            <td className="px-3 py-2 text-sm text-gray-700">{child.pcode}</td>
+          </tr>
+        );
+        if (expanded[child.pcode]) rows.push(...renderNode(child.pcode, level + 1));
+      });
+      return rows;
     };
+
     return renderNode("root");
   };
 
@@ -171,7 +173,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
     if (activeVersionId) fetchAdminUnits(activeVersionId);
   }, [activeVersionId, fetchAdminUnits]);
 
-  // ---- CSV Template ----
   const downloadTemplate = () => {
     const headers = [
       "ADM1 Name",
@@ -185,7 +186,9 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
       "ADM5 Name",
       "ADM5 PCode",
     ];
-    const blob = new Blob([headers.join(",") + "\n"], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([headers.join(",") + "\n"], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -204,7 +207,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         ]}
       />
 
-      {/* ---- Dataset Versions ---- */}
       <section>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -245,7 +247,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         </table>
       </section>
 
-      {/* ---- Progress ---- */}
       {loading && (
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
@@ -259,7 +260,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         </div>
       )}
 
-      {/* ---- Table / Tree Toggle ---- */}
       <div className="flex items-center justify-between mt-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           {viewMode === "table" ? (
@@ -289,7 +289,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         </div>
       </div>
 
-      {/* ---- Admin Units Table / Tree ---- */}
       {!loading && adminUnits.length > 0 && (
         <div className="border rounded-md overflow-auto">
           <table className="w-full text-sm">
@@ -319,7 +318,6 @@ export default function CountryAdminsPage({ params }: { params: { id: string } }
         <p className="text-gray-500 text-sm">No administrative units found.</p>
       )}
 
-      {/* Health Summary Placeholder */}
       <DatasetHealth datasetVersionId={activeVersionId} />
     </div>
   );
