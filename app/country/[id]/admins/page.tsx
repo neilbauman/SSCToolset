@@ -86,13 +86,20 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       setLoadingMsg("Fetching administrative hierarchy…");
       try {
         const { data: result, error } = await supabase.functions.invoke("fetch_snapshots", {
-          body: { versionId: selectedVersion.id },
+          body: { version_id: selectedVersion.id },
         });
+        console.log("Function result:", result);
         if (error) throw error;
-        if (result?.data) {
+        if (result && Array.isArray(result)) {
+          setUnits(result);
+          setProgress(100);
+          setLoadingMsg("");
+        } else if (result?.data && Array.isArray(result.data)) {
           setUnits(result.data);
           setProgress(100);
           setLoadingMsg("");
+        } else {
+          throw new Error("Invalid data structure returned from fetch_snapshots");
         }
       } catch (err) {
         console.error("Fetch failed:", err);
@@ -124,7 +131,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ---------- Map + Level Control ----------
+  // ---------- Level Controls ----------
   const levelNames = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
   const levelMap = useMemo(() => {
     const map: Record<number, AdminUnit[]> = {};
@@ -219,14 +226,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             <Database className="w-5 h-5 text-green-600" />
             Dataset Versions
           </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-            >
-              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-            </button>
-          </div>
+          <button
+            onClick={() => setOpenUpload(true)}
+            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+          >
+            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+          </button>
         </div>
 
         {versions.length ? (
@@ -290,7 +295,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <div className="border rounded-lg p-3 shadow-sm bg-white">
           <h3 className="text-sm font-semibold mb-1">Admin Levels</h3>
           <div className="flex flex-wrap gap-2">
-            {levelNames.map((l) => (
+            {["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((l) => (
               <label key={l} className="flex items-center gap-1 text-sm">
                 <input type="checkbox" checked={levels.includes(l)} onChange={() => toggleLevel(l)} />
                 {l}
