@@ -7,7 +7,7 @@ type AdminUnit = {
   place_uid: string;
   name: string;
   pcode: string;
-  level: number; // 1–5
+  level: number;
   parent_uid?: string | null;
 };
 
@@ -15,13 +15,13 @@ type TreeNode = AdminUnit & { children: TreeNode[] };
 
 interface Props {
   units: AdminUnit[];
-  activeLevels: number[]; // from ADM1–ADM5 toggles
+  activeLevels: number[];
 }
 
 export default function AdminUnitsTree({ units, activeLevels }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // --- Build hierarchy only once ---
+  // --- Build hierarchy ---
   const roots = useMemo(() => {
     if (!units?.length) return [];
     const map = new Map<string, TreeNode>();
@@ -34,13 +34,11 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
       else roots.push(node);
     }
 
-    // Sort children by PCode for stable order
     const sortNodes = (arr: TreeNode[]) => {
       arr.sort((a, b) => (a.pcode ?? "").localeCompare(b.pcode ?? ""));
       arr.forEach((n) => sortNodes(n.children));
     };
     sortNodes(roots);
-
     return roots;
   }, [units]);
 
@@ -52,20 +50,21 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
     });
   }, []);
 
-  const renderNode = (node: TreeNode, depth = 0): JSX.Element | null => {
-    if (!activeLevels.includes(node.level)) return null;
-    const hasChildren =
-      node.children.length > 0 &&
-      node.children.some((c) => activeLevels.includes(c.level));
+  const renderNode = (n: TreeNode, depth = 0): JSX.Element | null => {
+    if (!activeLevels.includes(n.level)) return null;
+    const visibleChildren = n.children.filter((c) =>
+      activeLevels.includes(c.level)
+    );
+    const hasChildren = visibleChildren.length > 0;
 
     return (
-      <div key={node.place_uid} style={{ marginLeft: depth * 16 }} className="py-0.5">
+      <div key={n.place_uid} style={{ marginLeft: depth * 16 }} className="py-0.5">
         <div
           className="flex items-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5"
-          onClick={() => hasChildren && toggleExpand(node.place_uid)}
+          onClick={() => hasChildren && toggleExpand(n.place_uid)}
         >
           {hasChildren ? (
-            expanded.has(node.place_uid) ? (
+            expanded.has(n.place_uid) ? (
               <ChevronDown className="w-4 h-4 text-gray-500" />
             ) : (
               <ChevronRight className="w-4 h-4 text-gray-500" />
@@ -74,14 +73,21 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
             <span className="w-4 h-4" />
           )}
           <div className="flex flex-col">
-            <span className="font-medium text-sm">{node.name}</span>
-            {node.pcode && (
-              <span className="text-gray-500 text-xs">{node.pcode}</span>
+            <span className="font-medium text-sm flex items-center gap-1">
+              {n.name}
+              {hasChildren && (
+                <span className="text-gray-400 text-[11px] bg-gray-100 px-1.5 py-[1px] rounded">
+                  {visibleChildren.length}
+                </span>
+              )}
+            </span>
+            {n.pcode && (
+              <span className="text-gray-500 text-xs">{n.pcode}</span>
             )}
           </div>
         </div>
-        {expanded.has(node.place_uid) &&
-          node.children.map((c) => renderNode(c, depth + 1))}
+        {expanded.has(n.place_uid) &&
+          visibleChildren.map((c) => renderNode(c, depth + 1))}
       </div>
     );
   };
