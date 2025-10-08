@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
-  Layers, Database, Upload, CheckCircle2, Trash2, Edit3,
+  Layers, Database, Upload, CheckCircle2, Trash2, Edit3, Download, Search,
 } from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
@@ -14,8 +14,14 @@ import AdminUnitsTree from "@/components/country/AdminUnitsTree";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = { iso_code: string; name: string };
-type AdminVersion = { id: string; title: string; year: number | null; dataset_date: string | null; is_active: boolean };
-type AdminUnit = { place_uid: string; name: string; pcode: string; level: number; parent_uid?: string | null };
+type AdminVersion = {
+  id: string; title: string; year: number | null; dataset_date: string | null;
+  source: string | null; is_active: boolean; created_at: string;
+};
+type AdminUnit = {
+  place_uid: string; name: string; pcode: string;
+  level: number; parent_uid?: string | null;
+};
 
 export default function AdminsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
@@ -28,8 +34,9 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const [progress, setProgress] = useState(0);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<AdminVersion | null>(null);
-  const [search, setSearch] = useState("");
+  const [editingVersion, setEditingVersion] = useState<AdminVersion | null>(null);
   const [admToggles, setAdmToggles] = useState({ 1: true, 2: false, 3: false, 4: false, 5: false });
+  const [searchTerm, setSearchTerm] = useState("");
   const isFetchingRef = useRef(false);
 
   const selectedLevels = useMemo(
@@ -42,31 +49,29 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  useEffect(() => {
-    supabase.from("admin_dataset_versions")
-      .select("*").eq("country_iso", countryIso).order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (!data) return;
-        setVersions(data);
-        setSelectedVersion(data.find(v => v.is_active) || data[0] || null);
-      });
-  }, [countryIso]);
+  const loadVersions = async () => {
+    const { data } = await supabase.from("admin_dataset_versions")
+      .select("*").eq("country_iso", countryIso).order("created_at", { ascending: false });
+    if (!data) return;
+    setVersions(data);
+    setSelectedVersion(data.find(v => v.is_active) || data[0] || null);
+  };
+  useEffect(() => { loadVersions(); }, [countryIso]);
 
   useEffect(() => {
     if (!selectedVersion || isFetchingRef.current) return;
     isFetchingRef.current = true;
     setLoadingMsg("Loading administrative units...");
+    setProgress(5);
     fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/fetch_snapshots`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version_id: selectedVersion.id }),
     })
-      .then((r) => r.json())
-      .then((data) => {
+      .then(r => r.json())
+      .then(data => {
         setUnits(data ?? []);
         setTotalUnits(data?.length ?? 0);
-        setProgress(100);
-        setLoadingMsg("");
+        setProgress(100); setLoadingMsg("");
       })
       .catch(() => setLoadingMsg("Failed to load data."))
       .finally(() => (isFetchingRef.current = false));
@@ -75,15 +80,8 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
   const handleDeleteVersion = async (id: string) => {
     await supabase.from("admin_dataset_versions").delete().eq("id", id);
     setOpenDelete(null);
+    await loadVersions();
   };
-
-  const filteredUnits = useMemo(() => {
-    if (!search.trim()) return units;
-    const term = search.toLowerCase();
-    return units.filter(u =>
-      u.name.toLowerCase().includes(term) || u.pcode.toLowerCase().includes(term)
-    );
-  }, [units, search]);
 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
@@ -98,6 +96,17 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
       ]} />
     ),
   };
+
+  const filteredUnits = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    if (!term) return units;
+    return units.filter(u =>
+      u.name.toLowerCase().includes(term) || u.pcode.toLowerCase().includes(term)
+    );
+  }, [units, searchTerm]);
+
+  const templateUrl =
+    "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -116,44 +125,50 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
-          <button
-            onClick={() => setOpenUpload(true)}
-            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-          >
-            <Upload className="w-4 h-4 mr-1" /> Upload Dataset
-          </button>
+          <div className="flex gap-2">
+            <a href={templateUrl} download className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700">
+              <Download className="w-4 h-4 mr-1" /> Template
+            </a>
+            <button onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90">
+              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+            </button>
+          </div>
         </div>
         {versions.length ? (
           <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
-              <tr>
-                <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1">Year</th>
-                <th className="px-2 py-1">Date</th>
-                <th className="px-2 py-1">Status</th>
-                <th className="px-2 py-1 text-right">Actions</th>
-              </tr>
+              <tr><th className="px-2 py-1 text-left">Title</th><th>Year</th><th>Date</th><th>Source</th><th>Status</th><th className="text-right">Actions</th></tr>
             </thead>
             <tbody>
-              {versions.map((v) => (
-                <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
-                  <td onClick={() => setSelectedVersion(v)} className="border px-2 py-1 cursor-pointer">{v.title}</td>
-                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1 text-center">
-                    {v.is_active ? (
-                      <span className="text-green-700 flex items-center gap-1 justify-center">
-                        <CheckCircle2 className="w-4 h-4" /> Active
-                      </span>
-                    ) : "—"}
-                  </td>
-                  <td className="border px-2 py-1 text-right">
-                    <button className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center" onClick={() => setOpenDelete(v)}>
-                      <Trash2 className="w-4 h-4 mr-1" /> Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {versions.map(v => {
+                let src: JSX.Element = <span>—</span>;
+                if (v.source) {
+                  try {
+                    const s = JSON.parse(v.source);
+                    src = s.url ? (
+                      <a href={s.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{s.name || s.url}</a>
+                    ) : <span>{s.name}</span>;
+                  } catch { src = <span>{v.source}</span>; }
+                }
+                return (
+                  <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
+                    <td onClick={() => setSelectedVersion(v)} className="border px-2 py-1 cursor-pointer">{v.title}</td>
+                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                    <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                    <td className="border px-2 py-1">{src}</td>
+                    <td className="border px-2 py-1 text-center">{v.is_active ? <span className="text-green-700 flex items-center gap-1 justify-center"><CheckCircle2 className="w-4 h-4" />Active</span> : "—"}</td>
+                    <td className="border px-2 py-1 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button className="text-gray-700 hover:underline text-xs flex items-center"
+                          onClick={() => setEditingVersion(v)}><Edit3 className="w-4 h-4 mr-1" />Edit</button>
+                        <button className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                          onClick={() => setOpenDelete(v)}><Trash2 className="w-4 h-4 mr-1" />Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (<p className="italic text-gray-500 text-sm">No dataset versions uploaded yet.</p>)}
@@ -164,47 +179,35 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         <div className="border rounded-lg p-3 shadow-sm bg-white">
           <h3 className="text-sm font-semibold mb-2">Admin Levels</h3>
           <div className="flex gap-3 flex-wrap">
-            {[1, 2, 3, 4, 5].map((lvl) => (
+            {[1, 2, 3, 4, 5].map(lvl => (
               <label key={lvl} className="flex items-center gap-1 text-sm">
-                <input
-                  type="checkbox"
+                <input type="checkbox"
                   checked={admToggles[lvl as 1 | 2 | 3 | 4 | 5]}
-                  onChange={() =>
-                    setAdmToggles((p) => ({ ...p, [lvl]: !p[lvl as 1 | 2 | 3 | 4 | 5] }))
-                  }
-                />
+                  onChange={() => setAdmToggles(p => ({ ...p, [lvl]: !p[lvl as 1 | 2 | 3 | 4 | 5] }))} />
                 ADM{lvl}
               </label>
             ))}
           </div>
         </div>
-        <div className="flex-1"><DatasetHealth totalUnits={totalUnits} /></div>
+        <DatasetHealth totalUnits={totalUnits} />
       </div>
 
-      {/* Search + Tree */}
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Layers className="w-5 h-5 text-blue-600" /> Administrative Units
-        </h2>
+      {/* Search */}
+      <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
+        <Search className="w-4 h-4 text-gray-500 mr-2" />
         <input
           type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search by name or PCode..."
-          className="border rounded px-2 py-1 text-sm w-64"
+          className="flex-1 text-sm outline-none bg-transparent"
         />
       </div>
 
+      {/* Tree View only */}
       <AdminUnitsTree units={filteredUnits} activeLevels={selectedLevels} />
 
-      {openUpload && (
-        <UploadAdminUnitsModal
-          open={openUpload}
-          onClose={() => setOpenUpload(false)}
-          countryIso={countryIso}
-          onUploaded={() => location.reload()}
-        />
-      )}
+      {openUpload && <UploadAdminUnitsModal open={openUpload} onClose={() => setOpenUpload(false)} countryIso={countryIso} onUploaded={loadVersions} />}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
