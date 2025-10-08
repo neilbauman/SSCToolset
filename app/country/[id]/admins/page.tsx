@@ -92,7 +92,20 @@ export default function AdminsPage({params}:{params:CountryParams}){
    <div className="overflow-x-auto border rounded">
     <table className="w-full text-sm">
      <thead className="bg-gray-100"><tr>{levelToggles.map(l=><th key={l}className="px-2 py-1 text-left">{l}</th>)}</tr></thead>
-     <tbody>{chains.map((ch,i)=><tr key={i}>{levelToggles.map(l=>{const u=ch.find(x=>x.level===l);return<td key={l}className="px-2 py-1">{u?.name??"—"}</td>})}</tr>)}</tbody>
+     <tbody>
+ {chains.map((ch: AdminUnit[], i: number) => (
+  <tr key={i}>
+   {levelToggles.map((l: string) => {
+     const u: AdminUnit | undefined = ch.find((x: AdminUnit) => x.level === l);
+     return (
+       <td key={l} className="px-2 py-1">
+         {u?.name ?? "—"}
+       </td>
+     );
+   })}
+  </tr>
+ ))}
+</tbody>
     </table>
    </div>
   ):<div className="border rounded-lg p-3 bg-white shadow-sm text-sm italic text-gray-500">Tree prototype TBD</div>}
