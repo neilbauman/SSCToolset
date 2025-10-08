@@ -93,18 +93,38 @@ export default function AdminsPage({params}:{params:CountryParams}){
     <table className="w-full text-sm">
      <thead className="bg-gray-100"><tr>{levelToggles.map(l=><th key={l}className="px-2 py-1 text-left">{l}</th>)}</tr></thead>
      <tbody>
- {chains.map((ch: AdminUnit[], i: number) => (
-  <tr key={i}>
-   {levelToggles.map((l: string) => {
-     const u: AdminUnit | undefined = ch.find((x: AdminUnit) => x.level === l);
-     return (
-       <td key={l} className="px-2 py-1">
-         {u?.name ?? "—"}
-       </td>
-     );
-   })}
-  </tr>
- ))}
+  {chains.map((chain: AdminUnit[], i: number) => {
+    const adm1 = chain.find((u) => u.level === "ADM1");
+    const adm2 = chain.find((u) => u.level === "ADM2");
+    const adm3 = chain.find((u) => u.level === "ADM3");
+    const adm4 = chain.find((u) => u.level === "ADM4");
+    const adm5 = chain.find((u) => u.level === "ADM5");
+
+    // Only render a unique row per full hierarchy combination
+    const key = [adm1?.pcode, adm2?.pcode, adm3?.pcode, adm4?.pcode, adm5?.pcode]
+      .filter(Boolean)
+      .join("-");
+
+    return (
+      <tr key={key}>
+        {levelToggles.includes("ADM1") && (
+          <td className="px-2 py-1 font-medium">{adm1?.name ?? "—"}</td>
+        )}
+        {levelToggles.includes("ADM2") && (
+          <td className="px-2 py-1">{adm2?.name ?? "—"}</td>
+        )}
+        {levelToggles.includes("ADM3") && (
+          <td className="px-2 py-1">{adm3?.name ?? "—"}</td>
+        )}
+        {levelToggles.includes("ADM4") && (
+          <td className="px-2 py-1">{adm4?.name ?? "—"}</td>
+        )}
+        {levelToggles.includes("ADM5") && (
+          <td className="px-2 py-1">{adm5?.name ?? "—"}</td>
+        )}
+      </tr>
+    );
+  })}
 </tbody>
     </table>
    </div>
