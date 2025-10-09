@@ -34,68 +34,99 @@ export default function UploadAdminUnitsModal({
     setLoading(true);
     setProgress(10);
 
-    const text = await form.file.text();
-    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-    const rows = parsed.data as any[];
+    try {
+      // Parse CSV file
+      const text = await form.file.text();
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      const rows = parsed.data as any[];
+      setProgress(20);
 
-    const sourceJson =
-      form.source_name || form.source_url
-        ? JSON.stringify({
-            name: form.source_name,
-            url: form.source_url,
-          })
-        : null;
+      // Prepare source JSON
+      const sourceJson =
+        form.source_name || form.source_url
+          ? JSON.stringify({
+              name: form.source_name,
+              url: form.source_url,
+            })
+          : null;
 
-    const { data: version } = await supabase
-      .from("admin_dataset_versions")
-      .insert({
-        country_iso: countryIso,
-        title: form.title.trim(),
-        year: form.year ? parseInt(form.year) : null,
-        dataset_date: form.dataset_date || null,
-        source: sourceJson,
-        notes: form.notes || null,
-        is_active: true,
-      })
-      .select()
-      .single();
-
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso)
-      .neq("id", version.id);
-
-    const adminRows: any[] = [];
-    rows.forEach((r) => {
-      for (let lvl = 1; lvl <= 5; lvl++) {
-        const name = r[`ADM${lvl} Name`];
-        const pcode = r[`ADM${lvl} PCode`];
-        if (!name || !pcode) continue;
-        const parent =
-          lvl > 1 ? r[`ADM${lvl - 1} PCode`] || null : null;
-        adminRows.push({
+      // Insert new dataset version
+      const { data: version, error: versionErr } = await supabase
+        .from("admin_dataset_versions")
+        .insert({
           country_iso: countryIso,
-          dataset_version_id: version.id,
-          name,
-          pcode,
-          level: `ADM${lvl}`,
-          parent_pcode: parent,
-        });
+          title: form.title.trim(),
+          year: form.year ? parseInt(form.year) : null,
+          dataset_date: form.dataset_date || null,
+          source: sourceJson,
+          notes: form.notes || null,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (versionErr || !version) throw versionErr;
+
+      // Deactivate all other versions
+      await supabase
+        .from("admin_dataset_versions")
+        .update({ is_active: false })
+        .eq("country_iso", countryIso)
+        .neq("id", version.id);
+
+      setProgress(40);
+
+      // Prepare payload for Edge Function
+      const payload = {
+        version_id: version.id,
+        rows: rows.map((r) => {
+          const out: any[] = [];
+          for (let lvl = 1; lvl <= 5; lvl++) {
+            const name = r[`ADM${lvl} Name`];
+            const pcode = r[`ADM${lvl} PCode`];
+            if (!name || !pcode) continue;
+            const parent = lvl > 1 ? r[`ADM${lvl - 1} PCode`] || null : null;
+            out.push({
+              name,
+              pcode,
+              level: lvl,
+              parent_pcode: parent,
+            });
+          }
+          return out;
+        }).flat(),
+      };
+
+      // Call Edge Function (convert-gis2)
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-gis2`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        console.error("Upload failed:", await response.text());
+        throw new Error("Edge Function upload failed");
       }
-    });
 
-    const batchSize = 1000;
-    for (let i = 0; i < adminRows.length; i += batchSize) {
-      const chunk = adminRows.slice(i, i + batchSize);
-      await supabase.from("admin_units").insert(chunk);
-      setProgress(Math.round(((i + batchSize) / adminRows.length) * 100));
+      const result = await response.json();
+      console.log("Function result:", result);
+      setProgress(100);
+
+      onUploaded();
+      onClose();
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Failed to upload dataset. Check console or Supabase logs.");
+    } finally {
+      setLoading(false);
     }
-
-    setProgress(100);
-    setLoading(false);
-    onUploaded();
-    onClose();
   };
 
   return (
