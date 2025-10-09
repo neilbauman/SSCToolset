@@ -56,7 +56,7 @@ export default function UploadPopulationModal({
     setProgress(5);
 
     try {
-      // --- Step 1: Read file text using FileReader (safe for Next.js/React) ---
+      // --- Step 1: Safe FileReader for Next.js 15 / React 19 ---
       const text = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -78,7 +78,7 @@ export default function UploadPopulationModal({
         throw new Error(`Missing required columns: ${missing.join(", ")}`);
       }
 
-      // --- Step 2: Create new dataset version (inactive first) ---
+      // --- Step 2: Create new dataset version ---
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
@@ -146,7 +146,7 @@ export default function UploadPopulationModal({
         return true;
       });
 
-      // --- Step 7: Batch insert into population_data ---
+      // --- Step 7: Batch insert ---
       const batchSize = 1000;
       for (let i = 0; i < uniqueRows.length; i += batchSize) {
         const chunk = uniqueRows.slice(i, i + batchSize);
@@ -182,8 +182,7 @@ export default function UploadPopulationModal({
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-semibold">Upload Population Dataset</h3>
           <Button
-            variant="outline"
-            size="sm"
+            className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
             onClick={handleDownloadTemplate}
             disabled={loading}
           >
@@ -272,11 +271,15 @@ export default function UploadPopulationModal({
         )}
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={onClose} disabled={loading}>
+          <Button
+            className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
+            onClick={onClose}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button
-            className="bg-red-700 hover:bg-red-800 text-white"
+            className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 text-sm rounded"
             onClick={handleUpload}
             disabled={loading}
           >
