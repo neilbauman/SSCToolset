@@ -15,8 +15,14 @@ import type { CountryParams } from "@/app/country/types";
 
 type Country = { iso_code: string; name: string };
 type AdminVersion = {
-  id: string; title: string; year: number | null; dataset_date: string | null;
-  source: string | null; is_active: boolean; created_at: string;
+  id: string;
+  title: string;
+  year: number | null;
+  dataset_date: string | null;
+  source: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
 };
 type AdminUnit = { place_uid: string; name: string; pcode: string; level: string; parent_uid?: string | null };
 
