@@ -5,8 +5,8 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import PageHeader from "@/components/ui/PageHeader";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 
 export default function PopulationPage({ params }: { params: { id: string } }) {
@@ -92,6 +92,17 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     document.body.removeChild(link);
   };
 
+  // Format a human-readable date for display
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "—";
+    const d = new Date(dateString);
+    return d.toLocaleDateString("en-GB", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* 🧭 Breadcrumbs and Header */}
@@ -123,6 +134,20 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         }
       />
 
+      {/* 📅 Active Version Info */}
+      {selectedVersion && (
+        <div className="mt-3 text-sm text-gray-600 flex items-center gap-4">
+          <div>
+            <span className="font-medium text-gray-800">Active Version:</span>{" "}
+            {selectedVersion.title} ({selectedVersion.year || "—"})
+          </div>
+          <div>
+            <span className="font-medium text-gray-800">Last Updated:</span>{" "}
+            {formatDate(selectedVersion.created_at)}
+          </div>
+        </div>
+      )}
+
       {/* 📦 Versions Table */}
       <div className="mt-6 border rounded-md bg-white p-4 shadow-sm">
         <h3 className="text-lg font-semibold mb-3">Dataset Versions</h3>
@@ -152,7 +177,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
                   {v.title}
                 </td>
                 <td className="text-center">{v.year || "—"}</td>
-                <td className="text-center">{v.dataset_date || "—"}</td>
+                <td className="text-center">{formatDate(v.dataset_date)}</td>
                 <td className="text-center">{v.source || "—"}</td>
                 <td className="text-center">
                   {v.is_active ? (
