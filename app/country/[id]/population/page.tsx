@@ -77,11 +77,38 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     fetchVersions();
   }
 
+  // --- Download Template CSV ---
+  const handleDownloadTemplate = () => {
+    const headers = ["pcode", "population", "name", "year"];
+    const csv = headers.join(",") + "\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Population_Template_v1.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Population Data – {countryIso}</h2>
-        <Button onClick={() => setOpenUpload(true)}>Upload Dataset</Button>
+        <div className="flex gap-2">
+          <Button
+            className="px-3 py-1 text-sm border rounded"
+            onClick={handleDownloadTemplate}
+          >
+            Download Template
+          </Button>
+          <Button
+            className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
+            onClick={() => setOpenUpload(true)}
+          >
+            Upload Dataset
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-md p-4">
@@ -121,17 +148,15 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
                     "—"
                   )}
                 </td>
-                <td className="text-right">
+                <td className="text-right space-x-1">
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    className="px-2 py-1 text-xs border rounded"
                     onClick={() => setOpenEdit(v)}
                   >
                     Edit
                   </Button>
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    className="px-2 py-1 text-xs border rounded"
                     onClick={() => setOpenDelete(v)}
                   >
                     Delete
