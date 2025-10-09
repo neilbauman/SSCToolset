@@ -113,11 +113,11 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         ]}
       />
 
-      {/* 🧱 Header */}
+      {/* 🧱 Page Header */}
       <PageHeader
         title={`Population Data – ${countryIso}`}
         description="Upload and manage versioned population datasets aligned with administrative boundaries."
-        group="Country-config"
+        group="Country Configurations"
       />
 
       {/* 🧩 Action Buttons */}
