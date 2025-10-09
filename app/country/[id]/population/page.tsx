@@ -5,6 +5,8 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 
 export default function PopulationPage({ params }: { params: { id: string } }) {
@@ -77,7 +79,6 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     fetchVersions();
   }
 
-  // --- Download Template CSV ---
   const handleDownloadTemplate = () => {
     const headers = ["pcode", "population", "name", "year"];
     const csv = headers.join(",") + "\n";
@@ -92,30 +93,42 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Population Data – {countryIso}</h2>
-        <div className="flex gap-2">
-          <Button
-            className="px-3 py-1 text-sm border rounded"
-            onClick={handleDownloadTemplate}
-          >
-            Download Template
-          </Button>
-          <Button
-            className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
-            onClick={() => setOpenUpload(true)}
-          >
-            Upload Dataset
-          </Button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full">
+      {/* 🧭 Breadcrumbs and Header */}
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/" },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Population Data" },
+        ]}
+      />
+      <PageHeader
+        title={`Population Data – ${countryIso}`}
+        description="Upload and manage versioned population datasets aligned with administrative boundaries."
+        actions={
+          <div className="flex gap-2">
+            <Button
+              className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
+              onClick={handleDownloadTemplate}
+            >
+              Download Template
+            </Button>
+            <Button
+              className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
+              onClick={() => setOpenUpload(true)}
+            >
+              Upload Dataset
+            </Button>
+          </div>
+        }
+      />
 
-      <div className="border rounded-md p-4">
+      {/* 📦 Versions Table */}
+      <div className="mt-6 border rounded-md bg-white p-4 shadow-sm">
         <h3 className="text-lg font-semibold mb-3">Dataset Versions</h3>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b">
+            <tr className="border-b bg-gray-50">
               <th className="text-left py-1">Title</th>
               <th>Year</th>
               <th>Date</th>
@@ -168,8 +181,9 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         </table>
       </div>
 
+      {/* 📊 Dataset Health */}
       {selectedVersion && (
-        <div className="border rounded-md p-4 space-y-4">
+        <div className="mt-6 border rounded-md bg-white p-4 shadow-sm space-y-4">
           <h3 className="text-lg font-semibold">
             Dataset Health – {selectedVersion.title}
           </h3>
@@ -213,6 +227,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
+      {/* 🧱 Modals */}
       <UploadPopulationModal
         open={openUpload}
         onClose={() => setOpenUpload(false)}
