@@ -92,7 +92,6 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     document.body.removeChild(link);
   };
 
-  // Format a human-readable date for display
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "—";
     const d = new Date(dateString);
@@ -105,7 +104,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* 🧭 Breadcrumbs and Header */}
+      {/* 🧭 Breadcrumbs */}
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/" },
@@ -113,30 +112,32 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
           { label: "Population Data" },
         ]}
       />
+
+      {/* 🧱 Header */}
       <PageHeader
         title={`Population Data – ${countryIso}`}
         description="Upload and manage versioned population datasets aligned with administrative boundaries."
-        actions={
-          <div className="flex gap-2">
-            <Button
-              className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
-              onClick={handleDownloadTemplate}
-            >
-              Download Template
-            </Button>
-            <Button
-              className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
-              onClick={() => setOpenUpload(true)}
-            >
-              Upload Dataset
-            </Button>
-          </div>
-        }
       />
+
+      {/* 🧩 Action Buttons */}
+      <div className="flex justify-end mt-3 mb-2 gap-2">
+        <Button
+          className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
+          onClick={handleDownloadTemplate}
+        >
+          Download Template
+        </Button>
+        <Button
+          className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
+          onClick={() => setOpenUpload(true)}
+        >
+          Upload Dataset
+        </Button>
+      </div>
 
       {/* 📅 Active Version Info */}
       {selectedVersion && (
-        <div className="mt-3 text-sm text-gray-600 flex items-center gap-4">
+        <div className="mb-4 text-sm text-gray-600 flex items-center gap-4">
           <div>
             <span className="font-medium text-gray-800">Active Version:</span>{" "}
             {selectedVersion.title} ({selectedVersion.year || "—"})
@@ -149,7 +150,7 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
       )}
 
       {/* 📦 Versions Table */}
-      <div className="mt-6 border rounded-md bg-white p-4 shadow-sm">
+      <div className="border rounded-md bg-white p-4 shadow-sm">
         <h3 className="text-lg font-semibold mb-3">Dataset Versions</h3>
         <table className="w-full text-sm">
           <thead>
