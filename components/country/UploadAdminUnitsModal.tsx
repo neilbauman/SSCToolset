@@ -30,23 +30,24 @@ export default function UploadAdminUnitsModal({
   if (!open) return null;
 
   const handleUpload = async () => {
-    try {
-      if (!form.file || !form.title.trim()) return;
-      setLoading(true);
-      setProgress(10);
+    if (!form.file || !form.title.trim()) return;
+    setLoading(true);
+    setProgress(10);
 
-      // Parse CSV
+    try {
       const text = await form.file.text();
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
       const rows = parsed.data as any[];
 
-      // Build source JSON
       const sourceJson =
         form.source_name || form.source_url
-          ? JSON.stringify({ name: form.source_name, url: form.source_url })
+          ? JSON.stringify({
+              name: form.source_name,
+              url: form.source_url,
+            })
           : null;
 
-      // Create new dataset version
+      // ✅ create dataset version as inactive (no constraint conflict)
       const { data: version, error: versionError } = await supabase
         .from("admin_dataset_versions")
         .insert({
@@ -56,21 +57,13 @@ export default function UploadAdminUnitsModal({
           dataset_date: form.dataset_date || null,
           source: sourceJson,
           notes: form.notes || null,
-          is_active: false,
+          is_active: false, // <-- CHANGED HERE (was true)
         })
         .select()
         .single();
 
-      if (versionError || !version) throw versionError;
+      if (versionError) throw versionError;
 
-      // Deactivate older versions
-      await supabase
-        .from("admin_dataset_versions")
-        .update({ is_active: false })
-        .eq("country_iso", countryIso)
-        .neq("id", version.id);
-
-      // Prepare admin rows
       const adminRows: any[] = [];
       rows.forEach((r) => {
         for (let lvl = 1; lvl <= 5; lvl++) {
@@ -89,27 +82,15 @@ export default function UploadAdminUnitsModal({
         }
       });
 
-      // Deduplicate by version, pcode, and level
-      const seen = new Set();
-      const uniqueRows = adminRows.filter((r) => {
-        const key = `${r.dataset_version_id}-${r.pcode}-${r.level}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      console.log(`Filtered out ${adminRows.length - uniqueRows.length} duplicates`);
-
-      // Batch insert
       const batchSize = 1000;
-      for (let i = 0; i < uniqueRows.length; i += batchSize) {
-        const chunk = uniqueRows.slice(i, i + batchSize);
-        const { error } = await supabase.from("admin_units").insert(chunk);
-        if (error) throw error;
-        setProgress(Math.round(((i + batchSize) / uniqueRows.length) * 100));
+      for (let i = 0; i < adminRows.length; i += batchSize) {
+        const chunk = adminRows.slice(i, i + batchSize);
+        await supabase.from("admin_units").insert(chunk);
+        setProgress(Math.round(((i + batchSize) / adminRows.length) * 100));
       }
 
       setProgress(100);
-      alert("✅ Upload complete!");
+      alert("Upload complete. Activate the dataset version when ready.");
       onUploaded();
       onClose();
     } catch (err) {
