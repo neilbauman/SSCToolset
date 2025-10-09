@@ -34,90 +34,112 @@ export default function UploadAdminUnitsModal({
     setLoading(true);
     setProgress(10);
 
-    const text = await form.file.text();
-    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-    const rows = parsed.data as any[];
+    try {
+      // Parse CSV
+      const text = await form.file.text();
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      const rows = parsed.data as any[];
 
-    const sourceJson =
-      form.source_name || form.source_url
-        ? JSON.stringify({
-            name: form.source_name,
-            url: form.source_url,
-          })
-        : null;
+      // Prepare source JSON
+      const sourceJson =
+        form.source_name || form.source_url
+          ? JSON.stringify({
+              name: form.source_name,
+              url: form.source_url,
+            })
+          : null;
 
-    // Step 1: Insert new version as inactive first
-    const { data: version, error: versionError } = await supabase
-      .from("admin_dataset_versions")
-      .insert({
-        country_iso: countryIso,
-        title: form.title.trim(),
-        year: form.year ? parseInt(form.year) : null,
-        dataset_date: form.dataset_date || null,
-        source: sourceJson,
-        notes: form.notes || null,
-        is_active: false, // start inactive
-      })
-      .select()
-      .single();
-
-    if (versionError || !version) {
-      alert("Failed to create dataset version: " + (versionError?.message || ""));
-      setLoading(false);
-      return;
-    }
-
-    // Step 2: Deactivate all other versions for same country
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: false })
-      .eq("country_iso", countryIso)
-      .neq("id", version.id);
-
-    // Step 3: Activate this new one
-    await supabase
-      .from("admin_dataset_versions")
-      .update({ is_active: true })
-      .eq("id", version.id);
-
-    // Step 4: Prepare admin rows for insert
-    const adminRows: any[] = [];
-    rows.forEach((r) => {
-      for (let lvl = 1; lvl <= 5; lvl++) {
-        const name = r[`ADM${lvl} Name`];
-        const pcode = r[`ADM${lvl} PCode`];
-        if (!name || !pcode) continue;
-        const parent = lvl > 1 ? r[`ADM${lvl - 1} PCode`] || null : null;
-        adminRows.push({
+      // Step 1: Insert new version as inactive first
+      const { data: version, error: versionError } = await supabase
+        .from("admin_dataset_versions")
+        .insert({
           country_iso: countryIso,
-          dataset_version_id: version.id,
-          name,
-          pcode,
-          level: `ADM${lvl}`,
-          parent_pcode: parent,
-        });
-      }
-    });
+          title: form.title.trim(),
+          year: form.year ? parseInt(form.year) : null,
+          dataset_date: form.dataset_date || null,
+          source: sourceJson,
+          notes: form.notes || null,
+          is_active: false, // Start inactive
+        })
+        .select()
+        .single();
 
-    // Step 5: Batch insert with error handling
-    const batchSize = 1000;
-    for (let i = 0; i < adminRows.length; i += batchSize) {
-      const chunk = adminRows.slice(i, i + batchSize);
-      const { error } = await supabase.from("admin_units").insert(chunk);
-      if (error) {
-        console.error("Batch insert failed:", error);
-        alert("Error inserting admin units: " + error.message);
+      if (versionError || !version) {
+        alert(
+          "Failed to create dataset version: " +
+            (versionError?.message || "Unknown error")
+        );
         setLoading(false);
         return;
       }
-      setProgress(Math.round(((i + batchSize) / adminRows.length) * 100));
-    }
 
-    // Step 6: Wrap up
-    setProgress(100);
-    setLoading(false);
-    onUploaded();
-    onClose();
+      // Step 2: Deactivate all other versions for same country
+      await supabase
+        .from("admin_dataset_versions")
+        .update({ is_active: false })
+        .eq("country_iso", countryIso)
+        .neq("id", version.id);
+
+      // Step 3: Activate this new version
+      await supabase
+        .from("admin_dataset_versions")
+        .update({ is_active: true })
+        .eq("id", version.id);
+
+      // Step 4: Build adminRows
+      const adminRows: any[] = [];
+      rows.forEach((r) => {
+        for (let lvl = 1; lvl <= 5; lvl++) {
+          const name = r[`ADM${lvl} Name`];
+          const pcode = r[`ADM${lvl} PCode`];
+          if (!name || !pcode) continue;
+          const parent = lvl > 1 ? r[`ADM${lvl - 1} PCode`] || null : null;
+          adminRows.push({
+            country_iso: countryIso,
+            dataset_version_id: version.id,
+            name,
+            pcode,
+            level: `ADM${lvl}`,
+            parent_pcode: parent,
+          });
+        }
+      });
+
+      // Step 5: De-duplicate (prevent unique constraint violation)
+      const seen = new Set<string>();
+      const uniqueRows = adminRows.filter((r) => {
+        const key = `${r.dataset_version_id}-${r.pcode}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      console.log(`🧮 Uploading ${uniqueRows.length} unique admin rows...`);
+
+      // Step 6: Insert in batches
+      const batchSize = 1000;
+      for (let i = 0; i < uniqueRows.length; i += batchSize) {
+        const chunk = uniqueRows.slice(i, i + batchSize);
+        const { error } = await supabase.from("admin_units").insert(chunk);
+        if (error) {
+          console.error("Batch insert failed:", error);
+          alert("Error inserting admin units: " + error.message);
+          setLoading(false);
+          return;
+        }
+        setProgress(Math.round(((i + batchSize) / uniqueRows.length) * 100));
+      }
+
+      // Step 7: Wrap up
+      setProgress(100);
+      setLoading(false);
+      onUploaded();
+      onClose();
+    } catch (err: any) {
+      console.error("Unexpected upload error:", err);
+      alert("Failed to upload dataset. Check console or Supabase logs.");
+      setLoading(false);
+    }
   };
 
   return (
