@@ -33,6 +33,19 @@ export default function UploadPopulationModal({
 
   if (!open) return null;
 
+  const handleDownloadTemplate = () => {
+    const headers = ["pcode", "population", "name", "year"];
+    const csv = headers.join(",") + "\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Population_Template_v1.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleUpload = async () => {
     if (!form.file || !form.title.trim()) {
       toast.error("Please provide a title and choose a file.");
@@ -40,11 +53,17 @@ export default function UploadPopulationModal({
     }
 
     setLoading(true);
-    setProgress(10);
+    setProgress(5);
 
     try {
-      // 1. Parse CSV
-      const text = await form.file.text();
+      // --- Step 1: Read file text using FileReader (safe for Next.js/React) ---
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsText(form.file as Blob);
+      });
+
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
       const rows = parsed.data as any[];
 
@@ -59,7 +78,7 @@ export default function UploadPopulationModal({
         throw new Error(`Missing required columns: ${missing.join(", ")}`);
       }
 
-      // 2. Insert new dataset version (inactive first)
+      // --- Step 2: Create new dataset version (inactive first) ---
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
@@ -81,20 +100,20 @@ export default function UploadPopulationModal({
         );
       }
 
-      // 3. Deactivate all other versions
+      // --- Step 3: Deactivate other versions ---
       await supabase
         .from("population_dataset_versions")
         .update({ is_active: false })
         .eq("country_iso", countryIso)
         .neq("id", version.id);
 
-      // 4. Activate this version
+      // --- Step 4: Activate this version ---
       await supabase
         .from("population_dataset_versions")
         .update({ is_active: true })
         .eq("id", version.id);
 
-      // 5. Prepare population rows
+      // --- Step 5: Prepare population rows ---
       const popRows: any[] = [];
       for (const r of rows) {
         const pcode = r["pcode"] || r["PCODE"] || r["PCode"];
@@ -118,7 +137,7 @@ export default function UploadPopulationModal({
         throw new Error("No valid population rows detected in CSV.");
       }
 
-      // 6. Deduplicate by (dataset_version_id, pcode)
+      // --- Step 6: Deduplicate ---
       const seen = new Set<string>();
       const uniqueRows = popRows.filter((r) => {
         const key = `${r.dataset_version_id}-${r.pcode}`;
@@ -127,7 +146,7 @@ export default function UploadPopulationModal({
         return true;
       });
 
-      // 7. Batch insert
+      // --- Step 7: Batch insert into population_data ---
       const batchSize = 1000;
       for (let i = 0; i < uniqueRows.length; i += batchSize) {
         const chunk = uniqueRows.slice(i, i + batchSize);
@@ -159,10 +178,22 @@ export default function UploadPopulationModal({
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Upload Population Dataset</h3>
+      <div className="space-y-5">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-semibold">Upload Population Dataset</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadTemplate}
+            disabled={loading}
+          >
+            Download Template
+          </Button>
+        </div>
+
         <p className="text-xs text-gray-500">
-          Upload a CSV containing population data for {countryIso.toUpperCase()}.
+          Upload a CSV containing population data for{" "}
+          <strong>{countryIso.toUpperCase()}</strong>.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -202,7 +233,7 @@ export default function UploadPopulationModal({
               className="w-full border rounded px-2 py-1 text-sm"
               value={form.source}
               onChange={handleChange("source")}
-              placeholder="e.g., PSA or National Statistics Office"
+              placeholder="e.g., PSA or OCHA"
             />
           </label>
 
@@ -233,7 +264,7 @@ export default function UploadPopulationModal({
             Uploading… {progress}%
             <div className="w-full bg-gray-100 rounded mt-1">
               <div
-                className="h-1 bg-blue-600 rounded"
+                className="h-1 bg-red-600 rounded"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -241,10 +272,14 @@ export default function UploadPopulationModal({
         )}
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button onClick={onClose} disabled={loading}>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleUpload} disabled={loading}>
+          <Button
+            className="bg-red-700 hover:bg-red-800 text-white"
+            onClick={handleUpload}
+            disabled={loading}
+          >
             {loading ? "Uploading…" : "Upload"}
           </Button>
         </div>
