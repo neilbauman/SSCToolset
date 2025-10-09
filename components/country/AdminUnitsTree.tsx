@@ -7,8 +7,9 @@ type AdminUnit = {
   place_uid: string;
   name: string;
   pcode: string;
-  level: number;
+  level: string | number;
   parent_uid?: string | null;
+  parent_pcode?: string | null;
 };
 
 type TreeNode = AdminUnit & { children: TreeNode[] };
@@ -24,24 +25,37 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
   // --- Build hierarchy ---
   const roots = useMemo(() => {
     if (!units?.length) return [];
+
+    // Create lookup map using both UID and PCode
     const map = new Map<string, TreeNode>();
-    units.forEach((u) => map.set(u.place_uid, { ...u, children: [] }));
+    units.forEach((u) => {
+      const key = u.place_uid || u.pcode;
+      map.set(key, { ...u, children: [] });
+    });
 
     const roots: TreeNode[] = [];
+
+    // Link children
     for (const node of map.values()) {
-      if (node.parent_uid && map.has(node.parent_uid))
-        map.get(node.parent_uid)!.children.push(node);
-      else roots.push(node);
+      const parentKey = node.parent_uid || node.parent_pcode || null;
+      if (parentKey && map.has(parentKey)) {
+        map.get(parentKey)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
     }
 
+    // Sort nodes alphabetically by PCode
     const sortNodes = (arr: TreeNode[]) => {
       arr.sort((a, b) => (a.pcode ?? "").localeCompare(b.pcode ?? ""));
       arr.forEach((n) => sortNodes(n.children));
     };
     sortNodes(roots);
+
     return roots;
   }, [units]);
 
+  // --- Expand toggle ---
   const toggleExpand = useCallback((uid: string) => {
     setExpanded((prev) => {
       const n = new Set(prev);
@@ -50,22 +64,25 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
     });
   }, []);
 
+  // --- Render node recursively ---
   const renderNode = (n: TreeNode, depth = 0): JSX.Element | null => {
     const numericLevel = Number(String(n.level).replace("ADM", ""));
     if (!activeLevels.includes(numericLevel)) return null;
-    const visibleChildren = n.children.filter((c) =>
-      activeLevels.includes(c.level)
-    );
+
+    const visibleChildren = n.children.filter((c) => {
+      const childLevel = Number(String(c.level).replace("ADM", ""));
+      return activeLevels.includes(childLevel);
+    });
     const hasChildren = visibleChildren.length > 0;
 
     return (
-      <div key={n.place_uid} style={{ marginLeft: depth * 16 }} className="py-0.5">
+      <div key={n.place_uid || n.pcode} style={{ marginLeft: depth * 16 }} className="py-0.5">
         <div
           className="flex items-center gap-1 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5"
-          onClick={() => hasChildren && toggleExpand(n.place_uid)}
+          onClick={() => hasChildren && toggleExpand(n.place_uid || n.pcode)}
         >
           {hasChildren ? (
-            expanded.has(n.place_uid) ? (
+            expanded.has(n.place_uid || n.pcode) ? (
               <ChevronDown className="w-4 h-4 text-gray-500" />
             ) : (
               <ChevronRight className="w-4 h-4 text-gray-500" />
@@ -82,12 +99,10 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
                 </span>
               )}
             </span>
-            {n.pcode && (
-              <span className="text-gray-500 text-xs">{n.pcode}</span>
-            )}
+            {n.pcode && <span className="text-gray-500 text-xs">{n.pcode}</span>}
           </div>
         </div>
-        {expanded.has(n.place_uid) &&
+        {expanded.has(n.place_uid || n.pcode) &&
           visibleChildren.map((c) => renderNode(c, depth + 1))}
       </div>
     );
