@@ -46,7 +46,7 @@ export default function UploadAdminUnitsModal({
           })
         : null;
 
-    // Insert new version record
+    // Step 1: Insert new version as inactive first
     const { data: version, error: versionError } = await supabase
       .from("admin_dataset_versions")
       .insert({
@@ -56,7 +56,7 @@ export default function UploadAdminUnitsModal({
         dataset_date: form.dataset_date || null,
         source: sourceJson,
         notes: form.notes || null,
-        is_active: true,
+        is_active: false, // start inactive
       })
       .select()
       .single();
@@ -67,14 +67,20 @@ export default function UploadAdminUnitsModal({
       return;
     }
 
-    // Deactivate other versions for same country
+    // Step 2: Deactivate all other versions for same country
     await supabase
       .from("admin_dataset_versions")
       .update({ is_active: false })
       .eq("country_iso", countryIso)
       .neq("id", version.id);
 
-    // Build admin rows
+    // Step 3: Activate this new one
+    await supabase
+      .from("admin_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", version.id);
+
+    // Step 4: Prepare admin rows for insert
     const adminRows: any[] = [];
     rows.forEach((r) => {
       for (let lvl = 1; lvl <= 5; lvl++) {
@@ -87,13 +93,13 @@ export default function UploadAdminUnitsModal({
           dataset_version_id: version.id,
           name,
           pcode,
-          level: `ADM${lvl}`, // ensure text format
+          level: `ADM${lvl}`,
           parent_pcode: parent,
         });
       }
     });
 
-    // Batch insert with error handling
+    // Step 5: Batch insert with error handling
     const batchSize = 1000;
     for (let i = 0; i < adminRows.length; i += batchSize) {
       const chunk = adminRows.slice(i, i + batchSize);
@@ -107,6 +113,7 @@ export default function UploadAdminUnitsModal({
       setProgress(Math.round(((i + batchSize) / adminRows.length) * 100));
     }
 
+    // Step 6: Wrap up
     setProgress(100);
     setLoading(false);
     onUploaded();
@@ -195,6 +202,7 @@ export default function UploadAdminUnitsModal({
             />
           </label>
         </div>
+
         {progress > 0 && (
           <div className="mt-3 w-full bg-gray-100 rounded-full h-2 overflow-hidden">
             <div
@@ -203,6 +211,7 @@ export default function UploadAdminUnitsModal({
             />
           </div>
         )}
+
         <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onClose}
