@@ -51,7 +51,8 @@ export default function AdminUnitsTree({ units, activeLevels }: Props) {
   }, []);
 
   const renderNode = (n: TreeNode, depth = 0): JSX.Element | null => {
-    if (!activeLevels.includes(n.level)) return null;
+    const numericLevel = Number(String(n.level).replace("ADM", ""));
+    if (!activeLevels.includes(numericLevel)) return null;
     const visibleChildren = n.children.filter((c) =>
       activeLevels.includes(c.level)
     );
