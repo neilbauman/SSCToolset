@@ -5,8 +5,8 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 
 export default function PopulationPage({ params }: { params: { id: string } }) {
