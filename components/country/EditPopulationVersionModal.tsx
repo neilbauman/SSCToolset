@@ -1,123 +1,200 @@
 "use client";
-import React, { useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type EditPopulationVersionModalProps = {
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import Modal from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+
+type Props = {
   open: boolean;
-  version: any;
   onClose: () => void;
-  onSave: () => void;
+  versionId: string | null;
+  countryIso: string;
+  onSaved: () => void;
 };
 
 export default function EditPopulationVersionModal({
   open,
-  version,
   onClose,
-  onSave,
-}: EditPopulationVersionModalProps) {
+  versionId,
+  countryIso,
+  onSaved,
+}: Props) {
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
-    title: version?.title || "",
-    year: version?.year || "",
-    source: version?.source || "",
-    notes: version?.notes || "",
+    title: "",
+    year: "",
+    dataset_date: "",
+    source: "",
+    notes: "",
+    is_active: false,
   });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (open && versionId) fetchVersion();
+  }, [open, versionId]);
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    const { error } = await supabase
-      .from("population_dataset_versions")
-      .update({
-        title: form.title,
-        year: form.year,
-        source: form.source,
-        notes: form.notes,
-      })
-      .eq("id", version.id);
+  async function fetchVersion() {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("population_dataset_versions")
+        .select("*")
+        .eq("id", versionId)
+        .single();
+      if (error) throw error;
+      if (data) {
+        setForm({
+          title: data.title || "",
+          year: data.year?.toString() || "",
+          dataset_date: data.dataset_date || "",
+          source: data.source || "",
+          notes: data.notes || "",
+          is_active: !!data.is_active,
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to load dataset version.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-    if (error) {
-      setError(error.message);
-      setSaving(false);
+  async function handleSave() {
+    if (!form.title.trim()) {
+      toast.error("Title is required.");
       return;
     }
 
-    setSuccess(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSuccess(false);
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("population_dataset_versions")
+        .update({
+          title: form.title.trim(),
+          year: form.year ? parseInt(form.year) : null,
+          dataset_date: form.dataset_date || null,
+          source: form.source || null,
+          notes: form.notes || null,
+          is_active: form.is_active,
+        })
+        .eq("id", versionId);
+
+      if (error) throw error;
+
+      // If activating this version, deactivate others
+      if (form.is_active) {
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: false })
+          .eq("country_iso", countryIso)
+          .neq("id", versionId);
+
+        await supabase
+          .from("population_dataset_versions")
+          .update({ is_active: true })
+          .eq("id", versionId);
+      }
+
+      toast.success("Population version updated successfully.");
+      onSaved();
       onClose();
-      onSave();
-    }, 1000);
-  };
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to save changes.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleChange =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setForm({ ...form, [key]: e.target.value });
+    };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-        <h2 className="text-lg font-semibold mb-3 text-[color:var(--gsc-red)]">
-          Edit Population Version
-        </h2>
-        <div className="space-y-3 text-sm">
-          <div>
-            <label className="block font-medium">Title</label>
+    <Modal open={open} onClose={onClose}>
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Edit Population Dataset</h3>
+        <p className="text-xs text-gray-500">
+          Update metadata for this dataset version.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Title *</span>
             <input
-              type="text"
+              className="w-full border rounded px-2 py-1 text-sm"
               value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="w-full border rounded px-2 py-1 mt-1"
+              onChange={handleChange("title")}
             />
-          </div>
-          <div>
-            <label className="block font-medium">Year</label>
+          </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Year</span>
             <input
-              type="number"
+              className="w-full border rounded px-2 py-1 text-sm"
               value={form.year}
-              onChange={(e) => setForm({ ...form, year: e.target.value })}
-              className="w-full border rounded px-2 py-1 mt-1"
+              onChange={handleChange("year")}
+              placeholder="e.g., 2020"
             />
-          </div>
-          <div>
-            <label className="block font-medium">Source (optional)</label>
+          </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Dataset Date</span>
             <input
-              type="text"
+              type="date"
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={form.dataset_date}
+              onChange={handleChange("dataset_date")}
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="block mb-1 font-medium">Source</span>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
               value={form.source}
-              onChange={(e) => setForm({ ...form, source: e.target.value })}
-              className="w-full border rounded px-2 py-1 mt-1"
+              onChange={handleChange("source")}
+              placeholder="Agency or publication"
             />
-          </div>
-          <div>
-            <label className="block font-medium">Notes (optional)</label>
+          </label>
+
+          <label className="text-sm md:col-span-2">
+            <span className="block mb-1 font-medium">Notes</span>
             <textarea
+              className="w-full border rounded px-2 py-1 text-sm"
               value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="w-full border rounded px-2 py-1 mt-1"
+              onChange={handleChange("notes")}
+              rows={3}
+              placeholder="Optional metadata or comments"
             />
-          </div>
+          </label>
+
+          <label className="flex items-center gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) =>
+                setForm({ ...form, is_active: e.target.checked })
+              }
+            />
+            Set this version as active
+          </label>
         </div>
 
-        {error && <p className="text-[color:var(--gsc-red)] text-sm mt-3">{error}</p>}
-        {success && <p className="text-green-600 text-sm mt-3">✔ Saved successfully</p>}
-
-        <div className="flex justify-end gap-3 mt-5">
-          <button
-            onClick={onClose}
-            className="bg-gray-100 text-gray-800 px-3 py-1.5 rounded hover:bg-gray-200"
-          >
+        <div className="flex justify-end gap-2 pt-4">
+          <Button onClick={onClose} disabled={loading}>
             Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-[color:var(--gsc-red)] text-white px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
+          </Button>
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? "Saving…" : "Save Changes"}
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
