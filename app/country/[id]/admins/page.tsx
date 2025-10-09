@@ -181,7 +181,13 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
-            <a href={templateUrl} download className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700">
+            <a
+  href={`${templateUrl}?download=true`}
+  download="admin_units_template.csv"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
+>
               <Download className="w-4 h-4 mr-1" /> Template
             </a>
             <button onClick={() => setOpenUpload(true)}
