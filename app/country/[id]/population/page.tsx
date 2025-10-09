@@ -5,9 +5,9 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import PageHeader from "@/components/ui/PageHeader";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Button } from "@/components/ui/Button";
+import { Database, Upload, Trash2, Edit3, Download, CheckCircle2 } from "lucide-react";
 
 export default function PopulationPage({ params }: { params: { id: string } }) {
   const countryIso = params.id.toUpperCase();
@@ -24,17 +24,10 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
   const [openDelete, setOpenDelete] = useState<null | any>(null);
 
   useEffect(() => {
-    fetchVersions();
-  }, []);
+    loadVersions();
+  }, [countryIso]);
 
-  useEffect(() => {
-    if (selectedVersion) {
-      fetchRows(selectedVersion.id);
-      fetchMetrics(selectedVersion.id);
-    }
-  }, [selectedVersion]);
-
-  async function fetchVersions() {
+  async function loadVersions() {
     const { data, error } = await supabase
       .from("population_dataset_versions")
       .select("*")
@@ -58,6 +51,13 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     if (!error && data) setRows(data);
   }
 
+  useEffect(() => {
+    if (selectedVersion) {
+      fetchRows(selectedVersion.id);
+      fetchMetrics(selectedVersion.id);
+    }
+  }, [selectedVersion]);
+
   async function fetchMetrics(versionId: string) {
     const { data, error } = await supabase
       .from("population_data")
@@ -76,20 +76,41 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
   async function handleDeleteVersion(versionId: string) {
     await supabase.from("population_data").delete().eq("dataset_version_id", versionId);
     await supabase.from("population_dataset_versions").delete().eq("id", versionId);
-    fetchVersions();
+    loadVersions();
   }
 
-  const handleDownloadTemplate = () => {
-    const headers = ["pcode", "population", "name", "year"];
-    const csv = headers.join(",") + "\n";
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "Population_Template_v1.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleTemplateDownload = async () => {
+    try {
+      const headers = ["pcode", "population", "name", "year"];
+      const csv = headers.join(",") + "\n";
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "population_template.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error("Template download failed:", e);
+    }
+  };
+
+  const headerProps = {
+    title: `${countryIso} – Population Data`,
+    group: "country-config" as const,
+    description:
+      "Upload and manage versioned population datasets aligned with administrative boundaries.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Population" },
+        ]}
+      />
+    ),
   };
 
   const formatDate = (dateString: string | null) => {
@@ -103,125 +124,109 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 🧭 Breadcrumbs */}
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/" },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "Population Data" },
-        ]}
-      />
-
-      {/* 🧱 Page Header */}
-      <PageHeader
-        title={`Population Data – ${countryIso}`}
-        description="Upload and manage versioned population datasets aligned with administrative boundaries."
-        group="Country Configurations"
-      />
-
-      {/* 🧩 Action Buttons */}
-      <div className="flex justify-end mt-3 mb-2 gap-2">
-        <Button
-          className="border px-3 py-1 text-sm rounded hover:bg-gray-50"
-          onClick={handleDownloadTemplate}
-        >
-          Download Template
-        </Button>
-        <Button
-          className="px-3 py-1 text-sm bg-red-700 hover:bg-red-800 text-white rounded"
-          onClick={() => setOpenUpload(true)}
-        >
-          Upload Dataset
-        </Button>
-      </div>
-
-      {/* 📅 Active Version Info */}
-      {selectedVersion && (
-        <div className="mb-4 text-sm text-gray-600 flex items-center gap-4">
-          <div>
-            <span className="font-medium text-gray-800">Active Version:</span>{" "}
-            {selectedVersion.title} ({selectedVersion.year || "—"})
-          </div>
-          <div>
-            <span className="font-medium text-gray-800">Last Updated:</span>{" "}
-            {formatDate(selectedVersion.created_at)}
+    <SidebarLayout headerProps={headerProps}>
+      {/* 📦 Dataset Versions */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Database className="w-5 h-5 text-green-600" />
+            Dataset Versions
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={handleTemplateDownload}
+              className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
+            >
+              <Download className="w-4 h-4 mr-1" /> Template
+            </button>
+            <button
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+            >
+              <Upload className="w-4 h-4 mr-1" /> Upload Dataset
+            </button>
           </div>
         </div>
-      )}
 
-      {/* 📦 Versions Table */}
-      <div className="border rounded-md bg-white p-4 shadow-sm">
-        <h3 className="text-lg font-semibold mb-3">Dataset Versions</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-gray-50">
-              <th className="text-left py-1">Title</th>
-              <th>Year</th>
-              <th>Date</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map((v) => (
-              <tr
-                key={v.id}
-                className={`border-b hover:bg-gray-50 ${
-                  selectedVersion?.id === v.id ? "bg-gray-100" : ""
-                }`}
-              >
-                <td
-                  className="cursor-pointer py-1"
-                  onClick={() => setSelectedVersion(v)}
-                >
-                  {v.title}
-                </td>
-                <td className="text-center">{v.year || "—"}</td>
-                <td className="text-center">{formatDate(v.dataset_date)}</td>
-                <td className="text-center">{v.source || "—"}</td>
-                <td className="text-center">
-                  {v.is_active ? (
-                    <span className="text-green-600 font-medium">Active</span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="text-right space-x-1">
-                  <Button
-                    className="px-2 py-1 text-xs border rounded"
-                    onClick={() => setOpenEdit(v)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    className="px-2 py-1 text-xs border rounded"
-                    onClick={() => setOpenDelete(v)}
-                  >
-                    Delete
-                  </Button>
-                </td>
+        {versions.length ? (
+          <table className="w-full text-sm border rounded">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th>Year</th>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th className="text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${
+                    v.is_active ? "bg-green-50" : ""
+                  }`}
+                >
+                  <td
+                    onClick={() => setSelectedVersion(v)}
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-bold" : ""
+                    }`}
+                  >
+                    {v.title}
+                  </td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{formatDate(v.dataset_date)}</td>
+                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        className="text-gray-700 hover:underline text-xs flex items-center"
+                        onClick={() => setOpenEdit(v)}
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500 text-sm">
+            No population dataset versions uploaded yet.
+          </p>
+        )}
       </div>
 
       {/* 📊 Dataset Health */}
       {selectedVersion && (
-        <div className="mt-6 border rounded-md bg-white p-4 shadow-sm space-y-4">
-          <h3 className="text-lg font-semibold">
-            Dataset Health – {selectedVersion.title}
+        <div className="border rounded-lg p-4 shadow-sm bg-white space-y-3">
+          <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
+            {selectedVersion.title}
           </h3>
-          <p className="text-sm">
+          <p className="text-sm text-gray-700">
             Records: <strong>{metrics.count}</strong> | Total Population:{" "}
             <strong>{metrics.total.toLocaleString()}</strong>
           </p>
           <div className="border-t pt-3">
-            <h4 className="font-medium mb-2 text-sm">
-              Population Records — {selectedVersion.title}
-            </h4>
+            <h4 className="font-medium mb-2 text-sm">Population Records</h4>
             {rows.length === 0 ? (
               <p className="text-sm text-gray-500">
                 No population data uploaded.
@@ -259,14 +264,14 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         open={openUpload}
         onClose={() => setOpenUpload(false)}
         countryIso={countryIso}
-        onUploaded={fetchVersions}
+        onUploaded={loadVersions}
       />
       <EditPopulationVersionModal
         open={!!openEdit}
         onClose={() => setOpenEdit(null)}
         versionId={openEdit?.id || null}
         countryIso={countryIso}
-        onSaved={fetchVersions}
+        onSaved={loadVersions}
       />
       <ConfirmDeleteModal
         open={!!openDelete}
@@ -274,6 +279,6 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
         message="Are you sure you want to delete this dataset?"
         onConfirm={() => handleDeleteVersion(openDelete?.id)}
       />
-    </div>
+    </SidebarLayout>
   );
 }
