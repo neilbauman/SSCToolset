@@ -57,7 +57,7 @@ export default function UploadAdminUnitsModal({
           dataset_date: form.dataset_date || null,
           source: sourceJson,
           notes: form.notes || null,
-          is_active: true,
+          is_active: false,
         })
         .select();
 
