@@ -5,7 +5,6 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
-  Layers,
   Database,
   Upload,
   CheckCircle2,
@@ -145,6 +144,22 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
+  const handleTemplateDownload = async () => {
+    try {
+      const url =
+        "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "admin_units_template.csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch {
+      alert("Failed to download template.");
+    }
+  };
+
   const headerProps = {
     title: `${country?.name ?? countryIso} – Administrative Boundaries`,
     group: "country-config" as const,
@@ -172,9 +187,6 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
     );
   }, [units, searchTerm]);
 
-  const templateUrl =
-    "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/admin_units_template.csv";
-
   return (
     <SidebarLayout headerProps={headerProps}>
       {loadingMsg && (
@@ -196,15 +208,12 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
-            <a
-              href={`${templateUrl}?download=1`}
-              download="admin_units_template.csv"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={handleTemplateDownload}
               className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
             >
               <Download className="w-4 h-4 mr-1" /> Template
-            </a>
+            </button>
             <button
               onClick={() => setOpenUpload(true)}
               className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
@@ -213,6 +222,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
             </button>
           </div>
         </div>
+
         {versions.length ? (
           <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
@@ -303,7 +313,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Search and Tree */}
+      {/* Search */}
       <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
         <Search className="w-4 h-4 text-gray-500 mr-2" />
         <input
@@ -315,6 +325,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
         />
       </div>
 
+      {/* Tree View */}
       <AdminUnitsTree units={filteredUnits} activeLevels={selectedLevels} />
 
       {/* Modals */}
@@ -326,6 +337,7 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onUploaded={loadVersions}
         />
       )}
+
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -333,6 +345,98 @@ export default function AdminsPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
+      )}
+
+      {editingVersion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Edit Version</h3>
+            <div className="space-y-2 text-sm">
+              <label className="block">
+                Title
+                <input
+                  type="text"
+                  value={editingVersion.title}
+                  onChange={(e) =>
+                    setEditingVersion({ ...editingVersion, title: e.target.value })
+                  }
+                  className="border rounded w-full px-2 py-1 mt-1"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  Year
+                  <input
+                    type="number"
+                    value={editingVersion.year ?? ""}
+                    onChange={(e) =>
+                      setEditingVersion({
+                        ...editingVersion,
+                        year: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+                <label className="block">
+                  Dataset Date
+                  <input
+                    type="date"
+                    value={editingVersion.dataset_date ?? ""}
+                    onChange={(e) =>
+                      setEditingVersion({
+                        ...editingVersion,
+                        dataset_date: e.target.value || null,
+                      })
+                    }
+                    className="border rounded w-full px-2 py-1 mt-1"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                Source
+                <input
+                  type="text"
+                  value={editingVersion.source ?? ""}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      source: e.target.value || null,
+                    })
+                  }
+                  className="border rounded w-full px-2 py-1 mt-1"
+                />
+              </label>
+              <label className="block">
+                Notes
+                <textarea
+                  value={editingVersion.notes ?? ""}
+                  onChange={(e) =>
+                    setEditingVersion({
+                      ...editingVersion,
+                      notes: e.target.value || null,
+                    })
+                  }
+                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setEditingVersion(null)}
+                className="px-3 py-1 text-sm border rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveEdit(editingVersion)}
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );
