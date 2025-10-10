@@ -39,18 +39,21 @@ type PopulationVersion = {
 };
 
 // -----------------------------------------------------------------------------
-// Population Data Preview
+// Population Data Preview Component
 // -----------------------------------------------------------------------------
 function PopulationPreview({ versionId }: { versionId: string }) {
   const [rows, setRows] = useState<any[]>([]);
-  const [summary, setSummary] = useState({ total: 0, sum: 0, avg: 0 });
+  const [summary, setSummary] = useState<{ total: number; sum: number; avg: number }>({
+    total: 0,
+    sum: 0,
+    avg: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-
-      const { data: preview, count } = await supabase
+      const { data, count } = await supabase
         .from("population_data")
         .select("pcode,name,population", { count: "exact" })
         .eq("dataset_version_id", versionId)
@@ -61,12 +64,15 @@ function PopulationPreview({ versionId }: { versionId: string }) {
         .select("population")
         .eq("dataset_version_id", versionId);
 
-      const sum =
-        all?.reduce((acc, r) => acc + Number(r.population || 0), 0) || 0;
+      const sum = all?.reduce((acc, r: any) => acc + Number(r.population || 0), 0) || 0;
       const avg = all?.length ? sum / all.length : 0;
 
-      setRows(preview || []);
-      setSummary({ total: count ?? 0, sum, avg });
+      setRows(data || []);
+      setSummary({
+        total: count ?? 0,
+        sum,
+        avg,
+      });
       setLoading(false);
     };
     load();
@@ -81,25 +87,21 @@ function PopulationPreview({ versionId }: { versionId: string }) {
     );
 
   return (
-    <div className="border rounded-lg p-4 shadow-sm bg-white mt-4">
+    <div className="border rounded-lg p-4 shadow-sm bg-white">
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-md font-semibold">Population Data Preview</h3>
         <p className="text-xs text-gray-500">Showing first {rows.length} rows</p>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary */}
       <div className="grid grid-cols-3 gap-4 mb-3">
         <div className="text-center border rounded-lg p-2 bg-gray-50">
           <p className="text-sm text-gray-600">Total Records</p>
-          <p className="text-lg font-semibold">
-            {summary.total.toLocaleString()}
-          </p>
+          <p className="text-lg font-semibold">{summary.total.toLocaleString()}</p>
         </div>
         <div className="text-center border rounded-lg p-2 bg-gray-50">
           <p className="text-sm text-gray-600">Total Population</p>
-          <p className="text-lg font-semibold">
-            {summary.sum.toLocaleString()}
-          </p>
+          <p className="text-lg font-semibold">{summary.sum.toLocaleString()}</p>
         </div>
         <div className="text-center border rounded-lg p-2 bg-gray-50">
           <p className="text-sm text-gray-600">Average per Record</p>
@@ -142,25 +144,24 @@ function PopulationPreview({ versionId }: { versionId: string }) {
 }
 
 // -----------------------------------------------------------------------------
-// Main Page
+// Main Page Component
 // -----------------------------------------------------------------------------
 export default function PopulationPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
-  const [versionStats, setVersionStats] = useState<
-    Record<string, { total: number; sum: number }>
-  >({});
-  const [selectedVersion, setSelectedVersion] =
-    useState<PopulationVersion | null>(null);
+  const [versionStats, setVersionStats] = useState<Record<string, { total: number; sum: number }>>({});
+  const [selectedVersion, setSelectedVersion] = useState<PopulationVersion | null>(null);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [progress, setProgress] = useState(0);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
-  const [editingVersion, setEditingVersion] =
-    useState<PopulationVersion | null>(null);
+  const [editingVersion, setEditingVersion] = useState<PopulationVersion | null>(null);
 
   const isFetchingRef = useRef(false);
+  const progressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // 🧭 Load country info
+  // 🧭 Fetch country info
   useEffect(() => {
     supabase
       .from("countries")
@@ -170,7 +171,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 📦 Load dataset versions + summary stats
+  // 📦 Load dataset versions
   const loadVersions = async () => {
     const { data } = await supabase
       .from("population_dataset_versions")
@@ -179,19 +180,18 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .order("created_at", { ascending: false });
 
     if (!data) return;
-
     setVersions(data);
     const active = data.find((v) => v.is_active) || data[0] || null;
     setSelectedVersion(active);
 
+    // Calculate summary stats per version
     const stats: Record<string, { total: number; sum: number }> = {};
     for (const v of data) {
       const { count, data: rows } = await supabase
         .from("population_data")
         .select("population", { count: "exact" })
         .eq("dataset_version_id", v.id);
-      const sum =
-        rows?.reduce((acc, r) => acc + Number(r.population || 0), 0) || 0;
+      const sum = rows?.reduce((acc, row: any) => acc + Number(row.population || 0), 0) || 0;
       stats[v.id] = { total: count ?? 0, sum };
     }
     setVersionStats(stats);
@@ -222,23 +222,20 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
 
   const handleTemplateDownload = () => {
     const url =
-      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
+      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
     const link = document.createElement("a");
     link.href = url;
-    link.download = "Population_Template.csv";
+    link.download = "population_template.csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ---------------------------------------------------------------------------
-  // Header
-  // ---------------------------------------------------------------------------
+  // 🧱 Header (mirrors Admins)
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description:
-      "Upload, version, and manage population datasets aligned with administrative boundaries.",
+    description: "Manage versioned population datasets aligned with administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -251,12 +248,21 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* 📊 Dataset Versions */}
+      {loadingMsg && (
+        <div className="mb-2">
+          <div className="h-1.5 w-full bg-gray-200 rounded">
+            <div
+              className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-600 mt-1">{loadingMsg}</p>
+        </div>
+      )}
+
+      {/* 📊 Dataset Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -315,27 +321,19 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
                 return (
                   <tr
                     key={v.id}
-                    className={`hover:bg-gray-50 ${
-                      v.is_active ? "bg-green-50" : ""
-                    }`}
+                    className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
                   >
                     <td
                       onClick={() => setSelectedVersion(v)}
-                      className={`border px-2 py-1 cursor-pointer ${
-                        isSel ? "font-bold" : ""
-                      }`}
+                      className={`border px-2 py-1 cursor-pointer ${isSel ? "font-bold" : ""}`}
                     >
                       {v.title}
                     </td>
                     <td className="border px-2 py-1">{v.year ?? "—"}</td>
                     <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
                     <td className="border px-2 py-1">{src}</td>
-                    <td className="border px-2 py-1 text-right">
-                      {s.sum.toLocaleString()}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
-                      {s.total.toLocaleString()}
-                    </td>
+                    <td className="border px-2 py-1 text-right">{s.sum.toLocaleString()}</td>
+                    <td className="border px-2 py-1 text-center">{s.total.toLocaleString()}</td>
                     <td className="border px-2 py-1 text-center">
                       {v.is_active ? (
                         <span className="inline-flex items-center gap-1 text-green-700">
@@ -387,32 +385,26 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       {/* 🧩 Population Data Preview */}
       {selectedVersion && <PopulationPreview versionId={selectedVersion.id} />}
 
-      {/* 🪟 Modals (async-safe) */}
+      {/* 🪟 Modals */}
       {openUpload && (
         <UploadPopulationModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={async () => {
-            await loadVersions();
-          }}
+          onUploaded={async () => loadVersions()}
         />
       )}
-
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
           message={`This will permanently remove version "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={async () => {
-            await handleDeleteVersion(openDelete.id);
-          }}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
-
       {editingVersion && (
         <EditPopulationVersionModal
-          version={editingVersion}
+          versionId={editingVersion.id}  // ✅ fixed prop name
           onClose={() => setEditingVersion(null)}
           onSaved={async () => {
             await loadVersions();
