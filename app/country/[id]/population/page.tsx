@@ -18,6 +18,9 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 type Country = {
   iso_code: string;
   name: string;
@@ -35,6 +38,114 @@ type PopulationVersion = {
   created_at: string;
 };
 
+// -----------------------------------------------------------------------------
+// Population Data Preview Component
+// -----------------------------------------------------------------------------
+function PopulationPreview({ versionId }: { versionId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [summary, setSummary] = useState<{ total: number; sum: number; avg: number }>({
+    total: 0,
+    sum: 0,
+    avg: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { data, count } = await supabase
+        .from("population_data")
+        .select("pcode,name,population", { count: "exact" })
+        .eq("dataset_version_id", versionId)
+        .limit(20);
+
+      const { data: all } = await supabase
+        .from("population_data")
+        .select("population")
+        .eq("dataset_version_id", versionId);
+
+      const sum = all?.reduce((acc, r: any) => acc + Number(r.population || 0), 0) || 0;
+      const avg = all?.length ? sum / all.length : 0;
+
+      setRows(data || []);
+      setSummary({
+        total: count ?? 0,
+        sum,
+        avg,
+      });
+      setLoading(false);
+    };
+    load();
+  }, [versionId]);
+
+  if (loading)
+    return (
+      <div className="flex items-center gap-2 text-gray-600 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading population data preview…
+      </div>
+    );
+
+  return (
+    <div className="border rounded-lg p-4 shadow-sm bg-white">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-md font-semibold">Population Data Preview</h3>
+        <p className="text-xs text-gray-500">Showing first {rows.length} rows</p>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <div className="text-center border rounded-lg p-2 bg-gray-50">
+          <p className="text-sm text-gray-600">Total Records</p>
+          <p className="text-lg font-semibold">{summary.total.toLocaleString()}</p>
+        </div>
+        <div className="text-center border rounded-lg p-2 bg-gray-50">
+          <p className="text-sm text-gray-600">Total Population</p>
+          <p className="text-lg font-semibold">{summary.sum.toLocaleString()}</p>
+        </div>
+        <div className="text-center border rounded-lg p-2 bg-gray-50">
+          <p className="text-sm text-gray-600">Average per Record</p>
+          <p className="text-lg font-semibold">
+            {Math.round(summary.avg).toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      {rows.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="border px-2 py-1 text-left">PCode</th>
+                <th className="border px-2 py-1 text-left">Name</th>
+                <th className="border px-2 py-1 text-right">Population</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{r.pcode}</td>
+                  <td className="border px-2 py-1">{r.name ?? "—"}</td>
+                  <td className="border px-2 py-1 text-right">
+                    {Number(r.population || 0).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm italic text-gray-500">
+          No data available for this version.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Main Page Component
+// -----------------------------------------------------------------------------
 export default function PopulationPage({
   params,
 }: {
@@ -88,11 +199,8 @@ export default function PopulationPage({
         .from("population_data")
         .select("population", { count: "exact" })
         .eq("dataset_version_id", v.id);
-
       const sum =
-        rows?.reduce((acc, row: any) => acc + Number(row.population || 0), 0) ||
-        0;
-
+        rows?.reduce((acc, row: any) => acc + Number(row.population || 0), 0) || 0;
       stats[v.id] = { total: count ?? 0, sum };
     }
     setVersionStats(stats);
@@ -121,34 +229,6 @@ export default function PopulationPage({
     await loadVersions();
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingVersion) return;
-    const {
-      id,
-      title,
-      year,
-      dataset_date,
-      source_name,
-      source_url,
-      notes,
-    } = editingVersion;
-
-    await supabase
-      .from("population_dataset_versions")
-      .update({
-        title: title?.trim() || null,
-        year: year || null,
-        dataset_date: dataset_date || null,
-        source_name: source_name?.trim() || null,
-        source_url: source_url?.trim() || null,
-        notes: notes?.trim() || null,
-      })
-      .eq("id", id);
-
-    setEditingVersion(null);
-    await loadVersions();
-  };
-
   const handleTemplateDownload = () => {
     const url =
       "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
@@ -160,7 +240,7 @@ export default function PopulationPage({
     document.body.removeChild(link);
   };
 
-  // 📄 Header config (mirrors Admins)
+  // 🧱 Header (mirrors Admins)
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
@@ -171,16 +251,16 @@ export default function PopulationPage({
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          {
-            label: country?.name ?? countryIso,
-            href: `/country/${countryIso}`,
-          },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
           { label: "Population" },
         ]}
       />
     ),
   };
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <SidebarLayout headerProps={headerProps}>
       {loadingMsg && (
@@ -195,6 +275,7 @@ export default function PopulationPage({
         </div>
       )}
 
+      {/* 📊 Dataset Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -322,6 +403,10 @@ export default function PopulationPage({
         )}
       </div>
 
+      {/* 🧩 Population Data Preview */}
+      {selectedVersion && <PopulationPreview versionId={selectedVersion.id} />}
+
+      {/* 🪟 Modals */}
       {openUpload && (
         <UploadPopulationModal
           open={openUpload}
