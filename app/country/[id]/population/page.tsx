@@ -220,12 +220,13 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
+  // ✅ Fixed: proper case-sensitive Supabase path
   const handleTemplateDownload = () => {
     const url =
-      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
+      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
     const link = document.createElement("a");
     link.href = url;
-    link.download = "population_template.csv";
+    link.download = "Population_Template.csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -404,7 +405,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       )}
       {editingVersion && (
         <EditPopulationVersionModal
-          versionId={editingVersion.id}  // ✅ fixed prop name
+          versionId={editingVersion.id}
           onClose={() => setEditingVersion(null)}
           onSaved={async () => {
             await loadVersions();
