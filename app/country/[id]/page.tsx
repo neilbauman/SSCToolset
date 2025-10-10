@@ -27,8 +27,8 @@ const TileLayer = dynamic(
   { ssr: false }
 );
 
-// ✅ Safe reload function
-function reloadPage() {
+// ✅ Safe reload function (fixed)
+async function reloadPage() {
   if (typeof window !== "undefined") {
     window.location.reload();
   }
@@ -328,8 +328,8 @@ export default function CountryConfigLandingPage({ params }: any) {
       />
       {openGISUpload && (
         <UploadGISModal
-          open={openGISUpload}                    // ✅ added
-          datasetVersionId={""}                   // ✅ placeholder
+          open={openGISUpload}
+          datasetVersionId={""}
           countryIso={id}
           onClose={() => setOpenGISUpload(false)}
           onUploaded={reloadPage}
