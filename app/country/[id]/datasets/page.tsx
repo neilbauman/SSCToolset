@@ -1,98 +1,81 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { PlusCircle, Edit3, Trash2, Search, Loader2, Database } from "lucide-react";
-import EditDatasetModal from "@/components/country/EditDatasetModal";
-import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import { Database, PlusCircle, Edit3, Trash2, Link2 } from "lucide-react";
+import AddDatasetModal from "@/components/country/AddDatasetModal";
+import ConfirmDeleteModal from "@/components/common/DeleteConfirmationModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Dataset = {
   id: string;
   title: string;
-  description?: string | null;
-  source?: string | null;
-  theme?: string | null;
-  admin_level?: string | null;
-  upload_type?: string | null;
-  created_at?: string;
-  indicator_id?: string | null;
+  theme: string;
+  admin_level: string;
+  source: string | null;
+  created_at: string;
 };
 
-export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
+export default function DatasetsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [themes, setThemes] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [filterTheme, setFilterTheme] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState<string | null>(null);
-  const [openEdit, setOpenEdit] = useState<Dataset | null>(null);
+  const [openAdd, setOpenAdd] = useState(false);
   const [openDelete, setOpenDelete] = useState<Dataset | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const fetchDatasets = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("dataset_metadata")
-        .select("*")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-      if (!error && data) {
-        setDatasets(data);
-        const uniqueThemes = [...new Set(data.map((d) => d.theme).filter(Boolean))];
-        const uniqueTypes = [...new Set(data.map((d) => d.upload_type).filter(Boolean))];
-        setThemes(uniqueThemes);
-        setTypes(uniqueTypes);
-      }
-      setLoading(false);
-    };
-    fetchDatasets();
+    loadDatasets();
   }, [countryIso]);
 
-  const filtered = useMemo(() => {
-    return datasets.filter((d) => {
-      const s = search.toLowerCase();
-      const matchesSearch =
-        !s ||
-        d.title?.toLowerCase().includes(s) ||
-        d.description?.toLowerCase().includes(s) ||
-        d.source?.toLowerCase().includes(s);
-      const matchesTheme = !filterTheme || d.theme === filterTheme;
-      const matchesType = !filterType || d.upload_type === filterType;
-      return matchesSearch && matchesTheme && matchesType;
-    });
-  }, [datasets, search, filterTheme, filterType]);
+  const loadDatasets = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("dataset_metadata")
+      .select("id, title, theme, admin_level, source, created_at")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+    if (!error && data) {
+      setDatasets(data);
+    }
+    setLoading(false);
+  };
 
-  const parseSource = (src: string | null) => {
-    if (!src) return <span className="text-gray-400">—</span>;
+  const handleDeleteDataset = async (id: string) => {
+    await supabase.from("dataset_metadata").delete().eq("id", id);
+    setOpenDelete(null);
+    await loadDatasets();
+  };
+
+  const parseSource = (source: string | null) => {
+    if (!source) return "—";
     try {
-      const j = JSON.parse(src);
-      if (j.url)
+      const parsed = JSON.parse(source);
+      if (parsed.url) {
         return (
-          <a href={j.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-            {j.name || j.url}
+          <a
+            href={parsed.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline flex items-center gap-1"
+          >
+            <Link2 className="w-4 h-4" />
+            {parsed.name || parsed.url}
           </a>
         );
-      return <span>{j.name || src}</span>;
+      }
+      return parsed.name || "—";
     } catch {
-      return <span>{src}</span>;
+      return source;
     }
   };
 
-  const handleDelete = async (id: string) => {
-    await supabase.from("dataset_metadata").delete().eq("id", id);
-    setOpenDelete(null);
-    setDatasets((prev) => prev.filter((d) => d.id !== id));
-  };
-
   const headerProps = {
-    title: `${countryIso} – Other Datasets`,
+    title: "Country Datasets",
     group: "country-config" as const,
-    description: "Manage additional datasets for this country's configuration.",
+    description:
+      "Manage datasets associated with this country. Add new indicators, upload CSV data, or edit existing metadata.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -107,63 +90,23 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-4 shadow-sm bg-white mb-4">
-        <div className="flex flex-wrap gap-3 items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
+      <div className="border rounded-lg p-4 shadow-sm bg-white mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <Database className="w-5 h-5 text-green-600" />
-            <h2 className="text-lg font-semibold">Country Datasets</h2>
-          </div>
+            Country Datasets
+          </h2>
           <button
-            onClick={() => setOpenEdit({ id: "", title: "", description: "", source: "", theme: "", admin_level: "" })}
-            className="flex items-center gap-1 text-sm bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded hover:opacity-90"
+            onClick={() => setOpenAdd(true)}
+            className="flex items-center gap-2 text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
           >
-            <PlusCircle className="w-4 h-4" />
-            Add Dataset
+            <PlusCircle className="w-4 h-4" /> Add Dataset
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-3 mb-3">
-          <div className="flex items-center border rounded px-2 py-1 bg-white w-full sm:w-64">
-            <Search className="w-4 h-4 text-gray-500 mr-2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search datasets..."
-              className="flex-1 text-sm outline-none bg-transparent"
-            />
-          </div>
-
-          <select
-            value={filterTheme || ""}
-            onChange={(e) => setFilterTheme(e.target.value || null)}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value="">All Themes</option>
-            {themes.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-
-          <select
-            value={filterType || ""}
-            onChange={(e) => setFilterType(e.target.value || null)}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value="">All Types</option>
-            {types.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-
         {loading ? (
-          <div className="flex items-center gap-2 text-gray-600 text-sm">
-            <Loader2 className="animate-spin w-4 h-4" /> Loading datasets...
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="italic text-gray-500 text-sm">No datasets found.</p>
-        ) : (
+          <p className="text-sm text-gray-500 italic">Loading datasets...</p>
+        ) : datasets.length > 0 ? (
           <table className="w-full text-sm border rounded">
             <thead className="bg-gray-100">
               <tr>
@@ -176,30 +119,28 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
               </tr>
             </thead>
             <tbody>
-              {filtered.map((ds) => (
-                <tr key={ds.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-1">{ds.title || "—"}</td>
-                  <td className="border px-2 py-1">{ds.theme || "—"}</td>
-                  <td className="border px-2 py-1">{ds.admin_level || "—"}</td>
-                  <td className="border px-2 py-1">{parseSource(ds.source ?? null)}</td>
-                  <td className="border px-2 py-1 text-gray-500">
-                    {ds.created_at ? new Date(ds.created_at).toLocaleDateString() : "—"}
+              {datasets.map((ds) => (
+                <tr key={ds.id} className="border-b hover:bg-gray-50">
+                  <td className="px-2 py-1">{ds.title || "—"}</td>
+                  <td className="px-2 py-1">{ds.theme || "—"}</td>
+                  <td className="px-2 py-1">{ds.admin_level || "—"}</td>
+                  <td className="px-2 py-1">{parseSource(ds.source)}</td>
+                  <td className="px-2 py-1 text-gray-500">
+                    {new Date(ds.created_at).toLocaleDateString()}
                   </td>
-                  <td className="border px-2 py-1 text-right">
+                  <td className="px-2 py-1 text-right">
                     <div className="flex justify-end gap-2">
                       <button
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                        onClick={() => setOpenEdit(ds)}
+                        className="flex items-center gap-1 text-xs text-gray-700 hover:underline"
+                        onClick={() => alert("Edit coming soon")}
                       >
-                        <Edit3 className="w-4 h-4" />
-                        Edit
+                        <Edit3 className="w-4 h-4" /> Edit
                       </button>
                       <button
                         className="flex items-center gap-1 text-xs text-[color:var(--gsc-red)] hover:underline"
                         onClick={() => setOpenDelete(ds)}
                       >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
+                        <Trash2 className="w-4 h-4" /> Delete
                       </button>
                     </div>
                   </td>
@@ -207,28 +148,29 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
               ))}
             </tbody>
           </table>
+        ) : (
+          <p className="italic text-gray-500 text-sm">
+            No datasets have been uploaded yet.
+          </p>
         )}
       </div>
 
-      {openEdit && (
-        <EditDatasetModal
-          open={!!openEdit}
-          dataset={openEdit}
-          onClose={() => setOpenEdit(null)}
+      {openAdd && (
+        <AddDatasetModal
+          open={openAdd}
+          onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onSaved={() => {
-            setOpenEdit(null);
-            location.reload();
-          }}
+          onSaved={loadDatasets}
         />
       )}
 
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          message={`Delete dataset "${openDelete.title}"?`}
+          title="Delete Dataset"
+          message={`Are you sure you want to delete "${openDelete.title}"? This will permanently remove it and all its associated values.`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDelete(openDelete.id)}
+          onConfirm={() => handleDeleteDataset(openDelete.id)}
         />
       )}
     </SidebarLayout>
