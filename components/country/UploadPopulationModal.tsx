@@ -63,7 +63,7 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // Step 1: Create a new version entry
+      // Step 1: Create a dataset version
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
@@ -79,9 +79,9 @@ export default function UploadPopulationModal({
         .single();
 
       if (versionError) throw versionError;
-      if (!version) throw new Error("Failed to create version record.");
+      if (!version) throw new Error("Failed to create dataset version record.");
 
-      // Step 2: Upload file to Supabase Storage
+      // Step 2: Upload CSV to Supabase Storage
       const fileExt = file.name.split(".").pop();
       const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -90,7 +90,21 @@ export default function UploadPopulationModal({
 
       if (uploadError) throw uploadError;
 
-      // Step 3: Call Edge Function directly (fetch-based)
+      // Step 3: Build payload for Edge Function
+      const payload = {
+        filePath: storagePath,
+        countryIso,
+        title: title.trim(),
+        year,
+        sourceName: sourceName || null,
+        sourceUrl: sourceUrl || null,
+        notes: notes || null,
+        versionId: version.id,
+      };
+
+      console.log("📤 Sending payload:", payload);
+
+      // Step 4: Call Supabase Edge Function directly
       const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-population`;
 
       const response = await fetch(functionUrl, {
@@ -99,21 +113,15 @@ export default function UploadPopulationModal({
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          filePath: storagePath,
-          countryIso,
-          title: title.trim(),
-          year,
-          sourceName: sourceName || null,
-          sourceUrl: sourceUrl || null,
-          notes: notes || null,
-          versionId: version.id,
-        }),
+        body: JSON.stringify(payload),
       });
 
+      const textResponse = await response.text();
+
+      console.log("🧩 Function response:", textResponse);
+
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Edge Function error: ${text}`);
+        throw new Error(`Edge Function error: ${textResponse}`);
       }
 
       await onUploaded();
