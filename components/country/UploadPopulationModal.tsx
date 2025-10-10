@@ -28,10 +28,6 @@ export default function UploadPopulationModal({
 
   if (!open) return null;
 
-  // ---------------------------------------------------------------------------
-  // 🧱 Handlers
-  // ---------------------------------------------------------------------------
-
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) {
       setFile(e.target.files[0]);
@@ -67,41 +63,59 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // ---------------------------------------------------------------------
-      // Step 1️⃣  Upload CSV to Supabase Storage (uploads bucket)
-      // ---------------------------------------------------------------------
+      // Step 1: Create a new version entry
+      const { data: version, error: versionError } = await supabase
+        .from("population_dataset_versions")
+        .insert({
+          country_iso: countryIso,
+          title,
+          year,
+          source_name: sourceName || null,
+          source_url: sourceUrl || null,
+          notes: notes || null,
+          is_active: false,
+        })
+        .select()
+        .single();
+
+      if (versionError) throw versionError;
+      if (!version) throw new Error("Failed to create version record.");
+
+      // Step 2: Upload file to Supabase Storage
       const fileExt = file.name.split(".").pop();
-      const storagePath = `uploads/${countryIso}/${Date.now()}.${fileExt}`;
+      const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from("uploads")
-        .upload(storagePath, file, { upsert: true });
+        .upload(storagePath, file);
 
       if (uploadError) throw uploadError;
 
-      // ---------------------------------------------------------------------
-      // Step 2️⃣  Trigger Edge Function to process CSV
-      // ---------------------------------------------------------------------
-      const { data, error: funcError } = await supabase.functions.invoke(
-        "convert-population",
-        {
-          body: {
-            filePath: storagePath,
-            countryIso,
-            title: title.trim(),
-            year,
-            sourceName: sourceName || null,
-            sourceUrl: sourceUrl || null,
-            notes: notes || null,
-          },
-        }
-      );
+      // Step 3: Call Edge Function directly (fetch-based)
+      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-population`;
 
-      if (funcError) {
-        console.error("Edge function error:", funcError);
-        throw funcError;
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          filePath: storagePath,
+          countryIso,
+          title: title.trim(),
+          year,
+          sourceName: sourceName || null,
+          sourceUrl: sourceUrl || null,
+          notes: notes || null,
+          versionId: version.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Edge Function error: ${text}`);
       }
 
-      console.log("✅ Population upload success:", data);
       await onUploaded();
       onClose();
     } catch (err: any) {
@@ -112,10 +126,6 @@ export default function UploadPopulationModal({
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // 🧱 Render
-  // ---------------------------------------------------------------------------
-
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -125,12 +135,11 @@ export default function UploadPopulationModal({
         </h2>
 
         <p className="text-sm text-gray-600 mb-4">
-          Upload a CSV file following the template format below. The data will be
-          processed and linked to the selected country’s administrative
+          Upload a CSV file following the template format below. The data will
+          be processed and linked to the selected country’s administrative
           boundaries.
         </p>
 
-        {/* Metadata Fields */}
         <div className="space-y-3 mb-4">
           <div>
             <label className="block text-sm font-medium">Title *</label>
@@ -183,17 +192,15 @@ export default function UploadPopulationModal({
           </div>
         </div>
 
-        {/* File Upload */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleTemplateDownload}
-              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
-            >
-              <Download className="w-4 h-4 mr-1" />
-              Download Template
-            </button>
-          </div>
+          <button
+            onClick={handleTemplateDownload}
+            className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
+          >
+            <Download className="w-4 h-4 mr-1" />
+            Download Template
+          </button>
+
           <label className="text-sm font-medium text-[color:var(--gsc-red)] cursor-pointer">
             <input type="file" accept=".csv" onChange={handleFileSelect} hidden />
             {file ? file.name : "Choose CSV File"}
@@ -206,7 +213,6 @@ export default function UploadPopulationModal({
           </p>
         )}
 
-        {/* Actions */}
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
