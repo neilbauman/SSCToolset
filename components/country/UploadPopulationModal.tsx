@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload, Loader2, Download } from "lucide-react";
+import { Upload, Loader2, Download, CheckCircle2 } from "lucide-react";
 
 interface UploadPopulationModalProps {
   open: boolean;
@@ -25,6 +25,7 @@ export default function UploadPopulationModal({
   const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<boolean>(false);
 
   if (!open) return null;
 
@@ -54,6 +55,7 @@ export default function UploadPopulationModal({
 
   const handleUpload = async () => {
     setError(null);
+    setSuccess(false);
     if (!file) return setError("Please select a CSV file first.");
     if (!year) return setError("Please provide the dataset year.");
     if (!title.trim()) return setError("Please provide a dataset title.");
@@ -61,12 +63,12 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // Step 1: Create a version record
+      // Step 1: Create a dataset version record
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
           country_iso: countryIso,
-          title: title.trim(),
+          title,
           year,
           source_name: sourceName || null,
           source_url: sourceUrl || null,
@@ -78,58 +80,36 @@ export default function UploadPopulationModal({
 
       if (versionError) throw versionError;
       if (!version) throw new Error("Failed to create version record.");
-      console.log("✅ Created version:", version);
 
       // Step 2: Upload CSV to storage
       const fileExt = file.name.split(".").pop();
       const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
-      console.log("📦 Uploading to:", storagePath);
-
       const { error: uploadError } = await supabase.storage
         .from("uploads")
         .upload(storagePath, file);
 
       if (uploadError) throw uploadError;
 
-      console.log("✅ File uploaded to Supabase Storage");
+      // Step 3: Call the Edge Function
+      const { data: fnData, error: funcError } = await supabase.functions.invoke(
+        "convert-population",
+        {
+          body: {
+            filePath: `uploads/${storagePath}`,
+            countryIso,
+            versionId: version.id,
+          },
+        }
+      );
 
-      // Step 3: Build payload for Edge Function
-      const payload = {
-        filePath: `uploads/${storagePath}`,
-        countryIso,
-        versionId: version.id,
-        title: title.trim(),
-        year,
-        sourceName: sourceName || null,
-        sourceUrl: sourceUrl || null,
-        notes: notes || null,
-      };
+      if (funcError) throw funcError;
+      console.log("Function response:", fnData);
 
-      console.log("📤 Payload:", payload);
-
-      // Step 4: Manually invoke Supabase Edge Function
-      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-population`;
-
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error("❌ Edge Function error:", errText);
-        throw new Error(errText || "Failed to process population upload");
-      }
-
-      const result = await response.json();
-      console.log("🧩 Function response:", result);
-
+      setSuccess(true);
       await onUploaded();
-      onClose();
+
+      // Close modal after 2 seconds
+      setTimeout(() => onClose(), 2000);
     } catch (err: any) {
       console.error("Upload error:", err);
       setError(err.message || "Upload failed.");
@@ -152,80 +132,81 @@ export default function UploadPopulationModal({
           boundaries.
         </p>
 
+        {/* Success banner */}
+        {success && (
+          <div className="bg-green-50 border border-green-200 text-green-800 rounded p-2 mb-3 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Population dataset uploaded successfully!
+          </div>
+        )}
+
+        {/* Error banner */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded p-2 mb-3">
+            {error}
+          </div>
+        )}
+
+        {/* Metadata */}
         <div className="space-y-3 mb-4">
-          <div>
-            <label className="block text-sm font-medium">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="e.g. Census 2020"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Year *</label>
-            <input
-              type="number"
-              value={year ?? ""}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="e.g. 2020"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Source Name</label>
-            <input
-              type="text"
-              value={sourceName}
-              onChange={(e) => setSourceName(e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="e.g. OCHA"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Source URL</label>
-            <input
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="https://example.org"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Optional notes about the dataset"
-            />
-          </div>
+          <label className="block text-sm font-medium">Title *</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm"
+            placeholder="e.g. Census 2020"
+          />
+
+          <label className="block text-sm font-medium">Year *</label>
+          <input
+            type="number"
+            value={year ?? ""}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+
+          <label className="block text-sm font-medium">Source Name</label>
+          <input
+            type="text"
+            value={sourceName}
+            onChange={(e) => setSourceName(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+
+          <label className="block text-sm font-medium">Source URL</label>
+          <input
+            type="url"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+
+          <label className="block text-sm font-medium">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
         </div>
 
+        {/* File Upload */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleTemplateDownload}
-              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
-            >
-              <Download className="w-4 h-4 mr-1" />
-              Download Template
-            </button>
-          </div>
+          <button
+            onClick={handleTemplateDownload}
+            className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
+          >
+            <Download className="w-4 h-4 mr-1" />
+            Download Template
+          </button>
+
           <label className="text-sm font-medium text-[color:var(--gsc-red)] cursor-pointer">
             <input type="file" accept=".csv" onChange={handleFileSelect} hidden />
             {file ? file.name : "Choose CSV File"}
           </label>
         </div>
 
-        {error && (
-          <p className="text-sm text-red-600 border-t border-red-100 pt-2 mt-2">
-            {error}
-          </p>
-        )}
-
+        {/* Actions */}
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
