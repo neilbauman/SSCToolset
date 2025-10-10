@@ -217,7 +217,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // ✅ Smart lowest admin level detection
+      // ✅ Smart lowest admin level detection (TS-safe)
       let column = "adm_level";
       const { data: test } = await supabase
         .from("population_data")
@@ -244,7 +244,11 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         .limit(10000);
 
       const levels = Array.from(
-        new Set((levelData || []).map((r) => (r[column] || "").toUpperCase()))
+        new Set(
+          (levelData || []).map((r: Record<string, any>) =>
+            ((r?.[column] as string) || "").toUpperCase()
+          )
+        )
       );
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
       const found = hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
@@ -335,7 +339,11 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
             </thead>
             <tbody>
               {versions.map((v) => {
-                const s = versionStats[v.id] || { total: 0, sum: 0, lowestLevel: "—" };
+                const s = versionStats[v.id] || {
+                  total: 0,
+                  sum: 0,
+                  lowestLevel: "—",
+                };
                 const src = v.source_url ? (
                   <a
                     href={v.source_url}
