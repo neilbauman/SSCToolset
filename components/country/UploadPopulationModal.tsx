@@ -1,13 +1,14 @@
 "use client";
-import { useState, useRef } from "react";
+
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload, X, Loader2 } from "lucide-react";
+import { Upload, Loader2, Download } from "lucide-react";
 
 interface UploadPopulationModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded: () => void | Promise<void>;
+  onUploaded: () => Promise<void>;
 }
 
 export default function UploadPopulationModal({
@@ -16,202 +17,156 @@ export default function UploadPopulationModal({
   countryIso,
   onUploaded,
 }: UploadPopulationModalProps) {
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [title, setTitle] = useState("");
-  const [year, setYear] = useState<number | null>(null);
-  const [sourceName, setSourceName] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [notes, setNotes] = useState("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!title || !year || !sourceName) {
-      alert("Please fill in all required fields before uploading.");
+  const handleDownloadTemplate = async () => {
+    try {
+      const url =
+        "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Template not found");
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "Population_Template.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error(err);
+      alert("Template not available.");
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError("Please select a CSV file first.");
       return;
     }
 
     setLoading(true);
-    setProgress(10);
+    setError(null);
 
     try {
-      // Create version metadata first
-      const { data: version, error: versionError } = await supabase
+      const text = await file.text();
+      const rows = text.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+      const header = rows[0].split(",").map((h) => h.trim().toLowerCase());
+
+      // Expected columns
+      const required = ["pcode", "population"];
+      for (const col of required) {
+        if (!header.includes(col)) {
+          throw new Error(`Missing required column: ${col}`);
+        }
+      }
+
+      // Insert dataset version
+      const datasetVersion = {
+        country_iso: countryIso,
+        title: file.name.replace(/\\.csv$/i, ""),
+        is_active: false,
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: version, error: insertError } = await supabase
         .from("population_dataset_versions")
-        .insert({
-          title: title.trim(),
-          country_iso: countryIso,
-          year,
-          source_name: sourceName.trim(),
-          source_url: sourceUrl?.trim() || null,
-          notes: notes?.trim() || null,
-          is_active: false,
-        })
+        .insert(datasetVersion)
         .select()
         .single();
 
-      if (versionError) throw versionError;
-      setProgress(25);
+      if (insertError) throw insertError;
 
-      // Parse CSV rows (headers: pcode, name, population)
-      const text = await file.text();
-      const lines = text.trim().split("\n");
-      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-      const rows = lines.slice(1).map((line) => {
-        const values = line.split(",");
-        const record: Record<string, any> = {};
-        headers.forEach((h, i) => (record[h] = values[i]));
-        return record;
+      // Prepare data
+      const dataRows = rows.slice(1).map((line) => {
+        const values = line.split(",").map((v) => v.trim());
+        const obj: any = {};
+        header.forEach((key, i) => (obj[key] = values[i] || null));
+        return {
+          id: crypto.randomUUID(),
+          dataset_version_id: version.id,
+          country_iso: countryIso,
+          pcode: obj.pcode,
+          name: obj.name || null,
+          population: parseInt(obj.population, 10) || 0,
+          created_at: new Date().toISOString(),
+        };
       });
 
-      if (!headers.includes("pcode") || !headers.includes("population")) {
-        throw new Error("CSV must include 'pcode' and 'population' columns.");
+      // Insert in chunks
+      const chunkSize = 500;
+      for (let i = 0; i < dataRows.length; i += chunkSize) {
+        const chunk = dataRows.slice(i, i + chunkSize);
+        const { error: insertChunkError } = await supabase
+          .from("population_data")
+          .insert(chunk);
+        if (insertChunkError) throw insertChunkError;
       }
 
-      // Insert data in chunks
-      for (let i = 0; i < rows.length; i += 500) {
-        const chunk = rows.slice(i, i + 500);
-        await supabase.from("population_data").insert(
-          chunk.map((r) => ({
-            pcode: r.pcode,
-            name: r.name || null,
-            population: Number(r.population) || 0,
-            country_iso: countryIso,
-            dataset_version_id: version.id,
-          }))
-        );
-        setProgress(Math.min(90, Math.round((i / rows.length) * 100)));
-      }
-
-      setProgress(100);
-      setLoading(false);
       await onUploaded();
       onClose();
-    } catch (err) {
-      console.error("Upload failed:", err);
-      alert("Upload failed. Check console for details.");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Upload failed.");
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleDownloadTemplate = () => {
-    const url =
-      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "population_template.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
-            Upload Population Dataset
-          </h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="space-y-3 text-sm">
-          <label className="block">
-            Title *
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="border rounded w-full px-2 py-1 mt-1 text-sm"
-            />
-          </label>
-          <label className="block">
-            Year *
-            <input
-              type="number"
-              value={year ?? ""}
-              onChange={(e) => setYear(Number(e.target.value) || null)}
-              className="border rounded w-full px-2 py-1 mt-1 text-sm"
-            />
-          </label>
-          <label className="block">
-            Source Name *
-            <input
-              type="text"
-              value={sourceName}
-              onChange={(e) => setSourceName(e.target.value)}
-              className="border rounded w-full px-2 py-1 mt-1 text-sm"
-            />
-          </label>
-          <label className="block">
-            Source URL
-            <input
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              className="border rounded w-full px-2 py-1 mt-1 text-sm"
-            />
-          </label>
-          <label className="block">
-            Notes
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="border rounded w-full px-2 py-1 mt-1 text-sm"
-            />
-          </label>
-        </div>
-
-        <div className="flex justify-between items-center mt-4">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+        <h3 className="text-lg font-semibold mb-3 flex items-center justify-between">
+          Upload Population Dataset
           <button
             onClick={handleDownloadTemplate}
-            disabled={loading}
-            className="border text-sm px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
+            className="text-sm border px-2 py-1 rounded hover:bg-gray-50"
           >
-            Download Template
+            <Download className="w-4 h-4 inline-block mr-1" /> Template
           </button>
+        </h3>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading}
-            className="flex items-center gap-2 text-sm bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded hover:opacity-90"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4" />
-                Select CSV
-              </>
-            )}
-          </button>
+        <div className="space-y-3">
           <input
-            ref={fileInputRef}
             type="file"
             accept=".csv"
-            className="hidden"
-            onChange={handleFileChange}
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="border rounded w-full px-2 py-1 text-sm"
           />
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {loading && (
+            <div className="flex items-center text-sm text-gray-600">
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...
+            </div>
+          )}
         </div>
 
-        {loading && (
-          <div className="mt-3 w-full bg-gray-200 h-2 rounded">
-            <div
-              className="bg-[color:var(--gsc-red)] h-2 rounded transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        )}
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="px-3 py-1 text-sm border rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={loading}
+            className="flex items-center bg-[color:var(--gsc-red)] text-white px-3 py-1 rounded text-sm hover:opacity-90"
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4 mr-2" />
+            )}
+            Upload
+          </button>
+        </div>
       </div>
     </div>
   );
