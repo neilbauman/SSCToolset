@@ -29,9 +29,7 @@ export default function UploadPopulationModal({
   if (!open) return null;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      setFile(e.target.files[0]);
-    }
+    if (e.target.files?.length) setFile(e.target.files[0]);
   };
 
   const handleTemplateDownload = async () => {
@@ -63,7 +61,7 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // Step 1: Create population_dataset_versions entry
+      // Step 1: Create a version record
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
@@ -80,13 +78,12 @@ export default function UploadPopulationModal({
 
       if (versionError) throw versionError;
       if (!version) throw new Error("Failed to create version record.");
+      console.log("✅ Created version:", version);
 
-      console.log("✅ Created version record:", version);
-
-      // Step 2: Upload CSV file to Supabase Storage
+      // Step 2: Upload CSV to storage
       const fileExt = file.name.split(".").pop();
       const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
-      console.log("📦 Uploading CSV to:", storagePath);
+      console.log("📦 Uploading to:", storagePath);
 
       const { error: uploadError } = await supabase.storage
         .from("uploads")
@@ -94,9 +91,9 @@ export default function UploadPopulationModal({
 
       if (uploadError) throw uploadError;
 
-      console.log("✅ File uploaded to Supabase storage");
+      console.log("✅ File uploaded to Supabase Storage");
 
-      // Step 3: Build payload for the Edge Function
+      // Step 3: Build payload for Edge Function
       const payload = {
         filePath: `uploads/${storagePath}`,
         countryIso,
@@ -108,20 +105,28 @@ export default function UploadPopulationModal({
         notes: notes || null,
       };
 
-      console.log("📤 Sending payload to Edge Function:", payload);
+      console.log("📤 Payload:", payload);
 
-      // Step 4: Invoke the Supabase Edge Function
-      const { data: funcData, error: funcError } = await supabase.functions.invoke(
-        "convert-population",
-        { body: payload }
-      );
+      // Step 4: Manually invoke Supabase Edge Function
+      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-population`;
 
-      if (funcError) {
-        console.error("❌ Edge Function Error:", funcError);
-        throw funcError;
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("❌ Edge Function error:", errText);
+        throw new Error(errText || "Failed to process population upload");
       }
 
-      console.log("🧩 Function response:", funcData);
+      const result = await response.json();
+      console.log("🧩 Function response:", result);
 
       await onUploaded();
       onClose();
@@ -147,7 +152,6 @@ export default function UploadPopulationModal({
           boundaries.
         </p>
 
-        {/* Metadata Fields */}
         <div className="space-y-3 mb-4">
           <div>
             <label className="block text-sm font-medium">Title *</label>
@@ -200,7 +204,6 @@ export default function UploadPopulationModal({
           </div>
         </div>
 
-        {/* File Upload */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <button
@@ -223,7 +226,6 @@ export default function UploadPopulationModal({
           </p>
         )}
 
-        {/* Actions */}
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
