@@ -94,7 +94,12 @@ function PopulationPreview({ versionId, title }: { versionId: string; title: str
   return (
     <div className="border rounded-lg p-4 shadow-sm bg-white">
       {/* 🧭 Section Title */}
-      <h2 className="text-lg font-semibold text-gray-700 mb-4">{title}</h2>
+      <h2
+        className="text-lg font-semibold mb-4"
+        style={{ color: "var(--gsc-red)" }}
+      >
+        {title}
+      </h2>
 
       {/* 🔍 Search + Summary */}
       <div className="flex justify-between items-center mb-3">
@@ -200,7 +205,6 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
   const [editing, setEditing] = useState<PopulationVersion | null>(null);
 
-  // 🧭 Fetch country info
   useEffect(() => {
     supabase
       .from("countries")
@@ -210,7 +214,6 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 📦 Load dataset versions
   const loadVersions = async () => {
     const { data } = await supabase
       .from("population_dataset_versions")
@@ -231,17 +234,23 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      const { data: levelRow } = await supabase
+      // Find lowest admin level among rows (ADM4 > ADM3 > ADM2 > ADM1)
+      const { data: levelData } = await supabase
         .from("population_data")
         .select("level")
         .eq("dataset_version_id", v.id)
-        .limit(1)
-        .maybeSingle();
+        .not("level", "is", null)
+        .neq("level", "")
+        .limit(1000);
+
+      const levels = (levelData || []).map((r) => r.level?.toUpperCase());
+      const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
+      const found = hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
 
       stats[v.id] = {
         total: count ?? 0,
         sum: rpc?.[0]?.sum || 0,
-        lowestLevel: levelRow?.level?.toUpperCase?.() || "—",
+        lowestLevel: found,
       };
     }
 
@@ -255,7 +264,6 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
-  // ⚙️ Handlers
   const handleDelete = async (id: string) => {
     await supabase.from("population_dataset_versions").delete().eq("id", id);
     setOpenDelete(null);
