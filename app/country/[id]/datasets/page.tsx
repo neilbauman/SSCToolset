@@ -15,7 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import AddNationalStatModal from "@/components/country/AddNationalStatModal";
+import AddNationalStatModal from "@/components/country/AddDatasetModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = { iso_code: string; name: string };
