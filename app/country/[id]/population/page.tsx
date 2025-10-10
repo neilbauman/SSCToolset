@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
@@ -45,6 +45,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const [editingVersion, setEditingVersion] = useState<PopulationVersion | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Fetch country info
   useEffect(() => {
     supabase
       .from("countries")
@@ -54,52 +55,58 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 🧮 Optimized: Fetch all dataset version stats in one query
+  // Load dataset versions and aggregate stats
   const loadVersions = async () => {
     setLoading(true);
 
-    // The heavy lifting is done in Postgres: sum and count per dataset_version_id
-    const { data, error } = await supabase
+    // 1️⃣ Get all versions for this country
+    const { data: versionsData, error: versionsError } = await supabase
       .from("population_dataset_versions")
-      .select(
-        `
-        id,
-        title,
-        year,
-        dataset_date,
-        source_name,
-        source_url,
-        notes,
-        is_active,
-        created_at,
-        country_iso,
-        population_data:population_data(dataset_version_id, population)
-        `
-      )
+      .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error loading dataset versions:", error);
+    if (versionsError || !versionsData) {
+      console.error("Error loading dataset versions:", versionsError);
       setLoading(false);
       return;
     }
 
-    // Post-process in memory but with aggregated totals only
-    const versionsWithStats = data.map((v: any) => {
-      const totalRecords = v.population_data?.length || 0;
-      const totalPopulation =
-        v.population_data?.reduce(
-          (acc: number, r: any) => acc + Number(r.population || 0),
-          0
-        ) || 0;
-      delete v.population_data;
-      return { ...v, totalRecords, totalPopulation };
-    });
+    // 2️⃣ Aggregate population data server-side
+    const { data: aggData, error: aggError } = await supabase
+      .from("population_data")
+      .select("dataset_version_id, count:id, sum:population", { count: "exact" });
 
-    setVersions(versionsWithStats);
-    const active = versionsWithStats.find((v) => v.is_active) || versionsWithStats[0] || null;
-    setSelectedVersion(active);
+    if (aggError) {
+      console.error("Error loading aggregated stats:", aggError);
+    }
+
+    // 3️⃣ Merge aggregated stats into each version
+    const statsMap: Record<
+      string,
+      { total_population: number; record_count: number }
+    > = {};
+
+    if (aggData) {
+      for (const row of aggData) {
+        const versionId = row.dataset_version_id;
+        const population = Number(row.sum || 0);
+        const recordCount = Number(row.count || 0);
+        statsMap[versionId] = {
+          total_population: population,
+          record_count: recordCount,
+        };
+      }
+    }
+
+    const merged = versionsData.map((v) => ({
+      ...v,
+      total_population: statsMap[v.id]?.total_population ?? 0,
+      record_count: statsMap[v.id]?.record_count ?? 0,
+    }));
+
+    setVersions(merged);
+    setSelectedVersion(merged.find((v) => v.is_active) || merged[0] || null);
     setLoading(false);
   };
 
@@ -107,12 +114,14 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     loadVersions();
   }, [countryIso]);
 
+  // Delete a version
   const handleDeleteVersion = async (id: string) => {
     await supabase.from("population_dataset_versions").delete().eq("id", id);
     setOpenDelete(null);
     await loadVersions();
   };
 
+  // Activate a version
   const handleActivateVersion = async (v: PopulationVersion) => {
     await supabase
       .from("population_dataset_versions")
@@ -125,6 +134,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
+  // Download population template
   const handleTemplateDownload = async () => {
     const fileUrl =
       "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
@@ -149,7 +159,8 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description: "Manage versioned population datasets aligned with administrative boundaries.",
+    description:
+      "Manage versioned population datasets aligned with administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -207,78 +218,76 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
               </tr>
             </thead>
             <tbody>
-              {versions.map((v) => {
-                const src = v.source_url ? (
-                  <a
-                    href={v.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline"
+              {versions.map((v) => (
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                >
+                  <td
+                    onClick={() => setSelectedVersion(v)}
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-bold" : ""
+                    }`}
                   >
-                    {v.source_name}
-                  </a>
-                ) : (
-                  <span>{v.source_name ?? "—"}</span>
-                );
-
-                return (
-                  <tr
-                    key={v.id}
-                    className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
-                  >
-                    <td
-                      onClick={() => setSelectedVersion(v)}
-                      className={`border px-2 py-1 cursor-pointer ${
-                        selectedVersion?.id === v.id ? "font-bold" : ""
-                      }`}
-                    >
-                      {v.title}
-                    </td>
-                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                    <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                    <td className="border px-2 py-1">{src}</td>
-                    <td className="border px-2 py-1 text-right">
-                      {v.totalPopulation.toLocaleString()}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
-                      {v.totalRecords.toLocaleString()}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
-                      {v.is_active ? (
-                        <span className="inline-flex items-center gap-1 text-green-700">
-                          <CheckCircle2 className="w-4 h-4" /> Active
-                        </span>
-                      ) : (
-                        "—"
+                    {v.title}
+                  </td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {v.source_url ? (
+                      <a
+                        href={v.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {v.source_name}
+                      </a>
+                    ) : (
+                      <span>{v.source_name ?? "—"}</span>
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    {v.total_population.toLocaleString()}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.record_count.toLocaleString()}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
+                        >
+                          Set Active
+                        </button>
                       )}
-                    </td>
-                    <td className="border px-2 py-1 text-right">
-                      <div className="flex justify-end gap-2">
-                        {!v.is_active && (
-                          <button
-                            className="text-blue-600 hover:underline text-xs"
-                            onClick={() => handleActivateVersion(v)}
-                          >
-                            Set Active
-                          </button>
-                        )}
-                        <button
-                          className="text-gray-700 hover:underline text-xs flex items-center"
-                          onClick={() => setEditingVersion(v)}
-                        >
-                          <Edit3 className="w-4 h-4 mr-1" /> Edit
-                        </button>
-                        <button
-                          className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                          onClick={() => setOpenDelete(v)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" /> Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      <button
+                        className="text-gray-700 hover:underline text-xs flex items-center"
+                        onClick={() => setEditingVersion(v)}
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         ) : (
