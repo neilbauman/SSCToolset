@@ -29,7 +29,6 @@ type Dataset = {
   is_active: boolean;
   created_at: string;
 };
-
 type StatRecord = {
   id: string;
   indicator_name: string;
@@ -59,7 +58,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 📦 Load Datasets (metadata table)
+  // 📦 Load datasets
   useEffect(() => {
     const loadDatasets = async () => {
       setLoading(true);
@@ -74,7 +73,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     loadDatasets();
   }, [countryIso]);
 
-  // 📊 Load Stats (national indicators)
+  // 📊 Load national statistics
   useEffect(() => {
     const loadStats = async () => {
       const { data, error } = await supabase
@@ -144,7 +143,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         </div>
       ) : (
         <>
-          {/* 🧩 Top Section — Dataset Table */}
+          {/* 🧩 Dataset Table */}
           <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -168,7 +167,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   <tr>
                     <th className="px-2 py-1 text-left">Title</th>
                     <th>Source</th>
-                    <th>Year</</th>
+                    <th>Year</th>
                     <th>Date</th>
                     <th>Type</th>
                     <th className="text-right">Actions</th>
@@ -229,7 +228,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
             )}
           </div>
 
-          {/* 🧮 Bottom Section — National Statistics */}
+          {/* 🧮 National Statistics */}
           <div className="border rounded-lg p-4 shadow-sm bg-white">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-green-600" />
