@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Upload, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Upload, Loader2 } from "lucide-react";
 import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
@@ -19,16 +19,23 @@ export default function AddDatasetModal({
   onUploaded,
 }: AddDatasetModalProps) {
   const [indicators, setIndicators] = useState<any[]>([]);
+  const [filteredIndicators, setFilteredIndicators] = useState<any[]>([]);
   const [selectedIndicator, setSelectedIndicator] = useState<any>(null);
+  const [themeFilter, setThemeFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [search, setSearch] = useState("");
+
   const [adminLevel, setAdminLevel] = useState("ADM0");
   const [value, setValue] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
+
   const [metadata, setMetadata] = useState({
     title: "",
-    source: "",
+    sourceName: "",
+    sourceUrl: "",
     notes: "",
   });
 
@@ -40,10 +47,24 @@ export default function AddDatasetModal({
         .select("*")
         .order("theme", { ascending: true });
       if (error) console.error("Failed to load indicators", error);
-      else setIndicators(data || []);
+      else {
+        setIndicators(data || []);
+        setFilteredIndicators(data || []);
+      }
     };
     fetchIndicators();
   }, [open]);
+
+  useEffect(() => {
+    let list = [...indicators];
+    if (themeFilter) list = list.filter((i) => i.theme === themeFilter);
+    if (typeFilter) list = list.filter((i) => i.type === typeFilter);
+    if (search)
+      list = list.filter((i) =>
+        i.name.toLowerCase().includes(search.toLowerCase())
+      );
+    setFilteredIndicators(list);
+  }, [themeFilter, typeFilter, search, indicators]);
 
   if (!open) return null;
 
@@ -64,13 +85,20 @@ export default function AddDatasetModal({
     if (!selectedIndicator) return alert("Select an indicator");
     if (!adminLevel) return alert("Select an admin level");
 
-    // Prepare dataset metadata
+    const sourceJSON =
+      metadata.sourceName || metadata.sourceUrl
+        ? JSON.stringify({
+            name: metadata.sourceName,
+            url: metadata.sourceUrl || null,
+          })
+        : null;
+
     const newDataset = {
       country_iso: countryIso,
       indicator_id: selectedIndicator.id,
       title: metadata.title || selectedIndicator.name,
       description: selectedIndicator.description,
-      source: metadata.source || null,
+      source: sourceJSON,
       notes: metadata.notes || null,
       admin_level: adminLevel,
       theme: selectedIndicator.theme,
@@ -96,7 +124,6 @@ export default function AddDatasetModal({
 
     const datasetId = insertedMeta.id;
 
-    // ADM0 case → single value entry
     if (adminLevel === "ADM0") {
       const singleValue = Number(value);
       if (isNaN(singleValue)) {
@@ -104,8 +131,8 @@ export default function AddDatasetModal({
         setUploading(false);
         return;
       }
-      setProgress("Saving national value...");
 
+      setProgress("Saving national value...");
       const { error } = await supabase.from("indicator_results").insert([
         {
           country_iso: countryIso,
@@ -119,9 +146,8 @@ export default function AddDatasetModal({
       ]);
       if (error) console.error("Value insert error:", error);
     } else {
-      // CSV upload case
       if (!parsedRows.length) {
-        alert("Upload a valid CSV with columns: pcode, value");
+        alert("Upload a valid CSV with columns: pcode,value");
         setUploading(false);
         return;
       }
@@ -136,11 +162,14 @@ export default function AddDatasetModal({
         created_at: new Date().toISOString(),
       }));
 
-      // Chunk uploads
       const chunkSize = 1000;
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize);
-        setProgress(`Uploading rows ${i + 1}–${Math.min(i + chunkSize, rows.length)} of ${rows.length}...`);
+        setProgress(
+          `Uploading rows ${i + 1}–${Math.min(i + chunkSize, rows.length)} of ${
+            rows.length
+          }...`
+        );
         const { error } = await supabase.from("indicator_results").insert(chunk);
         if (error) {
           console.error("Chunk upload error:", error);
@@ -168,7 +197,42 @@ export default function AddDatasetModal({
           </button>
         </div>
 
-        {/* Indicator Selection */}
+        {/* Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <input
+            type="text"
+            placeholder="Search indicators..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border rounded px-2 py-1 text-sm w-full"
+          />
+          <select
+            value={themeFilter}
+            onChange={(e) => setThemeFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm w-full"
+          >
+            <option value="">All Themes</option>
+            {[...new Set(indicators.map((i) => i.theme))].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm w-full"
+          >
+            <option value="">All Types</option>
+            {[...new Set(indicators.map((i) => i.type))].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Indicator selection */}
         <div className="mb-5">
           <label className="block text-sm font-medium mb-1">
             Select Indicator
@@ -178,12 +242,12 @@ export default function AddDatasetModal({
             value={selectedIndicator?.id || ""}
             onChange={(e) =>
               setSelectedIndicator(
-                indicators.find((i) => i.id === e.target.value) || null
+                filteredIndicators.find((i) => i.id === e.target.value) || null
               )
             }
           >
             <option value="">— Choose —</option>
-            {indicators.map((i) => (
+            {filteredIndicators.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.theme ? `${i.theme} – ${i.name}` : i.name}
               </option>
@@ -191,7 +255,7 @@ export default function AddDatasetModal({
           </select>
         </div>
 
-        {/* Admin level selector */}
+        {/* Admin level */}
         <div className="mb-5">
           <label className="block text-sm font-medium mb-1">
             Select Admin Level
@@ -209,7 +273,6 @@ export default function AddDatasetModal({
           </select>
         </div>
 
-        {/* Data entry */}
         {adminLevel === "ADM0" ? (
           <div className="mb-5">
             <label className="block text-sm font-medium mb-1">
@@ -241,8 +304,8 @@ export default function AddDatasetModal({
           </div>
         )}
 
-        {/* Metadata fields */}
-        <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Metadata */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-sm font-medium mb-1">Title</label>
             <input
@@ -255,28 +318,40 @@ export default function AddDatasetModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Source</label>
+            <label className="block text-sm font-medium mb-1">
+              Source Name
+            </label>
             <input
               type="text"
-              value={metadata.source}
+              value={metadata.sourceName}
               onChange={(e) =>
-                setMetadata({ ...metadata, source: e.target.value })
+                setMetadata({ ...metadata, sourceName: e.target.value })
               }
               className="border rounded px-2 py-1 w-full text-sm"
             />
           </div>
-        </div>
-
-        <div className="mb-5">
-          <label className="block text-sm font-medium mb-1">Notes</label>
-          <textarea
-            value={metadata.notes}
-            onChange={(e) =>
-              setMetadata({ ...metadata, notes: e.target.value })
-            }
-            className="border rounded px-2 py-1 w-full text-sm"
-            rows={2}
-          />
+          <div>
+            <label className="block text-sm font-medium mb-1">Source URL</label>
+            <input
+              type="url"
+              value={metadata.sourceUrl}
+              onChange={(e) =>
+                setMetadata({ ...metadata, sourceUrl: e.target.value })
+              }
+              className="border rounded px-2 py-1 w-full text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes</label>
+            <textarea
+              value={metadata.notes}
+              onChange={(e) =>
+                setMetadata({ ...metadata, notes: e.target.value })
+              }
+              className="border rounded px-2 py-1 w-full text-sm"
+              rows={2}
+            />
+          </div>
         </div>
 
         {uploading ? (
