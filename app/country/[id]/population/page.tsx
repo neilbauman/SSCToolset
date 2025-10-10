@@ -217,26 +217,37 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // --- ✅ Lowest admin level detection (robust)
-      let { data: levelData } = await supabase
+      // ✅ Smart lowest admin level detection
+      let column = "adm_level";
+      const { data: test } = await supabase
         .from("population_data")
-        .select("adm_level, admin_level, level")
+        .select("adm_level")
+        .limit(1)
+        .maybeSingle();
+
+      if (!test || test.adm_level === undefined) {
+        const { data: test2 } = await supabase
+          .from("population_data")
+          .select("admin_level")
+          .limit(1)
+          .maybeSingle();
+        if (test2 && test2.admin_level !== undefined) column = "admin_level";
+        else column = "level";
+      }
+
+      const { data: levelData } = await supabase
+        .from("population_data")
+        .select(column)
         .eq("dataset_version_id", v.id)
+        .not(column, "is", null)
+        .neq(column, "")
         .limit(10000);
 
       const levels = Array.from(
-        new Set(
-          (levelData || []).map((r) =>
-            (r.adm_level || r.admin_level || r.level || "")
-              .toString()
-              .toUpperCase()
-          )
-        )
+        new Set((levelData || []).map((r) => (r[column] || "").toUpperCase()))
       );
-
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
-      const found =
-        hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
+      const found = hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
 
       stats[v.id] = {
         total: count ?? 0,
