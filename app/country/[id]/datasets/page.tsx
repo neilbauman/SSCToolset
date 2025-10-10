@@ -15,7 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import AddNationalStatModal from "@/components/country/AddDatasetModal";
+import AddDatasetModal from "@/components/country/AddDatasetModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Country = { iso_code: string; name: string };
@@ -24,7 +24,7 @@ type Dataset = {
   title: string;
   year: number | null;
   dataset_date: string | null;
-  source: string | null;
+  source: any;
   notes: string | null;
   is_active: boolean;
   created_at: string;
@@ -46,7 +46,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [openAddStat, setOpenAddStat] = useState(false);
+  const [openAdd, setOpenAdd] = useState(false);
   const [openDelete, setOpenDelete] = useState<Dataset | null>(null);
 
   // 🧭 Fetch country info
@@ -59,37 +59,46 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 📦 Load Datasets (using dataset_metadata or a future new table)
+  // 📦 Load Datasets (metadata table)
   useEffect(() => {
     const loadDatasets = async () => {
       setLoading(true);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("dataset_metadata")
         .select("*")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
-
-      if (data) setDatasets(data);
+      if (!error && data) setDatasets(data);
       setLoading(false);
     };
     loadDatasets();
   }, [countryIso]);
 
-  // 📊 Load Stats (National Indicators)
+  // 📊 Load Stats (national indicators)
   useEffect(() => {
     const loadStats = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("indicator_results")
-        .select("*")
+        .select(
+          `
+          id,
+          value,
+          computed_at,
+          indicator_catalogue (
+            name,
+            unit
+          )
+        `
+        )
         .eq("country_iso", countryIso)
-        .is("admin_pcode", null) // national level only
+        .is("admin_pcode", null)
         .order("computed_at", { ascending: false });
 
-      if (data) {
-        const formatted = data.map((r) => ({
+      if (!error && data) {
+        const formatted = data.map((r: any) => ({
           id: r.id,
-          indicator_name: r.indicator_id,
-          unit: "N/A",
+          indicator_name: r.indicator_catalogue?.name || "Unnamed Indicator",
+          unit: r.indicator_catalogue?.unit || "",
           value: r.value,
           updated_at: r.computed_at,
         }));
@@ -144,11 +153,11 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               </h2>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setOpenAddStat(true)}
+                  onClick={() => setOpenAdd(true)}
                   className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
                 >
                   <Plus className="w-4 h-4 mr-1" />
-                  Add Statistic
+                  Add Dataset
                 </button>
               </div>
             </div>
@@ -159,10 +168,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   <tr>
                     <th className="px-2 py-1 text-left">Title</th>
                     <th>Source</th>
-                    <th>Year</th>
+                    <th>Year</</th>
                     <th>Date</th>
-                    <th>Theme</th>
-                    <th>Admin Level</th>
+                    <th>Type</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -181,7 +189,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                         {d.title}
                       </td>
                       <td className="border px-2 py-1 text-center">
-                        {d.source ?? "—"}
+                        {d.source?.name ?? "—"}
                       </td>
                       <td className="border px-2 py-1 text-center">
                         {d.year ?? "—"}
@@ -190,16 +198,15 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                         {d.dataset_date ?? "—"}
                       </td>
                       <td className="border px-2 py-1 text-center">
-                        {(d as any).theme ?? "—"}
-                      </td>
-                      <td className="border px-2 py-1 text-center">
-                        {(d as any).admin_level ?? "—"}
+                        {(d as any).dataset_type ?? "—"}
                       </td>
                       <td className="border px-2 py-1 text-right">
                         <div className="flex justify-end gap-2">
                           <button
                             className="text-gray-700 hover:underline text-xs flex items-center"
-                            onClick={() => alert("Edit not yet implemented")}
+                            onClick={() =>
+                              alert("Editing not yet implemented")
+                            }
                           >
                             <Edit3 className="w-4 h-4 mr-1" /> Edit
                           </button>
@@ -246,9 +253,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                       <td className="border px-2 py-1 text-center">
                         {s.value}
                       </td>
-                      <td className="border px-2 py-1 text-center">
-                        {s.unit}
-                      </td>
+                      <td className="border px-2 py-1 text-center">{s.unit}</td>
                       <td className="border px-2 py-1 text-center">
                         {new Date(s.updated_at).toLocaleDateString()}
                       </td>
@@ -258,7 +263,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               </table>
             ) : (
               <p className="italic text-gray-500 text-sm">
-                No national statistics yet. Use “Add Statistic” to start.
+                No national statistics yet. Use “Add Dataset” to start.
               </p>
             )}
           </div>
@@ -266,12 +271,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       )}
 
       {/* 🧩 Modals */}
-      {openAddStat && (
-        <AddNationalStatModal
-          open={openAddStat}
-          onClose={() => setOpenAddStat(false)}
+      {openAdd && (
+        <AddDatasetModal
+          open={openAdd}
+          onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onSaved={() => setOpenAddStat(false)}
+          onSaved={() => setOpenAdd(false)}
         />
       )}
       {openDelete && (
