@@ -22,12 +22,17 @@ function PopulationPreview({ versionId }: { versionId: string }) {
       let query = supabase.from("population_data").select("pcode,name,population", { count: "exact" }).eq("dataset_version_id", versionId);
       if (search.trim()) query = query.or(`pcode.ilike.%${search}%,name.ilike.%${search}%`);
       const { data, count } = await query.range((page - 1) * pageSize, page * pageSize - 1).order("pcode");
-      const { data: all } = await supabase.from("population_data").select("population").eq("dataset_version_id", versionId);
-      const sum = all?.reduce((a, r: any) => a + Number(r.population || 0), 0) || 0;
-      const avg = all?.length ? sum / all.length : 0;
-      setRows(data || []); setSummary({ total: count || 0, sum, avg }); setLoading(false);
+
+      const { data: sumResult } = await supabase.rpc("sum_population_by_version", { version_id: versionId });
+      const sum = sumResult?.[0]?.sum || 0;
+      const avg = count ? sum / count : 0;
+
+      setRows(data || []);
+      setSummary({ total: count || 0, sum, avg });
+      setLoading(false);
     }; load();
   }, [versionId, page, search]);
+
   return (<div className="border rounded-lg p-4 shadow-sm bg-white mt-6">
     <div className="flex justify-between mb-3"><h3 className="text-md font-semibold">Population Data Preview</h3>
       <div className="relative"><Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
@@ -48,19 +53,32 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
+
   useEffect(()=>{supabase.from("countries").select("iso_code,name").eq("iso_code",countryIso).maybeSingle().then(({data})=>data&&setCountry(data));},[countryIso]);
+
   const loadVersions=async()=>{
     const {data}=await supabase.from("population_dataset_versions").select("*").eq("country_iso",countryIso).order("created_at",{ascending:false});
     if(!data)return;setVersions(data);setSelected(data.find(v=>v.is_active)||data[0]||null);
+
     const {data:admin}=await supabase.from("admin_dataset_versions").select("id").eq("country_iso",countryIso).eq("is_active",true).maybeSingle();
     let lowest="—";if(admin){const {data:levels}=await supabase.from("admin_units").select("level").eq("dataset_version_id",admin.id);if(levels?.length){const m=Math.max(...levels.map(r=>Number(r.level?.replace("ADM",""))||0));lowest=`ADM${m}`;}}
-    const stats:any={};for(const v of data){const {count, data:rows}=await supabase.from("population_data").select("population",{count:"exact"}).eq("dataset_version_id",v.id);const sum=rows?.reduce((a,r)=>a+Number(r.population||0),0)||0;stats[v.id]={total:count||0,sum,lowestLevel:lowest};}
+
+    const stats:any={};for(const v of data){
+      const { count } = await supabase.from("population_data").select("*", { count: "exact", head: true }).eq("dataset_version_id", v.id);
+      const { data: sumResult } = await supabase.rpc("sum_population_by_version", { version_id: v.id });
+      const sum = sumResult?.[0]?.sum || 0;
+      stats[v.id] = { total: count || 0, sum, lowestLevel: lowest };
+    }
     setVersionStats(stats);
   };
+
   useEffect(()=>{loadVersions();},[countryIso]);
+
   const handleDelete=async(id:string)=>{await supabase.from("population_dataset_versions").delete().eq("id",id);setOpenDelete(null);await loadVersions();};
   const handleActivate=async(v:any)=>{await supabase.from("population_dataset_versions").update({is_active:false}).eq("country_iso",countryIso);await supabase.from("population_dataset_versions").update({is_active:true}).eq("id",v.id);await loadVersions();};
+
   const headerProps={title:`${country?.name??countryIso} – Population Data`,group:"country-config"as const,description:"Manage versioned population datasets.",breadcrumbs:(<Breadcrumbs items={[{label:"Dashboard",href:"/dashboard"},{label:"Country Configuration",href:"/country"},{label:country?.name??countryIso,href:`/country/${countryIso}`},{label:"Population"}]}/>) };
+
   return(<SidebarLayout headerProps={headerProps}>
     <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
       <div className="flex justify-between mb-3"><h2 className="text-lg font-semibold flex items-center gap-2"><Database className="w-5 h-5 text-green-600"/>Dataset Versions</h2><button onClick={()=>setOpenUpload(true)} className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"><Upload className="w-4 h-4 mr-1"/>Upload Dataset</button></div>
