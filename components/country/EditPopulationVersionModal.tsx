@@ -9,7 +9,8 @@ export interface EditPopulationVersionModalProps {
     title: string;
     year: number | null;
     dataset_date: string | null;
-    source: string | null;
+    source_name: string | null;
+    source_url: string | null;
     notes: string | null;
   };
   onClose: () => void;
@@ -32,8 +33,9 @@ export default function EditPopulationVersionModal({
         title: form.title?.trim() || null,
         year: form.year || null,
         dataset_date: form.dataset_date || null,
-        source: form.source || null,
-        notes: form.notes || null,
+        source_name: form.source_name?.trim() || null,
+        source_url: form.source_url?.trim() || null,
+        notes: form.notes?.trim() || null,
       })
       .eq("id", form.id);
     setSaving(false);
@@ -45,14 +47,21 @@ export default function EditPopulationVersionModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">Edit Version</h3>
+          <h3 className="text-lg font-semibold">Edit Population Version</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="space-y-3 text-sm">
-          {["title", "year", "dataset_date", "source", "notes"].map((f) => (
+          {[
+            "title",
+            "year",
+            "dataset_date",
+            "source_name",
+            "source_url",
+            "notes",
+          ].map((f) => (
             <label key={f} className="block capitalize">
               {f.replace("_", " ")}
               {f === "notes" ? (
@@ -66,7 +75,13 @@ export default function EditPopulationVersionModal({
               ) : (
                 <input
                   type={
-                    f === "year" ? "number" : f === "dataset_date" ? "date" : "text"
+                    f === "year"
+                      ? "number"
+                      : f === "dataset_date"
+                      ? "date"
+                      : f === "source_url"
+                      ? "url"
+                      : "text"
                   }
                   value={(form as any)[f] ?? ""}
                   onChange={(e) =>
