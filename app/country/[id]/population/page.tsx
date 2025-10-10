@@ -30,10 +30,6 @@ export default function CountryPage({ params }: { params: CountryParams }) {
       });
   }, [id]);
 
-  const reloadPage = (): void => {
-    window.location.reload();
-  };
-
   const headerProps = {
     title: `${country?.name ?? id} – Country Configuration`,
     group: "country-config" as const,
@@ -162,8 +158,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenAdminUpload(false)}
           countryIso={id}
           onUploaded={async () => {
-            await reloadPage();
-          }} // ✅ FIXED
+            window.location.reload(); // ✅ Type-safe async wrapper
+          }}
         />
       )}
 
@@ -173,8 +169,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenPopUpload(false)}
           countryIso={id}
           onUploaded={async () => {
-            await reloadPage();
-          }} // ✅ FIXED
+            window.location.reload(); // ✅ Type-safe async wrapper
+          }}
         />
       )}
 
@@ -184,8 +180,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           onClose={() => setOpenGISUpload(false)}
           countryIso={id}
           onUploaded={async () => {
-            await reloadPage();
-          }} // ✅ FIXED
+            window.location.reload(); // ✅ Type-safe async wrapper
+          }}
         />
       )}
     </SidebarLayout>
