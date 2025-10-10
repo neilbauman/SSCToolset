@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   Trash2,
   Edit3,
-  Download,
   Loader2,
   Search,
 } from "lucide-react";
@@ -42,7 +41,15 @@ type PopulationVersion = {
 // -----------------------------------------------------------------------------
 // Population Data Preview Component
 // -----------------------------------------------------------------------------
-function PopulationPreview({ versionId, title }: { versionId: string; title: string }) {
+function PopulationPreview({
+  versionId,
+  title,
+  lowestLevel,
+}: {
+  versionId: string;
+  title: string;
+  lowestLevel: string;
+}) {
   const [rows, setRows] = useState<any[]>([]);
   const [summary, setSummary] = useState<{ total: number; sum: number; avg: number }>({
     total: 0,
@@ -57,8 +64,6 @@ function PopulationPreview({ versionId, title }: { versionId: string; title: str
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-
-      // Fetch records with pagination and optional search
       let query = supabase
         .from("population_data")
         .select("pcode,name,population", { count: "exact" })
@@ -72,7 +77,6 @@ function PopulationPreview({ versionId, title }: { versionId: string; title: str
 
       const { data, count } = await query;
 
-      // Use the RPC for total population
       const { data: rpcData } = await supabase.rpc("sum_population_by_version", {
         version_id: versionId,
       });
@@ -93,13 +97,20 @@ function PopulationPreview({ versionId, title }: { versionId: string; title: str
 
   return (
     <div className="border rounded-lg p-4 shadow-sm bg-white">
-      {/* 🧭 Section Title */}
-      <h2
-        className="text-lg font-semibold mb-4"
-        style={{ color: "var(--gsc-red)" }}
-      >
-        {title}
-      </h2>
+      {/* 🧭 Title & Badge */}
+      <div className="flex items-center gap-3 mb-4">
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: "var(--gsc-red)" }}
+        >
+          {title}
+        </h2>
+        {lowestLevel !== "—" && (
+          <span className="text-xs font-semibold bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+            {lowestLevel}
+          </span>
+        )}
+      </div>
 
       {/* 🔍 Search + Summary */}
       <div className="flex justify-between items-center mb-3">
@@ -224,6 +235,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     if (!data) return;
 
     const stats: Record<string, { total: number; sum: number; lowestLevel: string }> = {};
+
     for (const v of data) {
       const { count } = await supabase
         .from("population_data")
@@ -234,14 +246,14 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // Find lowest admin level among rows (ADM4 > ADM3 > ADM2 > ADM1)
+      // Find lowest admin level
       const { data: levelData } = await supabase
         .from("population_data")
-        .select("level")
+        .select("level", { distinct: true })
         .eq("dataset_version_id", v.id)
         .not("level", "is", null)
         .neq("level", "")
-        .limit(1000);
+        .order("level", { ascending: false });
 
       const levels = (levelData || []).map((r) => r.level?.toUpperCase());
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
@@ -300,6 +312,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Dataset Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between mb-3 items-center">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -426,8 +439,15 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {selected && <PopulationPreview versionId={selected.id} title={selected.title} />}
+      {selected && (
+        <PopulationPreview
+          versionId={selected.id}
+          title={selected.title}
+          lowestLevel={versionStats[selected.id]?.lowestLevel || "—"}
+        />
+      )}
 
+      {/* Modals */}
       {openUpload && (
         <UploadPopulationModal
           open={openUpload}
