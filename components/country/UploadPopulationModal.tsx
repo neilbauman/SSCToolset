@@ -28,6 +28,10 @@ export default function UploadPopulationModal({
 
   if (!open) return null;
 
+  // ---------------------------------------------------------------------------
+  // 🧱 Handlers
+  // ---------------------------------------------------------------------------
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) {
       setFile(e.target.files[0]);
@@ -63,44 +67,41 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // Step 1: Create a dataset version record
-      const { data: version, error: versionError } = await supabase
-        .from("population_dataset_versions")
-        .insert({
-          country_iso: countryIso,
-          title,
-          year,
-          source_name: sourceName || null,
-          source_url: sourceUrl || null,
-          notes: notes || null,
-          is_active: false,
-        })
-        .select()
-        .single();
-
-      if (versionError) throw versionError;
-      if (!version) throw new Error("Failed to create version record.");
-
-      // Step 2: Upload CSV to storage
+      // ---------------------------------------------------------------------
+      // Step 1️⃣  Upload CSV to Supabase Storage (uploads bucket)
+      // ---------------------------------------------------------------------
       const fileExt = file.name.split(".").pop();
-      const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
+      const storagePath = `uploads/${countryIso}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from("uploads")
-        .upload(storagePath, file);
+        .upload(storagePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Step 3: Call the edge function to process the CSV
-      const { error: funcError } = await supabase.functions.invoke("convert-population", {
-        body: {
-          countryIso,
-          versionId: version.id,
-          storagePath,
-        },
-      });
+      // ---------------------------------------------------------------------
+      // Step 2️⃣  Trigger Edge Function to process CSV
+      // ---------------------------------------------------------------------
+      const { data, error: funcError } = await supabase.functions.invoke(
+        "convert-population",
+        {
+          body: {
+            filePath: storagePath,
+            countryIso,
+            title: title.trim(),
+            year,
+            sourceName: sourceName || null,
+            sourceUrl: sourceUrl || null,
+            notes: notes || null,
+          },
+        }
+      );
 
-      if (funcError) throw funcError;
+      if (funcError) {
+        console.error("Edge function error:", funcError);
+        throw funcError;
+      }
 
+      console.log("✅ Population upload success:", data);
       await onUploaded();
       onClose();
     } catch (err: any) {
@@ -111,6 +112,10 @@ export default function UploadPopulationModal({
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // 🧱 Render
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -120,8 +125,8 @@ export default function UploadPopulationModal({
         </h2>
 
         <p className="text-sm text-gray-600 mb-4">
-          Upload a CSV file following the template format below. The data will
-          be processed and linked to the selected country’s administrative
+          Upload a CSV file following the template format below. The data will be
+          processed and linked to the selected country’s administrative
           boundaries.
         </p>
 
