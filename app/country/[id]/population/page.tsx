@@ -247,8 +247,14 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   };
 
   const handleActivateVersion = async (v: PopulationVersion) => {
-    await supabase.from("population_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("population_dataset_versions").update({ is_active: true }).eq("id", v.id);
+    await supabase
+      .from("population_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase
+      .from("population_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", v.id);
     await loadVersions();
   };
 
@@ -292,7 +298,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
             <thead className="bg-gray-100">
               <tr>
                 <th className="px-2 py-1 text-left">Title</th>
-                <th>Year</th>
+                <th>Year</</th>
                 <th>Date</th>
                 <th>Source</th>
                 <th>Lowest Admin Level</th>
@@ -306,7 +312,12 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
               {versions.map((v) => {
                 const s = versionStats[v.id] || { total: 0, sum: 0, lowestLevel: "—" };
                 const src = v.source_url ? (
-                  <a href={v.source_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                  <a
+                    href={v.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
                     {v.source_name}
                   </a>
                 ) : (
@@ -315,7 +326,10 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
                 const isSel = selectedVersion?.id === v.id;
 
                 return (
-                  <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}>
+                  <tr
+                    key={v.id}
+                    className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                  >
                     <td
                       onClick={() => setSelectedVersion(v)}
                       className={`border px-2 py-1 cursor-pointer ${isSel ? "font-bold" : ""}`}
@@ -367,7 +381,9 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500 text-sm">No population dataset versions uploaded yet.</p>
+          <p className="italic text-gray-500 text-sm">
+            No population dataset versions uploaded yet.
+          </p>
         )}
       </div>
 
@@ -381,21 +397,17 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
           onUploaded={async () => loadVersions()}
         />
       )}
+
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          message={`This will permanently remove version \"${openDelete.title}\".`}
+          message={`This will permanently remove version "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
+
       {editingVersion && (
         <EditPopulationVersionModal
           versionId={editingVersion.id}
-          onClose={() => setEditingVersion(null)}
-          onSaved={async () => {
-            await loadVersions();
-          }}
-        />
-      )}
-    </SidebarLayout>
+          on
