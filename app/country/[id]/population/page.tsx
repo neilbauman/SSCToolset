@@ -1,106 +1,124 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import UploadPopulationModal from "@/components/country/UploadPopulationModal";
-import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
-import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import { useEffect, useState, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Database, Upload, Trash2, Edit3, Download, CheckCircle2 } from "lucide-react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Upload, Trash2, Edit3, CheckCircle2, Database, Loader2, Download } from "lucide-react";
+import UploadPopulationModal from "@/components/country/UploadPopulationModal";
+import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
+import type { CountryParams } from "@/app/country/types";
 
-export default function PopulationPage({ params }: { params: { id: string } }) {
-  const countryIso = params.id.toUpperCase();
-  const [versions, setVersions] = useState<any[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<any | null>(null);
-  const [rows, setRows] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState<{ count: number; total: number }>({
-    count: 0,
-    total: 0,
-  });
+type PopulationVersion = {
+  id: string;
+  title: string;
+  year: number | null;
+  dataset_date: string | null;
+  source: string | null;
+  is_active: boolean;
+  created_at: string;
+};
 
+type PopulationRow = {
+  pcode: string;
+  name: string;
+  population: number;
+  year: number;
+};
+
+export default function PopulationPage({ params }: { params: CountryParams }) {
+  const { id: countryIso } = params;
+  const [versions, setVersions] = useState<PopulationVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<PopulationVersion | null>(null);
+  const [rows, setRows] = useState<PopulationRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const [openUpload, setOpenUpload] = useState(false);
-  const [openEdit, setOpenEdit] = useState<null | any>(null);
-  const [openDelete, setOpenDelete] = useState<null | any>(null);
+  const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
+  const [editingVersion, setEditingVersion] = useState<PopulationVersion | null>(null);
+  const [stats, setStats] = useState({ totalPop: 0, count: 0, year: null as number | null });
 
-  useEffect(() => {
-    loadVersions();
-  }, [countryIso]);
+  const isFetchingRef = useRef(false);
 
-  async function loadVersions() {
+  // 🔹 Load versions for this country
+  const loadVersions = async () => {
     const { data, error } = await supabase
       .from("population_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setVersions(data);
-      const active = data.find((v) => v.is_active) || data[0] || null;
-      setSelectedVersion(active);
+    if (error) {
+      console.error("Error loading versions:", error);
+      return;
     }
-  }
 
-  async function fetchRows(versionId: string) {
-    const { data, error } = await supabase
-      .from("population_data")
-      .select("*")
-      .eq("dataset_version_id", versionId)
-      .limit(1000);
-
-    if (!error && data) setRows(data);
-  }
-
-  useEffect(() => {
-    if (selectedVersion) {
-      fetchRows(selectedVersion.id);
-      fetchMetrics(selectedVersion.id);
-    }
-  }, [selectedVersion]);
-
-  async function fetchMetrics(versionId: string) {
-    const { data, error } = await supabase
-      .from("population_data")
-      .select("population", { count: "exact" })
-      .eq("dataset_version_id", versionId);
-
-    if (!error && data) {
-      const total = data.reduce(
-        (sum: number, row: any) => sum + (row.population || 0),
-        0
-      );
-      setMetrics({ count: data.length, total });
-    }
-  }
-
-  async function handleDeleteVersion(versionId: string) {
-    await supabase.from("population_data").delete().eq("dataset_version_id", versionId);
-    await supabase.from("population_dataset_versions").delete().eq("id", versionId);
-    loadVersions();
-  }
-
-  const handleTemplateDownload = async () => {
-    try {
-      const headers = ["pcode", "population", "name", "year"];
-      const csv = headers.join(",") + "\n";
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "population_template.csv";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      console.error("Template download failed:", e);
-    }
+    setVersions(data || []);
+    const active = data?.find(v => v.is_active) || data?.[0] || null;
+    setSelectedVersion(active);
   };
 
+  // 🔹 Load sample population data
+  const loadPopulationRows = async (versionId: string) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    setLoading(true);
+    setRows([]);
+
+    const { data, error } = await supabase
+      .from("population_data")
+      .select("pcode, name, population, year")
+      .eq("dataset_version_id", versionId)
+      .limit(100);
+
+    if (error) console.error("Error loading population data:", error);
+    else setRows(data || []);
+
+    // compute stats
+    const total = data?.reduce((sum, r) => sum + Number(r.population || 0), 0) || 0;
+    const year = data?.[0]?.year || null;
+    setStats({ totalPop: total, count: data?.length || 0, year });
+
+    setLoading(false);
+    isFetchingRef.current = false;
+  };
+
+  // 🔹 Handle activation, deletion, and editing
+  const handleActivate = async (v: PopulationVersion) => {
+    await supabase.from("population_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
+    await supabase.from("population_dataset_versions").update({ is_active: true }).eq("id", v.id);
+    await loadVersions();
+  };
+
+  const handleDelete = async (id: string) => {
+    await supabase.from("population_dataset_versions").delete().eq("id", id);
+    setOpenDelete(null);
+    await loadVersions();
+  };
+
+  const handleTemplateDownload = async () => {
+    const url = "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "population_template.csv";
+    link.click();
+  };
+
+  useEffect(() => {
+    loadVersions();
+  }, [countryIso]);
+
+  useEffect(() => {
+    if (selectedVersion) loadPopulationRows(selectedVersion.id);
+  }, [selectedVersion]);
+
+  // 🔹 Header + layout props
   const headerProps = {
     title: `${countryIso} – Population Data`,
     group: "country-config" as const,
-    description:
-      "Upload and manage versioned population datasets aligned with administrative boundaries.",
+    description: "Upload and manage population datasets for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -113,24 +131,13 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
     ),
   };
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "—";
-    const d = new Date(dateString);
-    return d.toLocaleDateString("en-GB", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* 📦 Dataset Versions */}
+      {/* Dataset Versions Panel */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Dataset Versions
+            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
           </h2>
           <div className="flex gap-2">
             <button
@@ -161,24 +168,16 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
               </tr>
             </thead>
             <tbody>
-              {versions.map((v) => (
+              {versions.map(v => (
                 <tr
                   key={v.id}
-                  className={`hover:bg-gray-50 ${
-                    v.is_active ? "bg-green-50" : ""
-                  }`}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                  onClick={() => setSelectedVersion(v)}
                 >
-                  <td
-                    onClick={() => setSelectedVersion(v)}
-                    className={`border px-2 py-1 cursor-pointer ${
-                      selectedVersion?.id === v.id ? "font-bold" : ""
-                    }`}
-                  >
-                    {v.title}
-                  </td>
-                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1">{formatDate(v.dataset_date)}</td>
-                  <td className="border px-2 py-1">{v.source ?? "—"}</td>
+                  <td className="border px-2 py-1 cursor-pointer">{v.title}</td>
+                  <td className="border px-2 py-1 text-center">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1 text-center">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1 text-center">{v.source ?? "—"}</td>
                   <td className="border px-2 py-1 text-center">
                     {v.is_active ? (
                       <span className="inline-flex items-center gap-1 text-green-700">
@@ -190,15 +189,32 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
                   </td>
                   <td className="border px-2 py-1 text-right">
                     <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleActivate(v);
+                          }}
+                        >
+                          Set Active
+                        </button>
+                      )}
                       <button
                         className="text-gray-700 hover:underline text-xs flex items-center"
-                        onClick={() => setOpenEdit(v)}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setEditingVersion(v);
+                        }}
                       >
                         <Edit3 className="w-4 h-4 mr-1" /> Edit
                       </button>
                       <button
                         className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                        onClick={() => setOpenDelete(v)}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setOpenDelete(v);
+                        }}
                       >
                         <Trash2 className="w-4 h-4 mr-1" /> Delete
                       </button>
@@ -209,76 +225,80 @@ export default function PopulationPage({ params }: { params: { id: string } }) {
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500 text-sm">
-            No population dataset versions uploaded yet.
-          </p>
+          <p className="italic text-gray-500 text-sm">No population datasets uploaded yet.</p>
         )}
       </div>
 
-      {/* 📊 Dataset Health */}
+      {/* Summary + Preview */}
       {selectedVersion && (
-        <div className="border rounded-lg p-4 shadow-sm bg-white space-y-3">
-          <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
+        <div className="border rounded-lg p-4 shadow-sm bg-white">
+          <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
             {selectedVersion.title}
-          </h3>
-          <p className="text-sm text-gray-700">
-            Records: <strong>{metrics.count}</strong> | Total Population:{" "}
-            <strong>{metrics.total.toLocaleString()}</strong>
-          </p>
-          <div className="border-t pt-3">
-            <h4 className="font-medium mb-2 text-sm">Population Records</h4>
-            {rows.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                No population data uploaded.
+          </h2>
+          {loading ? (
+            <div className="flex items-center gap-2 text-gray-500">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading data…
+            </div>
+          ) : (
+            <>
+              <p className="text-sm mb-2">
+                Records: <strong>{stats.count}</strong> | Total Population:{" "}
+                <strong>{stats.totalPop.toLocaleString()}</strong>{" "}
+                {stats.year ? <>| Year: <strong>{stats.year}</strong></> : null}
               </p>
-            ) : (
-              <table className="w-full text-xs border">
-                <thead>
-                  <tr className="bg-gray-50 border-b">
-                    <th className="text-left px-2 py-1">PCode</th>
-                    <th className="text-left px-2 py-1">Name</th>
-                    <th className="text-right px-2 py-1">Population</th>
-                    <th className="text-center px-2 py-1">Year</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className="border-b hover:bg-gray-50">
-                      <td className="px-2 py-1">{r.pcode}</td>
-                      <td className="px-2 py-1">{r.name || "—"}</td>
-                      <td className="text-right px-2 py-1">
-                        {r.population?.toLocaleString() || "—"}
-                      </td>
-                      <td className="text-center px-2 py-1">{r.year || "—"}</td>
+              <div className="overflow-x-auto border rounded">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left px-2 py-1">PCode</th>
+                      <th className="text-left px-2 py-1">Name</th>
+                      <th className="text-right px-2 py-1">Population</th>
+                      <th className="text-center px-2 py-1">Year</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.pcode} className="hover:bg-gray-50">
+                        <td className="px-2 py-1">{r.pcode}</td>
+                        <td className="px-2 py-1">{r.name}</td>
+                        <td className="px-2 py-1 text-right">{r.population.toLocaleString()}</td>
+                        <td className="px-2 py-1 text-center">{r.year}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* 🧱 Modals */}
-      <UploadPopulationModal
-        open={openUpload}
-        onClose={() => setOpenUpload(false)}
-        countryIso={countryIso}
-        onUploaded={loadVersions}
-      />
-      <EditPopulationVersionModal
-        open={!!openEdit}
-        onClose={() => setOpenEdit(null)}
-        versionId={openEdit?.id || null}
-        countryIso={countryIso}
-        onSaved={loadVersions}
-      />
-      <ConfirmDeleteModal
-        open={!!openDelete}
-        onClose={() => setOpenDelete(null)}
-        message="Are you sure you want to delete this dataset?"
-        onConfirm={() => handleDeleteVersion(openDelete?.id)}
-      />
+      {/* Modals */}
+      {openUpload && (
+        <UploadPopulationModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={countryIso}
+          onUploaded={loadVersions}
+        />
+      )}
+
+      {openDelete && (
+        <ConfirmDeleteModal
+          open={!!openDelete}
+          message={`Delete population dataset "${openDelete.title}"?`}
+          onClose={() => setOpenDelete(null)}
+          onConfirm={() => handleDelete(openDelete.id)}
+        />
+      )}
+
+      {editingVersion && (
+        <EditPopulationVersionModal
+          version={editingVersion}
+          onClose={() => setEditingVersion(null)}
+          onSaved={loadVersions}
+        />
+      )}
     </SidebarLayout>
   );
 }
