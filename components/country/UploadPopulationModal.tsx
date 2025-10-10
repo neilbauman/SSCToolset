@@ -63,12 +63,12 @@ export default function UploadPopulationModal({
     setUploading(true);
 
     try {
-      // Step 1: Create a dataset version
+      // Step 1: Create population_dataset_versions entry
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
           country_iso: countryIso,
-          title,
+          title: title.trim(),
           year,
           source_name: sourceName || null,
           source_url: sourceUrl || null,
@@ -79,50 +79,49 @@ export default function UploadPopulationModal({
         .single();
 
       if (versionError) throw versionError;
-      if (!version) throw new Error("Failed to create dataset version record.");
+      if (!version) throw new Error("Failed to create version record.");
 
-      // Step 2: Upload CSV to Supabase Storage
+      console.log("✅ Created version record:", version);
+
+      // Step 2: Upload CSV file to Supabase Storage
       const fileExt = file.name.split(".").pop();
       const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
+      console.log("📦 Uploading CSV to:", storagePath);
+
       const { error: uploadError } = await supabase.storage
         .from("uploads")
         .upload(storagePath, file);
 
       if (uploadError) throw uploadError;
 
-      // Step 3: Build payload for Edge Function
+      console.log("✅ File uploaded to Supabase storage");
+
+      // Step 3: Build payload for the Edge Function
       const payload = {
-        filePath: storagePath,
+        filePath: `uploads/${storagePath}`,
         countryIso,
+        versionId: version.id,
         title: title.trim(),
         year,
         sourceName: sourceName || null,
         sourceUrl: sourceUrl || null,
         notes: notes || null,
-        versionId: version.id,
       };
 
-      console.log("📤 Sending payload:", payload);
+      console.log("📤 Sending payload to Edge Function:", payload);
 
-      // Step 4: Call Supabase Edge Function directly
-      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/convert-population`;
+      // Step 4: Invoke the Supabase Edge Function
+      const { data: funcData, error: funcError } = await supabase.functions.invoke(
+        "convert-population",
+        { body: payload }
+      );
 
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const textResponse = await response.text();
-
-      console.log("🧩 Function response:", textResponse);
-
-      if (!response.ok) {
-        throw new Error(`Edge Function error: ${textResponse}`);
+      if (funcError) {
+        console.error("❌ Edge Function Error:", funcError);
+        throw funcError;
       }
+
+      console.log("🧩 Function response:", funcData);
 
       await onUploaded();
       onClose();
@@ -148,6 +147,7 @@ export default function UploadPopulationModal({
           boundaries.
         </p>
 
+        {/* Metadata Fields */}
         <div className="space-y-3 mb-4">
           <div>
             <label className="block text-sm font-medium">Title *</label>
@@ -200,15 +200,17 @@ export default function UploadPopulationModal({
           </div>
         </div>
 
+        {/* File Upload */}
         <div className="flex items-center justify-between mb-3">
-          <button
-            onClick={handleTemplateDownload}
-            className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
-          >
-            <Download className="w-4 h-4 mr-1" />
-            Download Template
-          </button>
-
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTemplateDownload}
+              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Download Template
+            </button>
+          </div>
           <label className="text-sm font-medium text-[color:var(--gsc-red)] cursor-pointer">
             <input type="file" accept=".csv" onChange={handleFileSelect} hidden />
             {file ? file.name : "Choose CSV File"}
@@ -221,6 +223,7 @@ export default function UploadPopulationModal({
           </p>
         )}
 
+        {/* Actions */}
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
