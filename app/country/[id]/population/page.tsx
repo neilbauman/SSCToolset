@@ -220,19 +220,31 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     await loadVersions();
   };
 
-  // ✅ Fixed: proper case-sensitive Supabase path
-  const handleTemplateDownload = () => {
-    const url =
+  // ✅ Force file download (fixed behavior)
+  const handleTemplateDownload = async () => {
+    const fileUrl =
       "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "Population_Template.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "Population_Template.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading template:", error);
+      alert("Failed to download template file.");
+    }
   };
 
-  // 🧱 Header (mirrors Admins)
+  // 🧱 Header
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
