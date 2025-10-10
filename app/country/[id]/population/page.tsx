@@ -18,6 +18,9 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 type Country = {
   iso_code: string;
   name: string;
@@ -35,6 +38,84 @@ type PopulationVersion = {
   created_at: string;
 };
 
+// -----------------------------------------------------------------------------
+// Population Data Preview Component
+// -----------------------------------------------------------------------------
+function PopulationPreview({ versionId }: { versionId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("population_data")
+        .select("pcode, name, population")
+        .eq("dataset_version_id", versionId)
+        .limit(20);
+
+      if (error) {
+        console.error("Error loading population preview:", error);
+      }
+
+      setRows(data || []);
+      setLoading(false);
+    };
+
+    loadData();
+  }, [versionId]);
+
+  if (loading)
+    return (
+      <div className="flex items-center gap-2 text-gray-600 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading population data preview…
+      </div>
+    );
+
+  if (!rows.length)
+    return (
+      <p className="text-sm italic text-gray-500">
+        No population data available for this dataset version.
+      </p>
+    );
+
+  return (
+    <div className="border rounded-lg p-4 shadow-sm bg-white mt-6">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-md font-semibold">Population Data Preview</h3>
+        <p className="text-xs text-gray-500">Showing first {rows.length} rows</p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="border px-2 py-1 text-left">PCode</th>
+              <th className="border px-2 py-1 text-left">Name</th>
+              <th className="border px-2 py-1 text-right">Population</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="hover:bg-gray-50">
+                <td className="border px-2 py-1">{r.pcode}</td>
+                <td className="border px-2 py-1">{r.name ?? "—"}</td>
+                <td className="border px-2 py-1 text-right">
+                  {Number(r.population || 0).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Main Page Component
+// -----------------------------------------------------------------------------
 export default function PopulationPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [country, setCountry] = useState<Country | null>(null);
@@ -55,11 +136,11 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .then(({ data }) => data && setCountry(data));
   }, [countryIso]);
 
-  // 📦 Load dataset versions with summary stats
+  // 📦 Load dataset versions with summary stats (from RPC)
   const loadVersions = async () => {
     setLoading(true);
 
-    // Step 1: Fetch all population dataset versions for the country
+    // Step 1: Fetch dataset versions
     const { data: versionsData, error: versionsError } = await supabase
       .from("population_dataset_versions")
       .select("*")
@@ -72,17 +153,15 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       return;
     }
 
-    // Step 2: Call RPC function to fetch aggregated population stats
+    // Step 2: Get summary stats from RPC
     const { data: aggData, error: aggError } = await supabase.rpc(
       "get_population_summary",
       { country_iso: countryIso }
     );
 
-    if (aggError) {
-      console.error("Error fetching population summary:", aggError);
-    }
+    if (aggError) console.error("Error fetching population summary:", aggError);
 
-    // Step 3: Merge aggregation results with dataset versions
+    // Step 3: Merge results
     const statsMap: Record<string, { total_population: number; record_count: number }> = {};
     if (aggData) {
       for (const row of aggData) {
@@ -153,7 +232,8 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description: "Manage versioned population datasets aligned with administrative boundaries.",
+    description:
+      "Manage versioned population datasets aligned with administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -166,166 +246,159 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
     ),
   };
 
-  // --------------------------------------------------------------------------
-  // RENDER
-  // --------------------------------------------------------------------------
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Loading Indicator */}
-      {loading ? (
-        <div className="text-gray-500 text-sm flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading datasets...
-        </div>
-      ) : (
-        <>
-          {/* Dataset Versions Table */}
-          <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Database className="w-5 h-5 text-green-600" />
-                Dataset Versions
-              </h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleTemplateDownload}
-                  className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Template
-                </button>
-                <button
-                  onClick={() => setOpenUpload(true)}
-                  className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-                >
-                  <Upload className="w-4 h-4 mr-1" />
-                  Upload Dataset
-                </button>
-              </div>
-            </div>
-
-            {versions.length ? (
-              <table className="w-full text-sm border rounded">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="px-2 py-1 text-left">Title</th>
-                    <th>Year</th>
-                    <th>Date</th>
-                    <th>Source</th>
-                    <th>Total Population</th>
-                    <th>Records</th>
-                    <th>Status</th>
-                    <th className="text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {versions.map((v) => (
-                    <tr
-                      key={v.id}
-                      className={`hover:bg-gray-50 ${
-                        v.is_active ? "bg-green-50" : ""
-                      }`}
-                    >
-                      <td
-                        onClick={() => setSelectedVersion(v)}
-                        className={`border px-2 py-1 cursor-pointer ${
-                          selectedVersion?.id === v.id ? "font-bold" : ""
-                        }`}
-                      >
-                        {v.title}
-                      </td>
-                      <td className="border px-2 py-1">{v.year ?? "—"}</td>
-                      <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
-                      <td className="border px-2 py-1">
-                        {v.source_url ? (
-                          <a
-                            href={v.source_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {v.source_name}
-                          </a>
-                        ) : (
-                          <span>{v.source_name ?? "—"}</span>
-                        )}
-                      </td>
-                      <td className="border px-2 py-1 text-right">
-                        {v.total_population.toLocaleString()}
-                      </td>
-                      <td className="border px-2 py-1 text-center">
-                        {v.record_count.toLocaleString()}
-                      </td>
-                      <td className="border px-2 py-1 text-center">
-                        {v.is_active ? (
-                          <span className="inline-flex items-center gap-1 text-green-700">
-                            <CheckCircle2 className="w-4 h-4" /> Active
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="border px-2 py-1 text-right">
-                        <div className="flex justify-end gap-2">
-                          {!v.is_active && (
-                            <button
-                              className="text-blue-600 hover:underline text-xs"
-                              onClick={() => handleActivateVersion(v)}
-                            >
-                              Set Active
-                            </button>
-                          )}
-                          <button
-                            className="text-gray-700 hover:underline text-xs flex items-center"
-                            onClick={() => setEditingVersion(v)}
-                          >
-                            <Edit3 className="w-4 h-4 mr-1" /> Edit
-                          </button>
-                          <button
-                            className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                            onClick={() => setOpenDelete(v)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="italic text-gray-500 text-sm">
-                No population dataset versions uploaded yet.
-              </p>
-            )}
+      {/* Dataset Versions Table */}
+      <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Database className="w-5 h-5 text-green-600" />
+            Dataset Versions
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={handleTemplateDownload}
+              className="flex items-center text-sm border px-3 py-1 rounded hover:bg-blue-50 text-blue-700"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Template
+            </button>
+            <button
+              onClick={() => setOpenUpload(true)}
+              className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
+            >
+              <Upload className="w-4 h-4 mr-1" />
+              Upload Dataset
+            </button>
           </div>
+        </div>
 
-          {/* Modals */}
-          {openUpload && (
-            <UploadPopulationModal
-              open={openUpload}
-              onClose={() => setOpenUpload(false)}
-              countryIso={countryIso}
-              onUploaded={async () => loadVersions()}
-            />
-          )}
-          {openDelete && (
-            <ConfirmDeleteModal
-              open={!!openDelete}
-              message={`This will permanently remove version "${openDelete.title}".`}
-              onClose={() => setOpenDelete(null)}
-              onConfirm={() => handleDeleteVersion(openDelete.id)}
-            />
-          )}
-          {editingVersion && (
-            <EditPopulationVersionModal
-              versionId={editingVersion.id}
-              onClose={() => setEditingVersion(null)}
-              onSaved={async () => {
-                await loadVersions();
-              }}
-            />
-          )}
-        </>
+        {loading ? (
+          <div className="text-gray-500 text-sm flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading datasets...
+          </div>
+        ) : versions.length ? (
+          <table className="w-full text-sm border rounded">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th>Year</th>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Total Population</th>
+                <th>Records</th>
+                <th>Status</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr
+                  key={v.id}
+                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                >
+                  <td
+                    onClick={() => setSelectedVersion(v)}
+                    className={`border px-2 py-1 cursor-pointer ${
+                      selectedVersion?.id === v.id ? "font-bold" : ""
+                    }`}
+                  >
+                    {v.title}
+                  </td>
+                  <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                  <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                  <td className="border px-2 py-1">
+                    {v.source_url ? (
+                      <a
+                        href={v.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {v.source_name}
+                      </a>
+                    ) : (
+                      <span>{v.source_name ?? "—"}</span>
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    {v.total_population.toLocaleString()}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.record_count.toLocaleString()}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {v.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      {!v.is_active && (
+                        <button
+                          className="text-blue-600 hover:underline text-xs"
+                          onClick={() => handleActivateVersion(v)}
+                        >
+                          Set Active
+                        </button>
+                      )}
+                      <button
+                        className="text-gray-700 hover:underline text-xs flex items-center"
+                        onClick={() => setEditingVersion(v)}
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(v)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="italic text-gray-500 text-sm">
+            No population dataset versions uploaded yet.
+          </p>
+        )}
+      </div>
+
+      {/* 🧩 Population Data Preview */}
+      {selectedVersion && <PopulationPreview versionId={selectedVersion.id} />}
+
+      {/* Modals */}
+      {openUpload && (
+        <UploadPopulationModal
+          open={openUpload}
+          onClose={() => setOpenUpload(false)}
+          countryIso={countryIso}
+          onUploaded={async () => loadVersions()}
+        />
+      )}
+      {openDelete && (
+        <ConfirmDeleteModal
+          open={!!openDelete}
+          message={`This will permanently remove version "${openDelete.title}".`}
+          onClose={() => setOpenDelete(null)}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
+        />
+      )}
+      {editingVersion && (
+        <EditPopulationVersionModal
+          versionId={editingVersion.id}
+          onClose={() => setEditingVersion(null)}
+          onSaved={async () => {
+            await loadVersions();
+          }}
+        />
       )}
     </SidebarLayout>
   );
