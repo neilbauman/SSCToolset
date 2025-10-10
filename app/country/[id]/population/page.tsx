@@ -1,143 +1,211 @@
 "use client";
-
-import { useEffect, useState, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Upload, Trash2, Edit3, CheckCircle2, Database, Loader2, Download } from "lucide-react";
-import UploadPopulationModal from "@/components/country/UploadPopulationModal";
+import {
+  Database,
+  Upload,
+  CheckCircle2,
+  Trash2,
+  Edit3,
+  Download,
+  Search,
+  Loader2,
+} from "lucide-react";
+import DatasetHealth from "@/components/country/DatasetHealth";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
+type Country = { iso_code: string; name: string };
 type PopulationVersion = {
   id: string;
   title: string;
   year: number | null;
   dataset_date: string | null;
   source: string | null;
+  notes: string | null;
   is_active: boolean;
   created_at: string;
 };
-
-type PopulationRow = {
+type PopulationRecord = {
   pcode: string;
   name: string;
   population: number;
   year: number;
+  source: any;
 };
 
 export default function PopulationPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
+  const [country, setCountry] = useState<Country | null>(null);
   const [versions, setVersions] = useState<PopulationVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<PopulationVersion | null>(null);
-  const [rows, setRows] = useState<PopulationRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [records, setRecords] = useState<PopulationRecord[]>([]);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [progress, setProgress] = useState(0);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDelete, setOpenDelete] = useState<PopulationVersion | null>(null);
   const [editingVersion, setEditingVersion] = useState<PopulationVersion | null>(null);
-  const [stats, setStats] = useState({ totalPop: 0, count: 0, year: null as number | null });
-
+  const [searchTerm, setSearchTerm] = useState("");
   const isFetchingRef = useRef(false);
+  const progressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // 🔹 Load versions for this country
+  // Load country
+  useEffect(() => {
+    supabase
+      .from("countries")
+      .select("iso_code,name")
+      .eq("iso_code", countryIso)
+      .maybeSingle()
+      .then(({ data }) => data && setCountry(data));
+  }, [countryIso]);
+
+  // Load dataset versions
   const loadVersions = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("population_dataset_versions")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error loading versions:", error);
-      return;
-    }
-
-    setVersions(data || []);
-    const active = data?.find(v => v.is_active) || data?.[0] || null;
+    if (!data) return;
+    setVersions(data);
+    const active = data.find((v) => v.is_active) || data[0] || null;
     setSelectedVersion(active);
   };
+  useEffect(() => {
+    loadVersions();
+  }, [countryIso]);
 
-  // 🔹 Load sample population data
-  const loadPopulationRows = async (versionId: string) => {
-    if (isFetchingRef.current) return;
+  // Fetch population data when a version is selected
+  useEffect(() => {
+    if (!selectedVersion || isFetchingRef.current) return;
     isFetchingRef.current = true;
-    setLoading(true);
-    setRows([]);
+    setLoadingMsg("Loading population data...");
+    setProgress(10);
 
-    const { data, error } = await supabase
+    progressTimer.current = setInterval(
+      () => setProgress((p) => Math.min(p + 5, 90)),
+      200
+    );
+
+    supabase
       .from("population_data")
-      .select("pcode, name, population, year")
-      .eq("dataset_version_id", versionId)
-      .limit(100);
+      .select("pcode,name,population,year,source")
+      .eq("dataset_version_id", selectedVersion.id)
+      .limit(1000)
+      .then(({ data }) => {
+        setRecords(data || []);
+        setProgress(100);
+        setLoadingMsg("");
+      })
+      .catch(() => setLoadingMsg("Failed to load data."))
+      .finally(() => {
+        isFetchingRef.current = false;
+        if (progressTimer.current) clearInterval(progressTimer.current);
+      });
+  }, [selectedVersion]);
 
-    if (error) console.error("Error loading population data:", error);
-    else setRows(data || []);
-
-    // compute stats
-    const total = data?.reduce((sum, r) => sum + Number(r.population || 0), 0) || 0;
-    const year = data?.[0]?.year || null;
-    setStats({ totalPop: total, count: data?.length || 0, year });
-
-    setLoading(false);
-    isFetchingRef.current = false;
-  };
-
-  // 🔹 Handle activation, deletion, and editing
-  const handleActivate = async (v: PopulationVersion) => {
-    await supabase.from("population_dataset_versions").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("population_dataset_versions").update({ is_active: true }).eq("id", v.id);
-    await loadVersions();
-  };
-
-  const handleDelete = async (id: string) => {
+  // Actions
+  const handleDeleteVersion = async (id: string) => {
     await supabase.from("population_dataset_versions").delete().eq("id", id);
     setOpenDelete(null);
     await loadVersions();
   };
 
-  const handleTemplateDownload = async () => {
-    const url = "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "population_template.csv";
-    link.click();
+  const handleSaveEdit = async () => {
+    if (!editingVersion) return;
+    const { id, title, year, dataset_date, source, notes } = editingVersion;
+    await supabase
+      .from("population_dataset_versions")
+      .update({
+        title: title?.trim() || null,
+        year: year || null,
+        dataset_date: dataset_date || null,
+        source: source || null,
+        notes: notes || null,
+      })
+      .eq("id", id);
+    setEditingVersion(null);
+    await loadVersions();
   };
 
-  useEffect(() => {
-    loadVersions();
-  }, [countryIso]);
+  const handleActivateVersion = async (v: PopulationVersion) => {
+    await supabase
+      .from("population_dataset_versions")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase
+      .from("population_dataset_versions")
+      .update({ is_active: true })
+      .eq("id", v.id);
+    await loadVersions();
+  };
 
-  useEffect(() => {
-    if (selectedVersion) loadPopulationRows(selectedVersion.id);
-  }, [selectedVersion]);
+  const handleTemplateDownload = async () => {
+    try {
+      const url =
+        "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/population_template.csv";
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "population_template.csv";
+      link.click();
+    } catch (e) {
+      console.error("Template download failed:", e);
+    }
+  };
 
-  // 🔹 Header + layout props
   const headerProps = {
-    title: `${countryIso} – Population Data`,
+    title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description: "Upload and manage population datasets for this country.",
+    description:
+      "Manage versioned population datasets aligned with administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
           { label: "Population" },
         ]}
       />
     ),
   };
 
+  const filtered = useMemo(() => {
+    const t = searchTerm.toLowerCase();
+    if (!t) return records;
+    return records.filter(
+      (r) =>
+        r.name.toLowerCase().includes(t) || r.pcode.toLowerCase().includes(t)
+    );
+  }, [records, searchTerm]);
+
+  const reloadPage = () => location.reload();
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions Panel */}
+      {loadingMsg && (
+        <div className="mb-2">
+          <div className="h-1.5 w-full bg-gray-200 rounded">
+            <div
+              className="h-1.5 bg-[color:var(--gsc-red)] rounded transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-600 mt-1">{loadingMsg}</p>
+        </div>
+      )}
+
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" /> Dataset Versions
+            <Database className="w-5 h-5 text-green-600" />
+            Dataset Versions
           </h2>
           <div className="flex gap-2">
             <button
@@ -168,127 +236,152 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
               </tr>
             </thead>
             <tbody>
-              {versions.map(v => (
-                <tr
-                  key={v.id}
-                  className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
-                  onClick={() => setSelectedVersion(v)}
-                >
-                  <td className="border px-2 py-1 cursor-pointer">{v.title}</td>
-                  <td className="border px-2 py-1 text-center">{v.year ?? "—"}</td>
-                  <td className="border px-2 py-1 text-center">{v.dataset_date ?? "—"}</td>
-                  <td className="border px-2 py-1 text-center">{v.source ?? "—"}</td>
-                  <td className="border px-2 py-1 text-center">
-                    {v.is_active ? (
-                      <span className="inline-flex items-center gap-1 text-green-700">
-                        <CheckCircle2 className="w-4 h-4" /> Active
-                      </span>
+              {versions.map((v) => {
+                let src: JSX.Element = <span>—</span>;
+                if (v.source) {
+                  try {
+                    const j = JSON.parse(v.source);
+                    src = j.url ? (
+                      <a
+                        href={j.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {j.name || j.url}
+                      </a>
                     ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="border px-2 py-1 text-right">
-                    <div className="flex justify-end gap-2">
-                      {!v.is_active && (
-                        <button
-                          className="text-blue-600 hover:underline text-xs"
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleActivate(v);
-                          }}
-                        >
-                          Set Active
-                        </button>
+                      <span>{j.name}</span>
+                    );
+                  } catch {
+                    src = <span>{v.source}</span>;
+                  }
+                }
+                const isSel = selectedVersion?.id === v.id;
+                return (
+                  <tr
+                    key={v.id}
+                    className={`hover:bg-gray-50 ${v.is_active ? "bg-green-50" : ""}`}
+                  >
+                    <td
+                      onClick={() => setSelectedVersion(v)}
+                      className={`border px-2 py-1 cursor-pointer ${
+                        isSel ? "font-bold" : ""
+                      }`}
+                    >
+                      {v.title}
+                    </td>
+                    <td className="border px-2 py-1">{v.year ?? "—"}</td>
+                    <td className="border px-2 py-1">{v.dataset_date ?? "—"}</td>
+                    <td className="border px-2 py-1">{src}</td>
+                    <td className="border px-2 py-1 text-center">
+                      {v.is_active ? (
+                        <span className="inline-flex items-center gap-1 text-green-700">
+                          <CheckCircle2 className="w-4 h-4" /> Active
+                        </span>
+                      ) : (
+                        "—"
                       )}
-                      <button
-                        className="text-gray-700 hover:underline text-xs flex items-center"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setEditingVersion(v);
-                        }}
-                      >
-                        <Edit3 className="w-4 h-4 mr-1" /> Edit
-                      </button>
-                      <button
-                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setOpenDelete(v);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="border px-2 py-1 text-right">
+                      <div className="flex justify-end gap-2">
+                        {!v.is_active && (
+                          <button
+                            className="text-blue-600 hover:underline text-xs"
+                            onClick={() => handleActivateVersion(v)}
+                          >
+                            Set Active
+                          </button>
+                        )}
+                        <button
+                          className="text-gray-700 hover:underline text-xs flex items-center"
+                          onClick={() => setEditingVersion(v)}
+                        >
+                          <Edit3 className="w-4 h-4 mr-1" /> Edit
+                        </button>
+                        <button
+                          className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                          onClick={() => setOpenDelete(v)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" /> Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500 text-sm">No population datasets uploaded yet.</p>
+          <p className="italic text-gray-500 text-sm">
+            No dataset versions uploaded yet.
+          </p>
         )}
       </div>
 
-      {/* Summary + Preview */}
       {selectedVersion && (
-        <div className="border rounded-lg p-4 shadow-sm bg-white">
-          <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
+        <>
+          <h2 className="text-xl font-bold text-[color:var(--gsc-red)] mb-2">
             {selectedVersion.title}
           </h2>
-          {loading ? (
-            <div className="flex items-center gap-2 text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading data…
-            </div>
-          ) : (
-            <>
-              <p className="text-sm mb-2">
-                Records: <strong>{stats.count}</strong> | Total Population:{" "}
-                <strong>{stats.totalPop.toLocaleString()}</strong>{" "}
-                {stats.year ? <>| Year: <strong>{stats.year}</strong></> : null}
-              </p>
-              <div className="overflow-x-auto border rounded">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="text-left px-2 py-1">PCode</th>
-                      <th className="text-left px-2 py-1">Name</th>
-                      <th className="text-right px-2 py-1">Population</th>
-                      <th className="text-center px-2 py-1">Year</th>
+
+          <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
+            <Search className="w-4 h-4 text-gray-500 mr-2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name or PCode..."
+              className="flex-1 text-sm outline-none bg-transparent"
+            />
+          </div>
+
+          <div className="border rounded-lg bg-white shadow-sm p-3">
+            {filtered.length ? (
+              <table className="w-full text-sm border rounded">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-2 py-1 text-left">PCode</th>
+                    <th>Name</th>
+                    <th>Population</th>
+                    <th>Year</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.slice(0, 200).map((r) => (
+                    <tr key={r.pcode} className="hover:bg-gray-50">
+                      <td className="border px-2 py-1">{r.pcode}</td>
+                      <td className="border px-2 py-1">{r.name}</td>
+                      <td className="border px-2 py-1 text-right">{r.population}</td>
+                      <td className="border px-2 py-1 text-center">{r.year}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(r => (
-                      <tr key={r.pcode} className="hover:bg-gray-50">
-                        <td className="px-2 py-1">{r.pcode}</td>
-                        <td className="px-2 py-1">{r.name}</td>
-                        <td className="px-2 py-1 text-right">{r.population.toLocaleString()}</td>
-                        <td className="px-2 py-1 text-center">{r.year}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="italic text-gray-500 text-sm">
+                No data available for this version.
+              </p>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Modals */}
       {openUpload && (
         <UploadPopulationModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={loadVersions}
+          onUploaded={async () => reloadPage()} // ✅ async wrapper
         />
       )}
 
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          message={`Delete population dataset "${openDelete.title}"?`}
+          message={`This will permanently remove version "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDelete(openDelete.id)}
+          onConfirm={() => handleDeleteVersion(openDelete.id)}
         />
       )}
 
