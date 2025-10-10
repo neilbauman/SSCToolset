@@ -30,8 +30,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
       });
   }, [id]);
 
-  /** ✅ Always returns a Promise<void> (for strict typing) */
-  const reloadPage = async (): Promise<void> => {
+  const reloadPage = (): void => {
     window.location.reload();
   };
 
@@ -162,7 +161,9 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openAdminUpload}
           onClose={() => setOpenAdminUpload(false)}
           countryIso={id}
-          onUploaded={reloadPage}
+          onUploaded={async () => {
+            await reloadPage();
+          }} // ✅ FIXED
         />
       )}
 
@@ -171,7 +172,9 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openPopUpload}
           onClose={() => setOpenPopUpload(false)}
           countryIso={id}
-          onUploaded={reloadPage} // ✅ reloadPage now truly async
+          onUploaded={async () => {
+            await reloadPage();
+          }} // ✅ FIXED
         />
       )}
 
@@ -180,7 +183,9 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openGISUpload}
           onClose={() => setOpenGISUpload(false)}
           countryIso={id}
-          onUploaded={reloadPage}
+          onUploaded={async () => {
+            await reloadPage();
+          }} // ✅ FIXED
         />
       )}
     </SidebarLayout>
