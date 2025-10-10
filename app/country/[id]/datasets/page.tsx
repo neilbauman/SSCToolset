@@ -6,7 +6,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { PlusCircle, Edit3, Trash2, Search, Loader2, Database } from "lucide-react";
 import EditDatasetModal from "@/components/country/EditDatasetModal";
-import ConfirmDeleteModal from "@/components/common/ConfirmDeleteModal";
+import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import type { CountryParams } from "@/app/country/types";
 
 type Dataset = {
