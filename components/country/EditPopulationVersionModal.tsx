@@ -1,109 +1,154 @@
 "use client";
-import { useState } from "react";
-import { X } from "lucide-react";
+
+import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export interface EditPopulationVersionModalProps {
-  version: {
-    id: string;
-    title: string;
-    year: number | null;
-    dataset_date: string | null;
-    source_name: string | null;
-    source_url: string | null;
-    notes: string | null;
-  };
+interface EditPopulationVersionModalProps {
+  versionId: string;
   onClose: () => void;
-  onSaved: () => Promise<void> | void;
+  onSaved: () => Promise<void>;
 }
 
 export default function EditPopulationVersionModal({
-  version,
+  versionId,
   onClose,
   onSaved,
 }: EditPopulationVersionModalProps) {
-  const [form, setForm] = useState(version);
-  const [saving, setSaving] = useState(false);
+  const [version, setVersion] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchVersion = async () => {
+      const { data } = await supabase
+        .from("population_dataset_versions")
+        .select("*")
+        .eq("id", versionId)
+        .maybeSingle();
+      setVersion(data);
+    };
+    fetchVersion();
+  }, [versionId]);
 
   const handleSave = async () => {
-    setSaving(true);
-    await supabase
-      .from("population_dataset_versions")
-      .update({
-        title: form.title?.trim() || null,
-        year: form.year || null,
-        dataset_date: form.dataset_date || null,
-        source_name: form.source_name?.trim() || null,
-        source_url: form.source_url?.trim() || null,
-        notes: form.notes?.trim() || null,
-      })
-      .eq("id", form.id);
-    setSaving(false);
-    await onSaved();
-    onClose();
+    if (!version) return;
+    setLoading(true);
+    try {
+      const { id, title, year, dataset_date, source, notes } = version;
+      await supabase
+        .from("population_dataset_versions")
+        .update({
+          title: title?.trim() || null,
+          year: year || null,
+          dataset_date: dataset_date || null,
+          source:
+            source && typeof source === "object"
+              ? JSON.stringify(source)
+              : source || null,
+          notes: notes || null,
+        })
+        .eq("id", id);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save changes.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!version) return null;
+
+  const handleSourceChange = (field: "name" | "url", value: string) => {
+    setVersion((v: any) => ({
+      ...v,
+      source: {
+        ...(typeof v.source === "object"
+          ? v.source
+          : (() => {
+              try {
+                return JSON.parse(v.source || "{}");
+              } catch {
+                return {};
+              }
+            })()),
+        [field]: value,
+      },
+    }));
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-md">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">Edit Population Version</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="space-y-3 text-sm">
-          {[
-            "title",
-            "year",
-            "dataset_date",
-            "source_name",
-            "source_url",
-            "notes",
-          ].map((f) => (
+        <h3 className="text-lg font-semibold mb-3">Edit Population Version</h3>
+        <div className="space-y-2 text-sm">
+          {["title", "year", "dataset_date", "notes"].map((f) => (
             <label key={f} className="block capitalize">
               {f.replace("_", " ")}
-              {f === "notes" ? (
-                <textarea
-                  value={(form as any)[f] ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [f]: e.target.value || null })
-                  }
-                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
-                />
-              ) : (
-                <input
-                  type={
-                    f === "year"
-                      ? "number"
-                      : f === "dataset_date"
-                      ? "date"
-                      : f === "source_url"
-                      ? "url"
-                      : "text"
-                  }
-                  value={(form as any)[f] ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [f]: e.target.value || null })
-                  }
-                  className="border rounded w-full px-2 py-1 mt-1 text-sm"
-                />
-              )}
+              <input
+                type={
+                  f === "year" ? "number" : f === "dataset_date" ? "date" : "text"
+                }
+                value={version[f] ?? ""}
+                onChange={(e) =>
+                  setVersion({ ...version, [f]: e.target.value || null })
+                }
+                className="border rounded w-full px-2 py-1 mt-1 text-sm"
+              />
             </label>
           ))}
+
+          <label className="block">Source Name</label>
+          <input
+            type="text"
+            value={
+              typeof version.source === "object"
+                ? version.source?.name || ""
+                : (() => {
+                    try {
+                      return JSON.parse(version.source || "{}").name || "";
+                    } catch {
+                      return "";
+                    }
+                  })()
+            }
+            onChange={(e) => handleSourceChange("name", e.target.value)}
+            className="border rounded w-full px-2 py-1 mt-1 text-sm"
+          />
+
+          <label className="block mt-2">Source URL (optional)</label>
+          <input
+            type="url"
+            value={
+              typeof version.source === "object"
+                ? version.source?.url || ""
+                : (() => {
+                    try {
+                      return JSON.parse(version.source || "{}").url || "";
+                    } catch {
+                      return "";
+                    }
+                  })()
+            }
+            onChange={(e) => handleSourceChange("url", e.target.value)}
+            className="border rounded w-full px-2 py-1 mt-1 text-sm"
+          />
         </div>
 
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="px-3 py-1 text-sm border rounded">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 text-sm border rounded"
+            disabled={loading}
+          >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={loading}
             className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded hover:opacity-90"
           >
-            {saving ? "Saving..." : "Save"}
+            {loading ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
