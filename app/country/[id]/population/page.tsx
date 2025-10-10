@@ -64,6 +64,7 @@ function PopulationPreview({
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+
       let query = supabase
         .from("population_data")
         .select("pcode,name,population", { count: "exact" })
@@ -76,7 +77,6 @@ function PopulationPreview({
       }
 
       const { data, count } = await query;
-
       const { data: rpcData } = await supabase.rpc("sum_population_by_version", {
         version_id: versionId,
       });
@@ -246,16 +246,19 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // Find lowest admin level
+      // Find lowest admin level (ADM)
       const { data: levelData } = await supabase
         .from("population_data")
-        .select("level", { distinct: true })
+        .select("level")
         .eq("dataset_version_id", v.id)
         .not("level", "is", null)
         .neq("level", "")
         .order("level", { ascending: false });
 
-      const levels = (levelData || []).map((r) => r.level?.toUpperCase());
+      const levels = Array.from(
+        new Set((levelData || []).map((r) => r.level?.toUpperCase()))
+      );
+
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
       const found = hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
 
