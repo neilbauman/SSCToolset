@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { FileSpreadsheet, PlusCircle, Loader2, Trash2 } from "lucide-react";
+import { FileSpreadsheet, PlusCircle, Loader2, Trash2, MapPin } from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import type { CountryParams } from "@/app/country/types";
 
@@ -14,10 +14,9 @@ type Dataset = {
   country_iso: string;
   indicator_id: string;
   title: string;
-  description: string | null;
   source: string | null;
-  admin_level: string | null;
   theme: string | null;
+  admin_level: string | null;
   upload_type: string | null;
   created_at: string;
   indicator?: { name: string; type: string; data_type: string };
@@ -30,7 +29,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const [loading, setLoading] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
 
-  // Fetch country
+  // Fetch country metadata
   useEffect(() => {
     const loadCountry = async () => {
       const { data } = await supabase
@@ -43,14 +42,12 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     loadCountry();
   }, [countryIso]);
 
-  // Fetch datasets
+  // Fetch datasets for this country
   const loadDatasets = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("dataset_metadata")
-      .select(
-        `*, indicator:indicator_catalogue(name,type,data_type)`
-      )
+      .select("*, indicator:indicator_catalogue(name,type,data_type)")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
     if (error) console.error("Failed to fetch datasets:", error);
@@ -71,7 +68,8 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const headerProps = {
     title: `${country?.name ?? countryIso} – Other Datasets`,
     group: "country-config" as const,
-    description: "Upload and manage additional datasets for this country, including statistics and gradients.",
+    description:
+      "Upload and manage additional datasets for this country. Each dataset can be tied to an indicator and administrative level for later joins and SSC scoring.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -90,7 +88,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-            Datasets
+            Indicator Datasets
           </h2>
           <button
             onClick={() => setOpenAdd(true)}
@@ -110,11 +108,11 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
               <tr>
                 <th className="px-2 py-1 text-left">Title</th>
                 <th className="px-2 py-1 text-left">Indicator</th>
+                <th className="px-2 py-1 text-center">Theme</th>
+                <th className="px-2 py-1 text-center">Admin Level</th>
                 <th className="px-2 py-1 text-center">Type</th>
                 <th className="px-2 py-1 text-center">Data Type</th>
-                <th className="px-2 py-1 text-center">Admin Level</th>
                 <th className="px-2 py-1 text-left">Source</th>
-                <th className="px-2 py-1 text-center">Theme</th>
                 <th className="px-2 py-1 text-center">Upload Type</th>
                 <th className="px-2 py-1 text-center">Created</th>
                 <th className="px-2 py-1 text-right">Actions</th>
@@ -122,16 +120,34 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             </thead>
             <tbody>
               {datasets.map((d) => (
-                <tr key={d.id} className="border-b hover:bg-gray-50">
-                  <td className="px-2 py-1">{d.title || "Untitled"}</td>
-                  <td className="px-2 py-1">{d.indicator?.name ?? "—"}</td>
-                  <td className="px-2 py-1 text-center">{d.indicator?.type ?? "—"}</td>
-                  <td className="px-2 py-1 text-center">{d.indicator?.data_type ?? "—"}</td>
-                  <td className="px-2 py-1 text-center">{d.admin_level ?? "—"}</td>
-                  <td className="px-2 py-1">{d.source ?? "—"}</td>
+                <tr
+                  key={d.id}
+                  className="border-b hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-2 py-1 font-medium text-gray-900">
+                    {d.title || "Untitled"}
+                  </td>
+                  <td className="px-2 py-1 text-gray-700">
+                    {d.indicator?.name ?? "—"}
+                  </td>
                   <td className="px-2 py-1 text-center">{d.theme ?? "—"}</td>
-                  <td className="px-2 py-1 text-center capitalize">{d.upload_type ?? "—"}</td>
+                  <td className="px-2 py-1 text-center flex items-center justify-center gap-1">
+                    <MapPin className="w-4 h-4 text-gray-500" />
+                    {d.admin_level ?? "—"}
+                  </td>
+                  <td className="px-2 py-1 text-center capitalize">
+                    {d.indicator?.type ?? "—"}
+                  </td>
                   <td className="px-2 py-1 text-center">
+                    {d.indicator?.data_type ?? "—"}
+                  </td>
+                  <td className="px-2 py-1 text-gray-700">
+                    {d.source ?? "—"}
+                  </td>
+                  <td className="px-2 py-1 text-center capitalize">
+                    {d.upload_type ?? "—"}
+                  </td>
+                  <td className="px-2 py-1 text-center text-gray-600">
                     {new Date(d.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-2 py-1 text-right">
@@ -147,7 +163,9 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             </tbody>
           </table>
         ) : (
-          <p className="italic text-gray-500 text-sm">No datasets uploaded yet.</p>
+          <p className="italic text-gray-500 text-sm">
+            No datasets uploaded yet.
+          </p>
         )}
       </div>
 
