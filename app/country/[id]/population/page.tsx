@@ -10,10 +10,7 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import type { CountryParams } from "@/app/country/types";
 
-type Country = {
-  iso_code: string;
-  name: string;
-};
+type Country = { iso_code: string; name: string };
 
 export default function CountryPage({ params }: { params: CountryParams }) {
   const { id } = params;
@@ -33,7 +30,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
       });
   }, [id]);
 
-  const reloadPage = () => {
+  /** ✅ Always returns a Promise<void> (for strict typing) */
+  const reloadPage = async (): Promise<void> => {
     window.location.reload();
   };
 
@@ -164,7 +162,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openAdminUpload}
           onClose={() => setOpenAdminUpload(false)}
           countryIso={id}
-          onUploaded={async () => reloadPage()}
+          onUploaded={reloadPage}
         />
       )}
 
@@ -173,7 +171,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openPopUpload}
           onClose={() => setOpenPopUpload(false)}
           countryIso={id}
-          onUploaded={async () => reloadPage()} // ✅ async fixed here
+          onUploaded={reloadPage} // ✅ reloadPage now truly async
         />
       )}
 
@@ -182,7 +180,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openGISUpload}
           onClose={() => setOpenGISUpload(false)}
           countryIso={id}
-          onUploaded={async () => reloadPage()} // ✅ async fixed here too
+          onUploaded={reloadPage}
         />
       )}
     </SidebarLayout>
