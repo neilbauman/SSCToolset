@@ -246,21 +246,21 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // Find lowest admin level (ADM)
+      // Detect lowest admin level from adm_level column
       const { data: levelData } = await supabase
         .from("population_data")
-        .select("level")
+        .select("adm_level")
         .eq("dataset_version_id", v.id)
-        .not("level", "is", null)
-        .neq("level", "")
-        .order("level", { ascending: false });
+        .not("adm_level", "is", null)
+        .neq("adm_level", "")
+        .order("adm_level", { ascending: false });
 
       const levels = Array.from(
-        new Set((levelData || []).map((r) => r.level?.toUpperCase()))
+        new Set((levelData || []).map((r) => r.adm_level?.toUpperCase()))
       );
-
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
-      const found = hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
+      const found =
+        hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
 
       stats[v.id] = {
         total: count ?? 0,
@@ -300,7 +300,8 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${country?.name ?? countryIso} – Population Data`,
     group: "country-config" as const,
-    description: "Manage versioned population datasets aligned with administrative boundaries.",
+    description:
+      "Manage versioned population datasets aligned with administrative boundaries.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -380,7 +381,9 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
                     >
                       {v.title}
                     </td>
-                    <td className="border px-2 py-1 text-center">{v.year ?? "—"}</td>
+                    <td className="border px-2 py-1 text-center">
+                      {v.year ?? "—"}
+                    </td>
                     <td className="border px-2 py-1 text-center">
                       {v.dataset_date ?? "—"}
                     </td>
