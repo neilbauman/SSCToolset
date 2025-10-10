@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import AddNationalStatModal from "@/app/country/components/AddNationalStatModal";
+import AddNationalStatModal from "@/components/country/AddNationalStatModal";
 
 export default function OtherDatasetsPage({ params }: { params: { id: string } }) {
   const { id } = params;
