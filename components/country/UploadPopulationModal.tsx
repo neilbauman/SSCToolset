@@ -2,15 +2,7 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  Upload,
-  X,
-  Loader2,
-  Download,
-  FileSpreadsheet,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+import { Upload, Loader2, Download } from "lucide-react";
 
 interface UploadPopulationModalProps {
   open: boolean;
@@ -26,100 +18,103 @@ export default function UploadPopulationModal({
   onUploaded,
 }: UploadPopulationModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [year, setYear] = useState<number | null>(null);
+  const [sourceName, setSourceName] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
-  const handleTemplateDownload = () => {
-    const url =
-      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "Population_Template.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) {
       setFile(e.target.files[0]);
-      setError(null);
+    }
+  };
+
+  const handleTemplateDownload = async () => {
+    const fileUrl =
+      "https://ergsggprgtlsrrsmwtkf.supabase.co/storage/v1/object/public/templates/Population_Template.csv";
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "Population_Template.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download failed:", err);
+      alert("Failed to download template file.");
     }
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a CSV file to upload.");
-      return;
-    }
+    setError(null);
+    if (!file) return setError("Please select a CSV file first.");
+    if (!year) return setError("Please provide the dataset year.");
+    if (!title.trim()) return setError("Please provide a dataset title.");
+
+    setUploading(true);
 
     try {
-      setUploading(true);
-      setError(null);
-      setSuccess(false);
-
-      // 🔹 Create new dataset version record
-      const { data: version, error: vErr } = await supabase
+      // Step 1: Create a dataset version record
+      const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
-          title: file.name.replace(".csv", ""),
           country_iso: countryIso,
+          title,
+          year,
+          source_name: sourceName || null,
+          source_url: sourceUrl || null,
+          notes: notes || null,
           is_active: false,
         })
         .select()
         .single();
 
-      if (vErr) throw vErr;
-      const versionId = version.id;
+      if (versionError) throw versionError;
+      if (!version) throw new Error("Failed to create version record.");
 
-      // 🔹 Upload CSV to storage bucket
-      const { error: uploadErr } = await supabase.storage
+      // Step 2: Upload CSV to storage
+      const fileExt = file.name.split(".").pop();
+      const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
         .from("uploads")
-        .upload(`population/${countryIso}/${file.name}`, file, {
-          upsert: true,
-        });
+        .upload(storagePath, file);
 
-      if (uploadErr) throw uploadErr;
+      if (uploadError) throw uploadError;
 
-      // 🔹 Invoke Supabase Edge Function (server-side parser)
-      const { error: fnError } = await supabase.functions.invoke(
-        "process-population-csv",
-        {
-          body: {
-            countryIso,
-            versionId,
-            fileName: file.name,
-          },
-        }
-      );
+      // Step 3: Call the edge function to process the CSV
+      const { error: funcError } = await supabase.functions.invoke("convert-population", {
+        body: {
+          countryIso,
+          versionId: version.id,
+          storagePath,
+        },
+      });
 
-      if (fnError) throw fnError;
+      if (funcError) throw funcError;
 
-      setSuccess(true);
-      setFile(null);
       await onUploaded();
+      onClose();
     } catch (err: any) {
-      console.error("❌ Upload error:", err);
-      setError(err.message || "Upload failed. Please try again.");
+      console.error("Upload error:", err);
+      setError(err.message || "Upload failed.");
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Upload className="w-5 h-5 text-[color:var(--gsc-red)]" />
           Upload Population Dataset
         </h2>
@@ -130,79 +125,103 @@ export default function UploadPopulationModal({
           boundaries.
         </p>
 
-        {/* Template download */}
-        <div className="flex items-center justify-between border rounded p-3 mb-4 bg-gray-50">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-green-600" />
-            <span className="text-sm">Population_Template.csv</span>
+        {/* Metadata Fields */}
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium">Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g. Census 2020"
+            />
           </div>
-          <button
-            onClick={handleTemplateDownload}
-            className="flex items-center text-blue-700 text-sm hover:underline"
-          >
-            <Download className="w-4 h-4 mr-1" />
-            Download
-          </button>
+          <div>
+            <label className="block text-sm font-medium">Year *</label>
+            <input
+              type="number"
+              value={year ?? ""}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g. 2020"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Source Name</label>
+            <input
+              type="text"
+              value={sourceName}
+              onChange={(e) => setSourceName(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g. OCHA"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Source URL</label>
+            <input
+              type="url"
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="https://example.org"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="Optional notes about the dataset"
+            />
+          </div>
         </div>
 
-        {/* File picker */}
-        <div className="border-dashed border-2 border-gray-300 rounded-lg p-6 text-center mb-4">
-          <input
-            type="file"
-            accept=".csv"
-            className="hidden"
-            id="population-upload"
-            onChange={handleFileSelect}
-          />
-          <label
-            htmlFor="population-upload"
-            className="cursor-pointer text-sm text-blue-700 hover:underline"
-          >
-            {file ? file.name : "Click to select a CSV file"}
+        {/* File Upload */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTemplateDownload}
+              className="flex items-center text-sm border px-2 py-1 rounded hover:bg-blue-50 text-blue-700"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Download Template
+            </button>
+          </div>
+          <label className="text-sm font-medium text-[color:var(--gsc-red)] cursor-pointer">
+            <input type="file" accept=".csv" onChange={handleFileSelect} hidden />
+            {file ? file.name : "Choose CSV File"}
           </label>
         </div>
 
-        {/* Status */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 text-sm mb-2">
-            <AlertCircle className="w-4 h-4" />
+          <p className="text-sm text-red-600 border-t border-red-100 pt-2 mt-2">
             {error}
-          </div>
-        )}
-        {success && (
-          <div className="flex items-center gap-2 text-green-700 text-sm mb-2">
-            <CheckCircle2 className="w-4 h-4" />
-            Upload completed successfully.
-          </div>
+          </p>
         )}
 
-        {/* Buttons */}
-        <div className="flex justify-end gap-3 mt-4">
+        {/* Actions */}
+        <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
-            className="text-sm border px-3 py-1 rounded hover:bg-gray-100"
             disabled={uploading}
+            className="px-4 py-1 border rounded text-sm hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
-            disabled={uploading || !file}
-            className={`flex items-center gap-1 text-sm text-white px-3 py-1 rounded ${
-              uploading
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-[color:var(--gsc-red)] hover:opacity-90"
-            }`}
+            disabled={uploading}
+            className="px-4 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-70"
           >
             {uploading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Uploading…
+                <Loader2 className="w-4 h-4 animate-spin" /> Uploading…
               </>
             ) : (
               <>
-                <Upload className="w-4 h-4" />
-                Upload
+                <Upload className="w-4 h-4" /> Upload
               </>
             )}
           </button>
