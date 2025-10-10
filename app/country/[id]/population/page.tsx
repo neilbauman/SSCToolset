@@ -18,13 +18,7 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import EditPopulationVersionModal from "@/components/country/EditPopulationVersionModal";
 import type { CountryParams } from "@/app/country/types";
 
-// -----------------------------------------------------------------------------
-// Types
-// -----------------------------------------------------------------------------
-type Country = {
-  iso_code: string;
-  name: string;
-};
+type Country = { iso_code: string; name: string };
 
 type PopulationVersion = {
   id: string;
@@ -38,9 +32,6 @@ type PopulationVersion = {
   created_at: string;
 };
 
-// -----------------------------------------------------------------------------
-// Population Data Preview Component
-// -----------------------------------------------------------------------------
 function PopulationPreview({
   versionId,
   title,
@@ -51,11 +42,7 @@ function PopulationPreview({
   lowestLevel: string;
 }) {
   const [rows, setRows] = useState<any[]>([]);
-  const [summary, setSummary] = useState<{ total: number; sum: number; avg: number }>({
-    total: 0,
-    sum: 0,
-    avg: 0,
-  });
+  const [summary, setSummary] = useState({ total: 0, sum: 0, avg: 0 });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -64,7 +51,6 @@ function PopulationPreview({
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-
       let query = supabase
         .from("population_data")
         .select("pcode,name,population", { count: "exact" })
@@ -85,11 +71,7 @@ function PopulationPreview({
       const avg = count ? totalPopulation / count : 0;
 
       setRows(data || []);
-      setSummary({
-        total: count ?? 0,
-        sum: totalPopulation,
-        avg,
-      });
+      setSummary({ total: count ?? 0, sum: totalPopulation, avg });
       setLoading(false);
     };
     load();
@@ -97,22 +79,17 @@ function PopulationPreview({
 
   return (
     <div className="border rounded-lg p-4 shadow-sm bg-white">
-      {/* 🧭 Title & Badge */}
       <div className="flex items-center gap-3 mb-4">
-        <h2
-          className="text-lg font-semibold"
-          style={{ color: "var(--gsc-red)" }}
-        >
+        <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-red)" }}>
           {title}
         </h2>
         {lowestLevel !== "—" && (
-          <span className="text-xs font-semibold bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-semibold bg-[color:var(--gsc-red)]/10 text-[color:var(--gsc-red)] px-2 py-0.5 rounded-full">
             {lowestLevel}
           </span>
         )}
       </div>
 
-      {/* 🔍 Search + Summary */}
       <div className="flex justify-between items-center mb-3">
         <div className="grid grid-cols-3 gap-4 w-full max-w-2xl">
           <div className="text-center border rounded-lg p-2 bg-gray-50">
@@ -130,7 +107,6 @@ function PopulationPreview({
             </p>
           </div>
         </div>
-
         <div className="relative">
           <Search className="absolute left-2 top-2.5 w-4 h-4 text-gray-500" />
           <input
@@ -171,7 +147,6 @@ function PopulationPreview({
             </tbody>
           </table>
 
-          {/* Pagination */}
           <div className="flex justify-between items-center mt-3 text-sm text-gray-600">
             <button
               className="px-2 py-1 border rounded disabled:opacity-50"
@@ -201,9 +176,6 @@ function PopulationPreview({
   );
 }
 
-// -----------------------------------------------------------------------------
-// Main Page Component
-// -----------------------------------------------------------------------------
 export default function PopulationPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
   const [country, setCountry] = useState<Country | null>(null);
@@ -233,7 +205,6 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
       .order("created_at", { ascending: false });
 
     if (!data) return;
-
     const stats: Record<string, { total: number; sum: number; lowestLevel: string }> = {};
 
     for (const v of data) {
@@ -246,18 +217,23 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         version_id: v.id,
       });
 
-      // Detect lowest admin level from adm_level column
-      const { data: levelData } = await supabase
+      // --- ✅ Lowest admin level detection (robust)
+      let { data: levelData } = await supabase
         .from("population_data")
-        .select("adm_level")
+        .select("adm_level, admin_level, level")
         .eq("dataset_version_id", v.id)
-        .not("adm_level", "is", null)
-        .neq("adm_level", "")
-        .order("adm_level", { ascending: false });
+        .limit(10000);
 
       const levels = Array.from(
-        new Set((levelData || []).map((r) => r.adm_level?.toUpperCase()))
+        new Set(
+          (levelData || []).map((r) =>
+            (r.adm_level || r.admin_level || r.level || "")
+              .toString()
+              .toUpperCase()
+          )
+        )
       );
+
       const hierarchy = ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
       const found =
         hierarchy.reverse().find((lvl) => levels.includes(lvl)) || "—";
@@ -316,7 +292,6 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Dataset Versions Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between mb-3 items-center">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -349,11 +324,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
             </thead>
             <tbody>
               {versions.map((v) => {
-                const s = versionStats[v.id] || {
-                  total: 0,
-                  sum: 0,
-                  lowestLevel: "—",
-                };
+                const s = versionStats[v.id] || { total: 0, sum: 0, lowestLevel: "—" };
                 const src = v.source_url ? (
                   <a
                     href={v.source_url}
@@ -381,55 +352,42 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
                     >
                       {v.title}
                     </td>
-                    <td className="border px-2 py-1 text-center">
-                      {v.year ?? "—"}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
-                      {v.dataset_date ?? "—"}
-                    </td>
-                    <td className="border px-2 py-1">{src}</td>
-                    <td className="border px-2 py-1 text-center">
-                      {s.lowestLevel}
-                    </td>
-                    <td className="border px-2 py-1 text-right">
-                      {s.sum.toLocaleString()}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
-                      {s.total.toLocaleString()}
-                    </td>
-                    <td className="border px-2 py-1 text-center">
+                    <td className="border text-center">{v.year ?? "—"}</td>
+                    <td className="border text-center">{v.dataset_date ?? "—"}</td>
+                    <td className="border">{src}</td>
+                    <td className="border text-center">{s.lowestLevel}</td>
+                    <td className="border text-right">{s.sum.toLocaleString()}</td>
+                    <td className="border text-center">{s.total.toLocaleString()}</td>
+                    <td className="border text-center">
                       {v.is_active ? (
                         <span className="inline-flex items-center gap-1 text-green-700">
-                          <CheckCircle2 className="w-4 h-4" />
-                          Active
+                          <CheckCircle2 className="w-4 h-4" /> Active
                         </span>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="border px-2 py-1 text-right">
+                    <td className="border text-right">
                       <div className="flex justify-end gap-2">
                         {!v.is_active && (
                           <button
-                            className="text-blue-600 hover:underline text-xs"
+                            className="text-blue-600 text-xs"
                             onClick={() => handleActivate(v)}
                           >
                             Set Active
                           </button>
                         )}
                         <button
-                          className="text-gray-700 hover:underline text-xs flex items-center"
+                          className="text-gray-700 text-xs flex items-center"
                           onClick={() => setEditing(v)}
                         >
-                          <Edit3 className="w-4 h-4 mr-1" />
-                          Edit
+                          <Edit3 className="w-4 h-4 mr-1" /> Edit
                         </button>
                         <button
-                          className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                          className="text-[color:var(--gsc-red)] text-xs flex items-center"
                           onClick={() => setOpenDelete(v)}
                         >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Delete
+                          <Trash2 className="w-4 h-4 mr-1" /> Delete
                         </button>
                       </div>
                     </td>
@@ -453,13 +411,12 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         />
       )}
 
-      {/* Modals */}
       {openUpload && (
         <UploadPopulationModal
           open={openUpload}
           onClose={() => setOpenUpload(false)}
           countryIso={countryIso}
-          onUploaded={async () => loadVersions()}
+          onUploaded={loadVersions}
         />
       )}
       {openDelete && (
@@ -474,7 +431,7 @@ export default function PopulationPage({ params }: { params: CountryParams }) {
         <EditPopulationVersionModal
           versionId={editing.id}
           onClose={() => setEditing(null)}
-          onSaved={async () => loadVersions()}
+          onSaved={loadVersions}
         />
       )}
     </SidebarLayout>
