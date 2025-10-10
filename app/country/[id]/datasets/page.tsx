@@ -4,7 +4,12 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Database, PlusCircle, Loader2, ExternalLink } from "lucide-react";
+import {
+  Database,
+  PlusCircle,
+  Loader2,
+  ExternalLink,
+} from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import type { CountryParams } from "@/app/country/types";
 
@@ -16,8 +21,8 @@ type DatasetMeta = {
   theme?: string | null;
   indicator_id?: string | null;
   admin_level?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type Country = {
@@ -33,20 +38,22 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
 
-  // Fetch country info
+  // ✅ Fetch country info
   useEffect(() => {
     const fetchCountry = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("countries")
         .select("iso_code, name")
         .eq("iso_code", countryIso)
         .maybeSingle();
+
+      if (error) console.error("Country fetch failed:", error);
       if (data) setCountry(data);
     };
     fetchCountry();
   }, [countryIso]);
 
-  // Load dataset metadata for this country
+  // ✅ Load dataset metadata for this country
   const loadDatasets = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -54,6 +61,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
+
     if (error) console.error("Failed to fetch datasets:", error);
     setDatasets(data || []);
     setLoading(false);
@@ -63,6 +71,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     loadDatasets();
   }, [countryIso]);
 
+  // ✅ Header info
   const headerProps = {
     title: `${country?.name ?? countryIso} – Datasets`,
     group: "country-config" as const,
@@ -73,18 +82,22 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          {
+            label: country?.name ?? countryIso,
+            href: `/country/${countryIso}`,
+          },
           { label: "Datasets" },
         ]}
       />
     ),
   };
 
+  // ✅ Parse JSON-formatted source field
   const parseSource = (src: string | null) => {
     if (!src) return null;
     try {
       const s = JSON.parse(src);
-      if (s.url)
+      if (s.url) {
         return (
           <a
             href={s.url}
@@ -96,6 +109,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
             <ExternalLink className="w-3 h-3" />
           </a>
         );
+      }
       return <span>{s.name || src}</span>;
     } catch {
       return <span>{src}</span>;
@@ -104,6 +118,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Top Section: Datasets Table */}
       <div className="border rounded-lg p-4 shadow-sm mb-6 bg-white">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -140,13 +155,19 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   key={ds.id}
                   className="hover:bg-gray-50 border-t border-gray-200"
                 >
-                  <td className="px-2 py-1">{ds.title}</td>
+                  <td className="px-2 py-1">{ds.title || "—"}</td>
                   <td className="px-2 py-1">{ds.theme || "—"}</td>
                   <td className="px-2 py-1">{ds.admin_level || "—"}</td>
-                  <td className="px-2 py-1">{parseSource(ds.source)}</td>
+                  <td className="px-2 py-1">
+                    {parseSource(ds.source ?? null)}
+                  </td>
                   <td className="px-2 py-1 text-gray-500">
                     {ds.created_at
-                      ? new Date(ds.created_at).toLocaleDateString()
+                      ? new Date(ds.created_at).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
                       : "—"}
                   </td>
                 </tr>
@@ -160,12 +181,13 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
+      {/* Modal for Adding Dataset */}
       {openAdd && (
         <AddDatasetModal
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onSaved={loadDatasets} // ✅ correct prop name for new modal
+          onSaved={loadDatasets} // ✅ new modal event name
         />
       )}
     </SidebarLayout>
