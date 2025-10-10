@@ -2,24 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, Loader2, AlertCircle } from "lucide-react";
+import Papa from "papaparse";
+import { X, Upload, Loader2 } from "lucide-react";
 
-interface AddDatasetModalProps {
+type AddDatasetModalProps = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onSaved?: () => void;
-}
+  onSaved: () => void;
+};
 
-interface Indicator {
+type Indicator = {
   id: string;
   code: string;
   name: string;
-  theme: string;
   type: string;
+  theme: string;
   data_type: string;
   default_admin_level: string;
-}
+};
 
 export default function AddDatasetModal({
   open,
@@ -28,266 +29,268 @@ export default function AddDatasetModal({
   onSaved,
 }: AddDatasetModalProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [filteredIndicators, setFilteredIndicators] = useState<Indicator[]>([]);
+  const [selectedIndicator, setSelectedIndicator] = useState<Indicator | null>(null);
+  const [adminLevel, setAdminLevel] = useState<string>("ADM0");
+  const [value, setValue] = useState<string>("");
+  const [file, setFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // form data
-  const [selectedIndicator, setSelectedIndicator] = useState<Indicator | null>(
-    null
-  );
-  const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [value, setValue] = useState("");
-  const [title, setTitle] = useState("");
+  const [filters, setFilters] = useState({ theme: "All", type: "All" });
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
 
-  // load indicator list
   useEffect(() => {
-    if (!open) return;
     const loadIndicators = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("indicator_catalogue")
-        .select("id, code, name, theme, type, data_type, default_admin_level")
-        .order("theme", { ascending: true });
-
-      if (error) {
-        console.error("Indicator fetch failed:", error);
-        setErrorMsg("Failed to load indicators.");
-      } else {
-        setIndicators(data || []);
+      const { data, error } = await supabase.from("indicator_catalogue").select("*").order("theme");
+      if (!error && data) {
+        setIndicators(data);
+        setFilteredIndicators(data);
       }
-      setLoading(false);
     };
     loadIndicators();
-  }, [open]);
+  }, []);
+
+  const handleFilterChange = (theme: string, type: string, searchTerm: string) => {
+    const filtered = indicators.filter((ind) => {
+      const matchesTheme = theme === "All" || ind.theme === theme;
+      const matchesType = type === "All" || ind.type === type;
+      const matchesSearch =
+        !searchTerm ||
+        ind.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ind.code.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesTheme && matchesType && matchesSearch;
+    });
+    setFilteredIndicators(filtered);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFile(file);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        setParsedRows(results.data);
+      },
+    });
+  };
 
   const handleSave = async () => {
-    setErrorMsg(null);
-
-    if (!selectedIndicator) {
-      setErrorMsg("Please select an indicator.");
+    if (!selectedIndicator || !title) {
+      alert("Indicator and title are required.");
       return;
     }
-    if (!title.trim()) {
-      setErrorMsg("Please enter a title.");
-      return;
-    }
-    if (!value.trim()) {
-      setErrorMsg("Please enter a value.");
-      return;
-    }
+    setLoading(true);
 
-    setSaving(true);
-    const sourceJSON =
-      sourceName || sourceUrl
-        ? JSON.stringify({ name: sourceName, url: sourceUrl })
-        : null;
-
-    const newDataset = {
-      country_iso: countryIso,
-      indicator_id: selectedIndicator.id, // ✅ valid FK UUID
-      title: title.trim(),
-      description: notes.trim() || null,
-      source: sourceJSON,
-      admin_level: adminLevel,
-      theme: selectedIndicator.theme || null,
-      upload_type: "manual",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error: insertError } = await supabase
+    const { data: datasetMeta, error: metaError } = await supabase
       .from("dataset_metadata")
-      .insert([newDataset]);
+      .insert({
+        country_iso: countryIso,
+        indicator_id: selectedIndicator.id,
+        title: title.trim(),
+        admin_level: adminLevel,
+        theme: selectedIndicator.theme,
+        source: JSON.stringify({ name: sourceName, url: sourceUrl }),
+        upload_type: file ? "csv" : "manual",
+      })
+      .select()
+      .single();
 
-    if (insertError) {
-      console.error("Insert failed:", insertError);
-      setErrorMsg(
-        insertError.message || "Failed to save dataset metadata (unknown error)."
-      );
-      setSaving(false);
+    if (metaError || !datasetMeta) {
+      alert("Failed to save dataset metadata.");
+      setLoading(false);
       return;
     }
 
-    // save value into results table (if exists)
-    try {
-      const { error: resultError } = await supabase
-        .from("indicator_results")
-        .insert([
-          {
-            indicator_id: selectedIndicator.id,
-            country_iso: countryIso,
-            admin_level: adminLevel,
-            pcode: null,
-            value: Number(value),
-            data_type: selectedIndicator.data_type,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-
-      if (resultError) {
-        console.warn("Value insert warning:", resultError);
-      }
-    } catch (e) {
-      console.warn("No indicator_results table found:", e);
+    // Prepare data for dataset_values
+    let rows: any[] = [];
+    if (file && parsedRows.length) {
+      rows = parsedRows.map((r) => ({
+        dataset_id: datasetMeta.id,
+        admin_pcode: r.pcode || r.PCODE || r.code || null,
+        value: r.value ? parseFloat(r.value) : null,
+        unit: selectedIndicator.data_type,
+        notes: notes || null,
+      }));
+    } else if (value) {
+      rows = [
+        {
+          dataset_id: datasetMeta.id,
+          admin_pcode: "ADM0",
+          value: parseFloat(value),
+          unit: selectedIndicator.data_type,
+          notes: notes || null,
+        },
+      ];
     }
 
-    setSaving(false);
-    if (onSaved) onSaved();
+    if (rows.length) {
+      const { error: insertError } = await supabase.from("dataset_values").insert(rows);
+      if (insertError) {
+        console.error(insertError);
+        alert("Failed to insert dataset values.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    setLoading(false);
+    onSaved();
     onClose();
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-black"
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-[color:var(--gsc-red)]">Add Dataset</h2>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 mb-3">
+          <input
+            placeholder="Search indicators..."
+            className="border rounded px-2 py-1 text-sm flex-1"
+            onChange={(e) =>
+              handleFilterChange(filters.theme, filters.type, e.target.value)
+            }
+          />
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            onChange={(e) =>
+              setFilters((f) => {
+                const newF = { ...f, theme: e.target.value };
+                handleFilterChange(newF.theme, newF.type, "");
+                return newF;
+              })
+            }
+          >
+            <option>All</option>
+            {[...new Set(indicators.map((i) => i.theme))].map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            onChange={(e) =>
+              setFilters((f) => {
+                const newF = { ...f, type: e.target.value };
+                handleFilterChange(newF.theme, newF.type, "");
+                return newF;
+              })
+            }
+          >
+            <option>All</option>
+            {[...new Set(indicators.map((i) => i.type))].map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Indicator selection */}
+        <select
+          className="border rounded px-2 py-1 w-full text-sm mb-3"
+          value={selectedIndicator?.id || ""}
+          onChange={(e) =>
+            setSelectedIndicator(
+              indicators.find((i) => i.id === e.target.value) || null
+            )
+          }
         >
-          <X className="w-5 h-5" />
-        </button>
+          <option value="">Select Indicator</option>
+          {filteredIndicators.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.theme} – {i.name}
+            </option>
+          ))}
+        </select>
 
-        <h2 className="text-lg font-semibold text-[color:var(--gsc-red)] mb-4">
-          Add Dataset
-        </h2>
+        {/* Admin level and data entry */}
+        <div className="flex gap-3 mb-3">
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={adminLevel}
+            onChange={(e) => setAdminLevel(e.target.value)}
+          >
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((lvl) => (
+              <option key={lvl}>{lvl}</option>
+            ))}
+          </select>
+          <input
+            type="number"
+            step="any"
+            placeholder="Enter Value (manual)"
+            className="border rounded px-2 py-1 flex-1 text-sm"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
 
-        {errorMsg && (
-          <div className="flex items-center gap-2 bg-red-100 text-red-700 text-sm p-2 rounded mb-3">
-            <AlertCircle className="w-4 h-4" />
-            {errorMsg}
-          </div>
-        )}
+        {/* CSV upload */}
+        <div className="border rounded-lg p-3 mb-3">
+          <p className="text-sm font-semibold mb-1 flex items-center gap-2">
+            <Upload className="w-4 h-4" /> Upload CSV (optional)
+          </p>
+          <input type="file" accept=".csv" onChange={handleFileUpload} />
+          {parsedRows.length > 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              Parsed {parsedRows.length} rows.
+            </p>
+          )}
+        </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 text-gray-600 text-sm">
-            <Loader2 className="animate-spin w-4 h-4" />
-            Loading indicators...
-          </div>
-        ) : (
-          <div className="space-y-3 text-sm">
-            <div>
-              <label className="block font-medium mb-1">
-                Select Indicator <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={selectedIndicator?.id || ""}
-                onChange={(e) =>
-                  setSelectedIndicator(
-                    indicators.find((i) => i.id === e.target.value) || null
-                  )
-                }
-                className="border rounded w-full px-2 py-1"
-              >
-                <option value="">-- Select Indicator --</option>
-                {indicators.map((ind) => (
-                  <option key={ind.id} value={ind.id}>
-                    {ind.theme} – {ind.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+        {/* Metadata fields */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <input
+            placeholder="Title *"
+            className="border rounded px-2 py-1 text-sm"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            placeholder="Source Name"
+            className="border rounded px-2 py-1 text-sm"
+            value={sourceName}
+            onChange={(e) => setSourceName(e.target.value)}
+          />
+          <input
+            placeholder="Source URL"
+            className="border rounded px-2 py-1 text-sm col-span-2"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+          />
+          <textarea
+            placeholder="Notes"
+            className="border rounded px-2 py-1 text-sm col-span-2"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
 
-            <div>
-              <label className="block font-medium mb-1">
-                Select Admin Level <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={adminLevel}
-                onChange={(e) => setAdminLevel(e.target.value)}
-                className="border rounded w-full px-2 py-1"
-              >
-                {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((adm) => (
-                  <option key={adm} value={adm}>
-                    {adm}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-medium mb-1">
-                Value ({selectedIndicator?.data_type || "numeric"}){" "}
-                <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                className="border rounded w-full px-2 py-1"
-                placeholder="Enter value (e.g. 5 or 1.25)"
-              />
-            </div>
-
-            <div>
-              <label className="block font-medium mb-1">
-                Title <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="border rounded w-full px-2 py-1"
-                placeholder="Dataset title"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium mb-1">Source Name</label>
-                <input
-                  type="text"
-                  value={sourceName}
-                  onChange={(e) => setSourceName(e.target.value)}
-                  className="border rounded w-full px-2 py-1"
-                  placeholder="e.g. World Bank"
-                />
-              </div>
-              <div>
-                <label className="block font-medium mb-1">Source URL</label>
-                <input
-                  type="url"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  className="border rounded w-full px-2 py-1"
-                  placeholder="https://example.org/dataset"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-medium mb-1">Notes</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="border rounded w-full px-2 py-1"
-                rows={3}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end mt-6 gap-2">
+        <div className="flex justify-end gap-2">
           <button
+            className="px-3 py-1 text-sm border rounded"
             onClick={onClose}
-            className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+            disabled={loading}
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
-            className="px-3 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90 disabled:opacity-50"
+            className="px-3 py-1 text-sm bg-[color:var(--gsc-red)] text-white rounded hover:opacity-90"
+            disabled={loading}
           >
-            {saving ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving...
-              </span>
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin inline-block" />
             ) : (
               "Save Dataset"
             )}
