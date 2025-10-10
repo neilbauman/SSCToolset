@@ -4,13 +4,7 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  Database,
-  Layers,
-  Users,
-  Upload,
-  BarChart2,
-} from "lucide-react";
+import { Layers, Users, Database, Upload, BarChart2 } from "lucide-react";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
@@ -126,7 +120,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
               <h2 className="text-lg font-semibold">GIS Layers</h2>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Manage uploaded GIS layers for analytical and visualization outputs.
+              Manage uploaded GIS layers for analytical and visualization
+              outputs.
             </p>
           </div>
           <div className="flex justify-between">
@@ -158,7 +153,8 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           once population, administrative, and GIS layers are all configured.
         </p>
         <div className="text-sm italic text-gray-500">
-          Coming soon: automatic data integrity checks and indicator calculations.
+          Coming soon: automatic data integrity checks and indicator
+          calculations.
         </div>
       </div>
 
@@ -177,7 +173,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openPopUpload}
           onClose={() => setOpenPopUpload(false)}
           countryIso={id}
-          onUploaded={async () => reloadPage()} // ✅ async fix applied here
+          onUploaded={async () => reloadPage()} // ✅ async fixed here
         />
       )}
 
@@ -186,7 +182,7 @@ export default function CountryPage({ params }: { params: CountryParams }) {
           open={openGISUpload}
           onClose={() => setOpenGISUpload(false)}
           countryIso={id}
-          onUploaded={async () => reloadPage()}
+          onUploaded={async () => reloadPage()} // ✅ async fixed here too
         />
       )}
     </SidebarLayout>
