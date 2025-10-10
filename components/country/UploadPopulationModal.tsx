@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Upload, Loader2, Download, CheckCircle2 } from "lucide-react";
 
@@ -24,8 +25,9 @@ export default function UploadPopulationModal({
   const [sourceUrl, setSourceUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<boolean>(false);
 
   if (!open) return null;
 
@@ -61,9 +63,10 @@ export default function UploadPopulationModal({
     if (!title.trim()) return setError("Please provide a dataset title.");
 
     setUploading(true);
+    setProgress(0);
 
     try {
-      // Step 1: Create a dataset version record
+      // Step 1: Create dataset version
       const { data: version, error: versionError } = await supabase
         .from("population_dataset_versions")
         .insert({
@@ -79,36 +82,60 @@ export default function UploadPopulationModal({
         .single();
 
       if (versionError) throw versionError;
-      if (!version) throw new Error("Failed to create version record.");
+      if (!version) throw new Error("Failed to create dataset version.");
 
-      // Step 2: Upload CSV to storage
-      const fileExt = file.name.split(".").pop();
-      const storagePath = `population_uploads/${countryIso}/${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from("uploads")
-        .upload(storagePath, file);
+      // Step 2: Parse CSV in browser
+      const text = await file.text();
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      const rows = parsed.data as any[];
 
-      if (uploadError) throw uploadError;
+      if (rows.length === 0) throw new Error("CSV file is empty or invalid.");
 
-      // Step 3: Call the Edge Function
-      const { data: fnData, error: funcError } = await supabase.functions.invoke(
-        "convert-population",
-        {
-          body: {
-            filePath: `uploads/${storagePath}`,
-            countryIso,
-            versionId: version.id,
-          },
-        }
-      );
+      // Step 3: Prepare and batch insert
+      const batchSize = 5000;
+      let totalInserted = 0;
 
-      if (funcError) throw funcError;
-      console.log("Function response:", fnData);
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const chunk = rows.slice(i, i + batchSize).map((r) => ({
+          country_iso: countryIso,
+          dataset_version_id: version.id,
+          pcode: r["PCode"] || r["pcode"] || r["ADM_PCODE"] || null,
+          name:
+            r["Name"] ||
+            r["name"] ||
+            r["ADM_NAME"] ||
+            r["AdminName"] ||
+            "Unknown",
+          population:
+            parseInt(r["Population"] || r["population"] || r["Pop"], 10) || null,
+        }));
+
+        // Filter out invalid entries
+        const validChunk = chunk.filter(
+          (x) => x.pcode && x.name && x.population
+        );
+
+        const { error: insertError } = await supabase
+          .from("population_data")
+          .insert(validChunk);
+
+        if (insertError) throw insertError;
+
+        totalInserted += validChunk.length;
+        setProgress(Math.round((totalInserted / rows.length) * 100));
+      }
+
+      // Step 4: Mark dataset version as active
+      await supabase
+        .from("population_dataset_versions")
+        .update({ is_active: true })
+        .eq("id", version.id);
 
       setSuccess(true);
+      setProgress(100);
       await onUploaded();
 
-      // Close modal after 2 seconds
+      // Auto-close modal after 2 seconds
       setTimeout(() => onClose(), 2000);
     } catch (err: any) {
       console.error("Upload error:", err);
@@ -132,7 +159,6 @@ export default function UploadPopulationModal({
           boundaries.
         </p>
 
-        {/* Success banner */}
         {success && (
           <div className="bg-green-50 border border-green-200 text-green-800 rounded p-2 mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
@@ -140,7 +166,6 @@ export default function UploadPopulationModal({
           </div>
         )}
 
-        {/* Error banner */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded p-2 mb-3">
             {error}
@@ -205,6 +230,15 @@ export default function UploadPopulationModal({
             {file ? file.name : "Choose CSV File"}
           </label>
         </div>
+
+        {uploading && (
+          <div className="mt-3 w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-[color:var(--gsc-green)] h-2 transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end gap-2 mt-5">
