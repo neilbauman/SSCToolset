@@ -16,7 +16,9 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
   const [indicatorList, setIndicatorList] = useState<any[]>([]);
   const [filteredIndicators, setFilteredIndicators] = useState<any[]>([]);
   const [themes, setThemes] = useState<string[]>([]);
+  const [dataTypes, setDataTypes] = useState<string[]>(['numeric', 'percentage']);
   const [selectedTheme, setSelectedTheme] = useState('');
+  const [selectedDataType, setSelectedDataType] = useState('');
   const [search, setSearch] = useState('');
   const [datasetType, setDatasetType] = useState('gradient');
   const [adminLevel, setAdminLevel] = useState('ADM2');
@@ -24,8 +26,7 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    loadIndicators();
+    if (open) loadIndicators();
   }, [open]);
 
   async function loadIndicators() {
@@ -36,24 +37,17 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
     }
     setIndicatorList(data);
     setFilteredIndicators(data);
-
     const uniqueThemes = Array.from(new Set(data.map((i) => i.theme).filter(Boolean)));
     setThemes(uniqueThemes);
   }
 
-  function handleSearchFilter() {
+  useEffect(() => {
     let filtered = indicatorList;
     if (selectedTheme) filtered = filtered.filter((i) => i.theme === selectedTheme);
-    if (search)
-      filtered = filtered.filter((i) =>
-        i.name.toLowerCase().includes(search.toLowerCase())
-      );
+    if (selectedDataType) filtered = filtered.filter((i) => i.data_type === selectedDataType);
+    if (search) filtered = filtered.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
     setFilteredIndicators(filtered);
-  }
-
-  useEffect(() => {
-    handleSearchFilter();
-  }, [selectedTheme, search]);
+  }, [selectedTheme, selectedDataType, search, indicatorList]);
 
   async function handleDownload() {
     setDownloading(true);
@@ -97,10 +91,10 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
-        <h2 className="text-xl font-semibold mb-4">Download Dataset Template</h2>
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl">
+        <h2 className="text-2xl font-semibold mb-4">Download Dataset Template</h2>
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium mb-1">Dataset Type</label>
             <select
@@ -121,33 +115,31 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
               className="w-full border rounded-md px-2 py-1"
             >
               {['ADM0', 'ADM1', 'ADM2', 'ADM3', 'ADM4', 'ADM5'].map((lvl) => (
-                <option key={lvl} value={lvl}>
-                  {lvl}
-                </option>
+                <option key={lvl} value={lvl}>{lvl}</option>
               ))}
             </select>
           </div>
-        </div>
 
-        <div className="flex items-center mb-4">
-          <input
-            type="checkbox"
-            checked={prefill}
-            onChange={(e) => setPrefill(e.target.checked)}
-            className="mr-2"
-          />
-          <span className="flex items-center gap-1 text-sm">
-            Prefill with admin boundaries
-            <span title="Prefill uses the active administrative boundary dataset version for this country.">
-              <Info className="w-4 h-4 text-gray-400 cursor-help" />
+          <div className="flex items-center mt-6">
+            <input
+              type="checkbox"
+              checked={prefill}
+              onChange={(e) => setPrefill(e.target.checked)}
+              className="mr-2"
+            />
+            <span className="flex items-center gap-1 text-sm">
+              Prefill with admin boundaries
+              <span title="Prefill uses the active administrative boundary dataset version for this country.">
+                <Info className="w-4 h-4 text-gray-400 cursor-help" />
+              </span>
             </span>
-          </span>
+          </div>
         </div>
 
         <hr className="my-4" />
 
-        <h3 className="text-lg font-medium mb-2">Indicator Library</h3>
-        <div className="flex gap-2 mb-2">
+        <h3 className="text-lg font-semibold mb-2">Indicator Library</h3>
+        <div className="grid grid-cols-3 gap-2 mb-3">
           <select
             className="border rounded-md px-2 py-1 text-sm"
             value={selectedTheme}
@@ -155,11 +147,21 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
           >
             <option value="">All Themes</option>
             {themes.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
+
+          <select
+            className="border rounded-md px-2 py-1 text-sm"
+            value={selectedDataType}
+            onChange={(e) => setSelectedDataType(e.target.value)}
+          >
+            <option value="">All Types</option>
+            {dataTypes.map((dt) => (
+              <option key={dt} value={dt}>{dt}</option>
+            ))}
+          </select>
+
           <input
             type="text"
             placeholder="Search indicators..."
@@ -169,7 +171,7 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
           />
         </div>
 
-        <div className="max-h-40 overflow-y-auto border rounded-md p-2 text-sm mb-4">
+        <div className="max-h-48 overflow-y-auto border rounded-md p-2 text-sm mb-6">
           {filteredIndicators.map((ind) => (
             <div key={ind.id} className="py-1 border-b last:border-b-0">
               <strong>{ind.name}</strong> – <span className="text-gray-600">{ind.theme}</span>
@@ -177,11 +179,11 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
           ))}
         </div>
 
-        <div className="flex justify-between items-center mt-4">
+        <div className="flex justify-between items-center">
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-md"
+            className="bg-red-700 hover:bg-red-800 text-white font-semibold px-4 py-2 rounded-md"
           >
             {downloading ? 'Generating...' : 'Download Template'}
           </button>
