@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { X, Download, Loader2, Search } from "lucide-react";
+import { X, Download, Loader2, Search, Plus } from "lucide-react";
 import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
@@ -31,10 +31,11 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
   const [adminLevel, setAdminLevel] = useState<string>("ADM2");
   const [prefill, setPrefill] = useState<boolean>(true);
 
-  // Fetch indicator catalogue for filters
   useEffect(() => {
     const fetchCatalogue = async () => {
-      const { data, error } = await supabase.from("indicator_catalogue").select("id, name, code, theme, type, data_type, description");
+      const { data, error } = await supabase
+        .from("indicator_catalogue")
+        .select("id, name, code, theme, type, data_type, description");
       if (error) {
         setError(error.message);
         return;
@@ -47,7 +48,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
     if (open) fetchCatalogue();
   }, [open]);
 
-  // Filtered indicator list
   const filteredIndicators = useMemo(() => {
     return indicators.filter((i) => {
       const matchSearch = i.name.toLowerCase().includes(searchTerm.toLowerCase()) || i.code.toLowerCase().includes(searchTerm.toLowerCase());
@@ -69,7 +69,7 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           .from("admin_units")
           .select("pcode, name")
           .eq("country_iso", countryIso)
-          .eq("level", parseInt(adminLevel.replace("ADM", "")));
+          .eq("level", adminLevel);
 
         if (error) throw error;
 
@@ -77,7 +77,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
       }
 
       const csv = Papa.unparse(rows.length > 0 ? rows : [{ pcode: "", name: "", value: "" }]);
-
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -145,7 +144,7 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
               filteredIndicators.map((i) => (
                 <div
                   key={i.id}
-                  className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedIndicator?.id === i.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
+                  className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedIndicator?.id === i.id ? "bg-blue-50 border-l-4 border-[color:var(--gsc-red)]" : ""}`}
                   onClick={() => setSelectedIndicator(i)}
                 >
                   <p className="font-medium text-gray-800">{i.name}</p>
@@ -156,12 +155,15 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
               <p className="text-gray-500 italic p-2">No indicators found.</p>
             )}
           </div>
+        </div>
 
+        <div className="mb-4">
+          <h3 className="font-semibold text-gray-700 mb-2">Indicator Options</h3>
           <button
-            className="mt-2 text-blue-600 text-sm hover:underline"
+            className="flex items-center gap-2 text-sm text-[color:var(--gsc-red)] hover:underline mb-2"
             onClick={() => setSelectedIndicator({ id: null, name: "New Indicator" })}
           >
-            ➕ Create New Indicator
+            <Plus className="w-4 h-4" /> Create New Indicator
           </button>
         </div>
 
@@ -197,7 +199,7 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           <button
             onClick={handleDownload}
             disabled={loading}
-            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:opacity-90 flex items-center gap-2"
+            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm hover:opacity-90 flex items-center gap-2"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {loading ? "Generating..." : "Download Template"}
