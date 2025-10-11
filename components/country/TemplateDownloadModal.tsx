@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Download, X, Search } from "lucide-react";
 
 interface TemplateDownloadModalProps {
@@ -25,7 +25,7 @@ export default function TemplateDownloadModal({
   const [prepopulate, setPrepopulate] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Fetch indicators and admin levels
+  // Load indicators and admin levels
   useEffect(() => {
     if (open) {
       loadIndicators();
@@ -40,31 +40,37 @@ export default function TemplateDownloadModal({
       .order("theme", { ascending: true })
       .order("name", { ascending: true });
 
-    if (error) console.error("Error loading indicators:", error);
-    else {
-      setIndicators(data || []);
-      setFilteredIndicators(data || []);
+    if (error) {
+      console.error("Error loading indicators:", error);
+      return;
     }
+
+    setIndicators(data || []);
+    setFilteredIndicators(data || []);
   };
 
   const loadAdminLevels = async () => {
     const { data, error } = await supabase
       .from("admin_units")
-      .select("admin_level")
+      .select("level")
       .eq("country_iso", countryIso);
 
     if (error) {
       console.error("Error fetching admin levels:", error);
-      setAdminLevels(["ADM0", "ADM1", "ADM2", "ADM3"]);
+      setAdminLevels(["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"]);
       return;
     }
 
-    const distinctLevels = Array.from(
-      new Set(data.map((r) => r.admin_level))
-    ).sort();
-    setAdminLevels(
-      distinctLevels.length ? distinctLevels : ["ADM0", "ADM1", "ADM2", "ADM3"]
+    const distinct = Array.from(
+      new Set(
+        data
+          ?.map((r) => r.level)
+          ?.filter(Boolean)
+          ?.sort()
+      )
     );
+
+    setAdminLevels(distinct.length ? distinct : ["ADM0", "ADM1", "ADM2", "ADM3"]);
   };
 
   const handleSearch = (term: string) => {
@@ -87,14 +93,14 @@ export default function TemplateDownloadModal({
     setLoading(true);
     try {
       let rows: any[] = [];
-      let headers = ["pcode", "value", "name(optional)"];
+      const headers = ["pcode", "value", "name(optional)"];
 
       if (prepopulate) {
         const { data, error } = await supabase
           .from("admin_units")
           .select("pcode, name")
           .eq("country_iso", countryIso)
-          .eq("admin_level", adminLevel);
+          .eq("level", adminLevel);
 
         if (error) throw error;
 
@@ -105,20 +111,22 @@ export default function TemplateDownloadModal({
         }));
       }
 
-      const csvContent = [
+      const csv = [
         headers.join(","),
         ...rows.map((r) => `${r.pcode},${r.value},${r.name ?? ""}`),
       ].join("\n");
 
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      const a = document.createElement("a");
       const indicatorLabel = selectedIndicator
         ? selectedIndicator.code
         : "dataset";
-      link.href = url;
-      link.download = `${indicatorLabel}_${adminLevel}_template.csv`;
-      link.click();
+      a.href = url;
+      a.download = `${indicatorLabel}_${adminLevel}_template.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (e) {
       console.error("Template generation failed:", e);
       alert("Failed to generate template. Check console for details.");
@@ -132,7 +140,7 @@ export default function TemplateDownloadModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-lg relative">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
