@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import { Info, Loader2 } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from "@/lib/supabaseClient";
 
 interface TemplateDownloadModalProps {
   open: boolean;
@@ -24,7 +24,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
-  // Fetch admin levels dynamically
   useEffect(() => {
     if (!countryIso) return;
     const fetchLevels = async () => {
@@ -40,7 +39,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
     fetchLevels();
   }, [countryIso]);
 
-  // Fetch indicators and themes
   useEffect(() => {
     const fetchIndicators = async () => {
       const { data } = await supabase.from("indicator_catalogue").select("id, code, name, theme, type");
@@ -110,7 +108,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Download Dataset Template</h2>
 
-        {/* Dataset Type */}
         <label className="block text-sm font-medium text-gray-700">Dataset Type</label>
         <select
           value={datasetType}
@@ -121,7 +118,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           <option value="categorical">Categorical</option>
         </select>
 
-        {/* Theme Filter */}
         <label className="block text-sm font-medium text-gray-700">Theme Filter</label>
         <select
           value={selectedTheme}
@@ -134,7 +130,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           ))}
         </select>
 
-        {/* Indicator Search */}
         <label className="block text-sm font-medium text-gray-700">Indicator</label>
         <input
           type="text"
@@ -156,7 +151,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           ))}
         </select>
 
-        {/* Admin Level */}
         <label className="block text-sm font-medium text-gray-700">Admin Level</label>
         <select
           value={selectedAdmin}
@@ -169,7 +163,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           ))}
         </select>
 
-        {/* Prefill Checkbox with Tooltip */}
         <div className="flex items-center gap-2 mb-4 group relative">
           <input
             type="checkbox"
@@ -186,7 +179,6 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: Tem
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onClose} className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-100">
             Cancel
