@@ -18,7 +18,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const [openAdd, setOpenAdd] = useState(false);
   const [openDelete, setOpenDelete] = useState<any>(null);
   const [openEdit, setOpenEdit] = useState<any>(null);
-  const [downloadChoice, setDownloadChoice] = useState<{ open: boolean }>({ open: false });
+  const [downloadChoice, setDownloadChoice] = useState<{
+    open: boolean;
+    type?: string;
+    adminLevel?: string;
+    prefill?: boolean;
+  }>({ open: false });
 
   useEffect(() => {
     loadDatasets();
@@ -45,15 +50,16 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     await loadDatasets();
   };
 
-  const downloadTemplate = async (prefill: boolean) => {
+  const downloadTemplate = async (type: string, adminLevel: string, prefill: boolean) => {
     setDownloadChoice({ open: false });
 
     const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/generate-template`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        indicator_code: "POV_RATE", // fallback demo indicator, will override when used in AddDataset
         country_iso: countryIso,
+        type,
+        admin_level: adminLevel,
         prefill,
       }),
     });
@@ -67,7 +73,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `dataset_template_${countryIso}.csv`;
+    a.download = `${type}_template_${adminLevel}_${prefill ? "prefilled" : "empty"}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -97,7 +103,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         <h2 className="text-lg font-semibold">Datasets</h2>
         <div className="flex gap-2">
           <button
-            onClick={() => setDownloadChoice({ open: true })}
+            onClick={() => setDownloadChoice({ open: true, type: "gradient", adminLevel: "ADM2", prefill: false })}
             className="flex items-center bg-gray-200 text-sm px-3 py-1 rounded hover:bg-gray-300"
           >
             <Download className="w-4 h-4 mr-1" /> Download Template
@@ -186,26 +192,69 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
           <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-sm">
             <h3 className="text-lg font-semibold mb-3">Download Template</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Choose whether to prefill the template with admin PCodes and names.
+              Configure the dataset template to download.
             </p>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Dataset Type</label>
+                <select
+                  className="border rounded w-full text-sm px-2 py-1"
+                  value={downloadChoice.type}
+                  onChange={(e) => setDownloadChoice({ ...downloadChoice, type: e.target.value })}
+                >
+                  <option value="gradient">Gradient (values per admin)</option>
+                  <option value="categorical">Categorical (categories per admin)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Admin Level</label>
+                <select
+                  className="border rounded w-full text-sm px-2 py-1"
+                  value={downloadChoice.adminLevel}
+                  onChange={(e) => setDownloadChoice({ ...downloadChoice, adminLevel: e.target.value })}
+                >
+                  <option value="ADM0">ADM0 (National)</option>
+                  <option value="ADM1">ADM1 (Region)</option>
+                  <option value="ADM2">ADM2 (Province)</option>
+                  <option value="ADM3">ADM3 (Municipality)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Prefill Mode</label>
+                <select
+                  className="border rounded w-full text-sm px-2 py-1"
+                  value={downloadChoice.prefill ? "true" : "false"}
+                  onChange={(e) =>
+                    setDownloadChoice({ ...downloadChoice, prefill: e.target.value === "true" })
+                  }
+                >
+                  <option value="false">Empty</option>
+                  <option value="true">Prefilled with PCodes/Names</option>
+                </select>
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => downloadTemplate(false)}
-                className="px-3 py-1 text-sm border rounded"
-              >
-                Empty
-              </button>
-              <button
-                onClick={() => downloadTemplate(true)}
-                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
-              >
-                Prefilled
-              </button>
               <button
                 onClick={() => setDownloadChoice({ open: false })}
                 className="px-3 py-1 text-sm border rounded"
               >
                 Cancel
+              </button>
+              <button
+                onClick={() =>
+                  downloadTemplate(
+                    downloadChoice.type || "gradient",
+                    downloadChoice.adminLevel || "ADM2",
+                    downloadChoice.prefill || false
+                  )
+                }
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Download
               </button>
             </div>
           </div>
