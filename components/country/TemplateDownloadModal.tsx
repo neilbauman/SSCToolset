@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Download, X, Search, Filter } from "lucide-react";
+import { Download, X, Search } from "lucide-react";
 
 interface TemplateDownloadModalProps {
   open: boolean;
@@ -31,12 +31,14 @@ export default function TemplateDownloadModal({
   const [adminLevel, setAdminLevel] = useState("ADM0");
   const [prepopulate, setPrepopulate] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       loadIndicators();
       loadThemes();
       loadAdminLevels();
+      setMessage(null);
     }
   }, [open]);
 
@@ -46,12 +48,7 @@ export default function TemplateDownloadModal({
       .select("id, code, name, type, theme, data_type, default_admin_level")
       .order("theme", { ascending: true })
       .order("name", { ascending: true });
-
-    if (error) {
-      console.error("Error loading indicators:", error);
-      return;
-    }
-    setIndicators(data || []);
+    if (!error && data) setIndicators(data);
   };
 
   const loadThemes = async () => {
@@ -59,11 +56,7 @@ export default function TemplateDownloadModal({
       .from("theme_catalogue")
       .select("name")
       .order("name", { ascending: true });
-    if (error) {
-      console.error("Error loading themes:", error);
-      return;
-    }
-    setThemes((data || []).map((t) => t.name));
+    if (!error && data) setThemes((data || []).map((t) => t.name));
   };
 
   const loadAdminLevels = async () => {
@@ -72,8 +65,7 @@ export default function TemplateDownloadModal({
       .select("level")
       .eq("country_iso", countryIso);
 
-    if (error) {
-      console.error("Error fetching admin levels:", error);
+    if (error || !data) {
       setAdminLevels(["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"]);
       return;
     }
@@ -86,9 +78,11 @@ export default function TemplateDownloadModal({
             : String(r.level).toUpperCase()
         )
       )
-    ).sort((a, b) => parseInt(a.replace("ADM", "")) - parseInt(b.replace("ADM", "")));
+    ).sort(
+      (a, b) => parseInt(a.replace("ADM", "")) - parseInt(b.replace("ADM", ""))
+    );
 
-    setAdminLevels(levels.length ? levels : ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"]);
+    setAdminLevels(levels.length ? levels : ["ADM0", "ADM1", "ADM2"]);
   };
 
   const filteredIndicators = useMemo(() => {
@@ -106,28 +100,39 @@ export default function TemplateDownloadModal({
 
   const handleGenerateTemplate = async () => {
     setLoading(true);
+    setMessage(null);
+
     try {
       const headers = ["pcode", "value", "name(optional)"];
       let rows: any[] = [];
 
       if (prepopulate) {
+        const numericLevel = parseInt(adminLevel.replace("ADM", ""), 10);
+
         const { data, error } = await supabase
           .from("admin_units")
-          .select("pcode, name, level")
+          .select("pcode, name")
           .eq("country_iso", countryIso)
-          .eq("level", adminLevel.replace("ADM", ""));
+          .eq("level", numericLevel);
 
         if (error) throw error;
-        rows = (data || []).map((r) => ({
-          pcode: r.pcode,
-          value: "",
-          name: r.name,
-        }));
+
+        if (!data || data.length === 0) {
+          setMessage(
+            `No admin units found for ${adminLevel}. Template generated as empty.`
+          );
+        } else {
+          rows = (data || []).map((r) => ({
+            pcode: r.pcode,
+            value: "",
+            name: r.name ?? "",
+          }));
+        }
       }
 
       const csv = [
         headers.join(","),
-        ...rows.map((r) => `${r.pcode},${r.value},${r.name ?? ""}`),
+        ...rows.map((r) => `${r.pcode},${r.value},${r.name}`),
       ].join("\n");
 
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -141,12 +146,11 @@ export default function TemplateDownloadModal({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    } catch (e) {
-      console.error("Template generation failed:", e);
-      alert("Failed to generate template. Check console for details.");
+    } catch (err) {
+      console.error("Error generating template:", err);
+      setMessage("An error occurred generating the template.");
     } finally {
       setLoading(false);
-      onClose();
     }
   };
 
@@ -206,7 +210,7 @@ export default function TemplateDownloadModal({
         </div>
 
         {/* Search */}
-        <div className="flex items-center border rounded mb-2 px-2 py-1 bg-gray-50">
+        <div className="flex items-center border rounded mb-3 px-2 py-1 bg-gray-50">
           <Search className="w-4 h-4 text-gray-500 mr-2" />
           <input
             type="text"
@@ -219,7 +223,7 @@ export default function TemplateDownloadModal({
           />
         </div>
 
-        {/* Indicator selection */}
+        {/* Indicator select */}
         <label className="block text-sm font-medium mb-1">Indicator</label>
         <select
           className="w-full border rounded px-2 py-1 text-sm mb-3"
@@ -262,7 +266,7 @@ export default function TemplateDownloadModal({
           ))}
         </select>
 
-        {/* Prefill toggle */}
+        {/* Prefill */}
         <label className="flex items-center gap-2 mb-4 text-sm">
           <input
             type="checkbox"
@@ -272,13 +276,20 @@ export default function TemplateDownloadModal({
           Pre-fill with PCodes and Names from {adminLevel}
         </label>
 
+        {/* Message */}
+        {message && (
+          <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2 mb-3">
+            {message}
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
             className="px-3 py-1 border rounded text-sm"
           >
-            Cancel
+            Close
           </button>
           <button
             onClick={handleGenerateTemplate}
