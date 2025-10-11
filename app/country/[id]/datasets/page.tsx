@@ -3,59 +3,71 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Download, PlusCircle, Trash2, Loader2 } from "lucide-react";
+import { Download, PlusCircle, Trash2, Edit2, Loader2 } from "lucide-react";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
+import EditDatasetModal from "@/components/country/EditDatasetModal";
 import type { CountryParams } from "@/app/country/types";
 
 export default function DatasetsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
+
   const [country, setCountry] = useState<any>(null);
   const [datasets, setDatasets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
   const [openDelete, setOpenDelete] = useState<any>(null);
-  const [downloadChoice, setDownloadChoice] = useState<{ id: string; open: boolean }>({ id: "", open: false });
+  const [openEdit, setOpenEdit] = useState<any>(null);
+  const [downloadChoice, setDownloadChoice] = useState<{ open: boolean }>({ open: false });
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      const { data: c } = await supabase.from("countries").select("*").eq("iso_code", countryIso).maybeSingle();
-      setCountry(c);
-      const { data: d } = await supabase.from("dataset_metadata").select("*").eq("country_iso", countryIso).order("created_at", { ascending: false });
-      setDatasets(d || []);
-      setLoading(false);
-    };
-    loadData();
+    loadDatasets();
   }, [countryIso]);
+
+  const loadDatasets = async () => {
+    setLoading(true);
+    const { data: c } = await supabase.from("countries").select("*").eq("iso_code", countryIso).maybeSingle();
+    setCountry(c);
+
+    const { data: d } = await supabase
+      .from("dataset_metadata")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+
+    setDatasets(d || []);
+    setLoading(false);
+  };
 
   const handleDeleteDataset = async (id: string) => {
     await supabase.from("dataset_metadata").delete().eq("id", id);
     setOpenDelete(null);
-    setDatasets((prev) => prev.filter((d) => d.id !== id));
+    await loadDatasets();
   };
 
-  const downloadTemplate = async (datasetId: string, prefill: boolean) => {
-    setDownloadChoice({ id: "", open: false });
-    const ds = datasets.find((d) => d.id === datasetId);
-    if (!ds?.indicator_id) return alert("No indicator linked.");
+  const downloadTemplate = async (prefill: boolean) => {
+    setDownloadChoice({ open: false });
 
     const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/generate-template`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        indicator_id: ds.indicator_id,
+        indicator_code: "POV_RATE", // fallback demo indicator, will override when used in AddDataset
         country_iso: countryIso,
         prefill,
       }),
     });
 
-    if (!res.ok) return alert("Template generation failed");
+    if (!res.ok) {
+      alert("Template generation failed");
+      return;
+    }
+
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${ds.title || "dataset"}_template.csv`;
+    a.download = `dataset_template_${countryIso}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -80,16 +92,26 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Top bar */}
       <div className="flex justify-between mb-4">
         <h2 className="text-lg font-semibold">Datasets</h2>
-        <button
-          onClick={() => setOpenAdd(true)}
-          className="flex items-center bg-[color:var(--gsc-red)] text-white text-sm px-3 py-1 rounded hover:opacity-90"
-        >
-          <PlusCircle className="w-4 h-4 mr-1" /> Add Dataset
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setDownloadChoice({ open: true })}
+            className="flex items-center bg-gray-200 text-sm px-3 py-1 rounded hover:bg-gray-300"
+          >
+            <Download className="w-4 h-4 mr-1" /> Download Template
+          </button>
+          <button
+            onClick={() => setOpenAdd(true)}
+            className="flex items-center bg-[color:var(--gsc-red)] text-white text-sm px-3 py-1 rounded hover:opacity-90"
+          >
+            <PlusCircle className="w-4 h-4 mr-1" /> Add Dataset
+          </button>
+        </div>
       </div>
 
+      {/* Table */}
       {loading ? (
         <div className="flex items-center gap-2 text-gray-600 text-sm">
           <Loader2 className="animate-spin w-4 h-4" /> Loading datasets...
@@ -114,15 +136,35 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                 <td className="px-2 py-1">{ds.title || "—"}</td>
                 <td className="px-2 py-1">{ds.theme || "—"}</td>
                 <td className="px-2 py-1">{ds.admin_level || "—"}</td>
-                <td className="px-2 py-1">{ds.source || "—"}</td>
+                <td className="px-2 py-1">
+                  {(() => {
+                    try {
+                      const src = ds.source ? JSON.parse(ds.source) : null;
+                      return src?.url ? (
+                        <a
+                          href={src.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {src.name || "Source"}
+                        </a>
+                      ) : (
+                        src?.name || "—"
+                      );
+                    } catch {
+                      return "—";
+                    }
+                  })()}
+                </td>
                 <td className="px-2 py-1">{new Date(ds.created_at).toLocaleDateString()}</td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setDownloadChoice({ id: ds.id, open: true })}
+                      onClick={() => setOpenEdit(ds)}
                       className="text-blue-600 text-xs flex items-center hover:underline"
                     >
-                      <Download className="w-4 h-4 mr-1" /> Template
+                      <Edit2 className="w-4 h-4 mr-1" /> Edit
                     </button>
                     <button
                       onClick={() => setOpenDelete(ds)}
@@ -138,7 +180,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         </table>
       )}
 
-      {/* Template Prefill Modal */}
+      {/* Download Template Modal */}
       {downloadChoice.open && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-sm">
@@ -148,19 +190,19 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
             </p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => downloadTemplate(downloadChoice.id, false)}
+                onClick={() => downloadTemplate(false)}
                 className="px-3 py-1 text-sm border rounded"
               >
                 Empty
               </button>
               <button
-                onClick={() => downloadTemplate(downloadChoice.id, true)}
+                onClick={() => downloadTemplate(true)}
                 className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
               >
                 Prefilled
               </button>
               <button
-                onClick={() => setDownloadChoice({ id: "", open: false })}
+                onClick={() => setDownloadChoice({ open: false })}
                 className="px-3 py-1 text-sm border rounded"
               >
                 Cancel
@@ -175,10 +217,16 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onUploaded={async () => {
-            const { data: d } = await supabase.from("dataset_metadata").select("*").eq("country_iso", countryIso);
-            setDatasets(d || []);
-          }}
+          onUploaded={loadDatasets}
+        />
+      )}
+
+      {openEdit && (
+        <EditDatasetModal
+          open={true}
+          dataset={openEdit}
+          onClose={() => setOpenEdit(null)}
+          onUpdated={loadDatasets}
         />
       )}
 
