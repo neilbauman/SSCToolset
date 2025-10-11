@@ -1,88 +1,78 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Database, PlusCircle, Edit3, Trash2, Link2 } from "lucide-react";
-import AddDatasetModal from "@/components/country/AddDatasetModal";
+import { Download, PlusCircle, Trash2, Loader2 } from "lucide-react";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import AddDatasetModal from "@/components/country/AddDatasetModal";
 import type { CountryParams } from "@/app/country/types";
-
-type Dataset = {
-  id: string;
-  title: string;
-  theme: string;
-  admin_level: string;
-  source: string | null;
-  created_at: string;
-};
 
 export default function DatasetsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [country, setCountry] = useState<any>(null);
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
-  const [openDelete, setOpenDelete] = useState<Dataset | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [openDelete, setOpenDelete] = useState<any>(null);
+  const [downloadChoice, setDownloadChoice] = useState<{ id: string; open: boolean }>({ id: "", open: false });
 
   useEffect(() => {
-    loadDatasets();
+    const loadData = async () => {
+      setLoading(true);
+      const { data: c } = await supabase.from("countries").select("*").eq("iso_code", countryIso).maybeSingle();
+      setCountry(c);
+      const { data: d } = await supabase.from("dataset_metadata").select("*").eq("country_iso", countryIso).order("created_at", { ascending: false });
+      setDatasets(d || []);
+      setLoading(false);
+    };
+    loadData();
   }, [countryIso]);
-
-  const loadDatasets = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("dataset_metadata")
-      .select("id, title, theme, admin_level, source, created_at")
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-    if (!error && data) {
-      setDatasets(data);
-    }
-    setLoading(false);
-  };
 
   const handleDeleteDataset = async (id: string) => {
     await supabase.from("dataset_metadata").delete().eq("id", id);
     setOpenDelete(null);
-    await loadDatasets();
+    setDatasets((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const parseSource = (source: string | null) => {
-    if (!source) return "—";
-    try {
-      const parsed = JSON.parse(source);
-      if (parsed.url) {
-        return (
-          <a
-            href={parsed.url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-600 hover:underline flex items-center gap-1"
-          >
-            <Link2 className="w-4 h-4" />
-            {parsed.name || parsed.url}
-          </a>
-        );
-      }
-      return parsed.name || "—";
-    } catch {
-      return source;
-    }
+  const downloadTemplate = async (datasetId: string, prefill: boolean) => {
+    setDownloadChoice({ id: "", open: false });
+    const ds = datasets.find((d) => d.id === datasetId);
+    if (!ds?.indicator_id) return alert("No indicator linked.");
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/generate-template`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        indicator_id: ds.indicator_id,
+        country_iso: countryIso,
+        prefill,
+      }),
+    });
+
+    if (!res.ok) return alert("Template generation failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${ds.title || "dataset"}_template.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const headerProps = {
-    title: "Country Datasets",
+    title: `${country?.name ?? countryIso} – Other Datasets`,
     group: "country-config" as const,
-    description:
-      "Manage datasets associated with this country. Add new indicators, upload CSV data, or edit existing metadata.",
+    description: "Manage and upload non-core datasets for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "Datasets" },
+          { label: country?.name ?? countryIso, href: `/country/${countryIso}` },
+          { label: "Other Datasets" },
         ]}
       />
     ),
@@ -90,85 +80,112 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="border rounded-lg p-4 shadow-sm bg-white mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Database className="w-5 h-5 text-green-600" />
-            Country Datasets
-          </h2>
-          <button
-            onClick={() => setOpenAdd(true)}
-            className="flex items-center gap-2 text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
-          >
-            <PlusCircle className="w-4 h-4" /> Add Dataset
-          </button>
-        </div>
-
-        {loading ? (
-          <p className="text-sm text-gray-500 italic">Loading datasets...</p>
-        ) : datasets.length > 0 ? (
-          <table className="w-full text-sm border rounded">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1 text-left">Theme</th>
-                <th className="px-2 py-1 text-left">Admin Level</th>
-                <th className="px-2 py-1 text-left">Source</th>
-                <th className="px-2 py-1 text-left">Created</th>
-                <th className="px-2 py-1 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {datasets.map((ds) => (
-                <tr key={ds.id} className="border-b hover:bg-gray-50">
-                  <td className="px-2 py-1">{ds.title || "—"}</td>
-                  <td className="px-2 py-1">{ds.theme || "—"}</td>
-                  <td className="px-2 py-1">{ds.admin_level || "—"}</td>
-                  <td className="px-2 py-1">{parseSource(ds.source)}</td>
-                  <td className="px-2 py-1 text-gray-500">
-                    {new Date(ds.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        className="flex items-center gap-1 text-xs text-gray-700 hover:underline"
-                        onClick={() => alert("Edit coming soon")}
-                      >
-                        <Edit3 className="w-4 h-4" /> Edit
-                      </button>
-                      <button
-                        className="flex items-center gap-1 text-xs text-[color:var(--gsc-red)] hover:underline"
-                        onClick={() => setOpenDelete(ds)}
-                      >
-                        <Trash2 className="w-4 h-4" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="italic text-gray-500 text-sm">
-            No datasets have been uploaded yet.
-          </p>
-        )}
+      <div className="flex justify-between mb-4">
+        <h2 className="text-lg font-semibold">Datasets</h2>
+        <button
+          onClick={() => setOpenAdd(true)}
+          className="flex items-center bg-[color:var(--gsc-red)] text-white text-sm px-3 py-1 rounded hover:opacity-90"
+        >
+          <PlusCircle className="w-4 h-4 mr-1" /> Add Dataset
+        </button>
       </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-gray-600 text-sm">
+          <Loader2 className="animate-spin w-4 h-4" /> Loading datasets...
+        </div>
+      ) : datasets.length === 0 ? (
+        <p className="italic text-gray-500 text-sm">No datasets added yet.</p>
+      ) : (
+        <table className="w-full text-sm border rounded bg-white shadow-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="px-2 py-1 text-left">Title</th>
+              <th className="px-2 py-1 text-left">Theme</th>
+              <th className="px-2 py-1 text-left">Admin Level</th>
+              <th className="px-2 py-1 text-left">Source</th>
+              <th className="px-2 py-1 text-left">Created</th>
+              <th className="px-2 py-1 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {datasets.map((ds) => (
+              <tr key={ds.id} className="border-t hover:bg-gray-50">
+                <td className="px-2 py-1">{ds.title || "—"}</td>
+                <td className="px-2 py-1">{ds.theme || "—"}</td>
+                <td className="px-2 py-1">{ds.admin_level || "—"}</td>
+                <td className="px-2 py-1">{ds.source || "—"}</td>
+                <td className="px-2 py-1">{new Date(ds.created_at).toLocaleDateString()}</td>
+                <td className="px-2 py-1 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setDownloadChoice({ id: ds.id, open: true })}
+                      className="text-blue-600 text-xs flex items-center hover:underline"
+                    >
+                      <Download className="w-4 h-4 mr-1" /> Template
+                    </button>
+                    <button
+                      onClick={() => setOpenDelete(ds)}
+                      className="text-[color:var(--gsc-red)] text-xs flex items-center hover:underline"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" /> Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* Template Prefill Modal */}
+      {downloadChoice.open && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-3">Download Template</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Choose whether to prefill the template with admin PCodes and names.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => downloadTemplate(downloadChoice.id, false)}
+                className="px-3 py-1 text-sm border rounded"
+              >
+                Empty
+              </button>
+              <button
+                onClick={() => downloadTemplate(downloadChoice.id, true)}
+                className="px-3 py-1 text-sm bg-[color:var(--gsc-green)] text-white rounded"
+              >
+                Prefilled
+              </button>
+              <button
+                onClick={() => setDownloadChoice({ id: "", open: false })}
+                className="px-3 py-1 text-sm border rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {openAdd && (
         <AddDatasetModal
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onSaved={loadDatasets}
+          onUploaded={async () => {
+            const { data: d } = await supabase.from("dataset_metadata").select("*").eq("country_iso", countryIso);
+            setDatasets(d || []);
+          }}
         />
       )}
 
       {openDelete && (
         <ConfirmDeleteModal
-          open={!!openDelete}
-          title="Delete Dataset"
-          message={`Are you sure you want to delete "${openDelete.title}"? This will permanently remove it and all its associated values.`}
+          open={true}
+          message={`This will permanently remove "${openDelete.title}".`}
           onClose={() => setOpenDelete(null)}
           onConfirm={() => handleDeleteDataset(openDelete.id)}
         />
