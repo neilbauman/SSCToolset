@@ -138,7 +138,9 @@ export default function TemplateDownloadModal({ open, onClose, countryIso }: {
           />
           <span className="flex items-center gap-1 text-sm">
             Prefill with admin boundaries
-            <Info className="w-4 h-4 text-gray-400" title="Prefill uses the active administrative boundary dataset version for this country." />
+            <span title="Prefill uses the active administrative boundary dataset version for this country.">
+              <Info className="w-4 h-4 text-gray-400 cursor-help" />
+            </span>
           </span>
         </div>
 
