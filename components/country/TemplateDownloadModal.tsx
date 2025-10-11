@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Download, X, Search } from "lucide-react";
+import { Download, X, Search, Filter } from "lucide-react";
 
 interface TemplateDownloadModalProps {
   open: boolean;
@@ -16,19 +16,26 @@ export default function TemplateDownloadModal({
   countryIso,
 }: TemplateDownloadModalProps) {
   const [indicators, setIndicators] = useState<any[]>([]);
-  const [filteredIndicators, setFilteredIndicators] = useState<any[]>([]);
-  const [search, setSearch] = useState("");
+  const [themes, setThemes] = useState<string[]>([]);
+  const [adminLevels, setAdminLevels] = useState<string[]>([]);
   const [selectedIndicator, setSelectedIndicator] = useState<any>(null);
+
+  const [filters, setFilters] = useState({
+    theme: "",
+    type: "",
+    data_type: "",
+    search: "",
+  });
+
   const [datasetType, setDatasetType] = useState("gradient");
   const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [adminLevels, setAdminLevels] = useState<string[]>([]);
   const [prepopulate, setPrepopulate] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Load indicators and admin levels
   useEffect(() => {
     if (open) {
       loadIndicators();
+      loadThemes();
       loadAdminLevels();
     }
   }, [open]);
@@ -44,9 +51,19 @@ export default function TemplateDownloadModal({
       console.error("Error loading indicators:", error);
       return;
     }
-
     setIndicators(data || []);
-    setFilteredIndicators(data || []);
+  };
+
+  const loadThemes = async () => {
+    const { data, error } = await supabase
+      .from("theme_catalogue")
+      .select("name")
+      .order("name", { ascending: true });
+    if (error) {
+      console.error("Error loading themes:", error);
+      return;
+    }
+    setThemes((data || []).map((t) => t.name));
   };
 
   const loadAdminLevels = async () => {
@@ -61,47 +78,37 @@ export default function TemplateDownloadModal({
       return;
     }
 
-    // Extract and normalize levels
     const levels = Array.from(
       new Set(
-        (data || [])
-          .map((r) =>
-            typeof r.level === "number"
-              ? `ADM${r.level}`
-              : String(r.level).toUpperCase()
-          )
+        (data || []).map((r) =>
+          typeof r.level === "number"
+            ? `ADM${r.level}`
+            : String(r.level).toUpperCase()
+        )
       )
-    ).sort((a, b) => {
-      const aNum = parseInt(a.replace("ADM", ""));
-      const bNum = parseInt(b.replace("ADM", ""));
-      return aNum - bNum;
-    });
+    ).sort((a, b) => parseInt(a.replace("ADM", "")) - parseInt(b.replace("ADM", "")));
 
-    // Fallback if nothing found
     setAdminLevels(levels.length ? levels : ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"]);
   };
 
-  const handleSearch = (term: string) => {
-    setSearch(term);
-    if (!term) {
-      setFilteredIndicators(indicators);
-      return;
-    }
-    const t = term.toLowerCase();
-    const filtered = indicators.filter(
-      (i) =>
-        i.name.toLowerCase().includes(t) ||
-        i.code.toLowerCase().includes(t) ||
-        i.theme.toLowerCase().includes(t)
-    );
-    setFilteredIndicators(filtered);
-  };
+  const filteredIndicators = useMemo(() => {
+    return indicators.filter((i) => {
+      const matchesTheme = !filters.theme || i.theme === filters.theme;
+      const matchesType = !filters.type || i.type === filters.type;
+      const matchesDataType = !filters.data_type || i.data_type === filters.data_type;
+      const matchesSearch =
+        !filters.search ||
+        i.name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        i.code.toLowerCase().includes(filters.search.toLowerCase());
+      return matchesTheme && matchesType && matchesDataType && matchesSearch;
+    });
+  }, [indicators, filters]);
 
   const handleGenerateTemplate = async () => {
     setLoading(true);
     try {
-      let rows: any[] = [];
       const headers = ["pcode", "value", "name(optional)"];
+      let rows: any[] = [];
 
       if (prepopulate) {
         const { data, error } = await supabase
@@ -111,7 +118,6 @@ export default function TemplateDownloadModal({
           .eq("level", adminLevel.replace("ADM", ""));
 
         if (error) throw error;
-
         rows = (data || []).map((r) => ({
           pcode: r.pcode,
           value: "",
@@ -148,7 +154,7 @@ export default function TemplateDownloadModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
@@ -161,19 +167,60 @@ export default function TemplateDownloadModal({
           Download Dataset Template
         </h2>
 
-        {/* Indicator search */}
-        <label className="block text-sm font-medium mb-1">Select Indicator (optional)</label>
+        {/* Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-sm">
+          <select
+            value={filters.theme}
+            onChange={(e) => setFilters({ ...filters, theme: e.target.value })}
+            className="border rounded px-2 py-1"
+          >
+            <option value="">All Themes</option>
+            {themes.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+
+          <select
+            value={filters.type}
+            onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+            className="border rounded px-2 py-1"
+          >
+            <option value="">All Types</option>
+            <option value="gradient">Gradient</option>
+            <option value="categorical">Categorical</option>
+            <option value="disaggregated">Disaggregated</option>
+            <option value="derived">Derived</option>
+          </select>
+
+          <select
+            value={filters.data_type}
+            onChange={(e) =>
+              setFilters({ ...filters, data_type: e.target.value })
+            }
+            className="border rounded px-2 py-1"
+          >
+            <option value="">All Data Types</option>
+            <option value="numeric">Numeric</option>
+            <option value="percentage">Percentage</option>
+          </select>
+        </div>
+
+        {/* Search */}
         <div className="flex items-center border rounded mb-2 px-2 py-1 bg-gray-50">
           <Search className="w-4 h-4 text-gray-500 mr-2" />
           <input
             type="text"
             placeholder="Search indicators..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) =>
+              setFilters({ ...filters, search: e.target.value })
+            }
             className="flex-1 bg-transparent text-sm outline-none"
           />
         </div>
 
+        {/* Indicator selection */}
+        <label className="block text-sm font-medium mb-1">Indicator</label>
         <select
           className="w-full border rounded px-2 py-1 text-sm mb-3"
           value={selectedIndicator?.id || ""}
@@ -184,7 +231,7 @@ export default function TemplateDownloadModal({
               setAdminLevel(found.default_admin_level);
           }}
         >
-          <option value="">— None / New Indicator —</option>
+          <option value="">— New Indicator —</option>
           {filteredIndicators.map((i) => (
             <option key={i.id} value={i.id}>
               {i.theme} – {i.name} ({i.code})
