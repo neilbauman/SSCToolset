@@ -61,16 +61,24 @@ export default function TemplateDownloadModal({
       return;
     }
 
-    const distinct = Array.from(
+    // Extract and normalize levels
+    const levels = Array.from(
       new Set(
-        data
-          ?.map((r) => r.level)
-          ?.filter(Boolean)
-          ?.sort()
+        (data || [])
+          .map((r) =>
+            typeof r.level === "number"
+              ? `ADM${r.level}`
+              : String(r.level).toUpperCase()
+          )
       )
-    );
+    ).sort((a, b) => {
+      const aNum = parseInt(a.replace("ADM", ""));
+      const bNum = parseInt(b.replace("ADM", ""));
+      return aNum - bNum;
+    });
 
-    setAdminLevels(distinct.length ? distinct : ["ADM0", "ADM1", "ADM2", "ADM3"]);
+    // Fallback if nothing found
+    setAdminLevels(levels.length ? levels : ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"]);
   };
 
   const handleSearch = (term: string) => {
@@ -98,9 +106,9 @@ export default function TemplateDownloadModal({
       if (prepopulate) {
         const { data, error } = await supabase
           .from("admin_units")
-          .select("pcode, name")
+          .select("pcode, name, level")
           .eq("country_iso", countryIso)
-          .eq("level", adminLevel);
+          .eq("level", adminLevel.replace("ADM", ""));
 
         if (error) throw error;
 
@@ -154,12 +162,12 @@ export default function TemplateDownloadModal({
         </h2>
 
         {/* Indicator search */}
-        <label className="block text-sm font-medium mb-1">Select Indicator</label>
+        <label className="block text-sm font-medium mb-1">Select Indicator (optional)</label>
         <div className="flex items-center border rounded mb-2 px-2 py-1 bg-gray-50">
           <Search className="w-4 h-4 text-gray-500 mr-2" />
           <input
             type="text"
-            placeholder="Search indicator..."
+            placeholder="Search indicators..."
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
             className="flex-1 bg-transparent text-sm outline-none"
@@ -176,31 +184,27 @@ export default function TemplateDownloadModal({
               setAdminLevel(found.default_admin_level);
           }}
         >
-          <option value="">— None / Create New —</option>
+          <option value="">— None / New Indicator —</option>
           {filteredIndicators.map((i) => (
             <option key={i.id} value={i.id}>
-              {i.theme} – {i.name}
+              {i.theme} – {i.name} ({i.code})
             </option>
           ))}
         </select>
 
         {/* Dataset type */}
-        <label className="block text-sm font-medium mb-1">
-          Dataset Type
-        </label>
+        <label className="block text-sm font-medium mb-1">Dataset Type</label>
         <select
           className="w-full border rounded px-2 py-1 text-sm mb-3"
           value={datasetType}
           onChange={(e) => setDatasetType(e.target.value)}
         >
-          <option value="gradient">Gradient (per admin unit)</option>
-          <option value="categorical">Categorical (multi-value per admin)</option>
+          <option value="gradient">Gradient (values per admin unit)</option>
+          <option value="categorical">Categorical (grouped by attribute)</option>
         </select>
 
         {/* Admin level */}
-        <label className="block text-sm font-medium mb-1">
-          Administrative Level
-        </label>
+        <label className="block text-sm font-medium mb-1">Admin Level</label>
         <select
           className="w-full border rounded px-2 py-1 text-sm mb-3"
           value={adminLevel}
