@@ -1,208 +1,193 @@
-"use client";
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import Papa from 'papaparse';
+import { Info } from 'lucide-react';
 
-import { useState, useEffect, useMemo } from "react";
-import { X, Download, Loader2, Search, Plus } from "lucide-react";
-import Papa from "papaparse";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-interface TemplateDownloadModalProps {
+export default function TemplateDownloadModal({ open, onClose, countryIso }: {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-}
-
-export default function TemplateDownloadModal({ open, onClose, countryIso }: TemplateDownloadModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [indicators, setIndicators] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-
+}) {
+  const [indicatorList, setIndicatorList] = useState<any[]>([]);
+  const [filteredIndicators, setFilteredIndicators] = useState<any[]>([]);
   const [themes, setThemes] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [dataTypes, setDataTypes] = useState<string[]>([]);
-
-  const [selectedTheme, setSelectedTheme] = useState<string>("");
-  const [selectedType, setSelectedType] = useState<string>("");
-  const [selectedDataType, setSelectedDataType] = useState<string>("");
-
-  const [selectedIndicator, setSelectedIndicator] = useState<any | null>(null);
-  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">("gradient");
-  const [adminLevel, setAdminLevel] = useState<string>("ADM2");
-  const [prefill, setPrefill] = useState<boolean>(true);
+  const [selectedTheme, setSelectedTheme] = useState('');
+  const [search, setSearch] = useState('');
+  const [datasetType, setDatasetType] = useState('gradient');
+  const [adminLevel, setAdminLevel] = useState('ADM2');
+  const [prefill, setPrefill] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    const fetchCatalogue = async () => {
-      const { data, error } = await supabase
-        .from("indicator_catalogue")
-        .select("id, name, code, theme, type, data_type, description");
-      if (error) {
-        setError(error.message);
-        return;
-      }
-      setIndicators(data || []);
-      setThemes([...new Set(data.map((i) => i.theme).filter(Boolean))]);
-      setTypes([...new Set(data.map((i) => i.type).filter(Boolean))]);
-      setDataTypes([...new Set(data.map((i) => i.data_type).filter(Boolean))]);
-    };
-    if (open) fetchCatalogue();
+    if (!open) return;
+    loadIndicators();
   }, [open]);
 
-  const filteredIndicators = useMemo(() => {
-    return indicators.filter((i) => {
-      const matchSearch = i.name.toLowerCase().includes(searchTerm.toLowerCase()) || i.code.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchTheme = selectedTheme ? i.theme === selectedTheme : true;
-      const matchType = selectedType ? i.type === selectedType : true;
-      const matchDataType = selectedDataType ? i.data_type === selectedDataType : true;
-      return matchSearch && matchTheme && matchType && matchDataType;
-    });
-  }, [indicators, searchTerm, selectedTheme, selectedType, selectedDataType]);
-
-  const handleDownload = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let rows: any[] = [];
-
-      if (prefill) {
-        const { data, error } = await supabase
-          .from("admin_units")
-          .select("pcode, name")
-          .eq("country_iso", countryIso)
-          .eq("level", adminLevel);
-
-        if (error) throw error;
-
-        rows = (data || []).map((r) => ({ pcode: r.pcode, name: r.name, value: "" }));
-      }
-
-      const csv = Papa.unparse(rows.length > 0 ? rows : [{ pcode: "", name: "", value: "" }]);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${selectedIndicator?.code || "new_dataset"}_${adminLevel}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  async function loadIndicators() {
+    const { data, error } = await supabase.from('indicator_catalogue').select('*');
+    if (error) {
+      console.error('Error loading indicators', error);
+      return;
     }
-  };
+    setIndicatorList(data);
+    setFilteredIndicators(data);
+
+    const uniqueThemes = Array.from(new Set(data.map((i) => i.theme).filter(Boolean)));
+    setThemes(uniqueThemes);
+  }
+
+  function handleSearchFilter() {
+    let filtered = indicatorList;
+    if (selectedTheme) filtered = filtered.filter((i) => i.theme === selectedTheme);
+    if (search)
+      filtered = filtered.filter((i) =>
+        i.name.toLowerCase().includes(search.toLowerCase())
+      );
+    setFilteredIndicators(filtered);
+  }
+
+  useEffect(() => {
+    handleSearchFilter();
+  }, [selectedTheme, search]);
+
+  async function handleDownload() {
+    setDownloading(true);
+
+    let rows: any[] = [];
+    if (prefill) {
+      const { data: activeVersion } = await supabase
+        .from('admin_dataset_versions')
+        .select('id')
+        .eq('country_iso', countryIso)
+        .eq('is_active', true)
+        .single();
+
+      if (activeVersion) {
+        const { data: places } = await supabase
+          .from('admin_units')
+          .select('pcode, name')
+          .eq('country_iso', countryIso)
+          .eq('dataset_version_id', activeVersion.id);
+
+        if (places && places.length > 0) {
+          const unique = Array.from(new Map(places.map((p) => [p.pcode, p])).values());
+          rows = unique.map((p) => ({ pcode: p.pcode, name: p.name, value: '' }));
+        }
+      }
+    }
+
+    const csv = Papa.unparse(rows.length ? rows : [{ pcode: '', name: '', value: '' }]);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${datasetType.toUpperCase()}_${adminLevel}_TEMPLATE.csv`;
+    link.click();
+
+    setDownloading(false);
+  }
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Download Dataset Template</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
+        <h2 className="text-xl font-semibold mb-4">Download Dataset Template</h2>
 
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-
-        <div className="mb-4 border-b pb-3">
-          <h3 className="font-semibold text-gray-700 mb-2">Select from Indicator Library</h3>
-          <div className="flex items-center gap-2 mb-3">
-            <Search className="w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search indicators by name or code..."
-              className="border rounded px-2 py-1 w-full text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <select className="border rounded px-2 py-1 text-sm" value={selectedTheme} onChange={(e) => setSelectedTheme(e.target.value)}>
-              <option value="">All Themes</option>
-              {themes.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-            <select className="border rounded px-2 py-1 text-sm" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
-              <option value="">All Types</option>
-              {types.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-            <select className="border rounded px-2 py-1 text-sm" value={selectedDataType} onChange={(e) => setSelectedDataType(e.target.value)}>
-              <option value="">All Data Types</option>
-              {dataTypes.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Dataset Type</label>
+            <select
+              value={datasetType}
+              onChange={(e) => setDatasetType(e.target.value)}
+              className="w-full border rounded-md px-2 py-1"
+            >
+              <option value="gradient">Gradient</option>
+              <option value="categorical">Categorical</option>
             </select>
           </div>
 
-          <div className="border rounded h-32 overflow-y-auto text-sm">
-            {filteredIndicators.length ? (
-              filteredIndicators.map((i) => (
-                <div
-                  key={i.id}
-                  className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedIndicator?.id === i.id ? "bg-blue-50 border-l-4 border-[color:var(--gsc-red)]" : ""}`}
-                  onClick={() => setSelectedIndicator(i)}
-                >
-                  <p className="font-medium text-gray-800">{i.name}</p>
-                  <p className="text-gray-500 text-xs">{i.theme} • {i.type} • {i.data_type}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 italic p-2">No indicators found.</p>
-            )}
+          <div>
+            <label className="block text-sm font-medium mb-1">Admin Level</label>
+            <select
+              value={adminLevel}
+              onChange={(e) => setAdminLevel(e.target.value)}
+              className="w-full border rounded-md px-2 py-1"
+            >
+              {['ADM0', 'ADM1', 'ADM2', 'ADM3', 'ADM4', 'ADM5'].map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="mb-4">
-          <h3 className="font-semibold text-gray-700 mb-2">Indicator Options</h3>
-          <button
-            className="flex items-center gap-2 text-sm text-[color:var(--gsc-red)] hover:underline mb-2"
-            onClick={() => setSelectedIndicator({ id: null, name: "New Indicator" })}
+        <div className="flex items-center mb-4">
+          <input
+            type="checkbox"
+            checked={prefill}
+            onChange={(e) => setPrefill(e.target.checked)}
+            className="mr-2"
+          />
+          <span className="flex items-center gap-1 text-sm">
+            Prefill with admin boundaries
+            <Info className="w-4 h-4 text-gray-400" title="Prefill uses the active administrative boundary dataset version for this country." />
+          </span>
+        </div>
+
+        <hr className="my-4" />
+
+        <h3 className="text-lg font-medium mb-2">Indicator Library</h3>
+        <div className="flex gap-2 mb-2">
+          <select
+            className="border rounded-md px-2 py-1 text-sm"
+            value={selectedTheme}
+            onChange={(e) => setSelectedTheme(e.target.value)}
           >
-            <Plus className="w-4 h-4" /> Create New Indicator
-          </button>
+            <option value="">All Themes</option>
+            {themes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="Search indicators..."
+            className="flex-1 border rounded-md px-2 py-1 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
-        <div className="mb-4">
-          <h3 className="font-semibold text-gray-700 mb-2">Template Configuration</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-600">Dataset Type</label>
-              <select className="border rounded px-2 py-1 text-sm w-full" value={datasetType} onChange={(e) => setDatasetType(e.target.value as any)}>
-                <option value="gradient">Gradient</option>
-                <option value="categorical">Categorical</option>
-              </select>
+        <div className="max-h-40 overflow-y-auto border rounded-md p-2 text-sm mb-4">
+          {filteredIndicators.map((ind) => (
+            <div key={ind.id} className="py-1 border-b last:border-b-0">
+              <strong>{ind.name}</strong> – <span className="text-gray-600">{ind.theme}</span>
             </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-600">Admin Level</label>
-              <select className="border rounded px-2 py-1 text-sm w-full" value={adminLevel} onChange={(e) => setAdminLevel(e.target.value)}>
-                {[0, 1, 2, 3, 4, 5].map((lvl) => (
-                  <option key={lvl} value={`ADM${lvl}`}>{`ADM${lvl}`}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 mt-5">
-              <input type="checkbox" checked={prefill} onChange={(e) => setPrefill(e.target.checked)} />
-              <span className="text-sm text-gray-700">Prefill with PCodes and Names</span>
-            </div>
-          </div>
+          ))}
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onClose} className="px-3 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
+        <div className="flex justify-between items-center mt-4">
           <button
             onClick={handleDownload}
-            disabled={loading}
-            className="px-3 py-1 bg-[color:var(--gsc-red)] text-white rounded text-sm hover:opacity-90 flex items-center gap-2"
+            disabled={downloading}
+            className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-md"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {loading ? "Generating..." : "Download Template"}
+            {downloading ? 'Generating...' : 'Download Template'}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-3 py-1 text-gray-600 border rounded-md hover:bg-gray-100"
+          >
+            Cancel
           </button>
         </div>
       </div>
