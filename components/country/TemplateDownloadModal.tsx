@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Info } from "lucide-react";
-import Papa from "papaparse";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { createClient } from "@/utils/supabase/client";
+import { Info } from "lucide-react";
 
 interface TemplateDownloadModalProps {
   open: boolean;
@@ -11,224 +10,185 @@ interface TemplateDownloadModalProps {
   countryIso: string;
 }
 
-export default function TemplateDownloadModal({
-  open,
-  onClose,
-  countryIso,
-}: TemplateDownloadModalProps) {
+export default function TemplateDownloadModal({ open, onClose, countryIso }: TemplateDownloadModalProps) {
+  const supabase = createClient();
   const [templateType, setTemplateType] = useState<"gradient" | "categorical">("gradient");
   const [prefill, setPrefill] = useState(false);
-  const [adminLevels, setAdminLevels] = useState<string[]>([]);
-  const [selectedAdminLevel, setSelectedAdminLevel] = useState<string>("");
-  const [categoryCount, setCategoryCount] = useState<number>(0);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [adminLevels, setAdminLevels] = useState<number[]>([]);
+  const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
+  const [categoryCount, setCategoryCount] = useState<number>(3);
 
-  // Fetch available admin levels
   useEffect(() => {
-    if (!open) return;
-    const fetchAdminLevels = async () => {
-      const { data, error } = await supabase
-        .from("admin_names")
-        .select("level")
-        .eq("country_iso", countryIso);
-
-      if (!error && data) {
-        const levels = Array.from(new Set(data.map((d) => d.level))).sort((a, b) => a - b);
-        setAdminLevels(levels.map((l) => `ADM${l}`));
-      }
-    };
-    fetchAdminLevels();
-  }, [open, countryIso]);
-
-  // Update category name inputs when count changes
-  useEffect(() => {
-    if (templateType === "categorical") {
-      setCategories(Array.from({ length: categoryCount }, (_, i) => categories[i] || ""));
-    } else {
-      setCategories([]);
+    if (open && prefill) {
+      loadAdminLevels();
     }
-  }, [categoryCount, templateType]);
+  }, [open, prefill]);
 
-  const handleCategoryChange = (index: number, value: string) => {
-    const updated = [...categories];
-    updated[index] = value;
-    setCategories(updated);
-  };
+  async function loadAdminLevels() {
+    const { data: activeVersion } = await supabase
+      .from("admin_dataset_versions")
+      .select("id")
+      .eq("country_iso", countryIso)
+      .eq("is_active", true)
+      .single();
 
-  const downloadCSV = (csv: string, filename: string) => {
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    if (!activeVersion) return;
 
-  const handleDownload = async () => {
-    setLoading(true);
+    const { data: levels } = await supabase
+      .from("places")
+      .select("level")
+      .eq("dataset_version_id", activeVersion.id);
+
+    if (levels) {
+      const uniqueLevels = [...new Set(levels.map((l: any) => l.level))].sort((a, b) => a - b);
+      setAdminLevels(uniqueLevels);
+    }
+  }
+
+  async function handleDownload() {
     let rows: any[] = [];
+    let headers: string[] = [];
 
-    // If prefill is on, get places from active dataset
-    if (prefill && selectedAdminLevel) {
-      const { data: placesDataset } = await supabase
-        .from("places_datasets")
-        .select("dataset_version_id")
+    if (templateType === "gradient") {
+      headers = ["pcode", "value", "name(optional)"];
+    } else {
+      headers = ["pcode", "name(optional)"];
+      for (let i = 1; i <= categoryCount; i++) headers.push(`category_${i}`);
+    }
+
+    if (prefill && selectedLevel !== null) {
+      const { data: activeVersion } = await supabase
+        .from("admin_dataset_versions")
+        .select("id")
         .eq("country_iso", countryIso)
         .eq("is_active", true)
-        .maybeSingle();
+        .single();
 
-      if (placesDataset?.dataset_version_id) {
+      if (activeVersion) {
         const { data: places } = await supabase
           .from("places")
-          .select("pcode, name, level")
-          .eq("country_iso", countryIso)
-          .eq("level", selectedAdminLevel)
-          .eq("dataset_version_id", placesDataset.dataset_version_id);
+          .select("pcode, name")
+          .eq("dataset_version_id", activeVersion.id)
+          .eq("level", selectedLevel);
 
-        if (places?.length) {
-          rows = Array.from(new Map(places.map((p) => [p.pcode, p])).values()).map((p) => ({
-            pcode: p.pcode,
-            value: "",
-            name: p.name || "",
-          }));
+        if (places) {
+          rows = places.map((p: any) => {
+            const base = [p.pcode, templateType === "gradient" ? "" : "", p.name || ""];
+            if (templateType === "categorical") {
+              for (let i = 0; i < categoryCount; i++) base.push("");
+            }
+            return base;
+          });
         }
       }
     }
 
-    // Fallback empty row if no prefill
-    if (rows.length === 0) rows = [{ pcode: "", value: "", name: "" }];
-
-    // Add category header if categorical
-    let headers = ["pcode", "value", "name"];
-    if (templateType === "categorical" && categories.length > 0) {
-      headers = ["pcode", "category", "name"];
-    }
-
-    const csv = Papa.unparse(rows, { columns: headers });
-
-    const filename = `${
-      templateType === "gradient" ? "GRADIENT" : "CATEGORICAL"
-    }_${selectedAdminLevel || "TEMPLATE"}.csv`;
-
-    downloadCSV(csv, filename);
-    setLoading(false);
-    onClose();
-  };
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${templateType.toUpperCase()}_TEMPLATE.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 relative">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-lg font-semibold text-gray-800">Download Template</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-lg">
+        <h2 className="text-lg font-semibold mb-4 text-gray-800">Download Dataset Template</h2>
 
-        {/* Template Type */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Template Type</label>
-          <select
-            value={templateType}
-            onChange={(e) => setTemplateType(e.target.value as "gradient" | "categorical")}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
-          >
-            <option value="gradient">Gradient</option>
-            <option value="categorical">Categorical</option>
-          </select>
-        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Template Type</label>
+            <select
+              value={templateType}
+              onChange={(e) => setTemplateType(e.target.value as any)}
+              className="w-full border rounded-lg px-3 py-2"
+            >
+              <option value="gradient">Gradient (e.g., poverty per admin)</option>
+              <option value="categorical">Categorical (e.g., housing types)</option>
+            </select>
+          </div>
 
-        {/* Prefill Toggle */}
-        <div className="flex items-center justify-between mb-4">
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          {templateType === "categorical" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Number of Categories</label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={categoryCount}
+                onChange={(e) => setCategoryCount(Number(e.target.value))}
+                className="w-full border rounded-lg px-3 py-2"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
             <input
+              id="prefill"
               type="checkbox"
               checked={prefill}
               onChange={(e) => setPrefill(e.target.checked)}
-              className="h-4 w-4 accent-[#C21F3A]"
+              className="w-4 h-4 accent-[var(--gsc-red)]"
             />
-            <span className="flex items-center gap-1">
+            <label htmlFor="prefill" className="text-sm flex items-center gap-1">
               Prefill with admin boundaries
-              <span
-                title="Uses the currently active administrative boundary dataset for this country."
-                className="inline-flex items-center"
+              <Info
+                className="w-4 h-4 text-gray-400 cursor-pointer"
+                onMouseOver={(e) => {
+                  const tooltip = document.createElement("div");
+                  tooltip.innerText =
+                    "Prefill uses the currently active administrative boundary dataset for this country.";
+                  tooltip.className =
+                    "absolute bg-gray-700 text-white text-xs px-2 py-1 rounded shadow-md -translate-y-8 ml-6";
+                  tooltip.id = "tooltip-info";
+                  e.currentTarget.parentElement?.appendChild(tooltip);
+                }}
+                onMouseOut={() => {
+                  document.getElementById("tooltip-info")?.remove();
+                }}
+              />
+            </label>
+          </div>
+
+          {prefill && adminLevels.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Administrative Level</label>
+              <select
+                value={selectedLevel ?? ""}
+                onChange={(e) => setSelectedLevel(Number(e.target.value))}
+                className="w-full border rounded-lg px-3 py-2"
               >
-                <Info className="w-4 h-4 text-gray-400" />
-              </span>
-            </span>
-          </label>
+                <option value="">Select Level</option>
+                {adminLevels.map((lvl) => (
+                  <option key={lvl} value={lvl}>
+                    ADM{lvl}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Admin Level Selection (only if prefill) */}
-        {prefill && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Administrative Level
-            </label>
-            <select
-              value={selectedAdminLevel}
-              onChange={(e) => setSelectedAdminLevel(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
-            >
-              <option value="">Select Admin Level</option>
-              {adminLevels.map((lvl) => (
-                <option key={lvl} value={lvl}>
-                  {lvl}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Categorical Options */}
-        {templateType === "categorical" && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Number of Categories
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={categoryCount}
-              onChange={(e) => setCategoryCount(parseInt(e.target.value) || 0)}
-              className="w-24 border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-[#C21F3A]"
-            />
-            {categoryCount > 0 && (
-              <div className="mt-3 space-y-2">
-                {categories.map((cat, i) => (
-                  <input
-                    key={i}
-                    type="text"
-                    placeholder={`Category ${i + 1} name`}
-                    value={cat}
-                    onChange={(e) => handleCategoryChange(i, e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A]"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 pt-3">
+        <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-100 transition"
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
           >
             Cancel
           </button>
           <button
             onClick={handleDownload}
-            disabled={loading}
-            className="px-4 py-2 bg-[#C21F3A] text-white rounded-md font-medium hover:bg-[#a41b32] transition disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-white"
+            style={{ backgroundColor: "var(--gsc-red)" }}
           >
-            {loading ? "Generating..." : "Download Template"}
+            Download
           </button>
         </div>
       </div>
