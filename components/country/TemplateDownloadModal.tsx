@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { X, Info } from "lucide-react";
 import Papa from "papaparse";
-import { saveAs } from "file-saver";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface TemplateDownloadModalProps {
@@ -27,6 +26,7 @@ export default function TemplateDownloadModal({
   const [prefill, setPrefill] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
 
+  // Load indicators and themes
   useEffect(() => {
     if (!open) return;
     const loadIndicators = async () => {
@@ -40,6 +40,7 @@ export default function TemplateDownloadModal({
     loadIndicators();
   }, [open]);
 
+  // Filter indicators by theme
   useEffect(() => {
     if (selectedTheme) {
       setFilteredIndicators(indicators.filter((i) => i.theme === selectedTheme));
@@ -48,6 +49,20 @@ export default function TemplateDownloadModal({
     }
   }, [selectedTheme, indicators]);
 
+  // Native CSV download helper
+  const downloadCSV = (csv: string, filename: string) => {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Handle template generation
   const handleDownload = async () => {
     setLoading(true);
 
@@ -62,7 +77,6 @@ export default function TemplateDownloadModal({
     }
 
     if (prefill) {
-      // Prefill using active places dataset
       const { data: placesDataset } = await supabase
         .from("places_datasets")
         .select("dataset_version_id")
@@ -78,7 +92,7 @@ export default function TemplateDownloadModal({
           .eq("level", adminLevel)
           .eq("dataset_version_id", placesDataset.dataset_version_id);
 
-        if (places) {
+        if (places?.length) {
           rows = places.map((p) => ({
             pcode: p.pcode,
             value: "",
@@ -88,14 +102,10 @@ export default function TemplateDownloadModal({
       }
     }
 
-    // Default headers
-    if (rows.length === 0) {
-      rows = [{ pcode: "", value: "", name: "" }];
-    }
+    if (rows.length === 0) rows = [{ pcode: "", value: "", name: "" }];
 
     const csv = Papa.unparse(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, filename);
+    downloadCSV(csv, filename);
     setLoading(false);
     onClose();
   };
@@ -201,7 +211,7 @@ export default function TemplateDownloadModal({
               Prefill with admin boundaries
               <Info
                 className="w-4 h-4 text-gray-400"
-                title="Prefill uses the currently active administrative boundary dataset for this country to automatically include PCodes and names."
+                title="Prefill uses the currently active administrative boundary dataset for this country."
               />
             </span>
           </label>
