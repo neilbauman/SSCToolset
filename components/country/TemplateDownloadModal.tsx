@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Download, X } from "lucide-react";
+import { Download, X, Search } from "lucide-react";
 
 interface TemplateDownloadModalProps {
   open: boolean;
@@ -16,18 +16,16 @@ export default function TemplateDownloadModal({
   countryIso,
 }: TemplateDownloadModalProps) {
   const [indicators, setIndicators] = useState<any[]>([]);
-  const [themes, setThemes] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [selectedIndicator, setSelectedIndicator] = useState<any | null>(null);
-  const [selectedTheme, setSelectedTheme] = useState("All Themes");
-  const [selectedType, setSelectedType] = useState("All Types");
-  const [adminLevels, setAdminLevels] = useState<string[]>([]);
-  const [adminLevel, setAdminLevel] = useState<string>("");
-  const [prefillMode, setPrefillMode] = useState<"Empty" | "Prefilled">("Empty");
-  const [datasetType, setDatasetType] = useState("gradient");
-  const [loading, setLoading] = useState(false);
+  const [filteredIndicators, setFilteredIndicators] = useState<any[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedIndicator, setSelectedIndicator] = useState<any>(null);
+  const [datasetType, setDatasetType] = useState("gradient");
+  const [adminLevel, setAdminLevel] = useState("ADM0");
+  const [adminLevels, setAdminLevels] = useState<string[]>([]);
+  const [prepopulate, setPrepopulate] = useState(true);
+  const [loading, setLoading] = useState(false);
 
+  // Fetch indicators and admin levels
   useEffect(() => {
     if (open) {
       loadIndicators();
@@ -38,20 +36,15 @@ export default function TemplateDownloadModal({
   const loadIndicators = async () => {
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("*")
-      .order("theme", { ascending: true });
+      .select("id, code, name, type, theme, data_type, default_admin_level")
+      .order("theme", { ascending: true })
+      .order("name", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching indicators:", error);
-      return;
+    if (error) console.error("Error loading indicators:", error);
+    else {
+      setIndicators(data || []);
+      setFilteredIndicators(data || []);
     }
-
-    setIndicators(data || []);
-    const uniqueThemes = Array.from(new Set(data.map((d) => d.theme))).filter(Boolean);
-    const uniqueTypes = Array.from(new Set(data.map((d) => d.data_type))).filter(Boolean);
-
-    setThemes(["All Themes", ...uniqueThemes]);
-    setTypes(["All Types", ...uniqueTypes]);
   };
 
   const loadAdminLevels = async () => {
@@ -63,203 +56,177 @@ export default function TemplateDownloadModal({
     if (error) {
       console.error("Error fetching admin levels:", error);
       setAdminLevels(["ADM0", "ADM1", "ADM2", "ADM3"]);
-      setAdminLevel("ADM2");
       return;
     }
 
     const distinctLevels = Array.from(
       new Set(data.map((r) => r.admin_level))
     ).sort();
-
-    setAdminLevels(distinctLevels.length ? distinctLevels : ["ADM0", "ADM1", "ADM2", "ADM3"]);
-    setAdminLevel(distinctLevels[0] || "ADM2");
+    setAdminLevels(
+      distinctLevels.length ? distinctLevels : ["ADM0", "ADM1", "ADM2", "ADM3"]
+    );
   };
 
-  const filteredIndicators = indicators.filter((ind) => {
-    const matchesTheme =
-      selectedTheme === "All Themes" || ind.theme === selectedTheme;
-    const matchesType =
-      selectedType === "All Types" || ind.data_type === selectedType;
-    const matchesSearch =
-      search === "" ||
-      ind.name.toLowerCase().includes(search.toLowerCase()) ||
-      ind.code.toLowerCase().includes(search.toLowerCase());
-    return matchesTheme && matchesType && matchesSearch;
-  });
+  const handleSearch = (term: string) => {
+    setSearch(term);
+    if (!term) {
+      setFilteredIndicators(indicators);
+      return;
+    }
+    const t = term.toLowerCase();
+    const filtered = indicators.filter(
+      (i) =>
+        i.name.toLowerCase().includes(t) ||
+        i.code.toLowerCase().includes(t) ||
+        i.theme.toLowerCase().includes(t)
+    );
+    setFilteredIndicators(filtered);
+  };
 
-  const handleDownload = async () => {
+  const handleGenerateTemplate = async () => {
     setLoading(true);
     try {
-      const body = {
-        country_iso: countryIso,
-        indicator_id: selectedIndicator?.id || null,
-        type: datasetType,
-        admin_level: adminLevel,
-        prefill: prefillMode === "Prefilled",
-      };
+      let rows: any[] = [];
+      let headers = ["pcode", "value", "name(optional)"];
 
-      const res = await fetch("/functions/v1/generate-template", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      if (prepopulate) {
+        const { data, error } = await supabase
+          .from("admin_units")
+          .select("pcode, name")
+          .eq("country_iso", countryIso)
+          .eq("admin_level", adminLevel);
 
-      if (!res.ok) {
-        alert(`Failed to generate template (${res.status})`);
-        return;
+        if (error) throw error;
+
+        rows = (data || []).map((r) => ({
+          pcode: r.pcode,
+          value: "",
+          name: r.name,
+        }));
       }
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${countryIso}_${datasetType}_${adminLevel}_template.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      onClose();
-    } catch (err) {
-      console.error("Template download failed:", err);
-      alert("Failed to download template.");
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((r) => `${r.pcode},${r.value},${r.name ?? ""}`),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const indicatorLabel = selectedIndicator
+        ? selectedIndicator.code
+        : "dataset";
+      link.href = url;
+      link.download = `${indicatorLabel}_${adminLevel}_template.csv`;
+      link.click();
+    } catch (e) {
+      console.error("Template generation failed:", e);
+      alert("Failed to generate template. Check console for details.");
     } finally {
       setLoading(false);
+      onClose();
     }
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-5 w-full max-w-lg relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
         >
-          <X size={20} />
+          <X className="w-5 h-5" />
         </button>
 
-        <h2 className="text-xl font-semibold mb-4">Download Dataset Template</h2>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Download className="w-5 h-5 text-green-600" />
+          Download Dataset Template
+        </h2>
 
-        <p className="text-gray-600 mb-4">
-          Choose an indicator (optional), dataset type, and admin level for your CSV template.
-        </p>
-
-        {/* Indicator selection */}
-        <input
-          type="text"
-          placeholder="Search indicators..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border rounded w-full px-2 py-1 mb-2"
-        />
-
-        <div className="flex gap-2 mb-2">
-          <select
-            value={selectedTheme}
-            onChange={(e) => setSelectedTheme(e.target.value)}
-            className="border rounded px-2 py-1 flex-1"
-          >
-            {themes.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            className="border rounded px-2 py-1 flex-1"
-          >
-            {types.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
+        {/* Indicator search */}
+        <label className="block text-sm font-medium mb-1">Select Indicator</label>
+        <div className="flex items-center border rounded mb-2 px-2 py-1 bg-gray-50">
+          <Search className="w-4 h-4 text-gray-500 mr-2" />
+          <input
+            type="text"
+            placeholder="Search indicator..."
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="flex-1 bg-transparent text-sm outline-none"
+          />
         </div>
 
-        <div className="border rounded mb-4 max-h-32 overflow-y-auto">
-          {filteredIndicators.length === 0 ? (
-            <div className="text-gray-500 p-2 text-sm">No indicators found</div>
-          ) : (
-            filteredIndicators.map((ind) => (
-              <div
-                key={ind.id}
-                onClick={() => setSelectedIndicator(ind)}
-                className={`p-2 cursor-pointer ${
-                  selectedIndicator?.id === ind.id
-                    ? "bg-green-100"
-                    : "hover:bg-gray-100"
-                }`}
-              >
-                <span className="font-medium">{ind.name}</span>{" "}
-                <span className="text-gray-500 text-sm">
-                  ({ind.code})
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-
-        <button
-          onClick={() => setSelectedIndicator(null)}
-          className="text-blue-600 text-sm mb-4 hover:underline"
+        <select
+          className="w-full border rounded px-2 py-1 text-sm mb-3"
+          value={selectedIndicator?.id || ""}
+          onChange={(e) => {
+            const found = indicators.find((i) => i.id === e.target.value);
+            setSelectedIndicator(found || null);
+            if (found?.default_admin_level)
+              setAdminLevel(found.default_admin_level);
+          }}
         >
-          Skip indicator selection
-        </button>
+          <option value="">— None / Create New —</option>
+          {filteredIndicators.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.theme} – {i.name}
+            </option>
+          ))}
+        </select>
 
-        {/* Dataset type and admin level */}
-        <div className="flex gap-4 mb-4">
-          <div className="flex-1">
-            <label className="block text-sm text-gray-600 mb-1">Dataset Type</label>
-            <select
-              value={datasetType}
-              onChange={(e) => setDatasetType(e.target.value)}
-              className="border rounded w-full px-2 py-1"
-            >
-              <option value="gradient">Gradient</option>
-              <option value="categorical">Categorical</option>
-            </select>
-          </div>
+        {/* Dataset type */}
+        <label className="block text-sm font-medium mb-1">
+          Dataset Type
+        </label>
+        <select
+          className="w-full border rounded px-2 py-1 text-sm mb-3"
+          value={datasetType}
+          onChange={(e) => setDatasetType(e.target.value)}
+        >
+          <option value="gradient">Gradient (per admin unit)</option>
+          <option value="categorical">Categorical (multi-value per admin)</option>
+        </select>
 
-          <div className="flex-1">
-            <label className="block text-sm text-gray-600 mb-1">Admin Level</label>
-            <select
-              value={adminLevel}
-              onChange={(e) => setAdminLevel(e.target.value)}
-              className="border rounded w-full px-2 py-1"
-            >
-              {adminLevels.map((l) => (
-                <option key={l}>{l}</option>
-              ))}
-            </select>
-          </div>
+        {/* Admin level */}
+        <label className="block text-sm font-medium mb-1">
+          Administrative Level
+        </label>
+        <select
+          className="w-full border rounded px-2 py-1 text-sm mb-3"
+          value={adminLevel}
+          onChange={(e) => setAdminLevel(e.target.value)}
+        >
+          {adminLevels.map((lvl) => (
+            <option key={lvl}>{lvl}</option>
+          ))}
+        </select>
 
-          <div className="flex-1">
-            <label className="block text-sm text-gray-600 mb-1">Prefill Mode</label>
-            <select
-              value={prefillMode}
-              onChange={(e) => setPrefillMode(e.target.value as "Empty" | "Prefilled")}
-              className="border rounded w-full px-2 py-1"
-            >
-              <option value="Empty">Empty</option>
-              <option value="Prefilled">Prefilled</option>
-            </select>
-          </div>
-        </div>
+        {/* Prefill toggle */}
+        <label className="flex items-center gap-2 mb-4 text-sm">
+          <input
+            type="checkbox"
+            checked={prepopulate}
+            onChange={(e) => setPrepopulate(e.target.checked)}
+          />
+          Pre-fill with PCodes and Names from {adminLevel}
+        </label>
 
-        <div className="flex justify-end gap-3 mt-6">
+        {/* Actions */}
+        <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onClose}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
+            className="px-3 py-1 border rounded text-sm"
           >
             Cancel
           </button>
           <button
+            onClick={handleGenerateTemplate}
             disabled={loading}
-            onClick={handleDownload}
-            className="px-4 py-2 bg-green-700 text-white rounded flex items-center gap-2 hover:bg-green-800 disabled:opacity-50"
+            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
           >
-            <Download size={16} />
-            {loading ? "Generating..." : "Download Template"}
+            {loading ? "Generating..." : "Download CSV"}
           </button>
         </div>
       </div>
