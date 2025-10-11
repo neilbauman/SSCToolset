@@ -60,9 +60,9 @@ export default function TemplateDownloadModal({
     let rows: any[] = [];
 
     if (templateType === "gradient") {
-      headers = ["pcode", "value", "name(optional)"];
+      headers = ["name(optional)", "pcode", "value"];
     } else {
-      headers = ["pcode", "name(optional)"];
+      headers = ["name(optional)", "pcode"];
       for (let i = 1; i <= categoryCount; i++) headers.push(`category_${i}`);
     }
 
@@ -84,7 +84,10 @@ export default function TemplateDownloadModal({
 
         if (units) {
           rows = units.map((u) => {
-            const base = [u.pcode, "", u.name ?? ""];
+            const base =
+              templateType === "gradient"
+                ? [u.name ?? "", u.pcode, ""]
+                : [u.name ?? "", u.pcode];
             if (templateType === "categorical") {
               for (let i = 0; i < categoryCount; i++) base.push("");
             }
