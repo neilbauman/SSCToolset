@@ -49,7 +49,7 @@ export default function TemplateDownloadModal({
     }
   }, [selectedTheme, indicators]);
 
-  // Native CSV download helper
+  // Native CSV download
   const downloadCSV = (csv: string, filename: string) => {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -65,7 +65,6 @@ export default function TemplateDownloadModal({
   // Handle template generation
   const handleDownload = async () => {
     setLoading(true);
-
     let rows: any[] = [];
     let filename = "TEMPLATE.csv";
 
@@ -93,7 +92,10 @@ export default function TemplateDownloadModal({
           .eq("dataset_version_id", placesDataset.dataset_version_id);
 
         if (places?.length) {
-          rows = places.map((p) => ({
+          const uniquePlaces = Array.from(
+            new Map(places.map((p) => [p.pcode, p])).values()
+          );
+          rows = uniquePlaces.map((p) => ({
             pcode: p.pcode,
             value: "",
             name: p.name || "",
@@ -133,7 +135,7 @@ export default function TemplateDownloadModal({
           <select
             value={selectedTheme}
             onChange={(e) => setSelectedTheme(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
           >
             <option value="">All Themes</option>
             {themes.map((theme) => (
@@ -152,7 +154,7 @@ export default function TemplateDownloadModal({
           <select
             value={selectedIndicator}
             onChange={(e) => setSelectedIndicator(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
           >
             <option value="">New Indicator (Custom)</option>
             {filteredIndicators.map((ind) => (
@@ -173,7 +175,7 @@ export default function TemplateDownloadModal({
             onChange={(e) =>
               setIndicatorType(e.target.value as "gradient" | "categorical")
             }
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
           >
             <option value="gradient">Gradient</option>
             <option value="categorical">Categorical</option>
@@ -188,7 +190,7 @@ export default function TemplateDownloadModal({
           <select
             value={adminLevel}
             onChange={(e) => setAdminLevel(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#C21F3A] focus:border-[#C21F3A]"
           >
             <option value="ADM0">ADM0</option>
             <option value="ADM1">ADM1</option>
@@ -198,21 +200,23 @@ export default function TemplateDownloadModal({
           </select>
         </div>
 
-        {/* Prefill Toggle */}
+        {/* Prefill Toggle with Tooltip */}
         <div className="flex items-center justify-between mb-6">
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input
               type="checkbox"
               checked={prefill}
               onChange={(e) => setPrefill(e.target.checked)}
-              className="h-4 w-4 accent-red-500"
+              className="h-4 w-4 accent-[#C21F3A]"
             />
             <span className="flex items-center gap-1">
               Prefill with admin boundaries
-              <Info
-                className="w-4 h-4 text-gray-400"
+              <span
                 title="Prefill uses the currently active administrative boundary dataset for this country."
-              />
+                className="inline-flex items-center"
+              >
+                <Info className="w-4 h-4 text-gray-400" />
+              </span>
             </span>
           </label>
         </div>
