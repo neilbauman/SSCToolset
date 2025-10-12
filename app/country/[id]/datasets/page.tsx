@@ -33,7 +33,6 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   const loadValues = async (datasetId: string) => {
     setLoadingValues(true);
-    setValues([]);
     const { data, error } = await supabase
       .from("dataset_values")
       .select("admin_pcode, value, unit")
@@ -51,7 +50,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         })
       );
       setValues(joined);
-      setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth" }), 150);
+      setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
     }
     setLoadingValues(false);
   };
@@ -72,8 +71,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: "Other Datasets",
     group: "datasets" as const,
-    description: "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs />, // ✅ FIXED — no props
+    description:
+      "Upload and manage additional datasets such as national statistics or gradient indicators.",
+    breadcrumbs: <Breadcrumbs items={[{ label: "Other Datasets" }]} />, // ✅ FIXED — required items prop
   };
 
   return (
@@ -101,9 +101,13 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         <table className="min-w-full text-sm">
           <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
             <tr>
-              {["Title", "Year", "Admin Level", "Type", "Data Type", "Source", "Actions"].map((h) => (
-                <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
-              ))}
+              {["Title", "Year", "Admin Level", "Type", "Data Type", "Source", "Actions"].map(
+                (h) => (
+                  <th key={h} className="px-3 py-2 text-left font-semibold">
+                    {h}
+                  </th>
+                )
+              )}
             </tr>
           </thead>
           <tbody>
@@ -112,8 +116,13 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               return (
                 <tr
                   key={d.id}
-                  onClick={() => { setSelected(d); loadValues(d.id); }}
-                  className={`border-t cursor-pointer hover:bg-[color:var(--gsc-beige)] ${active ? "font-semibold bg-[color:var(--gsc-beige)]" : ""}`}
+                  onClick={() => {
+                    setSelected(d);
+                    loadValues(d.id);
+                  }}
+                  className={`border-t cursor-pointer hover:bg-[color:var(--gsc-beige)] ${
+                    active ? "font-semibold bg-[color:var(--gsc-beige)]" : ""
+                  }`}
                 >
                   <td className="px-3 py-2">{d.title}</td>
                   <td className="px-3 py-2">{d.year || "—"}</td>
@@ -122,10 +131,20 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   <td className="px-3 py-2">{d.data_type}</td>
                   <td className="px-3 py-2">{d.source_name || "—"}</td>
                   <td className="px-3 py-2 flex gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); setOpenEdit(d); }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenEdit(d);
+                      }}
+                    >
                       <Edit3 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-blue)]" />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setOpenDelete(d); }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenDelete(d);
+                      }}
+                    >
                       <Trash2 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-red)]" />
                     </button>
                   </td>
@@ -133,7 +152,11 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               );
             })}
             {!datasets.length && (
-              <tr><td colSpan={7} className="text-center text-gray-500 py-6">No datasets found.</td></tr>
+              <tr>
+                <td colSpan={7} className="text-center text-gray-500 py-6">
+                  No datasets found.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -143,7 +166,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       {selected && (
         <div ref={previewRef} className="mt-6 border rounded-lg bg-white shadow-sm">
           <div className="px-4 py-2 border-b flex justify-between items-center bg-[color:var(--gsc-beige)]">
-            <h3 className="font-semibold text-[color:var(--gsc-gray)]">Data Preview: {selected.title}</h3>
+            <h3 className="font-semibold text-[color:var(--gsc-gray)]">
+              Data Preview: {selected.title}
+            </h3>
             {loadingValues && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
           </div>
           <div className="overflow-x-auto">
@@ -151,7 +176,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               <thead>
                 <tr className="bg-gray-50 text-gray-600 border-b">
                   {["Name", "PCode", "Value", "Unit"].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+                    <th key={h} className="px-3 py-2 text-left font-semibold">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -165,7 +192,11 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   </tr>
                 ))}
                 {!values.length && (
-                  <tr><td colSpan={4} className="text-center text-gray-500 py-6">No data available.</td></tr>
+                  <tr>
+                    <td colSpan={4} className="text-center text-gray-500 py-6">
+                      No data available.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -174,8 +205,22 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       )}
 
       {/* Modals */}
-      {openAdd && <AddDatasetModal open={openAdd} onClose={() => setOpenAdd(false)} countryIso={countryIso} onCreated={loadDatasets} />}
-      {openEdit && <EditDatasetModal open={!!openEdit} dataset={openEdit} onClose={() => setOpenEdit(null)} onSave={loadDatasets} />}
+      {openAdd && (
+        <AddDatasetModal
+          open={openAdd}
+          onClose={() => setOpenAdd(false)}
+          countryIso={countryIso}
+          onCreated={loadDatasets}
+        />
+      )}
+      {openEdit && (
+        <EditDatasetModal
+          open={!!openEdit}
+          dataset={openEdit}
+          onClose={() => setOpenEdit(null)}
+          onSave={loadDatasets}
+        />
+      )}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -185,7 +230,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
           onConfirm={() => handleDelete(openDelete.id)}
         />
       )}
-      {openTemplate && <TemplateDownloadModal open={openTemplate} onClose={() => setOpenTemplate(false)} />}
+      {openTemplate && (
+        <TemplateDownloadModal open={openTemplate} onClose={() => setOpenTemplate(false)} />
+      )}
     </SidebarLayout>
   );
 }
