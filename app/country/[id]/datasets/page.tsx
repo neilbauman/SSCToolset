@@ -1,72 +1,100 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import {
+  Database,
+  PlusCircle,
+  Eye,
+  Trash2,
+  Edit3,
+  Loader2,
+  Download,
+} from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
-import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
+import EditDatasetModal from "@/components/country/EditDatasetModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import { Database, Plus, FileDown, Loader2, Eye, Trash2 } from "lucide-react";
-import type { CountryParams } from "@/app/country/types";
 
-export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
+type CountryParams = { id: string };
+
+type DatasetMeta = {
+  id: string;
+  title: string;
+  indicator_id?: string | null;
+  type: string | null;
+  admin_level: string | null;
+  data_type: string | null;
+  source: string | null;
+  created_at: string;
+  year?: number | null;
+  unit?: string | null;
+};
+
+type DatasetRow = {
+  admin_name: string | null;
+  admin_pcode: string;
+  value: number | null;
+  unit: string | null;
+};
+
+export default function DatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
-  const [datasets, setDatasets] = useState<any[]>([]);
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
-  const [openTemplate, setOpenTemplate] = useState(false);
-  const [openDelete, setOpenDelete] = useState<any | null>(null);
-  const [selectedDataset, setSelectedDataset] = useState<any | null>(null);
-  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [openEdit, setOpenEdit] = useState<DatasetMeta | null>(null);
+  const [openDelete, setOpenDelete] = useState<DatasetMeta | null>(null);
+  const [selectedDataset, setSelectedDataset] = useState<DatasetMeta | null>(null);
+  const [previewData, setPreviewData] = useState<DatasetRow[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // 📦 Load datasets
-  async function loadDatasets() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("dataset_metadata")
-      .select(`
-        id, title, description, country_iso, created_at,
-        indicator_id,
-        indicator_catalogue(name, theme, data_type),
-        admin_level, upload_type, data_type, source
-      `)
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) setDatasets(data);
-    setLoading(false);
-  }
-
+  // 🟢 Load datasets
   useEffect(() => {
-    loadDatasets();
+    const fetchDatasets = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (error) console.error("Error fetching datasets:", error);
+      else setDatasets(data || []);
+      setLoading(false);
+    };
+    fetchDatasets();
   }, [countryIso]);
 
-  // 👁️ Load dataset values preview
-  async function loadPreview(datasetId: string) {
+  // 🟢 Load dataset values for preview
+  const loadPreview = async (datasetId: string) => {
     setPreviewLoading(true);
-    setPreviewRows([]);
+    setSelectedDataset(datasets.find((d) => d.id === datasetId) || null);
+
     const { data, error } = await supabase
-      .from("dataset_values")
-      .select("admin_pcode, value, unit, notes")
+      .from("view_dataset_values_with_names")
+      .select("admin_name, admin_pcode, value, unit")
       .eq("dataset_id", datasetId)
-      .limit(20);
+      .limit(1000);
 
-    if (!error && data) setPreviewRows(data);
+    if (error) {
+      console.error("Error loading dataset preview:", error);
+      setPreviewData([]);
+    } else {
+      setPreviewData(data || []);
+    }
     setPreviewLoading(false);
-  }
+  };
 
-  // 🗑️ Delete dataset
-  async function handleDeleteDataset(id: string) {
-    const { error } = await supabase.from("dataset_metadata").delete().eq("id", id);
-    if (error) alert("Failed to delete dataset.");
-    else await loadDatasets();
+  const handleDelete = async (id: string) => {
+    await supabase.from("dataset_metadata").delete().eq("id", id);
+    await supabase.from("dataset_values").delete().eq("dataset_id", id);
+    setDatasets((prev) => prev.filter((d) => d.id !== id));
     setOpenDelete(null);
-  }
+  };
 
   const headerProps = {
-    title: "Other Datasets",
+    title: `${countryIso} – Other Datasets`,
     group: "country-config" as const,
     description:
       "Upload and manage additional datasets such as national statistics or gradient indicators.",
@@ -75,7 +103,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
+          { label: countryIso },
           { label: "Other Datasets" },
         ]}
       />
@@ -86,168 +114,160 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     <SidebarLayout headerProps={headerProps}>
       {/* Header Actions */}
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
+        <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)] flex items-center gap-2">
+          <Database className="w-5 h-5 text-[color:var(--gsc-red)]" />
           Country Datasets
         </h2>
         <div className="flex gap-2">
           <button
-            onClick={() => setOpenTemplate(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-sm hover:opacity-90"
-            style={{ backgroundColor: "var(--gsc-blue)" }}
+            onClick={() => window.location.assign(`/country/${countryIso}/download-template`)}
+            className="flex items-center text-sm border px-3 py-1 rounded text-blue-700 hover:bg-blue-50"
           >
-            <FileDown className="w-4 h-4" /> Download Template
+            <Download className="w-4 h-4 mr-1" /> Template
           </button>
           <button
             onClick={() => setOpenAdd(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-sm hover:opacity-90"
-            style={{ backgroundColor: "var(--gsc-red)" }}
+            className="flex items-center text-sm text-white bg-[color:var(--gsc-red)] px-3 py-1 rounded hover:opacity-90"
           >
-            <Plus className="w-4 h-4" /> Add Dataset
+            <PlusCircle className="w-4 h-4 mr-1" /> Add Dataset
           </button>
         </div>
       </div>
 
-      {/* Datasets Table */}
-      {loading ? (
-        <div className="flex items-center gap-2 text-gray-600 text-sm">
-          <Loader2 className="animate-spin w-4 h-4" /> Loading datasets...
-        </div>
-      ) : datasets.length === 0 ? (
-        <p className="text-gray-500 text-sm italic">No datasets uploaded yet.</p>
-      ) : (
-        <div className="overflow-x-auto border rounded-md">
-          <table className="min-w-full text-sm">
-            <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)] text-left">
+      {/* Dataset Table */}
+      <div className="border rounded-lg p-4 bg-white shadow-sm">
+        {loading ? (
+          <div className="flex items-center text-sm text-gray-600">
+            <Loader2 className="animate-spin w-4 h-4 mr-2" /> Loading datasets...
+          </div>
+        ) : datasets.length === 0 ? (
+          <p className="italic text-gray-500 text-sm">No datasets uploaded yet.</p>
+        ) : (
+          <table className="w-full text-sm border rounded">
+            <thead className="bg-gray-100">
               <tr>
-                <th className="px-3 py-2 font-medium">Title</th>
-                <th className="px-3 py-2 font-medium">Indicator</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Admin Level</th>
-                <th className="px-3 py-2 font-medium">Data Type</th>
-                <th className="px-3 py-2 font-medium">Source</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium text-center">Actions</th>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th>Indicator</th>
+                <th>Type</th>
+                <th>Admin Level</th>
+                <th>Data Type</th>
+                <th>Source</th>
+                <th>Year</th>
+                <th>Created</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {datasets.map((ds) => {
-                const src = ds.source ? JSON.parse(ds.source) : null;
-                return (
-                  <tr
-                    key={ds.id}
-                    className="border-t hover:bg-gray-50 cursor-pointer"
-                    onClick={() => {
-                      setSelectedDataset(ds);
-                      loadPreview(ds.id);
-                    }}
-                  >
-                    <td className="px-3 py-2">{ds.title}</td>
-                    <td className="px-3 py-2">
-                      {ds.indicator_catalogue?.name || "—"}
-                    </td>
-                    <td className="px-3 py-2 capitalize">{ds.upload_type}</td>
-                    <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2 capitalize">{ds.data_type}</td>
-                    <td className="px-3 py-2">
-                      {src?.name ? (
-                        src.url ? (
-                          <a
-                            href={src.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[color:var(--gsc-blue)] underline"
-                          >
-                            {src.name}
-                          </a>
-                        ) : (
-                          src.name
-                        )
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-gray-500">
-                      {new Date(ds.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedDataset(ds);
-                            loadPreview(ds.id);
-                          }}
-                          title="View Data"
-                          className="text-[color:var(--gsc-blue)] hover:text-blue-700"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenDelete(ds);
-                          }}
-                          title="Delete Dataset"
-                          className="text-[color:var(--gsc-red)] hover:text-red-700"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {datasets.map((ds) => (
+                <tr key={ds.id} className="hover:bg-gray-50">
+                  <td className="border px-2 py-1">{ds.title}</td>
+                  <td className="border px-2 py-1 text-gray-500">—</td>
+                  <td className="border px-2 py-1">{ds.type || "—"}</td>
+                  <td className="border px-2 py-1">{ds.admin_level || "—"}</td>
+                  <td className="border px-2 py-1">{ds.data_type || "—"}</td>
+                  <td className="border px-2 py-1">
+                    {ds.source ? (
+                      (() => {
+                        try {
+                          const parsed = JSON.parse(ds.source);
+                          return parsed.url ? (
+                            <a
+                              href={parsed.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              {parsed.name || parsed.url}
+                            </a>
+                          ) : (
+                            parsed.name || "—"
+                          );
+                        } catch {
+                          return ds.source;
+                        }
+                      })()
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {ds.year ? ds.year : "—"}
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    {new Date(ds.created_at).toISOString().split("T")[0]}
+                  </td>
+                  <td className="border px-2 py-1 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        className="text-blue-600 hover:underline text-xs flex items-center"
+                        onClick={() => loadPreview(ds.id)}
+                      >
+                        <Eye className="w-4 h-4 mr-1" /> Preview
+                      </button>
+                      <button
+                        className="text-gray-700 hover:underline text-xs flex items-center"
+                        onClick={() => setOpenEdit(ds)}
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" /> Edit
+                      </button>
+                      <button
+                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
+                        onClick={() => setOpenDelete(ds)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Preview Panel */}
+      {/* Dataset Preview */}
       {selectedDataset && (
-        <div className="mt-6 border rounded-md p-4 bg-[color:var(--gsc-beige)]">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-base font-semibold text-[color:var(--gsc-gray)]">
+        <div className="mt-6 border rounded-lg p-4 bg-[color:var(--gsc-beige)] shadow-sm">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-md font-semibold text-[color:var(--gsc-gray)]">
               Dataset Preview — {selectedDataset.title}
             </h3>
             <button
               onClick={() => setSelectedDataset(null)}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-gray-500 hover:text-gray-800"
             >
               Close
             </button>
           </div>
-
           {previewLoading ? (
-            <div className="flex items-center gap-2 text-gray-500 text-sm">
-              <Loader2 className="animate-spin w-4 h-4" /> Loading data...
+            <div className="flex items-center text-sm text-gray-600">
+              <Loader2 className="animate-spin w-4 h-4 mr-2" /> Loading data...
             </div>
-          ) : previewRows.length === 0 ? (
-            <p className="text-gray-500 text-sm italic">
-              No data rows found for this dataset.
-            </p>
+          ) : previewData.length === 0 ? (
+            <p className="italic text-gray-500 text-sm">No data found for this dataset.</p>
           ) : (
-            <div className="overflow-x-auto border rounded bg-white">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100 text-gray-700">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">Admin PCode</th>
-                    <th className="px-3 py-2 text-left font-medium">Value</th>
-                    <th className="px-3 py-2 text-left font-medium">Unit</th>
-                    <th className="px-3 py-2 text-left font-medium">Notes</th>
+            <table className="w-full text-sm border rounded">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-2 py-1 text-left">Admin Name</th>
+                  <th className="px-2 py-1 text-left">PCode</th>
+                  <th className="px-2 py-1 text-right">Value</th>
+                  <th className="px-2 py-1 text-right">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewData.map((row, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="border px-2 py-1">{row.admin_name || "—"}</td>
+                    <td className="border px-2 py-1">{row.admin_pcode}</td>
+                    <td className="border px-2 py-1 text-right">
+                      {row.value !== null ? row.value.toFixed(2) : "—"}
+                    </td>
+                    <td className="border px-2 py-1 text-right">{row.unit || "—"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((r, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="px-3 py-1">{r.admin_pcode}</td>
-                      <td className="px-3 py-1">{r.value}</td>
-                      <td className="px-3 py-1">{r.unit || "—"}</td>
-                      <td className="px-3 py-1">{r.notes || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}
@@ -258,23 +278,39 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           countryIso={countryIso}
-          onUploaded={loadDatasets}
+          onUploaded={async () => {
+            const { data } = await supabase
+              .from("dataset_metadata")
+              .select("*")
+              .eq("country_iso", countryIso)
+              .order("created_at", { ascending: false });
+            setDatasets(data || []);
+          }}
         />
       )}
-      {openTemplate && (
-        <TemplateDownloadModal
-          open={openTemplate}
-          onClose={() => setOpenTemplate(false)}
-          countryIso={countryIso}
+
+      {openEdit && (
+        <EditDatasetModal
+          open={!!openEdit}
+          dataset={openEdit}
+          onClose={() => setOpenEdit(null)}
+          onSave={async () => {
+            const { data } = await supabase
+              .from("dataset_metadata")
+              .select("*")
+              .eq("country_iso", countryIso)
+              .order("created_at", { ascending: false });
+            setDatasets(data || []);
+          }}
         />
       )}
+
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
-          title="Delete Dataset"
-          message={`Are you sure you want to delete "${openDelete.title}"? This will remove all associated data values.`}
+          message={`Delete dataset "${openDelete.title}"? This will permanently remove it and its data.`}
           onClose={() => setOpenDelete(null)}
-          onConfirm={() => handleDeleteDataset(openDelete.id)}
+          onConfirm={() => handleDelete(openDelete.id)}
         />
       )}
     </SidebarLayout>
