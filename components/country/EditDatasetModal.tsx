@@ -16,7 +16,6 @@ type DatasetMeta = {
   source_name: string | null;
   source_url: string | null;
   indicator_id: string | null;
-  is_active?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -49,7 +48,6 @@ export default function EditDatasetModal({
   const [description, setDescription] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [isActive, setIsActive] = useState(true);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [theme, setTheme] = useState("All");
   const [search, setSearch] = useState("");
@@ -57,7 +55,7 @@ export default function EditDatasetModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Populate fields from dataset on open
+  // ✅ Prepopulate fields on modal open
   useEffect(() => {
     if (!dataset) return;
     setTitle(dataset.title || "");
@@ -69,7 +67,6 @@ export default function EditDatasetModal({
     setDescription(dataset.description || "");
     setSourceName(dataset.source_name || "");
     setSourceUrl(dataset.source_url || "");
-    setIsActive(dataset.is_active ?? true);
     setSelectedIndicatorId(dataset.indicator_id || null);
   }, [dataset]);
 
@@ -115,7 +112,6 @@ export default function EditDatasetModal({
         source_name: sourceName || null,
         source_url: sourceUrl || null,
         indicator_id: selectedIndicatorId,
-        is_active: isActive,
       };
       const { error } = await supabase
         .from("dataset_metadata")
@@ -150,7 +146,7 @@ export default function EditDatasetModal({
         </div>
 
         <div className="p-5 grid md:grid-cols-2 gap-6">
-          {/* Left side — metadata */}
+          {/* Left side — dataset metadata */}
           <div className="space-y-3">
             <div>
               <label className={LABEL}>Title *</label>
@@ -183,9 +179,7 @@ export default function EditDatasetModal({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={LABEL}>
-                  Dataset Type
-                </label>
+                <label className={LABEL}>Dataset Type</label>
                 <select
                   className={FIELD}
                   value={datasetType}
@@ -246,11 +240,6 @@ export default function EditDatasetModal({
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-              Active Dataset
-            </label>
           </div>
 
           {/* Right side — indicator linking */}
