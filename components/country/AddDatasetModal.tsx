@@ -1,453 +1,526 @@
+// /components/country/AddDatasetModal.tsx
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { X, Search, Upload, Info, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import Papa from "papaparse";
-import { X, Search, Upload, AlertCircle, CheckCircle2, Info, Plus } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type Props = { open: boolean; countryIso: string; onClose: () => void; onCreated?: () => void };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  onCreated?: () => void;
+};
+
 type Indicator = {
   id: string;
   code: string;
   name: string;
   theme: string | null;
-  data_type: "numeric" | "percentage" | "categorical" | null;
+  data_type: "numeric" | "percentage" | "categories" | null;
 };
-const GSC_BTN =
-  "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-red)] hover:opacity-90 disabled:opacity-50";
+
+type Theme = { name: string };
+
 const FIELD =
-  "w-full border rounded px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--gsc-red)] focus:border-[color:var(--gsc-red)]";
-const LABEL = "block text-sm font-medium text-[color:var(--gsc-gray)] mb-1";
+  "w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 ring-[color:var(--gsc-red)]";
+const LABEL = "block text-xs font-medium text-[color:var(--gsc-gray)] mb-1";
+const BTN_PRIMARY =
+  "inline-flex items-center gap-2 bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 hover:opacity-90 disabled:opacity-50";
+const BTN_GHOST =
+  "inline-flex items-center gap-2 border rounded-md px-3 py-2 hover:bg-gray-50";
+const CARD =
+  "rounded-md border hover:border-[color:var(--gsc-blue)] transition-colors cursor-pointer";
 
 export default function AddDatasetModal({ open, onClose, countryIso, onCreated }: Props) {
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [indicators, setIndicators] = useState<Indicator[]>([]);
-  const [themes, setThemes] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const [themeFilter, setThemeFilter] = useState("All");
+  // --- dataset form state (LEFT) ---
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState<string>("");
   const [year, setYear] = useState<number | "">("");
-  const [unit, setUnit] = useState("");
-  const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [dataType, setDataType] = useState<"numeric" | "percentage" | "categorical">("numeric");
-  const [uploadType, setUploadType] = useState<"gradient" | "categorical">("gradient");
-  const [indicatorId, setIndicatorId] = useState<string | null>(null);
+  const [unit, setUnit] = useState<string>("");
+  const [adminLevel, setAdminLevel] = useState<string>("ADM0");
+  const [dataType, setDataType] = useState<"numeric" | "percentage">("numeric");
+  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">("gradient");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [adminOptions, setAdminOptions] = useState([{ key: "ADM0", label: "ADM0 (National)" }]);
-  const [valueAdm0, setValueAdm0] = useState<string>("");
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [nationalValue, setNationalValue] = useState<string>("");
 
-  // Fetch indicators
+  // Upload helpers
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [bigInsert, setBigInsert] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ type: "ok" | "err" | null; text?: string }>({
+    type: null,
+  });
+
+  // --- indicator library (RIGHT) ---
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [themeFilter, setThemeFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [selected, setSelected] = useState<Indicator | null>(null);
+
+  // --- admin levels available for the country ---
+  const [levels, setLevels] = useState<string[]>(["ADM0"]);
+
+  // reset form when opening
   useEffect(() => {
     if (!open) return;
-    (async () => {
-      const { data } = await supabase
-        .from("indicator_catalogue")
-        .select("id,code,name,theme,data_type")
-        .order("name");
-      setIndicators(data || []);
-      setThemes(
-        Array.from(new Set((data || []).map((d) => d.theme).filter(Boolean))) as string[]
-      );
-    })();
-  }, [open]);
-
-  // Fetch available admin levels from active admin dataset
-  useEffect(() => {
-    if (!open) return;
-    (async () => {
-      try {
-        const { data: v } = await supabase
-          .from("admin_dataset_versions")
-          .select("id")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true)
-          .maybeSingle();
-        if (v?.id) {
-          const { data: lvls } = await supabase
-            .from("admin_units")
-            .select("level")
-            .eq("dataset_version_id", v.id);
-          const nums = Array.from(
-            new Set((lvls || []).map((r) => parseInt(String(r.level).replace("ADM", ""), 10)))
-          )
-            .filter(Number.isFinite)
-            .sort((a, b) => a - b);
-          setAdminOptions([
-            { key: "ADM0", label: "ADM0 (National)" },
-            ...nums.map((n) => ({ key: `ADM${n}`, label: `ADM${n}` })),
-          ]);
-        }
-      } catch {
-        setAdminOptions([{ key: "ADM0", label: "ADM0 (National)" }]);
-      }
-    })();
-  }, [open, countryIso]);
-
-  // Filters
-  const filtered = useMemo(
-    () =>
-      indicators.filter(
-        (i) =>
-          (themeFilter === "All" || (i.theme || "") === themeFilter) &&
-          (!search || `${i.name} ${i.code}`.toLowerCase().includes(search.toLowerCase()))
-      ),
-    [indicators, search, themeFilter]
-  );
-
-  const reset = () => {
     setTitle("");
     setDescription("");
     setYear("");
     setUnit("");
     setAdminLevel("ADM0");
     setDataType("numeric");
-    setUploadType("gradient");
+    setDatasetType("gradient");
     setSourceName("");
     setSourceUrl("");
-    setIndicatorId(null);
-    setFile(null);
-    setValueAdm0("");
-    if (fileRef.current) fileRef.current.value = "";
-    setMsg(null);
-  };
-  const handleClose = () => {
-    if (busy) return;
-    reset();
-    onClose();
+    setNationalValue("");
+    setCsvFile(null);
+    setSelected(null);
+    setMsg({ type: null });
+  }, [open]);
+
+  // fetch themes + indicators + admin levels
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const [{ data: t }, { data: i }] = await Promise.all([
+        supabase.from("theme_catalogue").select("name").order("name"),
+        supabase
+          .from("indicator_catalogue")
+          .select("id,code,name,theme,data_type")
+          .order("name"),
+      ]);
+      setThemes(t || []);
+      setIndicators((i || []) as Indicator[]);
+    })();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      // distinct levels from admin_units for this country
+      const { data } = await supabase
+        .from("admin_units")
+        .select("level")
+        .eq("country_iso", countryIso);
+      if (data && data.length) {
+        const uniq = Array.from(
+          new Set(
+            data
+              .map((r: any) => String(r.level))
+              .map((s) => (s.startsWith("ADM") ? s : `ADM${s}`))
+          )
+        )
+          .sort((a, b) => Number(a.replace("ADM", "")) - Number(b.replace("ADM", "")));
+        setLevels(uniq);
+        if (!uniq.includes(adminLevel)) setAdminLevel(uniq[0] || "ADM0");
+      } else {
+        setLevels(["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, countryIso]);
+
+  const filteredIndicators = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return indicators.filter((i) => {
+      const matchTheme = themeFilter === "All" || (i.theme || "") === themeFilter;
+      const matchQ =
+        !q ||
+        i.name.toLowerCase().includes(q) ||
+        i.code.toLowerCase().includes(q) ||
+        (i.theme || "").toLowerCase().includes(q);
+      return matchTheme && matchQ;
+    });
+  }, [indicators, search, themeFilter]);
+
+  const leftDisabled =
+    busy ||
+    !title.trim() ||
+    !adminLevel ||
+    (adminLevel === "ADM0" && !csvFile && !nationalValue.trim()) ||
+    (adminLevel !== "ADM0" && !csvFile);
+
+  const parseNumber = (raw: string): number | null => {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    const cleaned =
+      dataType === "percentage" ? s.replace(/%/g, "").trim() : s.replace(/,/g, "").trim();
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
   };
 
-  // Handle creation
-  async function handleCreate() {
-    if (!title.trim()) return setMsg({ type: "err", text: "Title required" });
-    if (adminLevel !== "ADM0" && !file)
-      return setMsg({ type: "err", text: "Please select a CSV file" });
-    if (adminLevel === "ADM0" && !valueAdm0.trim())
-      return setMsg({ type: "err", text: "Please enter a national value" });
+  // --- submit handler ---
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    setBusy(true);
-    let metaId: string | null = null;
+  const handleCreate = async () => {
     try {
-      const src = sourceName || sourceUrl ? { name: sourceName || null, url: sourceUrl || null } : null;
-      const ins = {
-        title,
+      setBusy(true);
+      setMsg({ type: null });
+
+      // 1) create dataset_metadata
+      const payload: any = {
+        country_iso: countryIso,
+        indicator_id: selected?.id || null,
+        title: title.trim(),
         description: description || null,
-        year: year === "" ? null : Number(year),
+        year: typeof year === "number" ? year : year === "" ? null : Number(year),
         unit: unit || null,
         admin_level: adminLevel,
-        country_iso: countryIso,
-        indicator_id: indicatorId,
-        upload_type: uploadType,
-        source: src ? JSON.stringify(src) : null,
+        data_type: dataType,
+        dataset_type: datasetType,
+        source_name: sourceName || null,
+        source_url: sourceUrl || null,
       };
-      const { data, error } = await supabase
+
+      const { data: meta, error: mErr } = await supabase
         .from("dataset_metadata")
-        .insert(ins)
+        .insert(payload)
         .select("id")
         .single();
-      if (error) throw error;
-      metaId = data?.id;
-    } catch (e: any) {
-      setBusy(false);
-      return setMsg({ type: "err", text: `Metadata failed: ${e.message}` });
-    }
+      if (mErr) throw mErr;
+      const metaId = meta?.id as string;
 
-    try {
-      if (adminLevel === "ADM0") {
-        const val = Number(valueAdm0);
-        if (!Number.isFinite(val)) throw new Error("Invalid numeric value");
+      // 2) insert values
+      // ADM0 single value path (no CSV)
+      if (adminLevel === "ADM0" && !csvFile) {
+        const val = parseNumber(nationalValue);
+        if (val == null) throw new Error("Enter a valid national value.");
         const { error } = await supabase
           .from("dataset_values")
-          .insert({ dataset_id: metaId!, admin_pcode: "ADM0", value: val, unit: unit || null });
+          .insert({ dataset_id: metaId, admin_pcode: "ADM0", value: val, unit: unit || null });
         if (error) throw error;
         setBusy(false);
-        setMsg({ type: "ok", text: "National-level value saved." });
-        onCreated && onCreated();
+        setMsg({ type: "ok", text: "Dataset saved." });
+        onCreated?.();
         return;
       }
 
-      const parsed = Papa.parse(await file!.text(), { header: true, skipEmptyLines: true });
-      if (parsed.errors?.length) throw new Error(parsed.errors[0].message);
-      const rows = (parsed.data as any[]).map((r) => ({
-        p: (r.pcode || r.PCode || r.admin_pcode || "").trim(),
-        v: r.value ?? r.Value ?? "",
-        u: r.unit ?? "",
-        n: r.notes ?? "",
-      }));
+      // CSV path (gradient)
+      if (!csvFile) throw new Error("Please select a CSV file.");
+      const csvText = await csvFile.text();
+      const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      if (parsed.errors.length) throw new Error(parsed.errors[0].message);
+
+      // Accept column aliases and normalize to {name, pcode, value, unit, notes}
+      const rows = (parsed.data as any[]).map((r) => {
+        const key = (k: string) => {
+          const hit =
+            Object.keys(r).find(
+              (h) => h.toLowerCase().trim().replaceAll(" ", "") === k.toLowerCase()
+            ) || "";
+          return r[hit];
+        };
+        return {
+          name: key("name"),
+          pcode: key("pcode"),
+          value: key("value"),
+          unit: key("unit"),
+          notes: key("notes"),
+        };
+      });
 
       let ok = 0,
-        skip = 0,
-        payload: any[] = [];
+        skip = 0;
+      const payloadRows: any[] = [];
       for (const r of rows) {
-        if (!r.p) {
+        const p = (r.pcode || "").toString().trim();
+        if (!p) {
           skip++;
           continue;
         }
-        let val: number | null = null;
-        if (r.v === "" || r.v == null) {
-          skip++;
-          continue;
-        }
-        const n = Number(String(r.v).replace("%", ""));
-        if (Number.isFinite(n)) val = n;
-        else {
+        const v = parseNumber(r.value);
+        if (v == null) {
           skip++;
           continue;
         }
         ok++;
-        payload.push({
-          dataset_id: metaId!,
-          admin_pcode: r.p,
-          value: val,
-          unit: r.u || null,
-          notes: r.n || null,
+        payloadRows.push({
+          dataset_id: metaId,
+          admin_pcode: p,
+          value: v,
+          unit: r.unit ? String(r.unit) : unit || null,
+          notes: r.notes ? String(r.notes) : null,
         });
       }
-      for (let i = 0; i < payload.length; i += 800) {
-        const { error } = await supabase.from("dataset_values").insert(payload.slice(i, i + 800));
+
+      // Chunked insert
+      const CHUNK = bigInsert ? 800 : 400;
+      for (let i = 0; i < payloadRows.length; i += CHUNK) {
+        const slice = payloadRows.slice(i, i + CHUNK);
+        const { error } = await supabase.from("dataset_values").insert(slice);
         if (error) throw error;
       }
+
       setBusy(false);
       setMsg({
         type: "ok",
-        text: `Upload complete: ${ok} rows${skip ? `; ${skip} skipped` : ``}`,
+        text: `Upload complete: ${ok} rows${skip ? `; ${skip} skipped` : ""}.`,
       });
-      onCreated && onCreated();
+      onCreated?.();
     } catch (e: any) {
       setBusy(false);
-      setMsg({ type: "err", text: `Upload fail: ${e.message}` });
+      setMsg({ type: "err", text: e.message || "Failed to save dataset." });
     }
-  }
+  };
+
+  const canUpload = !leftDisabled && !busy;
 
   return (
     <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}>
       <div
-        className={`absolute inset-0 bg-black/40 ${open ? "opacity-100" : "opacity-0"}`}
-        onClick={handleClose}
+        className={`absolute inset-0 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
+        onClick={onClose}
       />
       <div
-        className={`absolute left-1/2 top-1/2 w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-lg ${
-          open ? "opacity-100" : "opacity-0"
-        }`}
+        className={`absolute left-1/2 top-1/2 w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-lg transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
       >
-        <div className="flex justify-between border-b px-5 py-3">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-3">
           <h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add New Dataset</h3>
-          <button onClick={handleClose}>
+          <button onClick={onClose}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* Body */}
         <div className="p-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Left - Indicator */}
-          <div className="border rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <label className={LABEL}>Indicators</label>
-              <select
-                className="text-sm border rounded px-2 py-1"
-                value={themeFilter}
-                onChange={(e) => setThemeFilter(e.target.value)}
-              >
-                <option>All</option>
-                {themes.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="relative mb-2">
-              <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
-              <input
-                className={`${FIELD} pl-8`}
-                placeholder="Search indicator..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="border rounded max-h-72 overflow-auto">
-              {filtered.map((i) => (
-                <button
-                  key={i.id}
-                  onClick={() => setIndicatorId(indicatorId === i.id ? null : i.id)}
-                  className={`w-full text-left px-3 py-2.5 border-b hover:bg-gray-50 ${
-                    indicatorId === i.id ? "bg-green-50" : ""
-                  }`}
-                >
-                  <div className="font-medium">{i.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {i.theme || "—"} • {i.code}{" "}
-                    {i.data_type ? `• ${i.data_type}` : ""}
-                  </div>
-                </button>
-              ))}
-              {!filtered.length && (
-                <div className="p-3 text-sm text-gray-500">No indicators</div>
-              )}
-            </div>
-
-            <button
-              disabled
-              className="mt-2 text-xs text-[color:var(--gsc-blue)] flex items-center gap-1 opacity-60"
-            >
-              <Plus className="w-3 h-3" />
-              Add Indicator (soon)
-            </button>
-
-            {adminLevel !== "ADM0" && (
-              <div className="mt-4">
-                <label className={LABEL}>CSV File</label>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className={FIELD}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Columns: pcode,value,(unit,notes)
-                </p>
+          {/* LEFT: Dataset */}
+          <div className="lg:col-span-2 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL}>Title *</label>
+                <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
-            )}
-          </div>
-
-          {/* Right - Metadata */}
-          <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <label className={LABEL}>Title *</label>
-              <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} />
+              <div>
+                <label className={LABEL}>Year</label>
+                <input
+                  className={FIELD}
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}
+                />
+              </div>
             </div>
-            <div className="md:col-span-2">
+
+            <div>
               <label className={LABEL}>Description</label>
               <textarea
-                className={`${FIELD} min-h-[60px]`}
+                className={FIELD}
+                rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
-            <div>
-              <label className={LABEL}>Year</label>
-              <input
-                className={FIELD}
-                type="number"
-                value={year}
-                onChange={(e) =>
-                  setYear(e.target.value === "" ? "" : Number(e.target.value))
-                }
-              />
-            </div>
-            <div>
-              <label className={LABEL}>Unit</label>
-              <input
-                className={FIELD}
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className={LABEL}>Admin Level</label>
-              <select
-                className={FIELD}
-                value={adminLevel}
-                onChange={(e) => setAdminLevel(e.target.value)}
-              >
-                {adminOptions.map((o) => (
-                  <option key={o.key} value={o.key}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {adminLevel === "ADM0" && (
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className={LABEL}>National Value</label>
+                <label className={LABEL}>Admin Level</label>
+                <select className={FIELD} value={adminLevel} onChange={(e) => setAdminLevel(e.target.value)}>
+                  {levels.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={LABEL}>Dataset Type</label>
+                <select
+                  className={FIELD}
+                  value={datasetType}
+                  onChange={(e) => setDatasetType(e.target.value as any)}
+                >
+                  <option value="gradient">Gradient</option>
+                  <option value="categorical" disabled>
+                    Categorical (coming soon)
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label className={LABEL}>Data Type</label>
+                <select
+                  className={FIELD}
+                  value={dataType}
+                  onChange={(e) => setDataType(e.target.value as any)}
+                >
+                  <option value="numeric">Numeric</option>
+                  <option value="percentage">Percentage</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className={LABEL}>Unit</label>
+                <input className={FIELD} value={unit} onChange={(e) => setUnit(e.target.value)} />
+              </div>
+              <div>
+                <label className={LABEL}>Source Name</label>
                 <input
                   className={FIELD}
-                  value={valueAdm0}
-                  onChange={(e) => setValueAdm0(e.target.value)}
-                  placeholder="Enter numeric value"
+                  placeholder="e.g. National Statistics Office"
+                  value={sourceName}
+                  onChange={(e) => setSourceName(e.target.value)}
                 />
               </div>
-            )}
-            <div>
-              <label className={LABEL}>Dataset Type</label>
-              <select
-                className={FIELD}
-                value={uploadType}
-                onChange={(e) => setUploadType(e.target.value as any)}
-              >
-                <option value="gradient">Gradient</option>
-                <option value="categorical">Categorical</option>
-              </select>
+              <div>
+                <label className={LABEL}>Source URL</label>
+                <input
+                  className={FIELD}
+                  placeholder="https://…"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                />
+              </div>
             </div>
-            <div>
-              <label className={LABEL}>Data Type</label>
-              <select
-                className={FIELD}
-                value={dataType}
-                onChange={(e) => setDataType(e.target.value as any)}
-              >
-                <option value="numeric">Numeric</option>
-                <option value="percentage">Percentage</option>
-                <option value="categorical" disabled>
-                  Categorical (soon)
-                </option>
-              </select>
+
+            {/* CSV vs National value */}
+            {adminLevel === "ADM0" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className={LABEL}>National Value</label>
+                  <input
+                    className={FIELD}
+                    placeholder={dataType === "percentage" ? "e.g. 12.5 or 12.5%" : "e.g. 42"}
+                    value={nationalValue}
+                    onChange={(e) => setNationalValue(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <div className="text-xs text-gray-500">
+                    You can provide a single national value (recommended for ADM0) or upload a CSV instead.
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL}>CSV File {adminLevel !== "ADM0" ? "*" : "(optional)"}</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="block w-full text-sm"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Expected columns: <strong>name</strong> (optional), <strong>pcode</strong>,{" "}
+                  <strong>value</strong> (optional: <em>unit, notes</em>).
+                </p>
+              </div>
+              <div className="flex items-end justify-between">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={bigInsert}
+                    onChange={(e) => setBigInsert(e.target.checked)}
+                  />
+                  Large CSVs insert in chunks
+                  <Info className="w-4 h-4 text-gray-400" />
+                </label>
+                <div className="text-xs text-gray-500">
+                  {csvFile ? <span>{csvFile.name}</span> : <span>No file selected</span>}
+                </div>
+              </div>
             </div>
-            <div>
-              <label className={LABEL}>Source Name</label>
-              <input
-                className={FIELD}
-                value={sourceName}
-                onChange={(e) => setSourceName(e.target.value)}
-              />
+          </div>
+
+          {/* RIGHT: Indicator Library */}
+          <div className="space-y-3">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className={LABEL}>Indicators</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
+                  <input
+                    className={`${FIELD} pl-8`}
+                    placeholder="Search indicator…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="w-36">
+                <label className={LABEL}>Theme</label>
+                <select
+                  className={FIELD}
+                  value={themeFilter}
+                  onChange={(e) => setThemeFilter(e.target.value)}
+                >
+                  <option>All</option>
+                  {themes.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="md:col-span-2">
-              <label className={LABEL}>Source URL</label>
-              <input
-                className={FIELD}
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-              />
+
+            <div className="max-h-[420px] overflow-auto border rounded-md p-2">
+              {filteredIndicators.map((i) => {
+                const active = selected?.id === i.id;
+                return (
+                  <div
+                    key={i.id}
+                    className={`${CARD} p-3 mb-2 ${active ? "border-[color:var(--gsc-blue)] bg-blue-50/30" : "bg-white"}`}
+                    onClick={() => setSelected(active ? null : i)}
+                  >
+                    <div className="font-medium">{i.name}</div>
+                    <div className="text-xs text-gray-600 mt-0.5">
+                      {i.theme ? `${i.theme} • ` : ""}
+                      <span className="uppercase tracking-wider">{i.code}</span> •{" "}
+                      {i.data_type || "—"}
+                    </div>
+                  </div>
+                );
+              })}
+              {filteredIndicators.length === 0 && (
+                <div className="text-sm text-gray-500 px-1 py-6 text-center">No indicators match.</div>
+              )}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              <span className="inline-flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4" /> Linking an indicator is optional (you can add
+                or change it later).
+              </span>
             </div>
           </div>
         </div>
 
+        {/* Footer */}
         <div className="flex items-center justify-between border-t px-5 py-3">
-          <div className="text-sm text-gray-600 flex items-center gap-2">
-            <Info className="w-4 h-4 text-gray-400" />
-            Large CSVs insert in chunks
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleClose} className="px-3 py-2 border rounded-md">
-              Cancel
-            </button>
-            <button
-              onClick={handleCreate}
-              disabled={busy}
-              className={GSC_BTN}
-            >
+          <button className={BTN_GHOST} onClick={onClose}>
+            Cancel
+          </button>
+
+          <div className="flex items-center gap-3">
+            {busy && (
+              <span className="text-sm text-gray-600 inline-flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Uploading…
+              </span>
+            )}
+            <button className={BTN_PRIMARY} onClick={handleCreate} disabled={!canUpload}>
               <Upload className="w-4 h-4" />
-              {busy ? "Uploading..." : "Upload Dataset"}
+              Upload Dataset
             </button>
           </div>
         </div>
 
-        {msg && (
+        {msg.type && (
           <div
-            className={`mx-5 mb-4 mt-2 rounded-md border px-3 py-2 text-sm flex items-center gap-2 ${
-              msg.type === "ok"
-                ? "border-green-300 bg-green-50 text-green-800"
-                : "border-red-300 bg-red-50 text-red-800"
+            className={`flex items-center gap-2 text-sm px-5 py-2 border-t ${
+              msg.type === "ok" ? "text-green-700" : "text-[color:var(--gsc-red)]"
             }`}
           >
-            {msg.type === "ok" ? (
-              <CheckCircle2 className="w-4 h-4" />
-            ) : (
-              <AlertCircle className="w-4 h-4" />
-            )}
+            {msg.type === "ok" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
             <span>{msg.text}</span>
           </div>
         )}
