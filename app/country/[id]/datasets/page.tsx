@@ -1,12 +1,9 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  PlusCircle, FileDown, Edit3, Trash2, Loader2,
-} from "lucide-react";
+import { PlusCircle, FileDown, Edit3, Trash2, Loader2 } from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import EditDatasetModal from "@/components/country/EditDatasetModal";
 import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
@@ -44,19 +41,17 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       .limit(1000);
     if (!error && data) {
       const joined = await Promise.all(
-        data.map(async (row) => {
+        data.map(async (r) => {
           const { data: a } = await supabase
             .from("admin_units")
             .select("name")
-            .eq("pcode", row.admin_pcode)
+            .eq("pcode", r.admin_pcode)
             .maybeSingle();
-          return { ...row, name: a?.name || "—" };
+          return { ...r, name: a?.name || "—" };
         })
       );
       setValues(joined);
-      setTimeout(() => {
-        previewRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 200);
+      setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth" }), 150);
     }
     setLoadingValues(false);
   };
@@ -76,14 +71,14 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   const headerProps = {
     title: "Other Datasets",
-    group: "datasets",
+    group: "datasets" as const,
     description: "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs countryIso={countryIso} current="Other Datasets" />,
+    breadcrumbs: <Breadcrumbs current="Other Datasets" />, // ✅ FIXED
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Top Actions */}
+      {/* Actions */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex gap-2">
           <button
@@ -106,28 +101,19 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         <table className="min-w-full text-sm">
           <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold">Title</th>
-              <th className="px-3 py-2 text-left font-semibold">Year</th>
-              <th className="px-3 py-2 text-left font-semibold">Admin Level</th>
-              <th className="px-3 py-2 text-left font-semibold">Type</th>
-              <th className="px-3 py-2 text-left font-semibold">Data Type</th>
-              <th className="px-3 py-2 text-left font-semibold">Source</th>
-              <th className="px-3 py-2 text-left font-semibold">Actions</th>
+              {["Title", "Year", "Admin Level", "Type", "Data Type", "Source", "Actions"].map((h) => (
+                <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {datasets.map((d) => {
-              const isSelected = selected?.id === d.id;
+              const active = selected?.id === d.id;
               return (
                 <tr
                   key={d.id}
-                  className={`border-t cursor-pointer hover:bg-[color:var(--gsc-beige)] ${
-                    isSelected ? "font-semibold bg-[color:var(--gsc-beige)]" : ""
-                  }`}
-                  onClick={() => {
-                    setSelected(d);
-                    loadValues(d.id);
-                  }}
+                  onClick={() => { setSelected(d); loadValues(d.id); }}
+                  className={`border-t cursor-pointer hover:bg-[color:var(--gsc-beige)] ${active ? "font-semibold bg-[color:var(--gsc-beige)]" : ""}`}
                 >
                   <td className="px-3 py-2">{d.title}</td>
                   <td className="px-3 py-2">{d.year || "—"}</td>
@@ -137,18 +123,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   <td className="px-3 py-2">{d.source_name || "—"}</td>
                   <td className="px-3 py-2 flex gap-2">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenEdit(d);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setOpenEdit(d); }}
                     >
                       <Edit3 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-blue)]" />
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenDelete(d);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setOpenDelete(d); }}
                     >
                       <Trash2 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-red)]" />
                     </button>
@@ -157,11 +137,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               );
             })}
             {!datasets.length && (
-              <tr>
-                <td colSpan={7} className="text-center text-gray-500 py-6">
-                  No datasets found.
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="text-center text-gray-500 py-6">No datasets found.</td></tr>
             )}
           </tbody>
         </table>
@@ -180,10 +156,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-gray-600 border-b">
-                  <th className="px-3 py-2 text-left font-semibold">Name</th>
-                  <th className="px-3 py-2 text-left font-semibold">PCode</th>
-                  <th className="px-3 py-2 text-left font-semibold">Value</th>
-                  <th className="px-3 py-2 text-left font-semibold">Unit</th>
+                  {["Name", "PCode", "Value", "Unit"].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -196,11 +171,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   </tr>
                 ))}
                 {!values.length && (
-                  <tr>
-                    <td colSpan={4} className="text-center text-gray-500 py-6">
-                      No data available.
-                    </td>
-                  </tr>
+                  <tr><td colSpan={4} className="text-center text-gray-500 py-6">No data available.</td></tr>
                 )}
               </tbody>
             </table>
@@ -210,20 +181,10 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
       {/* Modals */}
       {openAdd && (
-        <AddDatasetModal
-          open={openAdd}
-          onClose={() => setOpenAdd(false)}
-          countryIso={countryIso}
-          onCreated={loadDatasets}
-        />
+        <AddDatasetModal open={openAdd} onClose={() => setOpenAdd(false)} countryIso={countryIso} onCreated={loadDatasets} />
       )}
       {openEdit && (
-        <EditDatasetModal
-          open={!!openEdit}
-          dataset={openEdit}
-          onClose={() => setOpenEdit(null)}
-          onSave={loadDatasets}
-        />
+        <EditDatasetModal open={!!openEdit} dataset={openEdit} onClose={() => setOpenEdit(null)} onSave={loadDatasets} />
       )}
       {openDelete && (
         <ConfirmDeleteModal
