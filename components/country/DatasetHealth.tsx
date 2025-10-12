@@ -1,38 +1,42 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { computeHealthLevel, HealthLevel } from "@/lib/dataHealth";
+
+type Health = "good" | "moderate" | "poor";
 
 export default function DatasetHealth({ datasetId }: { datasetId: string }) {
-  const [level, setLevel] = useState<HealthLevel | null>(null);
+  const [status, setStatus] = useState<Health | null>(null);
 
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("view_dataset_health")
         .select("completeness_pct, missing_admins_pct")
         .eq("dataset_id", datasetId)
         .maybeSingle();
 
-      if (error || !data) return;
-      const status = computeHealthLevel(data.completeness_pct, data.missing_admins_pct);
-      setLevel(status);
+      if (!data) return;
+      const c = data.completeness_pct ?? 0;
+      const m = data.missing_admins_pct ?? 0;
+      let level: Health = "good";
+      if (m > 10 || c < 80) level = "poor";
+      else if (m > 5 || c < 90) level = "moderate";
+      setStatus(level);
     })();
   }, [datasetId]);
 
-  if (!level)
-    return <span className="text-gray-400 text-xs italic">No data</span>;
+  if (!status) return <span className="text-gray-400 text-xs italic">—</span>;
 
-  const colors =
-    level === "good"
+  const style =
+    status === "good"
       ? "bg-green-100 text-green-700"
-      : level === "moderate"
+      : status === "moderate"
       ? "bg-yellow-100 text-yellow-700"
       : "bg-red-100 text-red-700";
 
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors}`}>
-      {level.toUpperCase()}
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style}`}>
+      {status.toUpperCase()}
     </span>
   );
 }
