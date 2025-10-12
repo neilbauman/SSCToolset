@@ -17,7 +17,7 @@ type Meta = {
   indicator_id: string | null;
   title: string;
   description: string | null;
-  source: string | null; // JSON {name,url}
+  source: string | null;
   admin_level: string | null;
   upload_type: string | null;
   theme: string | null;
@@ -122,8 +122,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             onClick={() => setOpenTpl(true)}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-blue)] hover:opacity-90"
           >
-            <Download className="w-4 h-4" />
-            Template
+            <Download className="w-4 h-4" /> Template
           </button>
           <button
             onClick={() => setOpenAdd(true)}
@@ -134,6 +133,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         </div>
       </div>
 
+      {/* Datasets table */}
       <div className="border rounded-lg p-3 shadow-sm bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100">
@@ -187,16 +187,13 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
               );
             })}
             {!datasets.length && (
-              <tr>
-                <td colSpan={8} className="px-2 py-6 text-center text-gray-500">
-                  No datasets yet.
-                </td>
-              </tr>
+              <tr><td colSpan={8} className="px-2 py-6 text-center text-gray-500">No datasets yet.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
+      {/* Preview panel */}
       {selected && (
         <div className="mt-4 border rounded-lg bg-white shadow-sm">
           <div className="flex items-center justify-between px-4 py-2 border-b">
@@ -205,8 +202,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
           </div>
           {loadingPreview ? (
             <div className="p-6 text-sm text-gray-600 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading…
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
             </div>
           ) : (
             <div className="overflow-auto">
@@ -236,6 +232,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         </div>
       )}
 
+      {/* Modals */}
       {openAdd && <AddDatasetModal open={openAdd} countryIso={countryIso} onClose={() => setOpenAdd(false)} onCreated={loadAll} />}
       {openEdit && (
         <EditDatasetModal
@@ -264,6 +261,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
               unit: null,
               source_name,
               source_url,
+              is_active: true, // ✅ added to satisfy DatasetMeta type
             };
           })()}
           onClose={() => setOpenEdit(null)}
