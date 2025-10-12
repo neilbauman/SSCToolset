@@ -16,32 +16,10 @@ import {
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import EditDatasetModal from "@/components/country/EditDatasetModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
+import type { DatasetMeta } from "@/types/datasets";
 
 type CountryParams = { id: string };
-
-type DatasetMeta = {
-  id: string;
-  title: string;
-  description?: string | null;
-  indicator_id?: string | null;
-  type?: string | null;
-  admin_level?: string | null;
-  data_type?: string | null;
-  source?: string | null;
-  created_at: string;
-  year?: number | null;
-  unit?: string | null;
-  theme?: string | null;
-  upload_type?: string | null;
-  country_iso?: string | null;
-};
-
-type DatasetRow = {
-  admin_name: string | null;
-  admin_pcode: string;
-  value: number | null;
-  unit: string | null;
-};
+type DatasetRow = { admin_name: string | null; admin_pcode: string; value: number | null; unit: string | null };
 
 export default function DatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
@@ -54,7 +32,6 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const [previewData, setPreviewData] = useState<DatasetRow[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // 🟢 Load datasets
   useEffect(() => {
     const fetchDatasets = async () => {
       setLoading(true);
@@ -63,30 +40,23 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         .select("*")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
-      if (error) console.error("Error fetching datasets:", error);
+      if (error) console.error(error);
       else setDatasets(data || []);
       setLoading(false);
     };
     fetchDatasets();
   }, [countryIso]);
 
-  // 🟢 Load dataset values for preview
   const loadPreview = async (datasetId: string) => {
     setPreviewLoading(true);
     setSelectedDataset(datasets.find((d) => d.id === datasetId) || null);
-
     const { data, error } = await supabase
       .from("view_dataset_values_with_names")
       .select("admin_name, admin_pcode, value, unit")
       .eq("dataset_id", datasetId)
       .limit(1000);
-
-    if (error) {
-      console.error("Error loading dataset preview:", error);
-      setPreviewData([]);
-    } else {
-      setPreviewData(data || []);
-    }
+    if (error) console.error(error);
+    setPreviewData(data || []);
     setPreviewLoading(false);
   };
 
@@ -100,8 +70,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
   const headerProps = {
     title: `${countryIso} – Other Datasets`,
     group: "country-config" as const,
-    description:
-      "Upload and manage additional datasets such as national statistics or gradient indicators.",
+    description: "Upload and manage additional datasets such as gradient indicators or national statistics.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -116,11 +85,9 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Header Actions */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)] flex items-center gap-2">
-          <Database className="w-5 h-5 text-[color:var(--gsc-red)]" />
-          Country Datasets
+          <Database className="w-5 h-5 text-[color:var(--gsc-red)]" /> Country Datasets
         </h2>
         <div className="flex gap-2">
           <button
@@ -138,7 +105,6 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         </div>
       </div>
 
-      {/* Dataset Table */}
       <div className="border rounded-lg p-4 bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center text-sm text-gray-600">
@@ -173,18 +139,13 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                     {ds.source ? (
                       (() => {
                         try {
-                          const parsed = JSON.parse(ds.source);
-                          return parsed.url ? (
-                            <a
-                              href={parsed.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline"
-                            >
-                              {parsed.name || parsed.url}
+                          const s = JSON.parse(ds.source);
+                          return s.url ? (
+                            <a href={s.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                              {s.name || s.url}
                             </a>
                           ) : (
-                            parsed.name || "—"
+                            s.name || "—"
                           );
                         } catch {
                           return ds.source;
@@ -194,30 +155,19 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                       "—"
                     )}
                   </td>
-                  <td className="border px-2 py-1 text-center">
-                    {ds.year ? ds.year : "—"}
-                  </td>
+                  <td className="border px-2 py-1 text-center">{ds.year || "—"}</td>
                   <td className="border px-2 py-1 text-center">
                     {new Date(ds.created_at).toISOString().split("T")[0]}
                   </td>
                   <td className="border px-2 py-1 text-right">
                     <div className="flex justify-end gap-2">
-                      <button
-                        className="text-blue-600 hover:underline text-xs flex items-center"
-                        onClick={() => loadPreview(ds.id)}
-                      >
+                      <button onClick={() => loadPreview(ds.id)} className="text-blue-600 hover:underline text-xs flex items-center">
                         <Eye className="w-4 h-4 mr-1" /> Preview
                       </button>
-                      <button
-                        className="text-gray-700 hover:underline text-xs flex items-center"
-                        onClick={() => setOpenEdit(ds)}
-                      >
+                      <button onClick={() => setOpenEdit(ds)} className="text-gray-700 hover:underline text-xs flex items-center">
                         <Edit3 className="w-4 h-4 mr-1" /> Edit
                       </button>
-                      <button
-                        className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center"
-                        onClick={() => setOpenDelete(ds)}
-                      >
+                      <button onClick={() => setOpenDelete(ds)} className="text-[color:var(--gsc-red)] hover:underline text-xs flex items-center">
                         <Trash2 className="w-4 h-4 mr-1" /> Delete
                       </button>
                     </div>
@@ -229,17 +179,13 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         )}
       </div>
 
-      {/* Dataset Preview */}
       {selectedDataset && (
         <div className="mt-6 border rounded-lg p-4 bg-[color:var(--gsc-beige)] shadow-sm">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-md font-semibold text-[color:var(--gsc-gray)]">
               Dataset Preview — {selectedDataset.title}
             </h3>
-            <button
-              onClick={() => setSelectedDataset(null)}
-              className="text-sm text-gray-500 hover:text-gray-800"
-            >
+            <button onClick={() => setSelectedDataset(null)} className="text-sm text-gray-500 hover:text-gray-800">
               Close
             </button>
           </div>
@@ -260,14 +206,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                 </tr>
               </thead>
               <tbody>
-                {previewData.map((row, i) => (
+                {previewData.map((r, i) => (
                   <tr key={i} className="hover:bg-gray-50">
-                    <td className="border px-2 py-1">{row.admin_name || "—"}</td>
-                    <td className="border px-2 py-1">{row.admin_pcode}</td>
-                    <td className="border px-2 py-1 text-right">
-                      {row.value !== null ? row.value.toFixed(2) : "—"}
-                    </td>
-                    <td className="border px-2 py-1 text-right">{row.unit || "—"}</td>
+                    <td className="border px-2 py-1">{r.admin_name || "—"}</td>
+                    <td className="border px-2 py-1">{r.admin_pcode}</td>
+                    <td className="border px-2 py-1 text-right">{r.value ?? "—"}</td>
+                    <td className="border px-2 py-1 text-right">{r.unit || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -276,7 +220,6 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         </div>
       )}
 
-      {/* Modals */}
       {openAdd && (
         <AddDatasetModal
           open={openAdd}
