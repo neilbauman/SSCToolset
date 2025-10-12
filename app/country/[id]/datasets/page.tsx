@@ -26,14 +26,12 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setLoading(true);
     const { data, error } = await supabase
       .from("dataset_metadata")
-      .select(
-        `
+      .select(`
         id, title, description, country_iso, created_at,
         indicator_id,
         indicator_catalogue(name, theme, data_type),
         admin_level, upload_type, data_type, source
-      `
-      )
+      `)
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
 
@@ -69,19 +67,19 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
   const headerProps = {
     title: "Other Datasets",
-    group: "country",
+    group: "country-config" as const,
     description:
       "Upload and manage additional datasets such as national statistics or gradient indicators.",
     breadcrumbs: (
-  <Breadcrumbs
-    items={[
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Country Configuration", href: "/country" },
-      { label: countryIso, href: `/country/${countryIso}` },
-      { label: "Other Datasets" },
-    ]}
-  />
-),
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Other Datasets" },
+        ]}
+      />
+    ),
   };
 
   return (
