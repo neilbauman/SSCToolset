@@ -6,13 +6,10 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Props = {
   open: boolean;
-  dataset: { id: string } | null;
+  dataset: any | null;
   onClose: () => void;
   onSave: () => void;
 };
-
-type Indicator = { id: string; name: string; theme: string | null; code: string; data_type: string | null };
-type Theme = { name: string };
 
 export default function EditDatasetModal({ open, dataset, onClose, onSave }: Props) {
   const [loading, setLoading] = useState(false);
@@ -21,18 +18,17 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
   const [title, setTitle] = useState("");
   const [year, setYear] = useState<number | "">("");
   const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [datasetType, setDatasetType] = useState("Gradient");
-  const [dataType, setDataType] = useState("Numeric");
+  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">("gradient");
+  const [dataType, setDataType] = useState<"numeric" | "percentage" | "categories">("numeric");
   const [unit, setUnit] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [description, setDescription] = useState("");
-
-  const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [theme, setTheme] = useState("All");
-  const [themes, setThemes] = useState<Theme[]>([]);
+  const [themes, setThemes] = useState<{ name: string }[]>([]);
   const [search, setSearch] = useState("");
   const [selectedIndicator, setSelectedIndicator] = useState<string | null>(null);
+  const [indicators, setIndicators] = useState<any[]>([]);
 
   useEffect(() => {
     if (!open || !dataset) return;
@@ -41,7 +37,7 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
       const { data } = await supabase
         .from("view_dataset_full")
         .select(
-          "id, title, year, admin_level, dataset_type, data_type, unit, source_name, source_url, description, indicator_id, theme"
+          "id,title,year,admin_level,dataset_type,data_type,unit,source_name,source_url,description,indicator_id,theme"
         )
         .eq("id", dataset.id)
         .single();
@@ -49,8 +45,8 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
         setTitle(data.title || "");
         setYear(data.year || "");
         setAdminLevel(data.admin_level || "ADM0");
-        setDatasetType(data.dataset_type || "Gradient");
-        setDataType(data.data_type || "Numeric");
+        setDatasetType(data.dataset_type || "gradient");
+        setDataType(data.data_type || "numeric");
         setUnit(data.unit || "");
         setSourceName(data.source_name || "");
         setSourceUrl(data.source_url || "");
@@ -58,15 +54,17 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
         setSelectedIndicator(data.indicator_id || null);
         setTheme(data.theme || "All");
       }
-      setLoading(false);
 
       const { data: inds } = await supabase
         .from("indicator_catalogue")
         .select("id,name,theme,code,data_type")
         .order("theme,name");
       setIndicators(inds || []);
-      const uniqueThemes = Array.from(new Set((inds || []).map((i) => i.theme).filter(Boolean))).map((t) => ({ name: t! }));
+      const uniqueThemes = Array.from(new Set((inds || []).map((i) => i.theme).filter(Boolean))).map((t) => ({
+        name: t!,
+      }));
       setThemes(uniqueThemes);
+      setLoading(false);
     })();
   }, [open, dataset]);
 
@@ -87,8 +85,8 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
         title,
         year: year || null,
         admin_level: adminLevel,
-        dataset_type: datasetType.toLowerCase(), // ensure matches constraint
-        data_type: dataType.toLowerCase(),
+        dataset_type: datasetType,
+        data_type: dataType,
         unit: unit || null,
         source_name: sourceName || null,
         source_url: sourceUrl || null,
@@ -128,7 +126,6 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
           <div className="p-6 text-gray-500 text-sm">Loading dataset...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
-            {/* Left Panel */}
             <div className="space-y-3">
               <div>
                 <label className={LABEL}>Title *</label>
@@ -157,19 +154,19 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={LABEL}>Dataset Type</label>
-                  <select className={FIELD} value={datasetType} onChange={(e) => setDatasetType(e.target.value)}>
-                    <option>Gradient</option>
-                    <option>Categorical</option>
+                  <select className={FIELD} value={datasetType} onChange={(e) => setDatasetType(e.target.value as any)}>
+                    <option value="gradient">Gradient</option>
+                    <option value="categorical">Categorical</option>
                   </select>
                 </div>
                 <div>
                   <label className={LABEL}>
                     Data Type <Info className="inline w-3 h-3 text-gray-400 ml-1" />
                   </label>
-                  <select className={FIELD} value={dataType} onChange={(e) => setDataType(e.target.value)}>
-                    <option>Numeric</option>
-                    <option>Percentage</option>
-                    <option>Text</option>
+                  <select className={FIELD} value={dataType} onChange={(e) => setDataType(e.target.value as any)}>
+                    <option value="numeric">Numeric</option>
+                    <option value="percentage">Percentage</option>
+                    <option value="categories">Categories</option>
                   </select>
                 </div>
               </div>
@@ -196,7 +193,6 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
               </div>
             </div>
 
-            {/* Right Panel */}
             <div className="space-y-3">
               <div className="flex gap-2 items-end">
                 <div className="flex-1 relative">
@@ -224,7 +220,9 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
                   return (
                     <div
                       key={i.id}
-                      className={`${CARD} p-3 mb-2 ${active ? "border-[color:var(--gsc-blue)] bg-blue-50/30" : "bg-white"}`}
+                      className={`${CARD} p-3 mb-2 ${
+                        active ? "border-[color:var(--gsc-blue)] bg-blue-50/30" : "bg-white"
+                      }`}
                       onClick={() => setSelectedIndicator(active ? null : i.id)}
                     >
                       <div className="font-medium">{i.name}</div>
@@ -245,10 +243,7 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
         )}
 
         <div className="flex justify-end border-t px-5 py-3 bg-gray-50">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-md border text-sm text-gray-600 hover:bg-gray-100"
-          >
+          <button onClick={onClose} className="px-4 py-2 rounded-md border text-sm text-gray-600 hover:bg-gray-100">
             Cancel
           </button>
           <button
