@@ -73,14 +73,15 @@ export default function EditDatasetModal({
       setSaving(true);
       const source = sourceName || sourceUrl ? JSON.stringify({ name: sourceName || null, url: sourceUrl || null }) : null;
       const payload = {
-        title,
-        year,
-        admin_level: adminLevel,
-        upload_type: datasetType,
-        description: description || null,
-        indicator_id: selectedIndicatorId,
-        source,
-      };
+  title,
+  year,
+  admin_level: adminLevel,
+  upload_type: datasetType,
+  description: description || null,
+  indicator_id: selectedIndicatorId,
+  source_name: sourceName || null,
+  source_url: sourceUrl || null,
+};
       const { error } = await supabase.from("dataset_metadata").update(payload).eq("id", dataset.id);
       if (error) throw error;
       setSaving(false);
