@@ -104,7 +104,12 @@ export default function EditDatasetModal({
           {/* Left panel: dataset fields */}
           <div className="space-y-3">
             <div>
-              <label className={LABEL}>Title *</label>
+              <label className={LABEL}>
+  Data Type 
+  <span className="inline-flex items-center ml-1" title="For display reference only">
+    <Info className="w-3 h-3 text-gray-400" />
+  </span>
+</label>
               <input className={FIELD} value={title} onChange={e => setTitle(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-3">
