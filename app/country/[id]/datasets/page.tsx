@@ -72,7 +72,16 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     group: "country",
     description:
       "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs countryIso={countryIso} current="Other Datasets" />,
+    breadcrumbs: (
+  <Breadcrumbs
+    items={[
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "Country Configuration", href: "/country" },
+      { label: countryIso, href: `/country/${countryIso}` },
+      { label: "Other Datasets" },
+    ]}
+  />
+),
   };
 
   return (
