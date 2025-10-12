@@ -1,153 +1,156 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { X, Save } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, Save } from "lucide-react";
 
-export default function EditDatasetModal({ open, onClose, dataset, onUpdated }: any) {
+type DatasetMeta = {
+  id: string;
+  title: string;
+  description: string | null;
+  source: string | null; // JSON string {name,url}
+  year: number | null;
+  upload_type: string | null;
+  theme: string | null;
+  indicator_id: string | null;
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  dataset: DatasetMeta | null;
+  onSaved?: () => Promise<void> | void;
+};
+
+const FIELD =
+  "border rounded px-2 py-1 w-full text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--gsc-red)]";
+const LABEL = "text-xs font-semibold text-[color:var(--gsc-gray)]";
+const GSC_BUTTON =
+  "px-3 py-1.5 rounded text-white bg-[color:var(--gsc-red)] hover:opacity-90";
+
+export default function EditDatasetModal({
+  open,
+  onClose,
+  dataset,
+  onSaved,
+}: Props) {
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [sourceName, setSourceName] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [year, setYear] = useState<number>(new Date().getFullYear());
-  const [loading, setLoading] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [year, setYear] = useState<string>("");
+  const [srcName, setSrcName] = useState("");
+  const [srcUrl, setSrcUrl] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (dataset) {
-      setTitle(dataset.title || "");
-      setDescription(dataset.description || "");
-      const parsedSource = dataset.source ? JSON.parse(dataset.source) : {};
-      setSourceName(parsedSource?.name || "");
-      setSourceUrl(parsedSource?.url || "");
-      setYear(dataset.year || new Date().getFullYear());
+    if (!open || !dataset) return;
+    setTitle(dataset.title || "");
+    setDesc(dataset.description || "");
+    setYear(dataset.year ? String(dataset.year) : "");
+    try {
+      const j = dataset.source ? JSON.parse(dataset.source) : {};
+      setSrcName(j?.name || "");
+      setSrcUrl(j?.url || "");
+    } catch {
+      setSrcName("");
+      setSrcUrl("");
     }
-  }, [dataset]);
-
-  if (!open || !dataset) return null;
+  }, [open, dataset]);
 
   async function handleSave() {
-    if (!title) return alert("Title is required.");
+    if (!dataset) return;
+    setBusy(true);
+    try {
+      const source =
+        srcName.trim() || srcUrl.trim()
+          ? JSON.stringify({ name: srcName || null, url: srcUrl || null })
+          : null;
 
-    setLoading(true);
-    const { error } = await supabase
-      .from("dataset_metadata")
-      .update({
-        title,
-        description,
-        year,
-        source: JSON.stringify({
-          name: sourceName || null,
-          url: sourceUrl || null,
-        }),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", dataset.id);
+      const { error } = await supabase
+        .from("dataset_metadata")
+        .update({
+          title: title.trim(),
+          description: desc || null,
+          year: year ? Number(year) : null,
+          source,
+        })
+        .eq("id", dataset.id);
+      if (error) throw error;
 
-    setLoading(false);
-
-    if (error) {
-      console.error(error);
-      alert("Failed to update dataset.");
-    } else {
-      alert("Dataset updated successfully.");
-      onUpdated();
+      if (onSaved) await onSaved();
       onClose();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save dataset.");
+    } finally {
+      setBusy(false);
     }
   }
 
+  if (!open || !dataset) return null;
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg">
-        <div className="px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
-            Edit Dataset
-          </h2>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+      <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h3 className="text-lg font-semibold">Edit Dataset</h3>
+          <button className="p-1" onClick={onClose} aria-label="Close">
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-4 space-y-3">
           <div>
-            <label className="text-sm font-medium">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border rounded p-2 text-sm"
-            />
+            <label className={LABEL}>Title</label>
+            <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
-
           <div>
-            <label className="text-sm font-medium">Year</label>
-            <input
-              type="number"
-              min="1900"
-              max={new Date().getFullYear() + 1}
-              value={year}
-              onChange={(e) => setYear(parseInt(e.target.value, 10))}
-              className="w-full border rounded p-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Description</label>
+            <label className={LABEL}>Description</label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              className={FIELD}
               rows={3}
-              className="w-full border rounded p-2 text-sm"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
             />
           </div>
-
-          <div>
-            <label className="text-sm font-medium">Source</label>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className={LABEL}>Year</label>
               <input
-                type="text"
-                placeholder="Source name"
-                className="border rounded p-2 text-sm"
-                value={sourceName}
-                onChange={(e) => setSourceName(e.target.value)}
-              />
-              <input
-                type="url"
-                placeholder="Source URL"
-                className="border rounded p-2 text-sm"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
+                className={FIELD}
+                type="number"
+                inputMode="numeric"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                placeholder="YYYY"
               />
             </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <p className="text-xs text-gray-500">
-              <b>Type:</b> {dataset.upload_type || "—"} |{" "}
-              <b>Data:</b> {dataset.data_type || "—"} |{" "}
-              <b>Admin Level:</b> {dataset.admin_level || "—"}
-            </p>
+            <div className="col-span-2">
+              <label className={LABEL}>Source</label>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  className={FIELD}
+                  placeholder="Source Name"
+                  value={srcName}
+                  onChange={(e) => setSrcName(e.target.value)}
+                />
+                <input
+                  className={FIELD}
+                  placeholder="URL"
+                  value={srcUrl}
+                  onChange={(e) => setSrcUrl(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 px-6 py-3 border-t">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
-          >
+        <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+          <button className="px-3 py-1.5 border rounded" onClick={onClose}>
             Cancel
           </button>
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            className="px-4 py-2 text-sm rounded text-white flex items-center gap-2"
-            style={{ backgroundColor: "var(--gsc-red)" }}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin w-4 h-4" /> Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" /> Save
-              </>
-            )}
+          <button disabled={busy} onClick={handleSave} className={GSC_BUTTON}>
+            <Save className="w-4 h-4 inline-block mr-1" />
+            {busy ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
