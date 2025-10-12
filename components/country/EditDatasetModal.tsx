@@ -87,8 +87,8 @@ export default function EditDatasetModal({ open, dataset, onClose, onSave }: Pro
         title,
         year: year || null,
         admin_level: adminLevel,
-        dataset_type: datasetType,
-        data_type: dataType,
+        dataset_type: datasetType.toLowerCase(), // ensure matches constraint
+        data_type: dataType.toLowerCase(),
         unit: unit || null,
         source_name: sourceName || null,
         source_url: sourceUrl || null,
