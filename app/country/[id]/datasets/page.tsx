@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Database, Eye, Pencil, Trash2, Loader2, Download } from "lucide-react";
+import { Eye, Pencil, Trash2, Loader2, Download } from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import EditDatasetModal from "@/components/country/EditDatasetModal";
 import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
@@ -17,7 +17,7 @@ type Meta = {
   indicator_id: string | null;
   title: string;
   description: string | null;
-  source: string | null; // JSON text {name,url}
+  source: string | null; // JSON {name,url}
   admin_level: string | null;
   upload_type: string | null;
   theme: string | null;
@@ -31,12 +31,10 @@ type Row = { admin_pcode: string; value: number | null; unit: string | null };
 export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [countryName, setCountryName] = useState<string>(countryIso);
-
   const [openAdd, setOpenAdd] = useState(false);
   const [openTpl, setOpenTpl] = useState(false);
   const [openEdit, setOpenEdit] = useState<Meta | null>(null);
   const [deleteMeta, setDeleteMeta] = useState<Meta | null>(null);
-
   const [datasets, setDatasets] = useState<Meta[]>([]);
   const [indicators, setIndicators] = useState<Record<string, IndicatorLite>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -56,17 +54,12 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-
     setDatasets(data || []);
-
-    const ids = Array.from(new Set((data || []).map((d) => d.indicator_id).filter(Boolean))) as string[];
+    const ids = Array.from(new Set((data || []).map(d => d.indicator_id).filter(Boolean))) as string[];
     if (ids.length) {
-      const { data: ind } = await supabase
-        .from("indicator_catalogue")
-        .select("id,name,data_type,theme")
-        .in("id", ids);
+      const { data: ind } = await supabase.from("indicator_catalogue").select("id,name,data_type,theme").in("id", ids);
       const map: Record<string, IndicatorLite> = {};
-      (ind || []).forEach((i) => (map[i.id] = i));
+      (ind || []).forEach(i => (map[i.id] = i));
       setIndicators(map);
     } else setIndicators({});
   };
@@ -108,11 +101,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const loadValues = async (id: string) => {
     setSelected(id);
     setLoadingPreview(true);
-    const { data } = await supabase
-      .from("dataset_values")
-      .select("admin_pcode,value,unit")
-      .eq("dataset_id", id)
-      .limit(500);
+    const { data } = await supabase.from("dataset_values").select("admin_pcode,value,unit").eq("dataset_id", id).limit(500);
     setPreviewRows((data || []) as Row[]);
     setLoadingPreview(false);
   };
@@ -160,7 +149,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             </tr>
           </thead>
           <tbody>
-            {datasets.map((d) => {
+            {datasets.map(d => {
               const ind = d.indicator_id ? indicators[d.indicator_id] : null;
               return (
                 <tr
@@ -211,12 +200,8 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
       {selected && (
         <div className="mt-4 border rounded-lg bg-white shadow-sm">
           <div className="flex items-center justify-between px-4 py-2 border-b">
-            <div className="font-semibold">
-              Dataset Preview — {datasets.find((d) => d.id === selected)?.title}
-            </div>
-            <button className="text-sm underline" onClick={() => setSelected(null)}>
-              Close
-            </button>
+            <div className="font-semibold">Dataset Preview — {datasets.find(d => d.id === selected)?.title}</div>
+            <button className="text-sm underline" onClick={() => setSelected(null)}>Close</button>
           </div>
           {loadingPreview ? (
             <div className="p-6 text-sm text-gray-600 flex items-center gap-2">
@@ -242,11 +227,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                     </tr>
                   ))}
                   {!previewRows.length && (
-                    <tr>
-                      <td colSpan={3} className="px-2 py-6 text-center text-gray-500">
-                        No rows.
-                      </td>
-                    </tr>
+                    <tr><td colSpan={3} className="px-2 py-6 text-center text-gray-500">No rows.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -255,30 +236,41 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         </div>
       )}
 
-      {/* Modals */}
-      {openAdd && (
-        <AddDatasetModal
-          open={openAdd}
-          countryIso={countryIso}
-          onClose={() => setOpenAdd(false)}
-          onCreated={loadAll}
-        />
-      )}
+      {openAdd && <AddDatasetModal open={openAdd} countryIso={countryIso} onClose={() => setOpenAdd(false)} onCreated={loadAll} />}
       {openEdit && (
         <EditDatasetModal
           open={!!openEdit}
-          dataset={openEdit}
+          dataset={(() => {
+            const ind = openEdit.indicator_id ? indicators[openEdit.indicator_id] : null;
+            let source_name: string | null = null, source_url: string | null = null;
+            if (openEdit.source) {
+              try {
+                const s = JSON.parse(openEdit.source);
+                source_name = s?.name ?? null; source_url = s?.url ?? null;
+              } catch { source_name = openEdit.source; }
+            }
+            return {
+              id: openEdit.id,
+              country_iso: openEdit.country_iso ?? null,
+              indicator_id: openEdit.indicator_id ?? null,
+              title: openEdit.title,
+              description: openEdit.description ?? null,
+              admin_level: openEdit.admin_level ?? null,
+              theme: (ind?.theme ?? openEdit.theme) ?? null,
+              year: openEdit.year ?? null,
+              created_at: openEdit.created_at ?? null,
+              dataset_type: openEdit.upload_type ?? null,
+              data_type: ind?.data_type ?? null,
+              unit: null,
+              source_name,
+              source_url,
+            };
+          })()}
           onClose={() => setOpenEdit(null)}
           onSave={loadAll}
         />
       )}
-      {openTpl && (
-        <TemplateDownloadModal
-          open={openTpl}
-          onClose={() => setOpenTpl(false)}
-          countryIso={countryIso}
-        />
-      )}
+      {openTpl && <TemplateDownloadModal open={openTpl} onClose={() => setOpenTpl(false)} countryIso={countryIso} />}
       {deleteMeta && (
         <ConfirmDeleteModal
           open={!!deleteMeta}
