@@ -102,10 +102,39 @@ return(<tr key={v.id}className={`hover:bg-gray-50 ${v.is_active?"bg-green-50":""
 
 <h2 className="text-xl font-bold text-[color:var(--gsc-red)] mb-2">{selectedVersion?selectedVersion.title:"No Version Selected"}</h2>
 
-<div className="flex justify-between items-start mb-4 gap-4"><div className="border rounded-lg p-3 shadow-sm bg-white">
-<h3 className="text-sm font-semibold mb-2">Admin Levels</h3><div className="flex gap-3 flex-wrap">{[1,2,3,4,5].map(l=>(<label key={l}className="flex items-center gap-1 text-sm">
-<input type="checkbox"checked={admToggles[l as 1|2|3|4|5]}onChange={()=>setAdmToggles(p=>({...p,[l]:!p[l as 1|2|3|4|5]}))}/>ADM{l}</label>))}</div></div><DatasetHealth totalUnits={totalUnits}/></div>
+<div className="flex justify-between items-start mb-4 gap-4">
+  <div className="border rounded-lg p-3 shadow-sm bg-white">
+    <h3 className="text-sm font-semibold mb-2">Admin Levels</h3>
+    <div className="flex gap-3 flex-wrap">
+      {[1, 2, 3, 4, 5].map(l => (
+        <label key={l} className="flex items-center gap-1 text-sm">
+          <input
+            type="checkbox"
+            checked={admToggles[l as 1 | 2 | 3 | 4 | 5]}
+            onChange={() =>
+              setAdmToggles(p => ({ ...p, [l]: !p[l as 1 | 2 | 3 | 4 | 5] }))
+            }
+          />
+          ADM{l}
+        </label>
+      ))}
+    </div>
+  </div>
 
+  {/* ✅ Data Health indicator placeholder — safe and optional */}
+  {activeDatasetId ? (
+    <div className="flex flex-col items-end">
+      <h3 className="text-sm font-semibold mb-1 text-[color:var(--gsc-gray)]">
+        Data Health
+      </h3>
+      <DatasetHealth datasetId={activeDatasetId} />
+    </div>
+  ) : (
+    <div className="text-xs text-gray-500 italic mt-2">
+      No dataset selected
+    </div>
+  )}
+</div>
 <div className="flex items-center mb-3 border rounded-lg px-2 py-1 w-full max-w-md bg-white">
 <Search className="w-4 h-4 text-gray-500 mr-2"/><input type="text"value={searchTerm}onChange={e=>setSearchTerm(e.target.value)}placeholder="Search by name or PCode..."className="flex-1 text-sm outline-none bg-transparent"/></div>
 
