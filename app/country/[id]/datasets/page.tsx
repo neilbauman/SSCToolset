@@ -70,7 +70,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
   const headerProps = {
     title: "Other Datasets",
-    group: "country-config" satisfies GroupKey,
+    group: "country-config",
     description:
       "Upload and manage additional datasets such as national statistics or gradient indicators.",
     breadcrumbs: <Breadcrumbs items={[{ label: "Other Datasets" }]} />, // ✅ FIXED — required items prop
