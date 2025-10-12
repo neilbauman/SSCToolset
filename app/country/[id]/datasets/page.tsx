@@ -4,59 +4,57 @@ import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Eye, Pencil, Trash2, Loader2, Download } from "lucide-react";
+import { Pencil, Trash2, Loader2, Download } from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
 import EditDatasetModal from "@/components/country/EditDatasetModal";
 import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import type { CountryParams } from "@/app/country/types";
 
-type Meta = {
-  id: string; title: string; indicator_id: string | null;
-  dataset_type: string | null; data_type: string | null;
-  admin_level: string | null; unit: string | null;
-  source_name: string | null; source_url: string | null;
-  description: string | null;
-};
-type Row = { admin_name: string | null; admin_pcode: string; value: number | null };
+type Meta = { id:string; title:string; indicator_id:string|null; dataset_type:string|null; data_type:string|null;
+  admin_level:string|null; unit:string|null; source_name:string|null; source_url:string|null; description:string|null; };
+type Row = { admin_name:string|null; admin_pcode:string; value:number|null };
 
 export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
-  const iso = params.id;
-  const [country, setCountry] = useState(iso);
-  const [datasets, setDatasets] = useState<Meta[]>([]);
-  const [inds, setInds] = useState<Record<string, string>>({});
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [openAdd, setOpenAdd] = useState(false);
-  const [openTpl, setOpenTpl] = useState(false);
-  const [openEdit, setOpenEdit] = useState<Meta | null>(null);
-  const [del, setDel] = useState<Meta | null>(null);
+  const iso=params.id;
+  const [country,setCountry]=useState(iso);
+  const [datasets,setDatasets]=useState<Meta[]>([]);
+  const [inds,setInds]=useState<Record<string,string>>({});
+  const [previewId,setPreviewId]=useState<string|null>(null);
+  const [rows,setRows]=useState<Row[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [openAdd,setOpenAdd]=useState(false);
+  const [openTpl,setOpenTpl]=useState(false);
+  const [openEdit,setOpenEdit]=useState<Meta|null>(null);
+  const [del,setDel]=useState<Meta|null>(null);
 
-  useEffect(() => { (async () => {
-    const c = await supabase.from("countries").select("name").eq("iso_code", iso).maybeSingle();
-    if (c.data?.name) setCountry(c.data.name);
-  })(); }, [iso]);
+  useEffect(()=>{(async()=>{
+    const c=await supabase.from("countries").select("name").eq("iso_code",iso).maybeSingle();
+    if(c.data?.name)setCountry(c.data.name);
+  })();},[iso]);
 
-  const loadAll = async () => {
-    const { data } = await supabase.from("dataset_metadata").select("*").eq("country_iso", iso).order("created_at",{ascending:false});
-    setDatasets(data || []);
-    const ids = (data||[]).map(d=>d.indicator_id).filter(Boolean);
+  const loadAll=async()=>{
+    const {data}=await supabase.from("dataset_metadata").select("*").eq("country_iso",iso).order("created_at",{ascending:false});
+    setDatasets(data||[]);
+    const ids=(data||[]).map(d=>d.indicator_id).filter(Boolean);
     if(ids.length){
-      const i = await supabase.from("indicator_catalogue").select("id,name").in("id",ids);
+      const i=await supabase.from("indicator_catalogue").select("id,name").in("id",ids);
       const map:Record<string,string>={};(i.data||[]).forEach(v=>map[v.id]=v.name);setInds(map);
     }
   };
   useEffect(()=>{loadAll();},[iso]);
 
-  const startPreview = async (d:Meta)=>{
-    setPreviewId(d.id===previewId?null:d.id); if(d.id===previewId)return;
+  const startPreview=async(d:Meta)=>{
+    setPreviewId(d.id===previewId?null:d.id);
+    if(d.id===previewId)return;
     setLoading(true);
-    const q=await supabase.from("dataset_values")
-      .select("admin_pcode,value,admin_units(name)")
-      .eq("dataset_id",d.id).limit(200);
-    const r=(q.data||[]).map((x:any)=>({admin_name:x.admin_units?.name||null,admin_pcode:x.admin_pcode,value:x.value}));
-    setRows(r);setLoading(false);
+    const {data:vals}=await supabase.from("dataset_values").select("admin_pcode,value").eq("dataset_id",d.id).limit(200);
+    if(!vals?.length){setRows([]);setLoading(false);return;}
+    const pcodes=vals.map(v=>v.admin_pcode);
+    const {data:admins}=await supabase.from("admin_units").select("pcode,name").in("pcode",pcodes);
+    const nameMap=Object.fromEntries((admins||[]).map(a=>[a.pcode,a.name]));
+    setRows(vals.map(v=>({admin_name:nameMap[v.admin_pcode]||null,admin_pcode:v.admin_pcode,value:v.value})));
+    setLoading(false);
   };
 
   const delDataset=async(id:string)=>{await supabase.from("dataset_values").delete().eq("dataset_id",id);
