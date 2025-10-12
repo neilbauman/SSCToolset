@@ -22,14 +22,18 @@ type CountryParams = { id: string };
 type DatasetMeta = {
   id: string;
   title: string;
+  description?: string | null;
   indicator_id?: string | null;
-  type: string | null;
-  admin_level: string | null;
-  data_type: string | null;
-  source: string | null;
+  type?: string | null;
+  admin_level?: string | null;
+  data_type?: string | null;
+  source?: string | null;
   created_at: string;
   year?: number | null;
   unit?: string | null;
+  theme?: string | null;
+  upload_type?: string | null;
+  country_iso?: string | null;
 };
 
 type DatasetRow = {
@@ -147,10 +151,10 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
             <thead className="bg-gray-100">
               <tr>
                 <th className="px-2 py-1 text-left">Title</th>
-                <th>Indicator</th>
                 <th>Type</th>
                 <th>Admin Level</th>
                 <th>Data Type</th>
+                <th>Theme</th>
                 <th>Source</th>
                 <th>Year</th>
                 <th>Created</th>
@@ -161,10 +165,10 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
               {datasets.map((ds) => (
                 <tr key={ds.id} className="hover:bg-gray-50">
                   <td className="border px-2 py-1">{ds.title}</td>
-                  <td className="border px-2 py-1 text-gray-500">—</td>
                   <td className="border px-2 py-1">{ds.type || "—"}</td>
                   <td className="border px-2 py-1">{ds.admin_level || "—"}</td>
                   <td className="border px-2 py-1">{ds.data_type || "—"}</td>
+                  <td className="border px-2 py-1">{ds.theme || "—"}</td>
                   <td className="border px-2 py-1">
                     {ds.source ? (
                       (() => {
