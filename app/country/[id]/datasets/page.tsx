@@ -73,12 +73,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     title: "Other Datasets",
     group: "datasets" as const,
     description: "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs current="Other Datasets" />, // ✅ FIXED
+    breadcrumbs: <Breadcrumbs />, // ✅ FIXED — no props
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Actions */}
+      {/* Header Actions */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex gap-2">
           <button
@@ -122,14 +122,10 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                   <td className="px-3 py-2">{d.data_type}</td>
                   <td className="px-3 py-2">{d.source_name || "—"}</td>
                   <td className="px-3 py-2 flex gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setOpenEdit(d); }}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); setOpenEdit(d); }}>
                       <Edit3 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-blue)]" />
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setOpenDelete(d); }}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); setOpenDelete(d); }}>
                       <Trash2 className="w-4 h-4 text-gray-600 hover:text-[color:var(--gsc-red)]" />
                     </button>
                   </td>
@@ -147,9 +143,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       {selected && (
         <div ref={previewRef} className="mt-6 border rounded-lg bg-white shadow-sm">
           <div className="px-4 py-2 border-b flex justify-between items-center bg-[color:var(--gsc-beige)]">
-            <h3 className="font-semibold text-[color:var(--gsc-gray)]">
-              Data Preview: {selected.title}
-            </h3>
+            <h3 className="font-semibold text-[color:var(--gsc-gray)]">Data Preview: {selected.title}</h3>
             {loadingValues && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
           </div>
           <div className="overflow-x-auto">
@@ -180,12 +174,8 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
       )}
 
       {/* Modals */}
-      {openAdd && (
-        <AddDatasetModal open={openAdd} onClose={() => setOpenAdd(false)} countryIso={countryIso} onCreated={loadDatasets} />
-      )}
-      {openEdit && (
-        <EditDatasetModal open={!!openEdit} dataset={openEdit} onClose={() => setOpenEdit(null)} onSave={loadDatasets} />
-      )}
+      {openAdd && <AddDatasetModal open={openAdd} onClose={() => setOpenAdd(false)} countryIso={countryIso} onCreated={loadDatasets} />}
+      {openEdit && <EditDatasetModal open={!!openEdit} dataset={openEdit} onClose={() => setOpenEdit(null)} onSave={loadDatasets} />}
       {openDelete && (
         <ConfirmDeleteModal
           open={!!openDelete}
@@ -195,9 +185,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
           onConfirm={() => handleDelete(openDelete.id)}
         />
       )}
-      {openTemplate && (
-        <TemplateDownloadModal open={openTemplate} onClose={() => setOpenTemplate(false)} />
-      )}
+      {openTemplate && <TemplateDownloadModal open={openTemplate} onClose={() => setOpenTemplate(false)} />}
     </SidebarLayout>
   );
 }
