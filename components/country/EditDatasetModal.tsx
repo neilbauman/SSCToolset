@@ -133,7 +133,12 @@ export default function EditDatasetModal({
                 </select>
               </div>
               <div>
-                <label className={LABEL}>Data Type <Info className="inline w-3 h-3 text-gray-400 ml-1" title="For display reference only" /></label>
+                <label className={LABEL}>
+  Data Type
+  <span className="inline-flex items-center ml-1" title="For display reference only">
+    <Info className="w-3 h-3 text-gray-400" />
+  </span>
+</label>
                 <select className={FIELD} value={dataType} onChange={e => setDataType(e.target.value)}>
                   <option>Numeric</option>
                   <option>Percentage</option>
