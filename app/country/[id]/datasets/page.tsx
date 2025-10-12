@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Database, Eye, Pencil, Trash2, Loader2, Download } from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
+import EditDatasetModal from "@/components/country/EditDatasetModal";
 import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
 import type { CountryParams } from "@/app/country/types";
@@ -25,8 +26,7 @@ type Meta = {
 };
 
 type IndicatorLite = { id: string; name: string; data_type: string | null; theme: string | null };
-
-type Row = { admin_pcode: string; value: number | null; unit: string | null; notes: string | null };
+type Row = { admin_pcode: string; value: number | null; unit: string | null };
 
 export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
@@ -34,14 +34,14 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
   const [openAdd, setOpenAdd] = useState(false);
   const [openTpl, setOpenTpl] = useState(false);
+  const [openEdit, setOpenEdit] = useState<Meta | null>(null);
+  const [deleteMeta, setDeleteMeta] = useState<Meta | null>(null);
 
   const [datasets, setDatasets] = useState<Meta[]>([]);
   const [indicators, setIndicators] = useState<Record<string, IndicatorLite>>({});
-  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [previewRows, setPreviewRows] = useState<Row[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
-
-  const [deleteMeta, setDeleteMeta] = useState<Meta | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -59,7 +59,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
     setDatasets(data || []);
 
-    // load indicator map for display
     const ids = Array.from(new Set((data || []).map((d) => d.indicator_id).filter(Boolean))) as string[];
     if (ids.length) {
       const { data: ind } = await supabase
@@ -69,53 +68,56 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
       const map: Record<string, IndicatorLite> = {};
       (ind || []).forEach((i) => (map[i.id] = i));
       setIndicators(map);
-    } else {
-      setIndicators({});
-    }
+    } else setIndicators({});
   };
 
-  useEffect(() => {
-    loadAll();
-  }, [countryIso]);
+  useEffect(() => { loadAll(); }, [countryIso]);
 
   const headerProps = {
     title: `${countryName} – Other Datasets`,
     group: "country-config" as const,
     description: "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs items={[
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Country Configuration", href: "/country" },
-      { label: countryName, href: `/country/${countryIso}` },
-      { label: "Other Datasets" }
-    ]} />
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: countryName, href: `/country/${countryIso}` },
+          { label: "Other Datasets" },
+        ]}
+      />
+    ),
   };
 
   const parseSource = (src: string | null) => {
     if (!src) return "—";
     try {
       const j = JSON.parse(src);
-      if (j?.url) return (<a className="text-blue-600 hover:underline" href={j.url} target="_blank" rel="noreferrer">{j.name || j.url}</a>);
+      if (j?.url)
+        return (
+          <a className="text-blue-600 hover:underline" href={j.url} target="_blank" rel="noreferrer">
+            {j.name || j.url}
+          </a>
+        );
       return j?.name || "—";
     } catch {
       return src;
     }
   };
 
-  const startPreview = async (m: Meta) => {
-    setPreviewId(m.id === previewId ? null : m.id);
-    if (m.id === previewId) return;
+  const loadValues = async (id: string) => {
+    setSelected(id);
     setLoadingPreview(true);
     const { data } = await supabase
       .from("dataset_values")
-      .select("admin_pcode,value,unit,notes")
-      .eq("dataset_id", m.id)
-      .limit(200);
+      .select("admin_pcode,value,unit")
+      .eq("dataset_id", id)
+      .limit(500);
     setPreviewRows((data || []) as Row[]);
     setLoadingPreview(false);
   };
 
   const handleDelete = async (id: string) => {
-    // delete child rows first then metadata
     await supabase.from("dataset_values").delete().eq("dataset_id", id);
     await supabase.from("dataset_metadata").delete().eq("id", id);
     setDeleteMeta(null);
@@ -124,7 +126,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Header Actions */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Country Datasets</h2>
         <div className="flex gap-2">
@@ -144,7 +145,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         </div>
       </div>
 
-      {/* Table */}
       <div className="border rounded-lg p-3 shadow-sm bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100">
@@ -163,7 +163,13 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             {datasets.map((d) => {
               const ind = d.indicator_id ? indicators[d.indicator_id] : null;
               return (
-                <tr key={d.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                <tr
+                  key={d.id}
+                  onClick={() => loadValues(d.id)}
+                  className={`border-b last:border-b-0 hover:bg-gray-50 cursor-pointer ${
+                    selected === d.id ? "font-semibold bg-gray-100" : ""
+                  }`}
+                >
                   <td className="px-2 py-1">{d.title}</td>
                   <td className="px-2 py-1">{ind ? ind.name : "—"}</td>
                   <td className="px-2 py-1">{d.upload_type || "—"}</td>
@@ -173,14 +179,17 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                   <td className="px-2 py-1">{d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}</td>
                   <td className="px-2 py-1">
                     <div className="flex justify-end gap-2">
-                      <button className="p-1 rounded hover:bg-gray-100" title="Preview" onClick={() => startPreview(d)}>
+                      <button className="p-1 rounded hover:bg-gray-100" title="Preview" onClick={() => loadValues(d.id)}>
                         <Eye className="w-4 h-4" />
                       </button>
-                      {/* Edit hook-up retained; modal already exists in repo */}
-                      <button className="p-1 rounded hover:bg-gray-100" title="Edit" onClick={() => setPreviewId(null)}>
+                      <button className="p-1 rounded hover:bg-gray-100" title="Edit" onClick={() => setOpenEdit(d)}>
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button className="p-1 rounded hover:bg-gray-100 text-[color:var(--gsc-red)]" title="Delete" onClick={() => setDeleteMeta(d)}>
+                      <button
+                        className="p-1 rounded hover:bg-gray-100 text-[color:var(--gsc-red)]"
+                        title="Delete"
+                        onClick={() => setDeleteMeta(d)}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -199,12 +208,13 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         </table>
       </div>
 
-      {/* Preview panel */}
-      {previewId && (
+      {selected && (
         <div className="mt-4 border rounded-lg bg-white shadow-sm">
           <div className="flex items-center justify-between px-4 py-2 border-b">
-            <div className="font-semibold">Dataset Preview — {datasets.find((d) => d.id === previewId)?.title}</div>
-            <button className="text-sm underline" onClick={() => setPreviewId(null)}>
+            <div className="font-semibold">
+              Dataset Preview — {datasets.find((d) => d.id === selected)?.title}
+            </div>
+            <button className="text-sm underline" onClick={() => setSelected(null)}>
               Close
             </button>
           </div>
@@ -221,7 +231,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                     <th className="text-left px-2 py-1">Admin PCode</th>
                     <th className="text-left px-2 py-1">Value</th>
                     <th className="text-left px-2 py-1">Unit</th>
-                    <th className="text-left px-2 py-1">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -230,12 +239,11 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                       <td className="px-2 py-1">{r.admin_pcode}</td>
                       <td className="px-2 py-1">{r.value ?? "—"}</td>
                       <td className="px-2 py-1">{r.unit ?? "—"}</td>
-                      <td className="px-2 py-1">{r.notes ?? "—"}</td>
                     </tr>
                   ))}
                   {!previewRows.length && (
                     <tr>
-                      <td colSpan={4} className="px-2 py-6 text-center text-gray-500">
+                      <td colSpan={3} className="px-2 py-6 text-center text-gray-500">
                         No rows.
                       </td>
                     </tr>
@@ -256,7 +264,21 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
           onCreated={loadAll}
         />
       )}
-      {openTpl && <TemplateDownloadModal open={openTpl} onClose={() => setOpenTpl(false)} countryIso={countryIso} />}
+      {openEdit && (
+        <EditDatasetModal
+          open={!!openEdit}
+          dataset={openEdit}
+          onClose={() => setOpenEdit(null)}
+          onSave={loadAll}
+        />
+      )}
+      {openTpl && (
+        <TemplateDownloadModal
+          open={openTpl}
+          onClose={() => setOpenTpl(false)}
+          countryIso={countryIso}
+        />
+      )}
       {deleteMeta && (
         <ConfirmDeleteModal
           open={!!deleteMeta}
