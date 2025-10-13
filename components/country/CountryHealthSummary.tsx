@@ -29,14 +29,18 @@ export default function CountryHealthSummary({
           .from("admin_units")
           .select("id, level")
           .eq("country_iso", countryIso);
-        const { data: pop } = await supabase
-          .from("population_data")
-          .select("pcode, population")
-          .eq("country_iso", countryIso);
-        const { data: gis } = await supabase
-          .from("gis_layers")
-          .select("id, layer_type")
-          .eq("country_iso", countryIso);
+        // 🧭 Population — fetch full record count
+const { data: pop, count: popCount } = await supabase
+  .from("population_data")
+  .select("pcode, population", { count: "exact" })
+  .eq("country_iso", countryIso)
+  .limit(100000); // arbitrary high cap to ensure full range
+
+// 🗺️ GIS — count all uploaded layers
+const { data: gis, count: gisCount } = await supabase
+  .from("gis_layers")
+  .select("id, layer_type", { count: "exact" })
+  .eq("country_iso", countryIso);
         const { data: dh } = await supabase
           .from("data_health_summary")
           .select("dataset_id, completeness_pct")
@@ -63,11 +67,15 @@ export default function CountryHealthSummary({
         })();
 
         const gisHealth = (() => {
-          if (!gis?.length) return { pct: 0, count: 0, label: "Missing" };
-          const valid = gis.filter((g) => g.layer_type);
-          const pct = (valid.length / gis.length) * 100;
-          return { pct, count: gis.length, label: pct >= 95 ? "Complete" : "Partial" };
-        })();
+  if (!gisCount) return { pct: 0, count: 0, label: "Missing" };
+  const valid = gis?.filter((g) => g.layer_type) || [];
+  const pct = (valid.length / gisCount) * 100;
+  return {
+    pct,
+    count: gisCount,
+    label: pct >= 95 ? "Complete" : "Partial",
+  };
+})();
 
         const otherHealth = (() => {
           if (!datasets?.length) return { pct: 0, count: 0, label: "Missing" };
