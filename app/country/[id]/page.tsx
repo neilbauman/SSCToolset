@@ -16,6 +16,7 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import ActiveJoinSummaryCard from "@/components/country/ActiveJoinSummaryCard";
 import type { CountryParams } from "@/app/country/types";
+import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 
 // ✅ Dynamically import Leaflet (no SSR)
 const MapContainer = dynamic(
@@ -215,6 +216,7 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      <CountryHealthSummary countryIso={id} />
       {/* Top row: Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
