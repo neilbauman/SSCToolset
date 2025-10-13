@@ -194,7 +194,7 @@ export default function CountryConfigLandingPage({ params }: any) {
       status: "empty" as const,
       icon: <AlertCircle className="w-6 h-6 text-blue-600" />,
       onUpload: undefined,
-      href: "#",
+      href: `/country/${id}/datasets`,
     },
   ] as const;
 
