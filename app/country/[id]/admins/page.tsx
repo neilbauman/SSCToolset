@@ -31,7 +31,9 @@ const[admToggles,setAdmToggles]=useState({1:true,2:false,3:false,4:false,5:false
 const[searchTerm,setSearchTerm]=useState("");
 const isFetchingRef=useRef(false);const progressTimer=useRef<NodeJS.Timeout|null>(null);
 const selectedLevels=useMemo(()=>Object.entries(admToggles).filter(([_,v])=>v).map(([k])=>Number(k)),[admToggles]);
-
+// Temporary placeholder until dataset context is wired in
+const activeDatasetId = ""; // or null if you prefer
+  
 useEffect(()=>{supabase.from("countries").select("iso_code,name").eq("iso_code",countryIso).maybeSingle().then(({data})=>data&&setCountry(data));},[countryIso]);
 
 const loadVersions=async()=>{
