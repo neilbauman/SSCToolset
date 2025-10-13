@@ -3,242 +3,198 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import {
-  Activity,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Database,
   Map,
   Users,
   Layers,
+  Database,
   Info,
+  XCircle,
 } from "lucide-react";
 
-export default function CountryHealthSummary({
-  countryIso,
-}: {
-  countryIso: string;
-}) {
-  const [summary, setSummary] = useState<any>(null);
+/**
+ * CountryHealthSummary
+ * Summarizes completeness across Admin, Population, GIS, and Other Datasets.
+ */
+export default function CountryHealthSummary({ countryIso }: { countryIso: string }) {
+  const [health, setHealth] = useState({
+    admins: 0,
+    population: 0,
+    gis: 0,
+    other: 0,
+    overall: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    if (!countryIso) return;
+    const loadHealth = async () => {
       try {
-        // 🧭 Admin Units
-        const { data: admins, count: adminCount } = await supabase
+        setLoading(true);
+
+        // --- ADMIN HEALTH ---
+        const { count: adminCount } = await supabase
           .from("admin_units")
-          .select("id, level", { count: "exact" })
-          .eq("country_iso", countryIso)
-          .limit(100000);
-
-        // 👥 Population
-        const { data: popData, count: popCount } = await supabase
-          .from("population_data")
-          .select("pcode, population", { count: "exact" })
-          .eq("country_iso", countryIso)
-          .limit(100000);
-
-        // 🗺️ GIS Layers
-        const { data: gisData, count: gisCount } = await supabase
-          .from("gis_layers")
-          .select("id, layer_type", { count: "exact" })
-          .eq("country_iso", countryIso)
-          .limit(100000);
-
-        // 📊 Other Datasets (metadata + health)
-        const { data: dh } = await supabase
-          .from("data_health_summary")
-          .select("dataset_id, completeness_pct, missing_admins_pct")
+          .select("id", { count: "exact", head: true })
           .eq("country_iso", countryIso);
 
-        const { data: datasets, count: datasetCount } = await supabase
-          .from("dataset_metadata")
-          .select("id", { count: "exact" })
+        // For simplicity, assume completeness = proportion of ADM levels 0–3
+        const { data: adminLevels } = await supabase
+          .from("admin_units")
+          .select("level")
           .eq("country_iso", countryIso);
 
-        // ✅ Compute health components
-
-        const adminHealth = (() => {
-          if (!adminCount) return { pct: 0, count: 0, label: "Missing" };
-          const lvls = new Set(admins?.map((a) => a.level));
-          const required = ["ADM0", "ADM1", "ADM2"];
-          const have = required.filter((l) => lvls.has(l));
-          const pct = (have.length / required.length) * 100;
-          return {
-            pct,
-            count: adminCount,
-            label: pct >= 100 ? "Complete" : "Partial",
-          };
-        })();
-
-        const popHealth = (() => {
-          if (!popCount) return { pct: 0, count: 0, label: "Missing" };
-          const filled =
-            popData?.filter((p) => p.population && p.population > 0) || [];
-          const pct = (filled.length / popCount) * 100;
-          return {
-            pct,
-            count: popCount,
-            label: pct >= 95 ? "Complete" : "Partial",
-          };
-        })();
-
-        const gisHealth = (() => {
-          if (!gisCount) return { pct: 0, count: 0, label: "Missing" };
-          const valid = gisData?.filter((g) => g.layer_type) || [];
-          const pct = (valid.length / gisCount) * 100;
-          return {
-            pct,
-            count: gisCount,
-            label: pct >= 95 ? "Complete" : "Partial",
-          };
-        })();
-
-        const otherHealth = (() => {
-          if (!datasetCount) return { pct: 0, count: 0, label: "Missing" };
-          const vals = dh?.map((r) => r.completeness_pct || 0) || [];
-          const avg = vals.length
-            ? vals.reduce((a, b) => a + b, 0) / vals.length
+        const levels = new Set((adminLevels || []).map((r) => r.level));
+        const completenessAdmin =
+          adminCount && adminCount > 0
+            ? Math.min((levels.size / 3) * 100, 100)
             : 0;
-          return {
-            pct: avg,
-            count: datasetCount,
-            label: avg >= 90 ? "Complete" : "Partial",
-          };
-        })();
 
-        const overallPct =
-          (adminHealth.pct +
-            popHealth.pct +
-            gisHealth.pct +
-            otherHealth.pct) /
+        // --- POPULATION HEALTH (active version only) ---
+        const { data: popVersion } = await supabase
+          .from("population_dataset_versions")
+          .select("id")
+          .eq("country_iso", countryIso)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        let completenessPop = 0;
+        if (popVersion?.id) {
+          const { count: popCount } = await supabase
+            .from("population_data")
+            .select("pcode", { count: "exact", head: true })
+            .eq("dataset_version_id", popVersion.id);
+
+          completenessPop = popCount && popCount > 0 ? 100 : 0;
+        }
+
+        // --- GIS HEALTH (active version only) ---
+        const { data: gisVersion } = await supabase
+          .from("gis_dataset_versions")
+          .select("id")
+          .eq("country_iso", countryIso)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        let completenessGIS = 0;
+        if (gisVersion?.id) {
+          const { count: gisCount } = await supabase
+            .from("gis_layers")
+            .select("id", { count: "exact", head: true })
+            .eq("dataset_version_id", gisVersion.id);
+
+          completenessGIS = gisCount && gisCount > 0 ? 100 : 0;
+        }
+
+        // --- OTHER DATASETS HEALTH ---
+        const { data: otherHealth } = await supabase
+          .from("data_health_summary")
+          .select("completeness_pct")
+          .eq("country_iso", countryIso);
+
+        const completenessOther =
+          otherHealth && otherHealth.length
+            ? Math.round(
+                otherHealth.reduce((s, d) => s + (d.completeness_pct || 0), 0) /
+                  otherHealth.length
+              )
+            : 0;
+
+        // --- OVERALL ---
+        const overall =
+          (completenessAdmin + completenessPop + completenessGIS + completenessOther) /
           4;
 
-        setSummary({
-          adminHealth,
-          popHealth,
-          gisHealth,
-          otherHealth,
-          overallPct,
+        setHealth({
+          admins: completenessAdmin,
+          population: completenessPop,
+          gis: completenessGIS,
+          other: completenessOther,
+          overall,
         });
       } catch (e) {
-        console.error("CountryHealthSummary error:", e);
+        console.error("Error loading health:", e);
       } finally {
         setLoading(false);
       }
-    })();
+    };
+
+    loadHealth();
   }, [countryIso]);
 
-  // ✅ Loading state
   if (loading)
     return (
-      <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm flex items-center gap-2 text-gray-600 text-sm">
-        <Activity className="w-4 h-4 animate-spin" /> Checking data health…
+      <div className="border rounded-lg p-4 bg-white text-sm text-gray-500">
+        Loading country data health…
       </div>
     );
 
-  if (!summary) return null;
-
-  // ✅ Icon logic
-  const icon =
-    summary.overallPct > 90 ? (
-      <CheckCircle2 className="w-5 h-5 text-green-600" />
-    ) : summary.overallPct > 70 ? (
-      <AlertTriangle className="w-5 h-5 text-yellow-600" />
-    ) : (
-      <XCircle className="w-5 h-5 text-red-600" />
-    );
-
-  // ✅ Reusable cell
-  const cell = (
-    label: string,
-    iconEl: JSX.Element,
-    pct: number,
-    desc: string,
-    count: number
-  ) => (
-    <div
-      className="flex flex-col items-center relative group"
-      title={`${label}: ${count} entries • ${desc}`}
-    >
-      {iconEl}
-      <p className="text-sm font-medium mt-1">{label}</p>
-      <p
-        className={`text-sm font-semibold ${
-          pct >= 90
-            ? "text-green-600"
-            : pct >= 70
-            ? "text-yellow-600"
-            : "text-red-600"
-        }`}
-      >
-        {pct.toFixed(1)}%
-      </p>
-      <div className="opacity-0 group-hover:opacity-100 absolute bottom-12 bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-md pointer-events-none transition">
-        {count} entries • {desc}
+  const Metric = ({
+    label,
+    value,
+    icon,
+  }: {
+    label: string;
+    value: number;
+    icon: JSX.Element;
+  }) => {
+    const color =
+      value >= 90 ? "text-green-600" : value >= 50 ? "text-yellow-600" : "text-red-600";
+    return (
+      <div className="flex flex-col items-center">
+        {icon}
+        <p className="text-sm mt-1">{label}</p>
+        <p className={`font-semibold ${color}`}>{value.toFixed(1)}%</p>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-[color:var(--gsc-gray)] flex items-center gap-1">
+    <div className="border rounded-lg bg-white p-4 shadow-sm">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-base font-semibold text-[color:var(--gsc-gray)] flex items-center gap-2">
           Country Data Health Overview
-          {/* ✅ fixed tooltip wrapper (no build error) */}
-          <div title="Summarizes completeness across baseline datasets">
-            <Info className="w-4 h-4 text-gray-400" />
-          </div>
+          <Info className="w-4 h-4 text-gray-400" />
         </h2>
-        {icon}
+        <XCircle className="w-5 h-5 text-red-400" />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 text-center gap-4">
-        {cell(
-          "Admin Units",
-          <Map className="w-5 h-5 text-green-700" />,
-          summary.adminHealth.pct,
-          summary.adminHealth.label,
-          summary.adminHealth.count
-        )}
-        {cell(
-          "Population",
-          <Users className="w-5 h-5 text-gray-700" />,
-          summary.popHealth.pct,
-          summary.popHealth.label,
-          summary.popHealth.count
-        )}
-        {cell(
-          "GIS Layers",
-          <Layers className="w-5 h-5 text-yellow-700" />,
-          summary.gisHealth.pct,
-          summary.gisHealth.label,
-          summary.gisHealth.count
-        )}
-        {cell(
-          "Other Datasets",
-          <Database className="w-5 h-5 text-blue-700" />,
-          summary.otherHealth.pct,
-          summary.otherHealth.label,
-          summary.otherHealth.count
-        )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+        <Metric
+          label="Admin Units"
+          value={health.admins}
+          icon={<Map className="w-6 h-6 text-green-600" />}
+        />
+        <Metric
+          label="Population"
+          value={health.population}
+          icon={<Users className="w-6 h-6 text-gray-600" />}
+        />
+        <Metric
+          label="GIS Layers"
+          value={health.gis}
+          icon={<Layers className="w-6 h-6 text-amber-600" />}
+        />
+        <Metric
+          label="Other Datasets"
+          value={health.other}
+          icon={<Database className="w-6 h-6 text-blue-600" />}
+        />
       </div>
 
-      <div className="mt-3 text-center text-xs text-gray-600">
+      <p className="text-center text-sm mt-3">
         Overall Completeness:{" "}
         <span
           className={`font-semibold ${
-            summary.overallPct >= 90
+            health.overall >= 90
               ? "text-green-600"
-              : summary.overallPct >= 70
+              : health.overall >= 50
               ? "text-yellow-600"
               : "text-red-600"
           }`}
         >
-          {summary.overallPct.toFixed(1)}%
+          {health.overall.toFixed(1)}%
         </span>
-      </div>
+      </p>
     </div>
   );
 }
