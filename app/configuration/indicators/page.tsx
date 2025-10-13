@@ -5,6 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Pencil, Trash2, Plus, Loader2 } from "lucide-react";
+import EditIndicatorModal from "@/components/configuration/EditIndicatorModal";
 
 type Indicator = {
   id: string;
@@ -31,31 +32,41 @@ export default function IndicatorsPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState<Indicator | null>(null);
 
+  // 🔹 Load indicators and their categories
+  const loadAll = async () => {
+    setLoading(true);
+    const { data: inds } = await supabase
+      .from("indicator_catalogue")
+      .select("*")
+      .order("created_at", { ascending: false });
+    const { data: cats } = await supabase
+      .from("indicator_categories")
+      .select("indicator_id, category");
+    const grouped: Record<string, string[]> = {};
+    (cats || []).forEach((c) => {
+      if (!grouped[c.indicator_id]) grouped[c.indicator_id] = [];
+      grouped[c.indicator_id].push(c.category);
+    });
+    setIndicators(inds || []);
+    setCategories(grouped);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data: inds } = await supabase.from("indicator_catalogue").select("*").order("created_at", { ascending: false });
-      const { data: cats } = await supabase.from("indicator_categories").select("indicator_id, category");
-      const grouped: Record<string, string[]> = {};
-      (cats || []).forEach((c) => {
-        if (!grouped[c.indicator_id]) grouped[c.indicator_id] = [];
-        grouped[c.indicator_id].push(c.category);
-      });
-      setIndicators(inds || []);
-      setCategories(grouped);
-      setLoading(false);
-    })();
+    loadAll();
   }, []);
 
   const handleDelete = async (id: string) => {
     await supabase.from("indicator_catalogue").delete().eq("id", id);
+    await supabase.from("indicator_categories").delete().eq("indicator_id", id);
     setIndicators((prev) => prev.filter((i) => i.id !== id));
   };
 
   const headerProps = {
     title: "Indicator Catalogue",
     group: "ssc-config" as const,
-    description: "Manage indicators used across SSC, vulnerability, and hazard layers.",
+    description:
+      "Manage indicators used across SSC, vulnerability, and hazard layers.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -69,6 +80,7 @@ export default function IndicatorsPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Header + Actions */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
           Indicators
@@ -81,6 +93,7 @@ export default function IndicatorsPage() {
         </button>
       </div>
 
+      {/* Main Table */}
       <div className="border rounded-lg p-3 shadow-sm bg-white overflow-auto">
         {loading ? (
           <div className="p-6 text-gray-600 flex items-center gap-2 text-sm">
@@ -171,24 +184,21 @@ export default function IndicatorsPage() {
         )}
       </div>
 
+      {/* Modals */}
       {openAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
-            <h3 className="text-lg font-semibold mb-3">Add New Indicator</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Modal functionality coming soon — structure is ready for
-              expansion.
-            </p>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setOpenAdd(false)}
-                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditIndicatorModal
+          open={openAdd}
+          onClose={() => setOpenAdd(false)}
+          onSave={loadAll}
+        />
+      )}
+      {editing && (
+        <EditIndicatorModal
+          open={!!editing}
+          indicator={editing}
+          onClose={() => setEditing(null)}
+          onSave={loadAll}
+        />
       )}
     </SidebarLayout>
   );
