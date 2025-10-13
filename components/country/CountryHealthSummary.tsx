@@ -25,67 +25,95 @@ export default function CountryHealthSummary({
   useEffect(() => {
     (async () => {
       try {
-        const { data: admins } = await supabase
+        // 🧭 Admin Units
+        const { data: admins, count: adminCount } = await supabase
           .from("admin_units")
-          .select("id, level")
-          .eq("country_iso", countryIso);
-        // 🧭 Population — fetch full record count
-const { data: pop, count: popCount } = await supabase
-  .from("population_data")
-  .select("pcode, population", { count: "exact" })
-  .eq("country_iso", countryIso)
-  .limit(100000); // arbitrary high cap to ensure full range
+          .select("id, level", { count: "exact" })
+          .eq("country_iso", countryIso)
+          .limit(100000);
 
-// 🗺️ GIS — count all uploaded layers
-const { data: gis, count: gisCount } = await supabase
-  .from("gis_layers")
-  .select("id, layer_type", { count: "exact" })
-  .eq("country_iso", countryIso);
+        // 👥 Population
+        const { data: popData, count: popCount } = await supabase
+          .from("population_data")
+          .select("pcode, population", { count: "exact" })
+          .eq("country_iso", countryIso)
+          .limit(100000);
+
+        // 🗺️ GIS Layers
+        const { data: gisData, count: gisCount } = await supabase
+          .from("gis_layers")
+          .select("id, layer_type", { count: "exact" })
+          .eq("country_iso", countryIso)
+          .limit(100000);
+
+        // 📊 Other Datasets (metadata + health)
         const { data: dh } = await supabase
           .from("data_health_summary")
-          .select("dataset_id, completeness_pct")
-          .eq("country_iso", countryIso);
-        const { data: datasets } = await supabase
-          .from("dataset_metadata")
-          .select("id")
+          .select("dataset_id, completeness_pct, missing_admins_pct")
           .eq("country_iso", countryIso);
 
+        const { data: datasets, count: datasetCount } = await supabase
+          .from("dataset_metadata")
+          .select("id", { count: "exact" })
+          .eq("country_iso", countryIso);
+
+        // ✅ Compute health components
+
         const adminHealth = (() => {
-          if (!admins?.length) return { pct: 0, count: 0, label: "Missing" };
-          const lvls = new Set(admins.map((a) => a.level));
+          if (!adminCount) return { pct: 0, count: 0, label: "Missing" };
+          const lvls = new Set(admins?.map((a) => a.level));
           const required = ["ADM0", "ADM1", "ADM2"];
           const have = required.filter((l) => lvls.has(l));
           const pct = (have.length / required.length) * 100;
-          return { pct, count: lvls.size, label: pct >= 100 ? "Complete" : "Partial" };
+          return {
+            pct,
+            count: adminCount,
+            label: pct >= 100 ? "Complete" : "Partial",
+          };
         })();
 
         const popHealth = (() => {
-          if (!pop?.length) return { pct: 0, count: 0, label: "Missing" };
-          const filled = pop.filter((p) => p.population && p.population > 0);
-          const pct = (filled.length / pop.length) * 100;
-          return { pct, count: pop.length, label: pct >= 95 ? "Complete" : "Partial" };
+          if (!popCount) return { pct: 0, count: 0, label: "Missing" };
+          const filled =
+            popData?.filter((p) => p.population && p.population > 0) || [];
+          const pct = (filled.length / popCount) * 100;
+          return {
+            pct,
+            count: popCount,
+            label: pct >= 95 ? "Complete" : "Partial",
+          };
         })();
 
         const gisHealth = (() => {
-  if (!gisCount) return { pct: 0, count: 0, label: "Missing" };
-  const valid = gis?.filter((g) => g.layer_type) || [];
-  const pct = (valid.length / gisCount) * 100;
-  return {
-    pct,
-    count: gisCount,
-    label: pct >= 95 ? "Complete" : "Partial",
-  };
-})();
+          if (!gisCount) return { pct: 0, count: 0, label: "Missing" };
+          const valid = gisData?.filter((g) => g.layer_type) || [];
+          const pct = (valid.length / gisCount) * 100;
+          return {
+            pct,
+            count: gisCount,
+            label: pct >= 95 ? "Complete" : "Partial",
+          };
+        })();
 
         const otherHealth = (() => {
-          if (!datasets?.length) return { pct: 0, count: 0, label: "Missing" };
+          if (!datasetCount) return { pct: 0, count: 0, label: "Missing" };
           const vals = dh?.map((r) => r.completeness_pct || 0) || [];
-          const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-          return { pct: avg, count: datasets.length, label: avg >= 90 ? "Complete" : "Partial" };
+          const avg = vals.length
+            ? vals.reduce((a, b) => a + b, 0) / vals.length
+            : 0;
+          return {
+            pct: avg,
+            count: datasetCount,
+            label: avg >= 90 ? "Complete" : "Partial",
+          };
         })();
 
         const overallPct =
-          (adminHealth.pct + popHealth.pct + gisHealth.pct + otherHealth.pct) / 4;
+          (adminHealth.pct +
+            popHealth.pct +
+            gisHealth.pct +
+            otherHealth.pct) /
+          4;
 
         setSummary({
           adminHealth,
@@ -102,6 +130,7 @@ const { data: gis, count: gisCount } = await supabase
     })();
   }, [countryIso]);
 
+  // ✅ Loading state
   if (loading)
     return (
       <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm flex items-center gap-2 text-gray-600 text-sm">
@@ -111,6 +140,7 @@ const { data: gis, count: gisCount } = await supabase
 
   if (!summary) return null;
 
+  // ✅ Icon logic
   const icon =
     summary.overallPct > 90 ? (
       <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -120,6 +150,7 @@ const { data: gis, count: gisCount } = await supabase
       <XCircle className="w-5 h-5 text-red-600" />
     );
 
+  // ✅ Reusable cell
   const cell = (
     label: string,
     iconEl: JSX.Element,
@@ -129,7 +160,7 @@ const { data: gis, count: gisCount } = await supabase
   ) => (
     <div
       className="flex flex-col items-center relative group"
-      title={`${label}: ${count} records • ${desc}`}
+      title={`${label}: ${count} entries • ${desc}`}
     >
       {iconEl}
       <p className="text-sm font-medium mt-1">{label}</p>
@@ -155,7 +186,7 @@ const { data: gis, count: gisCount } = await supabase
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-[color:var(--gsc-gray)] flex items-center gap-1">
           Country Data Health Overview
-          {/* ✅ FIX: tooltip wrapper instead of title prop */}
+          {/* ✅ fixed tooltip wrapper (no build error) */}
           <div title="Summarizes completeness across baseline datasets">
             <Info className="w-4 h-4 text-gray-400" />
           </div>
@@ -164,10 +195,34 @@ const { data: gis, count: gisCount } = await supabase
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 text-center gap-4">
-        {cell("Admin Units", <Map className="w-5 h-5 text-green-700" />, summary.adminHealth.pct, summary.adminHealth.label, summary.adminHealth.count)}
-        {cell("Population", <Users className="w-5 h-5 text-gray-700" />, summary.popHealth.pct, summary.popHealth.label, summary.popHealth.count)}
-        {cell("GIS Layers", <Layers className="w-5 h-5 text-yellow-700" />, summary.gisHealth.pct, summary.gisHealth.label, summary.gisHealth.count)}
-        {cell("Other Datasets", <Database className="w-5 h-5 text-blue-700" />, summary.otherHealth.pct, summary.otherHealth.label, summary.otherHealth.count)}
+        {cell(
+          "Admin Units",
+          <Map className="w-5 h-5 text-green-700" />,
+          summary.adminHealth.pct,
+          summary.adminHealth.label,
+          summary.adminHealth.count
+        )}
+        {cell(
+          "Population",
+          <Users className="w-5 h-5 text-gray-700" />,
+          summary.popHealth.pct,
+          summary.popHealth.label,
+          summary.popHealth.count
+        )}
+        {cell(
+          "GIS Layers",
+          <Layers className="w-5 h-5 text-yellow-700" />,
+          summary.gisHealth.pct,
+          summary.gisHealth.label,
+          summary.gisHealth.count
+        )}
+        {cell(
+          "Other Datasets",
+          <Database className="w-5 h-5 text-blue-700" />,
+          summary.otherHealth.pct,
+          summary.otherHealth.label,
+          summary.otherHealth.count
+        )}
       </div>
 
       <div className="mt-3 text-center text-xs text-gray-600">
