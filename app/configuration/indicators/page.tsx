@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Pencil, Trash2, Plus, Loader2 } from "lucide-react";
+import { Pencil, Trash2, Plus, Loader2, Search } from "lucide-react";
 import EditIndicatorModal from "@/components/configuration/EditIndicatorModal";
+import FrameworkLinkDisplay from "@/components/configuration/FrameworkLinkDisplay";
 
 type Indicator = {
   id: string;
@@ -32,7 +33,11 @@ export default function IndicatorsPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState<Indicator | null>(null);
 
-  // 🔹 Load indicators and their categories
+  // Filters
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+
+  // 🔹 Load indicators + categories
   const loadAll = async () => {
     setLoading(true);
     const { data: inds } = await supabase
@@ -62,6 +67,25 @@ export default function IndicatorsPage() {
     setIndicators((prev) => prev.filter((i) => i.id !== id));
   };
 
+  // 🔹 Filter + search logic
+  const filteredIndicators = useMemo(() => {
+    return indicators.filter((ind) => {
+      const term = search.toLowerCase();
+      const inSearch =
+        !term ||
+        ind.name.toLowerCase().includes(term) ||
+        (ind.code ?? "").toLowerCase().includes(term) ||
+        (ind.topic ?? "").toLowerCase().includes(term);
+
+      const cats = categories[ind.id] || [];
+      const inCat =
+        categoryFilter === "All" ||
+        cats.map((c) => c.toLowerCase()).includes(categoryFilter.toLowerCase());
+
+      return inSearch && inCat;
+    });
+  }, [indicators, categories, search, categoryFilter]);
+
   const headerProps = {
     title: "Indicator Catalogue",
     group: "ssc-config" as const,
@@ -80,20 +104,42 @@ export default function IndicatorsPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Header + Actions */}
-      <div className="flex justify-between items-center mb-4">
+      {/* Header Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
           Indicators
         </h2>
-        <button
-          onClick={() => setOpenAdd(true)}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-red)] hover:opacity-90"
-        >
-          <Plus className="w-4 h-4" /> Add Indicator
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:items-center">
+          <div className="relative flex-1 sm:flex-none">
+            <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search indicators..."
+              className="border rounded-md pl-8 pr-3 py-1 text-sm w-full sm:w-64"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="border rounded-md text-sm py-1 px-2"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option>All</option>
+            <option>SSC</option>
+            <option>Vulnerability</option>
+            <option>Hazard</option>
+          </select>
+          <button
+            onClick={() => setOpenAdd(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-red)] hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Add Indicator
+          </button>
+        </div>
       </div>
 
-      {/* Main Table */}
+      {/* Table */}
       <div className="border rounded-lg p-3 shadow-sm bg-white overflow-auto">
         {loading ? (
           <div className="p-6 text-gray-600 flex items-center gap-2 text-sm">
@@ -115,16 +161,21 @@ export default function IndicatorsPage() {
               </tr>
             </thead>
             <tbody>
-              {indicators.map((ind) => (
+              {filteredIndicators.map((ind) => (
                 <tr
                   key={ind.id}
                   className="border-b last:border-b-0 hover:bg-gray-50"
                 >
                   <td className="px-2 py-1">{ind.code || "—"}</td>
-                  <td className="px-2 py-1 font-medium">{ind.name}</td>
-                  <td className="px-2 py-1 text-gray-700">
-                    {ind.topic || "—"}
+                  <td className="px-2 py-1 font-medium">
+                    {ind.name}
+                    <FrameworkLinkDisplay
+                      pillar_id={ind.pillar_id}
+                      theme_id={ind.theme_id}
+                      subtheme_id={ind.subtheme_id}
+                    />
                   </td>
+                  <td className="px-2 py-1">{ind.topic || "—"}</td>
                   <td className="px-2 py-1">
                     {(categories[ind.id] || []).length ? (
                       <div className="flex gap-1 flex-wrap">
@@ -138,7 +189,7 @@ export default function IndicatorsPage() {
                         ))}
                       </div>
                     ) : (
-                      <span className="text-gray-400 text-xs">none</span>
+                      <span className="text-gray-400 text-xs">—</span>
                     )}
                   </td>
                   <td className="px-2 py-1">{ind.type || "—"}</td>
@@ -169,13 +220,13 @@ export default function IndicatorsPage() {
                   </td>
                 </tr>
               ))}
-              {!indicators.length && (
+              {!filteredIndicators.length && (
                 <tr>
                   <td
                     colSpan={9}
                     className="text-center py-6 text-gray-500 italic"
                   >
-                    No indicators yet.
+                    No indicators match your filters.
                   </td>
                 </tr>
               )}
