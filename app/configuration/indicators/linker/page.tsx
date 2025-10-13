@@ -1,6 +1,6 @@
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import IndicatorFrameworkLinker from "@/components/indicators/IndicatorFrameworkLinker";
+import IndicatorFrameworkLinker from "@/components/configuration/IndicatorFrameworkLinker";
 
 export const dynamic = "force-dynamic";
 
