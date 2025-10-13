@@ -14,16 +14,6 @@ import {
   Info,
 } from "lucide-react";
 
-/**
- * CountryHealthSummary
- * ------------------------------------------------------------
- * Aggregates completeness across baseline datasets:
- *  - Admin Units
- *  - Population
- *  - GIS Layers
- *  - Other Datasets
- * Displays overall data readiness and tooltips on hover.
- */
 export default function CountryHealthSummary({
   countryIso,
 }: {
@@ -35,35 +25,27 @@ export default function CountryHealthSummary({
   useEffect(() => {
     (async () => {
       try {
-        // 🧭 Admin Units
         const { data: admins } = await supabase
           .from("admin_units")
-          .select("id, level, name, pcode")
+          .select("id, level")
           .eq("country_iso", countryIso);
-
-        // 👥 Population
         const { data: pop } = await supabase
           .from("population_data")
           .select("pcode, population")
           .eq("country_iso", countryIso);
-
-        // 🗺️ GIS
         const { data: gis } = await supabase
           .from("gis_layers")
           .select("id, layer_type")
           .eq("country_iso", countryIso);
-
-        // 📊 Other Datasets
         const { data: dh } = await supabase
           .from("data_health_summary")
-          .select("dataset_id, completeness_pct, missing_admins_pct")
+          .select("dataset_id, completeness_pct")
           .eq("country_iso", countryIso);
         const { data: datasets } = await supabase
           .from("dataset_metadata")
-          .select("id, title, admin_level")
+          .select("id")
           .eq("country_iso", countryIso);
 
-        // ✅ Compute health
         const adminHealth = (() => {
           if (!admins?.length) return { pct: 0, count: 0, label: "Missing" };
           const lvls = new Set(admins.map((a) => a.level));
@@ -90,9 +72,7 @@ export default function CountryHealthSummary({
         const otherHealth = (() => {
           if (!datasets?.length) return { pct: 0, count: 0, label: "Missing" };
           const vals = dh?.map((r) => r.completeness_pct || 0) || [];
-          const avg = vals.length
-            ? vals.reduce((a, b) => a + b, 0) / vals.length
-            : 0;
+          const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
           return { pct: avg, count: datasets.length, label: avg >= 90 ? "Complete" : "Partial" };
         })();
 
@@ -132,7 +112,6 @@ export default function CountryHealthSummary({
       <XCircle className="w-5 h-5 text-red-600" />
     );
 
-  // Small badge component with tooltip
   const cell = (
     label: string,
     iconEl: JSX.Element,
@@ -168,7 +147,10 @@ export default function CountryHealthSummary({
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-[color:var(--gsc-gray)] flex items-center gap-1">
           Country Data Health Overview
-          <Info className="w-4 h-4 text-gray-400" title="Summarizes completeness across baseline datasets" />
+          {/* ✅ FIX: tooltip wrapper instead of title prop */}
+          <div title="Summarizes completeness across baseline datasets">
+            <Info className="w-4 h-4 text-gray-400" />
+          </div>
         </h2>
         {icon}
       </div>
