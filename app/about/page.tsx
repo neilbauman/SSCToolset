@@ -1,6 +1,7 @@
-// app/about/page.tsx
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
+"use client";
+
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export default function AboutPage() {
   const headerProps = {
     title: "About",
     group: "about" as const,
-    description: "Information about the SSC Toolset.",
+    description: "Overview of the Shelter Severity Classification (SSC) Toolset.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -21,7 +22,7 @@ export default function AboutPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="prose max-w-3xl">
+      <div className="prose max-w-4xl">
         <h2>Purpose</h2>
         <p>
           The <strong>Shelter Severity Classification (SSC)</strong> Toolset
@@ -36,6 +37,156 @@ export default function AboutPage() {
         <p>
           The SSC builds on a simple but powerful logic: shelter severity is
           determined by the intersection of three complementary data layers.
+        </p>
+
+        {/* Conceptual Diagram */}
+        <div className="flex justify-center my-8">
+          <div className="relative w-full max-w-3xl">
+            <svg viewBox="0 0 700 400" className="w-full h-auto">
+              {/* Underlying Vulnerabilities */}
+              <rect
+                x="60"
+                y="220"
+                width="180"
+                height="80"
+                rx="10"
+                fill="#60a5fa"
+                opacity="0.8"
+              />
+              <text
+                x="150"
+                y="260"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                Underlying
+              </text>
+              <text
+                x="150"
+                y="278"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                Vulnerabilities
+              </text>
+
+              {/* Hazard & Exposure */}
+              <rect
+                x="260"
+                y="100"
+                width="180"
+                height="80"
+                rx="10"
+                fill="#f59e0b"
+                opacity="0.8"
+              />
+              <text
+                x="350"
+                y="138"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                Hazard & Exposure
+              </text>
+              <text
+                x="350"
+                y="156"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                Data
+              </text>
+
+              {/* SSC Framework */}
+              <rect
+                x="460"
+                y="220"
+                width="180"
+                height="80"
+                rx="10"
+                fill="#ef4444"
+                opacity="0.8"
+              />
+              <text
+                x="550"
+                y="260"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                SSC Framework
+              </text>
+
+              {/* Arrows */}
+              <line
+                x1="240"
+                y1="260"
+                x2="460"
+                y2="260"
+                stroke="#9ca3af"
+                strokeWidth="3"
+                markerEnd="url(#arrowhead)"
+              />
+              <line
+                x1="350"
+                y1="180"
+                x2="350"
+                y2="220"
+                stroke="#9ca3af"
+                strokeWidth="3"
+                markerEnd="url(#arrowhead)"
+              />
+
+              {/* Output */}
+              <rect
+                x="260"
+                y="320"
+                width="180"
+                height="50"
+                rx="8"
+                fill="#16a34a"
+                opacity="0.9"
+              />
+              <text
+                x="350"
+                y="350"
+                textAnchor="middle"
+                fontSize="14"
+                fill="#fff"
+                fontWeight="600"
+              >
+                SSC Severity Classification (1–5)
+              </text>
+
+              {/* Arrowhead Definition */}
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#9ca3af" />
+                </marker>
+              </defs>
+            </svg>
+          </div>
+        </div>
+
+        <p className="text-sm text-gray-500 text-center -mt-4 mb-8">
+          Simplified conceptual model showing how vulnerability, hazard, and
+          shelter conditions interact to define severity.
         </p>
 
         <ul>
@@ -58,15 +209,9 @@ export default function AboutPage() {
           </li>
         </ul>
 
-        <p>
-          These three layers interact to answer key questions about shelter
-          severity:
-        </p>
-        <blockquote>
-          <em>
-            Given existing vulnerabilities, and the spatial footprint of a
-            hazard, how severely have shelter conditions been affected?
-          </em>
+        <blockquote className="my-6 border-l-4 border-gray-300 pl-4 italic text-gray-700">
+          “Given existing vulnerabilities, and the spatial footprint of a
+          hazard, how severely have shelter conditions been affected?”
         </blockquote>
 
         <h2>Analytical Structure</h2>
