@@ -37,7 +37,7 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
     setIndicator(data);
 
     const { data: links } = await supabase
-      .from("indicator_taxonomy")
+      .from("indicator_taxonomy_links")
       .select("taxonomy_id")
       .eq("indicator_id", indicatorId);
     setSelectedTaxonomyIds(links?.map((l) => l.taxonomy_id) || []);
@@ -68,7 +68,7 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
 
     // Fetch current taxonomy links
     const { data: existingLinks, error: fetchError } = await supabase
-      .from("indicator_taxonomy")
+      .from("indicator_taxonomy_links")
       .select("taxonomy_id")
       .eq("indicator_id", indicatorId);
 
@@ -83,7 +83,7 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
     // Remove deselected
     if (toRemove.length > 0) {
       const { error: delError } = await supabase
-        .from("indicator_taxonomy")
+        .from("indicator_taxonomy_links")
         .delete()
         .eq("indicator_id", indicatorId)
         .in("taxonomy_id", toRemove);
@@ -96,7 +96,7 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
         indicator_id: indicatorId,
         taxonomy_id: tid,
       }));
-      const { error: insError } = await supabase.from("indicator_taxonomy").insert(inserts);
+      const { error: insError } = await supabase.from("indicator_taxonomy_links").insert(inserts);
       if (insError) console.error("Failed to insert taxonomy links:", insError);
     }
 
