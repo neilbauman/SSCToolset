@@ -18,24 +18,26 @@ type Indicator = {
   created_at?: string;
 };
 
-type TermRow = {
+type Term = {
   id: string;
-  category: string;
   code: string;
   name: string;
+  category: string;
 };
 
-type SortKey = "code" | "name" | "type" | "unit" | "topic" | "taxonomy";
+type IndicatorTerms = Record<string, Term[]>;
+
+type SortKey = "code" | "name" | "type" | "unit" | "topic" | "created_at";
 
 export default function IndicatorsPage() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
-  const [taxonomyByIndicator, setTaxonomyByIndicator] = useState<Record<string, TermRow[]>>({});
+  const [termsByIndicator, setTermsByIndicator] = useState<IndicatorTerms>({});
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [sortKey, setSortKey] = useState<SortKey>("created_at" as any);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortAsc, setSortAsc] = useState(false);
 
   const headerProps = {
     title: "Indicator Catalogue",
@@ -52,74 +54,96 @@ export default function IndicatorsPage() {
     ),
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
 
   async function loadAll() {
     setLoading(true);
-    // 1) indicators
-    const { data: inds, error: errInd } = await supabase
+
+    // 1) Indicators
+    const { data: inds, error } = await supabase
       .from("indicator_catalogue")
       .select("id, code, name, type, unit, topic, created_at")
       .order("created_at", { ascending: false });
-    if (errInd) console.error(errInd);
 
-    // 2) taxonomy links (ordered) + terms
-    const { data: links, error: errLinks } = await supabase
-      .from("indicator_taxonomy_links")
-      .select("indicator_id, sort_order, taxonomy_terms(id, category, code, name)")
-      .order("sort_order", { ascending: true });
-    if (errLinks) console.error(errLinks);
-
-    const map: Record<string, TermRow[]> = {};
-    (links || []).forEach((row: any) => {
-      const t = row.taxonomy_terms as TermRow | null;
-      if (!t) return;
-      if (!map[row.indicator_id]) map[row.indicator_id] = [];
-      map[row.indicator_id].push(t);
-    });
+    if (error) {
+      console.error("Error loading indicators:", error);
+      setIndicators([]);
+      setTermsByIndicator({});
+      setLoading(false);
+      return;
+    }
 
     setIndicators(inds || []);
-    setTaxonomyByIndicator(map);
+
+    // 2) Taxonomy (indicator_taxonomy -> taxonomy_terms)
+    if (!inds || inds.length === 0) {
+      setTermsByIndicator({});
+      setLoading(false);
+      return;
+    }
+
+    const ids = inds.map((i) => i.id);
+
+    const { data: links, error: linkErr } = await supabase
+      .from("indicator_taxonomy")
+      .select("indicator_id, term_id")
+      .in("indicator_id", ids);
+
+    if (linkErr) {
+      console.error("Error loading indicator_taxonomy:", linkErr);
+      setTermsByIndicator({});
+      setLoading(false);
+      return;
+    }
+
+    const termIds = Array.from(new Set((links || []).map((l) => l.term_id)));
+    if (termIds.length === 0) {
+      setTermsByIndicator({});
+      setLoading(false);
+      return;
+    }
+
+    const { data: terms, error: termsErr } = await supabase
+      .from("taxonomy_terms")
+      .select("id, code, name, category")
+      .in("id", termIds);
+
+    if (termsErr) {
+      console.error("Error loading taxonomy_terms:", termsErr);
+      setTermsByIndicator({});
+      setLoading(false);
+      return;
+    }
+
+    const termMap = new Map(terms!.map((t) => [t.id, t]));
+    const grouped: IndicatorTerms = {};
+    (links || []).forEach((lnk) => {
+      const t = termMap.get(lnk.term_id);
+      if (!t) return;
+      if (!grouped[lnk.indicator_id]) grouped[lnk.indicator_id] = [];
+      grouped[lnk.indicator_id].push(t);
+    });
+
+    setTermsByIndicator(grouped);
     setLoading(false);
   }
 
-  function header(label: string, key: SortKey) {
-    const active = sortKey === key;
-    return (
-      <button
-        className={`inline-flex items-center gap-1 ${active ? "text-[color:var(--gsc-blue)]" : ""}`}
-        onClick={() => {
-          if (active) setSortDir(sortDir === "asc" ? "desc" : "asc");
-          else { setSortKey(key); setSortDir("asc"); }
-        }}
-        title="Sort"
-      >
-        {label} <ArrowUpDown className="w-3.5 h-3.5" />
-      </button>
-    );
-  }
-
-  const rows = useMemo(() => {
-    const enriched = indicators.map((i) => {
-      const terms = taxonomyByIndicator[i.id] || [];
-      const display = terms.map(t => `${t.code}`).join(", ");
-      return { ...i, taxonomy: display };
-    });
-    const k = sortKey;
-    const dir = sortDir === "asc" ? 1 : -1;
-    return [...enriched].sort((a: any, b: any) => {
-      const av = (a[k] ?? "").toString().toLowerCase();
-      const bv = (b[k] ?? "").toString().toLowerCase();
-      if (av < bv) return -1 * dir;
-      if (av > bv) return 1 * dir;
-      return 0;
-    });
-  }, [indicators, taxonomyByIndicator, sortKey, sortDir]);
-
   async function deleteIndicator(id: string) {
     if (!confirm("Delete this indicator?")) return;
-    // clean links first (FK may cascade, but be explicit)
-    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", id);
+
+    // Clean join rows first
+    const { error: jtErr } = await supabase
+      .from("indicator_taxonomy")
+      .delete()
+      .eq("indicator_id", id);
+    if (jtErr) {
+      console.error("Failed to delete taxonomy links:", jtErr);
+      alert("Error deleting taxonomy links.");
+      return;
+    }
+
     const { error } = await supabase.from("indicator_catalogue").delete().eq("id", id);
     if (error) {
       console.error("Failed to delete indicator:", error);
@@ -129,13 +153,50 @@ export default function IndicatorsPage() {
     }
   }
 
+  const sorted = useMemo(() => {
+    const copy = [...indicators];
+    copy.sort((a, b) => {
+      const av = (a[sortKey] ?? "") as string;
+      const bv = (b[sortKey] ?? "") as string;
+      if (av < bv) return sortAsc ? -1 : 1;
+      if (av > bv) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [indicators, sortKey, sortAsc]);
+
+  function toggleSort(col: SortKey) {
+    if (col === sortKey) {
+      setSortAsc((s) => !s);
+    } else {
+      setSortKey(col);
+      setSortAsc(true);
+    }
+  }
+
+  function SortBtn({ label, col }: { label: string; col: SortKey }) {
+    return (
+      <button
+        onClick={() => toggleSort(col)}
+        className="inline-flex items-center gap-1 text-left"
+        title="Sort"
+      >
+        <span>{label}</span>
+        <ArrowUpDown className={`w-3.5 h-3.5 ${sortKey === col ? "text-[var(--gsc-blue)]" : "text-gray-400"}`} />
+      </button>
+    );
+  }
+
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Indicators</h2>
+        <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
+          Indicators
+        </h2>
         <button
           onClick={() => setOpenAdd(true)}
-          className="flex items-center gap-1 px-3 py-2 text-sm bg-[color:var(--gsc-blue)] text-white rounded-md hover:opacity-90"
+          className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
+          style={{ background: "var(--gsc-blue)", color: "white" }}
         >
           <Plus className="w-4 h-4" /> Add Indicator
         </button>
@@ -145,64 +206,77 @@ export default function IndicatorsPage() {
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading indicators...
         </div>
-      ) : rows.length === 0 ? (
+      ) : indicators.length === 0 ? (
         <p className="text-sm text-gray-500 italic">No indicators found.</p>
       ) : (
-        <div className="border rounded-md overflow-hidden">
+        <div className="border rounded-md overflow-hidden bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
+            <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
               <tr>
-                <th className="text-left px-3 py-2 font-medium">{header("Code", "code")}</th>
-                <th className="text-left px-3 py-2 font-medium">{header("Name", "name")}</th>
-                <th className="text-left px-3 py-2 font-medium">{header("Type", "type")}</th>
-                <th className="text-left px-3 py-2 font-medium">{header("Unit", "unit")}</th>
-                <th className="text-left px-3 py-2 font-medium">{header("Topic", "topic")}</th>
-                <th className="text-left px-3 py-2 font-medium">{header("Taxonomy", "taxonomy")}</th>
+                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Code" col="code" /></th>
+                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Name" col="name" /></th>
+                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Type" col="type" /></th>
+                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Unit" col="unit" /></th>
+                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Topic" col="topic" /></th>
+                <th className="text-left px-3 py-2 font-medium">Taxonomy</th>
                 <th className="text-right px-3 py-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((ind) => (
-                <tr key={ind.id} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-2">{ind.code}</td>
-                  <td className="px-3 py-2">{ind.name}</td>
-                  <td className="px-3 py-2">{ind.type}</td>
-                  <td className="px-3 py-2">{ind.unit}</td>
-                  <td className="px-3 py-2">{ind.topic}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {(taxonomyByIndicator[ind.id] || []).map((t) => (
-                        <span
-                          key={t.id}
-                          className="px-2 py-0.5 rounded-full text-xs border bg-white"
-                          style={{ borderColor: "var(--gsc-light-gray)" }}
-                          title={`${t.category}: ${t.name}`}
+              {sorted.map((ind) => {
+                const t = termsByIndicator[ind.id] || [];
+                return (
+                  <tr key={ind.id} className="border-t hover:bg-[var(--gsc-beige)]/40">
+                    <td className="px-3 py-2">{ind.code}</td>
+                    <td className="px-3 py-2">{ind.name}</td>
+                    <td className="px-3 py-2">{ind.type}</td>
+                    <td className="px-3 py-2">{ind.unit}</td>
+                    <td className="px-3 py-2">{ind.topic}</td>
+                    <td className="px-3 py-2">
+                      {t.length === 0 ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {t
+                            .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
+                            .map((term) => (
+                              <span
+                                key={term.id}
+                                className="text-[11px] px-2 py-[2px] rounded-full border"
+                                style={{
+                                  borderColor: "var(--gsc-light-gray)",
+                                  background: "white",
+                                  color: "var(--gsc-gray)",
+                                }}
+                                title={`${term.category} • ${term.code}`}
+                              >
+                                {term.name}
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setEditingId(ind.id)}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
+                          title="Edit"
                         >
-                          {t.code}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <button
-                        onClick={() => setEditingId(ind.id)}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-4 h-4 text-[color:var(--gsc-blue)]" />
-                      </button>
-                      <button
-                        onClick={() => deleteIndicator(ind.id)}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                          <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                        </button>
+                        <button
+                          onClick={() => deleteIndicator(ind.id)}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
