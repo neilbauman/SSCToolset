@@ -1,8 +1,6 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import Modal from "@/components/ui/Modal";
 import AddPillarModal from "./AddPillarModal";
 import EditPillarModal from "./EditPillarModal";
 import AddThemeModal from "./AddThemeModal";
@@ -10,565 +8,114 @@ import EditThemeModal from "./EditThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
 import EditSubthemeModal from "./EditSubthemeModal";
 import IndicatorLinkModal from "./IndicatorLinkModal";
-import {
-  Plus,
-  Edit2,
-  Trash2,
-  Loader2,
-  ChevronRight,
-  ChevronDown,
-  BarChart2,
-} from "lucide-react";
+import { Plus, Edit2, Trash2, Loader2, ChevronRight, ChevronDown, BarChart2 } from "lucide-react";
 
-/** Types */
-export type Pillar = {
-  id: string;
-  name: string;
-  description: string | null;
-  can_have_indicators: boolean | null;
-};
-export type Theme = {
-  id: string;
-  pillar_id: string | null;
-  name: string;
-  description: string | null;
-  can_have_indicators: boolean | null;
-  sort_order: number | null;
-};
-export type Subtheme = {
-  id: string;
-  theme_id: string | null;
-  name: string;
-  description: string | null;
-  can_have_indicators: boolean | null;
-  sort_order: number | null;
-};
-
-type IndicatorLite = { id: string; code: string; name: string };
-type LinkRow = {
-  id: string;
-  indicator_id: string;
-  pillar_id: string | null;
-  theme_id: string | null;
-  subtheme_id: string | null;
-  indicator_catalogue: IndicatorLite | null;
-};
-
-type PillarMap = Record<string, Pillar>;
-type ThemeMap = Record<string, Theme[]>;
-type SubthemeMap = Record<string, Subtheme[]>;
-type LinkMap = Record<string, IndicatorLite[]>; // key: pillar:<id> | theme:<id> | subtheme:<id>
+type Pillar = { id: string; name: string; description: string | null };
+type Theme = { id: string; pillar_id: string | null; name: string; description: string | null };
+type Subtheme = { id: string; theme_id: string | null; name: string; description: string | null };
+type Indicator = { id: string; code: string; name: string };
+type LinkRow = { id: string; pillar_id: string | null; theme_id: string | null; subtheme_id: string | null; indicator_catalogue: Indicator | null };
+type MapT<T> = Record<string, T[]>;
 
 export default function CataloguePage() {
   const [pillars, setPillars] = useState<Pillar[]>([]);
-  const [themesByPillar, setThemesByPillar] = useState<ThemeMap>({});
-  const [subsByTheme, setSubsByTheme] = useState<SubthemeMap>({});
-  const [links, setLinks] = useState<LinkMap>({});
+  const [themesByPillar, setThemesByPillar] = useState<MapT<Theme>>({});
+  const [subsByTheme, setSubsByTheme] = useState<MapT<Subtheme>>({});
+  const [links, setLinks] = useState<Record<string, Indicator[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-
-  // Add/Edit modal state
   const [openAddPillar, setOpenAddPillar] = useState(false);
   const [editPillar, setEditPillar] = useState<Pillar | null>(null);
-
   const [addThemeFor, setAddThemeFor] = useState<Pillar | null>(null);
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
-
   const [addSubFor, setAddSubFor] = useState<Theme | null>(null);
   const [editSub, setEditSub] = useState<Subtheme | null>(null);
-
-  // Indicator linking modal
   const [openLinkModal, setOpenLinkModal] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<{
-    type: "pillar" | "theme" | "subtheme";
-    id: string;
-    name: string;
-  } | null>(null);
+  const [linkTarget, setLinkTarget] = useState<{ type: "pillar" | "theme" | "subtheme"; id: string; name: string } | null>(null);
 
-  useEffect(() => {
-    loadTree();
-  }, []);
-
-  async function loadTree() {
+  useEffect(() => { load(); }, []);
+  async function load() {
     setLoading(true);
-
-    // 1) Pillars
-    const { data: ps, error: perr } = await supabase
-      .from("pillar_catalogue")
-      .select("id,name,description,can_have_indicators")
-      .order("name", { ascending: true });
-    if (perr) {
-      console.error(perr);
-      setPillars([]);
-      setThemesByPillar({});
-      setSubsByTheme({});
-      setLinks({});
-      setLoading(false);
-      return;
-    }
-
-    // 2) Themes
-    const { data: ts, error: terr } = await supabase
-      .from("theme_catalogue")
-      .select("id,pillar_id,name,description,can_have_indicators,sort_order")
-      .order("pillar_id", { ascending: true, nullsFirst: true })
-      .order("sort_order", { ascending: true, nullsFirst: true })
-      .order("name", { ascending: true });
-
-    // 3) Subthemes
-    const { data: ss, error: serr } = await supabase
-      .from("subtheme_catalogue")
-      .select("id,theme_id,name,description,can_have_indicators,sort_order")
-      .order("theme_id", { ascending: true, nullsFirst: true })
-      .order("sort_order", { ascending: true, nullsFirst: true })
-      .order("name", { ascending: true });
-
-    // 4) Links with indicator names
-    const { data: ls, error: lerr } = await supabase
-      .from("catalogue_indicator_links")
-      .select(
-        "id,indicator_id,pillar_id,theme_id,subtheme_id,indicator_catalogue (id,code,name)"
-      );
-
-    const pillarList: Pillar[] = (ps || []) as Pillar[];
-    const themeList: Theme[] = (ts || []) as Theme[];
-    const subList: Subtheme[] = (ss || []) as Subtheme[];
-    const linkList: LinkRow[] = (ls || []) as LinkRow[];
-
-    // Build theme map
-    const tMap: ThemeMap = {};
-    for (const t of themeList) {
-      const pid = t.pillar_id || "__NULL__";
-      if (!tMap[pid]) tMap[pid] = [];
-      tMap[pid].push(t);
-    }
-
-    // Build subtheme map
-    const sMap: SubthemeMap = {};
-    for (const s of subList) {
-      const tid = s.theme_id || "__NULL__";
-      if (!sMap[tid]) sMap[tid] = [];
-      sMap[tid].push(s);
-    }
-
-    // Build link map
-    const lMap: LinkMap = {};
-    const addLink = (key: string, ind: IndicatorLite | null) => {
-      if (!ind) return;
-      if (!lMap[key]) lMap[key] = [];
-      lMap[key].push(ind);
-    };
-    for (const l of linkList) {
-      if (l.pillar_id) addLink(`pillar:${l.pillar_id}`, l.indicator_catalogue);
-      if (l.theme_id) addLink(`theme:${l.theme_id}`, l.indicator_catalogue);
-      if (l.subtheme_id) addLink(`subtheme:${l.subtheme_id}`, l.indicator_catalogue);
-    }
-
-    setPillars(pillarList);
-    setThemesByPillar(tMap);
-    setSubsByTheme(sMap);
-    setLinks(lMap);
-    setLoading(false);
-  }
-
-  // Expand/collapse helpers
-  function toggle(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+    const [p, t, s, l] = await Promise.all([
+      supabase.from("pillar_catalogue").select("id,name,description").order("name"),
+      supabase.from("theme_catalogue").select("id,pillar_id,name,description").order("pillar_id").order("name"),
+      supabase.from("subtheme_catalogue").select("id,theme_id,name,description").order("theme_id").order("name"),
+      supabase.from("catalogue_indicator_links").select("id,pillar_id,theme_id,subtheme_id,indicator_catalogue(id,code,name)")
+    ]);
+    const pillars = p.data || [], themes = t.data || [], subs = s.data || [];
+    const linksRaw: LinkRow[] = (l.data || []).map((r: any) => ({ ...r, indicator_catalogue: Array.isArray(r.indicator_catalogue) ? r.indicator_catalogue[0] : r.indicator_catalogue }));
+    const tm: MapT<Theme> = {}, sm: MapT<Subtheme> = {}, lm: Record<string, Indicator[]> = {};
+    themes.forEach(v => { (tm[v.pillar_id || "_"] ||= []).push(v); });
+    subs.forEach(v => { (sm[v.theme_id || "_"] ||= []).push(v); });
+    linksRaw.forEach(v => {
+      const k = v.pillar_id ? `pillar:${v.pillar_id}` : v.theme_id ? `theme:${v.theme_id}` : v.subtheme_id ? `subtheme:${v.subtheme_id}` : null;
+      if (!k || !v.indicator_catalogue) return; (lm[k] ||= []).push(v.indicator_catalogue);
     });
-  }
-  function isOpen(id: string) {
-    return expanded.has(id);
+    setPillars(pillars); setThemesByPillar(tm); setSubsByTheme(sm); setLinks(lm); setLoading(false);
   }
 
-  // Delete handlers (safe: FK ON DELETE CASCADE for catalogue children; indicators not deleted)
-  async function deletePillar(p: Pillar) {
-    const ok = confirm(
-      `Delete pillar "${p.name}"?\n\nThis will cascade to delete its themes and subthemes in the catalogue (indicators remain in the indicator library).`
-    );
-    if (!ok) return;
-    const { error } = await supabase.from("pillar_catalogue").delete().eq("id", p.id);
-    if (error) {
-      console.error(error);
-      alert("Delete failed.");
-    } else {
-      await loadTree();
-    }
-  }
-  async function deleteTheme(t: Theme) {
-    const ok = confirm(
-      `Delete theme "${t.name}"?\n\nThis will cascade to delete its subthemes in the catalogue.`
-    );
-    if (!ok) return;
-    const { error } = await supabase.from("theme_catalogue").delete().eq("id", t.id);
-    if (error) {
-      console.error(error);
-      alert("Delete failed.");
-    } else {
-      await loadTree();
-    }
-  }
-  async function deleteSubtheme(s: Subtheme) {
-    const ok = confirm(`Delete subtheme "${s.name}"?`);
-    if (!ok) return;
-    const { error } = await supabase.from("subtheme_catalogue").delete().eq("id", s.id);
-    if (error) {
-      console.error(error);
-      alert("Delete failed.");
-    } else {
-      await loadTree();
-    }
-  }
-
-  // Render helper: indicator chips row
-  function IndicatorChips({
-    items,
-  }: {
-    items: IndicatorLite[] | undefined;
-  }) {
-    if (!items || items.length === 0) {
-      return <div className="text-xs text-gray-400">—</div>;
-    }
-    // show compact, wrap
-    return (
-      <div className="flex flex-wrap gap-1">
-        {items
-          .slice()
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((ind) => (
-            <span
-              key={ind.id}
-              className="text-[11px] px-2 py-[2px] rounded-full border whitespace-nowrap"
-              style={{
-                borderColor: "var(--gsc-light-gray)",
-                background: "white",
-                color: "var(--gsc-gray)",
-              }}
-              title={`${ind.name} (${ind.code})`}
-            >
-              {ind.name}
-            </span>
-          ))}
-      </div>
-    );
-  }
-
+  const toggle = (id: string) => setExpanded(e => { const n = new Set(e); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const isOpen = (id: string) => expanded.has(id);
   const hasData = useMemo(() => pillars.length > 0, [pillars]);
+  const del = async (tbl: string, id: string) => { if (confirm("Delete item?")) { await supabase.from(tbl).delete().eq("id", id); load(); } };
+  const Chips = ({ a }: { a?: Indicator[] }) => !a?.length ? <span className="text-xs text-gray-400">—</span> :
+    <div className="flex flex-wrap gap-1">{a.sort((x, y) => x.name.localeCompare(y.name)).map(i =>
+      <span key={i.id} className="text-[11px] px-2 py-[2px] rounded-full border" style={{ borderColor: "var(--gsc-light-gray)", color: "var(--gsc-gray)" }}>{i.name}</span>)}</div>;
 
   return (
     <div>
-      {/* Toolbar */}
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
-          Framework Catalogue
-        </h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setOpenAddPillar(true)}
-            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
-            style={{ background: "var(--gsc-blue)", color: "white" }}
-          >
-            <Plus className="w-4 h-4" />
-            Add Pillar
-          </button>
-        </div>
-      </div>
-
-      {/* Empty state / loading */}
-      {loading ? (
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading catalogue…
-        </div>
-      ) : !hasData ? (
-        <p className="text-sm text-gray-500 italic">No catalogue items yet.</p>
-      ) : (
-        <div className="border rounded-md overflow-hidden bg-white">
-          {/* Header */}
-          <div
-            className="grid grid-cols-12 items-center text-sm font-medium border-b"
-            style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
-          >
-            <div className="col-span-4 py-2 px-2">Entity / Name</div>
-            <div className="col-span-5 py-2">Indicators</div>
-            <div className="col-span-3 py-2 text-right">Actions</div>
-          </div>
-
-          {/* Body */}
-          <div>
-            {pillars.map((p) => {
-              const pid = p.id;
-              const tList = themesByPillar[pid] || [];
-              const pKey = `pillar:${pid}`;
-              return (
-                <div key={pid} className="border-b">
-                  {/* Pillar row */}
-                  <div className="grid grid-cols-12 items-start text-sm px-2 py-2">
-                    <div className="col-span-4 flex items-start gap-2">
-                      <button
-                        className="mt-[2px] text-gray-500"
-                        onClick={() => toggle(pid)}
-                        title={isOpen(pid) ? "Collapse" : "Expand"}
-                      >
-                        {isOpen(pid) ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                      </button>
-                      <div>
-                        <div className="font-medium" style={{ color: "var(--gsc-blue)" }}>
-                          {p.name}
-                        </div>
-                        {p.description && (
-                          <div className="text-xs text-gray-500">{p.description}</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="col-span-5">
-                      <IndicatorChips items={links[pKey]} />
-                    </div>
-                    <div className="col-span-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => {
-                            setLinkTarget({ type: "pillar", id: pid, name: p.name });
-                            setOpenLinkModal(true);
-                          }}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Manage indicators"
-                        >
-                          <BarChart2 className="w-4 h-4" style={{ color: "var(--gsc-green)" }} />
-                        </button>
-                        <button
-                          onClick={() => setEditPillar(p)}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Edit pillar"
-                        >
-                          <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
-                        </button>
-                        <button
-                          onClick={() => deletePillar(p)}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Delete pillar"
-                        >
-                          <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                        </button>
-                        <button
-                          onClick={() => setAddThemeFor(p)}
-                          className="inline-flex items-center justify-center px-2 h-8 rounded border hover:bg-gray-50 text-xs"
-                          title="Add theme"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span className="ml-1">Theme</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Themes */}
-                  {isOpen(pid) &&
-                    tList.map((t) => {
-                      const tid = t.id;
-                      const sList = subsByTheme[tid] || [];
-                      const tKey = `theme:${tid}`;
-                      return (
-                        <div key={tid} className="border-t">
-                          {/* Theme row */}
-                          <div className="grid grid-cols-12 items-start text-sm px-8 py-2">
-                            <div className="col-span-4 flex items-start gap-2">
-                              <button
-                                className="mt-[2px] text-gray-500"
-                                onClick={() => toggle(tid)}
-                                title={isOpen(tid) ? "Collapse" : "Expand"}
-                              >
-                                {isOpen(tid) ? (
-                                  <ChevronDown className="w-4 h-4" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4" />
-                                )}
-                              </button>
-                              <div>
-                                <div className="font-medium" style={{ color: "var(--gsc-green)" }}>
-                                  {t.name}
-                                </div>
-                                {t.description && (
-                                  <div className="text-xs text-gray-500">{t.description}</div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="col-span-5">
-                              <IndicatorChips items={links[tKey]} />
-                            </div>
-                            <div className="col-span-3">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  onClick={() => {
-                                    setLinkTarget({ type: "theme", id: tid, name: t.name });
-                                    setOpenLinkModal(true);
-                                  }}
-                                  className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                  title="Manage indicators"
-                                >
-                                  <BarChart2 className="w-4 h-4" style={{ color: "var(--gsc-green)" }} />
-                                </button>
-                                <button
-                                  onClick={() => setEditTheme(t)}
-                                  className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                  title="Edit theme"
-                                >
-                                  <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
-                                </button>
-                                <button
-                                  onClick={() => deleteTheme(t)}
-                                  className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                  title="Delete theme"
-                                >
-                                  <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                                </button>
-                                <button
-                                  onClick={() => setAddSubFor(t)}
-                                  className="inline-flex items-center justify-center px-2 h-8 rounded border hover:bg-gray-50 text-xs"
-                                  title="Add subtheme"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  <span className="ml-1">Subtheme</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Subthemes */}
-                          {isOpen(tid) &&
-                            sList.map((s) => {
-                              const sid = s.id;
-                              const sKey = `subtheme:${sid}`;
-                              return (
-                                <div key={sid} className="border-t">
-                                  <div className="grid grid-cols-12 items-start text-sm px-16 py-2">
-                                    <div className="col-span-4">
-                                      <div className="font-medium" style={{ color: "var(--gsc-orange)" }}>
-                                        {s.name}
-                                      </div>
-                                      {s.description && (
-                                        <div className="text-xs text-gray-500">{s.description}</div>
-                                      )}
-                                    </div>
-                                    <div className="col-span-5">
-                                      <IndicatorChips items={links[sKey]} />
-                                    </div>
-                                    <div className="col-span-3">
-                                      <div className="flex items-center justify-end gap-1">
-                                        <button
-                                          onClick={() => {
-                                            setLinkTarget({
-                                              type: "subtheme",
-                                              id: sid,
-                                              name: s.name,
-                                            });
-                                            setOpenLinkModal(true);
-                                          }}
-                                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                          title="Manage indicators"
-                                        >
-                                          <BarChart2
-                                            className="w-4 h-4"
-                                            style={{ color: "var(--gsc-green)" }}
-                                          />
-                                        </button>
-                                        <button
-                                          onClick={() => setEditSub(s)}
-                                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                          title="Edit subtheme"
-                                        >
-                                          <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
-                                        </button>
-                                        <button
-                                          onClick={() => deleteSubtheme(s)}
-                                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                                          title="Delete subtheme"
-                                        >
-                                          <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      );
-                    })}
+      <div className="flex justify-between mb-3"><h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>Framework Catalogue</h2>
+        <button onClick={() => setOpenAddPillar(true)} className="px-3 py-2 text-sm rounded-md" style={{ background: "var(--gsc-blue)", color: "white" }}><Plus className="w-4 h-4 inline mr-1" />Add Pillar</button></div>
+      {loading ? <p className="text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin inline mr-1" />Loading…</p> :
+        !hasData ? <p className="text-sm text-gray-500 italic">No catalogue items.</p> :
+          <div className="border rounded-md bg-white">
+            <div className="grid grid-cols-12 text-sm font-medium border-b bg-[var(--gsc-beige)] text-[var(--gsc-gray)]"><div className="col-span-4 px-2 py-2">Entity</div><div className="col-span-5 py-2">Indicators</div><div className="col-span-3 py-2 text-right">Actions</div></div>
+            {pillars.map(p => <div key={p.id} className="border-b">
+              <div className="grid grid-cols-12 items-start text-sm px-2 py-2">
+                <div className="col-span-4 flex gap-2">
+                  <button onClick={() => toggle(p.id)}>{isOpen(p.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button>
+                  <div><div className="font-medium text-[var(--gsc-blue)]">{p.name}</div><div className="text-xs text-gray-500">{p.description}</div></div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Pillar Modals */}
-      {openAddPillar && (
-        <AddPillarModal
-          open={openAddPillar}
-          onClose={() => setOpenAddPillar(false)}
-          onSaved={loadTree}
-        />
-      )}
-      {editPillar && (
-        <EditPillarModal
-          open={!!editPillar}
-          onClose={() => setEditPillar(null)}
-          onSaved={loadTree}
-          pillar={editPillar}
-        />
-      )}
-
-      {/* Theme Modals */}
-      {addThemeFor && (
-        <AddThemeModal
-          open={!!addThemeFor}
-          onClose={() => setAddThemeFor(null)}
-          onSaved={loadTree}
-          pillar={addThemeFor}
-        />
-      )}
-      {editTheme && (
-        <EditThemeModal
-          open={!!editTheme}
-          onClose={() => setEditTheme(null)}
-          onSaved={loadTree}
-          theme={editTheme}
-        />
-      )}
-
-      {/* Subtheme Modals */}
-      {addSubFor && (
-        <AddSubthemeModal
-          open={!!addSubFor}
-          onClose={() => setAddSubFor(null)}
-          onSaved={loadTree}
-          theme={addSubFor}
-        />
-      )}
-      {editSub && (
-        <EditSubthemeModal
-          open={!!editSub}
-          onClose={() => setEditSub(null)}
-          onSaved={loadTree}
-          subtheme={editSub}
-        />
-      )}
-
-      {/* Indicator Link Modal */}
-      {openLinkModal && linkTarget && (
-        <IndicatorLinkModal
-          open={openLinkModal}
-          onClose={() => setOpenLinkModal(false)}
-          onSaved={loadTree}
-          entity={linkTarget}
-        />
-      )}
+                <div className="col-span-5"><Chips a={links[`pillar:${p.id}`]} /></div>
+                <div className="col-span-3 flex justify-end gap-1">
+                  <button onClick={() => { setLinkTarget({ type: "pillar", id: p.id, name: p.name }); setOpenLinkModal(true); }} title="Indicators"><BarChart2 className="w-4 h-4 text-[var(--gsc-green)]" /></button>
+                  <button onClick={() => setEditPillar(p)}><Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" /></button>
+                  <button onClick={() => del("pillar_catalogue", p.id)}><Trash2 className="w-4 h-4 text-[var(--gsc-red)]" /></button>
+                  <button onClick={() => setAddThemeFor(p)} className="px-2 border rounded text-xs"><Plus className="w-3 h-3 inline" /> Theme</button>
+                </div>
+              </div>
+              {isOpen(p.id) && (themesByPillar[p.id] || []).map(t => <div key={t.id} className="border-t">
+                <div className="grid grid-cols-12 items-start text-sm px-8 py-2">
+                  <div className="col-span-4 flex gap-2">
+                    <button onClick={() => toggle(t.id)}>{isOpen(t.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button>
+                    <div><div className="font-medium text-[var(--gsc-green)]">{t.name}</div><div className="text-xs text-gray-500">{t.description}</div></div>
+                  </div>
+                  <div className="col-span-5"><Chips a={links[`theme:${t.id}`]} /></div>
+                  <div className="col-span-3 flex justify-end gap-1">
+                    <button onClick={() => { setLinkTarget({ type: "theme", id: t.id, name: t.name }); setOpenLinkModal(true); }}><BarChart2 className="w-4 h-4 text-[var(--gsc-green)]" /></button>
+                    <button onClick={() => setEditTheme(t)}><Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" /></button>
+                    <button onClick={() => del("theme_catalogue", t.id)}><Trash2 className="w-4 h-4 text-[var(--gsc-red)]" /></button>
+                    <button onClick={() => setAddSubFor(t)} className="px-2 border rounded text-xs"><Plus className="w-3 h-3 inline" /> Sub</button>
+                  </div>
+                </div>
+                {isOpen(t.id) && (subsByTheme[t.id] || []).map(s => <div key={s.id} className="grid grid-cols-12 px-16 py-2 border-t text-sm">
+                  <div className="col-span-4 text-[var(--gsc-orange)]">{s.name}</div>
+                  <div className="col-span-5"><Chips a={links[`subtheme:${s.id}`]} /></div>
+                  <div className="col-span-3 flex justify-end gap-1">
+                    <button onClick={() => { setLinkTarget({ type: "subtheme", id: s.id, name: s.name }); setOpenLinkModal(true); }}><BarChart2 className="w-4 h-4 text-[var(--gsc-green)]" /></button>
+                    <button onClick={() => setEditSub(s)}><Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" /></button>
+                    <button onClick={() => del("subtheme_catalogue", s.id)}><Trash2 className="w-4 h-4 text-[var(--gsc-red)]" /></button>
+                  </div></div>)}
+              </div>)}
+            </div>)}
+          </div>}
+      {openAddPillar && <AddPillarModal open onClose={() => setOpenAddPillar(false)} onSaved={load} />}
+      {editPillar && <EditPillarModal open pillar={editPillar} onClose={() => setEditPillar(null)} onSaved={load} />}
+      {addThemeFor && <AddThemeModal open pillar={addThemeFor} onClose={() => setAddThemeFor(null)} onSaved={load} />}
+      {editTheme && <EditThemeModal open theme={editTheme} onClose={() => setEditTheme(null)} onSaved={load} />}
+      {addSubFor && <AddSubthemeModal open theme={addSubFor} onClose={() => setAddSubFor(null)} onSaved={load} />}
+      {editSub && <EditSubthemeModal open subtheme={editSub} onClose={() => setEditSub(null)} onSaved={load} />}
+      {openLinkModal && linkTarget && <IndicatorLinkModal open onClose={() => setOpenLinkModal(false)} entity={linkTarget} onSaved={load} />}
     </div>
   );
 }
