@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import Modal from "@/components/ui/Modal";
 import AddTaxonomyTermModal from "@/components/configuration/taxonomy/AddTaxonomyTermModal";
 import EditTaxonomyTermModal from "@/components/configuration/taxonomy/EditTaxonomyTermModal";
 import {
@@ -15,6 +14,7 @@ import {
   ArrowUp,
   ArrowDown,
   RefreshCcw,
+  Save,
 } from "lucide-react";
 
 type Term = {
@@ -25,6 +25,7 @@ type Term = {
   name: string;
   description: string | null;
   sort_order: number | null;
+  category_order: number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -64,8 +65,9 @@ export default function TaxonomyPage() {
     const { data, error } = await supabase
       .from("taxonomy_terms")
       .select(
-        "id,parent_id,category,code,name,description,sort_order,created_at,updated_at"
+        "id,parent_id,category,code,name,description,sort_order,category_order,created_at,updated_at"
       )
+      .order("category_order", { ascending: true, nullsFirst: true })
       .order("category", { ascending: true })
       .order("sort_order", { ascending: true, nullsFirst: true })
       .order("name", { ascending: true });
@@ -81,9 +83,10 @@ export default function TaxonomyPage() {
     const list = (data || []).map((t) => ({
       ...t,
       sort_order: t.sort_order ?? 0,
+      category_order: t.category_order ?? 0,
     })) as Term[];
 
-    // normalize sort_order per category (0..n-1)
+    // group by category
     const grouped: TermsByCategory = {};
     for (const t of list) {
       if (!grouped[t.category]) grouped[t.category] = [];
@@ -95,27 +98,25 @@ export default function TaxonomyPage() {
           (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
           a.name.localeCompare(b.name)
       );
-      grouped[cat] = grouped[cat].map((t, idx) => ({ ...t, sort_order: idx }));
     });
 
-    setTerms(Object.values(grouped).flat());
+    setTerms(list);
     setByCat(grouped);
     setLoading(false);
   }
 
+  /** Save within-category order */
   async function saveOrderForCategory(category: string) {
     const list = (byCat[category] || []).map((t, idx) => ({
       ...t,
       sort_order: idx,
     }));
-
     const updates = list.map((t) =>
       supabase
         .from("taxonomy_terms")
-        .update({ sort_order: t.sort_order, category: t.category })
+        .update({ sort_order: t.sort_order })
         .eq("id", t.id)
     );
-
     const results = await Promise.all(updates);
     const failed = results.find((r) => r.error);
     if (failed?.error) {
@@ -126,6 +127,7 @@ export default function TaxonomyPage() {
     }
   }
 
+  /** Move term within a category (local only until Save) */
   function moveWithinCategory(category: string, id: string, dir: "up" | "down") {
     setByCat((prev) => {
       const copy = { ...prev };
@@ -135,12 +137,12 @@ export default function TaxonomyPage() {
       const swapWith = dir === "up" ? idx - 1 : idx + 1;
       if (swapWith < 0 || swapWith >= arr.length) return prev;
       [arr[idx], arr[swapWith]] = [arr[swapWith], arr[idx]];
-      // reassign sort indexes locally
       copy[category] = arr.map((t, i) => ({ ...t, sort_order: i }));
       return copy;
     });
   }
 
+  /** Delete term */
   async function deleteTerm(term: Term) {
     if (
       !confirm(
@@ -149,12 +151,10 @@ export default function TaxonomyPage() {
     )
       return;
 
-    // Clean any indicator links first
     const { error: linkErr } = await supabase
       .from("indicator_taxonomy_links")
       .delete()
       .eq("term_id", term.id);
-
     if (linkErr) {
       console.error("Failed to remove term links:", linkErr);
       alert("Could not remove linked indicators.");
@@ -165,7 +165,6 @@ export default function TaxonomyPage() {
       .from("taxonomy_terms")
       .delete()
       .eq("id", term.id);
-
     if (error) {
       console.error("Failed to delete term:", error);
       alert("Delete failed.");
@@ -174,13 +173,38 @@ export default function TaxonomyPage() {
     }
   }
 
-  const categories = useMemo(
-    () =>
-      Object.keys(byCat).sort((a, b) =>
-        a.toLowerCase().localeCompare(b.toLowerCase())
-      ),
-    [byCat]
-  );
+  /** Category-level reordering */
+  const categories = useMemo(() => {
+    const cats = Object.keys(byCat).map((cat) => ({
+      name: cat,
+      order: byCat[cat][0]?.category_order ?? 0,
+    }));
+    return cats.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [byCat]);
+
+  async function moveCategory(name: string, dir: "up" | "down") {
+    if (categories.length < 2) return;
+    const currentIdx = categories.findIndex((c) => c.name === name);
+    const swapIdx = dir === "up" ? currentIdx - 1 : currentIdx + 1;
+    if (swapIdx < 0 || swapIdx >= categories.length) return;
+
+    const reordered = [...categories];
+    [reordered[currentIdx], reordered[swapIdx]] = [
+      reordered[swapIdx],
+      reordered[currentIdx],
+    ];
+
+    // persist new order
+    await Promise.all(
+      reordered.map((cat, idx) =>
+        supabase
+          .from("taxonomy_terms")
+          .update({ category_order: idx })
+          .eq("category", cat.name)
+      )
+    );
+    await loadTerms();
+  }
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -219,19 +243,52 @@ export default function TaxonomyPage() {
         <p className="text-sm text-gray-500 italic">No taxonomy terms yet.</p>
       ) : (
         <div className="space-y-6">
-          {categories.map((cat) => {
-            const list = byCat[cat] || [];
+          {categories.map((cat, catIdx) => {
+            const list = byCat[cat.name] || [];
             return (
-              <div key={cat} className="bg-white border rounded-md">
+              <div key={cat.name} className="bg-white border rounded-md">
+                {/* Category header with reordering controls */}
                 <div
-                  className="px-3 py-2 border-b text-sm font-semibold"
+                  className="flex justify-between items-center px-3 py-2 border-b text-sm font-semibold"
                   style={{
                     background: "var(--gsc-beige)",
                     color: "var(--gsc-gray)",
                   }}
                 >
-                  {cat}
+                  <div className="flex items-center gap-2">
+                    <span>{cat.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+                      disabled={catIdx === 0}
+                      onClick={() => moveCategory(cat.name, "up")}
+                      title="Move category up"
+                    >
+                      <ArrowUp
+                        className={`w-4 h-4 ${
+                          catIdx === 0 ? "text-gray-300" : "text-gray-600"
+                        }`}
+                      />
+                    </button>
+                    <button
+                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+                      disabled={catIdx === categories.length - 1}
+                      onClick={() => moveCategory(cat.name, "down")}
+                      title="Move category down"
+                    >
+                      <ArrowDown
+                        className={`w-4 h-4 ${
+                          catIdx === categories.length - 1
+                            ? "text-gray-300"
+                            : "text-gray-600"
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
+
+                {/* Terms list */}
                 <ul className="divide-y">
                   {list.map((t, idx) => (
                     <li
@@ -243,14 +300,17 @@ export default function TaxonomyPage() {
                           {t.name}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {t.code} {t.description ? `• ${t.description}` : ""}
+                          {t.code}{" "}
+                          {t.description ? `• ${t.description}` : ""}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === 0}
-                          onClick={() => moveWithinCategory(cat, t.id, "up")}
+                          onClick={() =>
+                            moveWithinCategory(cat.name, t.id, "up")
+                          }
                           title="Move up"
                         >
                           <ArrowUp
@@ -262,7 +322,9 @@ export default function TaxonomyPage() {
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === list.length - 1}
-                          onClick={() => moveWithinCategory(cat, t.id, "down")}
+                          onClick={() =>
+                            moveWithinCategory(cat.name, t.id, "down")
+                          }
                           title="Move down"
                         >
                           <ArrowDown
@@ -274,13 +336,13 @@ export default function TaxonomyPage() {
                           />
                         </button>
                         <button
-                          onClick={async () => {
-                            await saveOrderForCategory(cat);
-                          }}
+                          onClick={async () =>
+                            await saveOrderForCategory(cat.name)
+                          }
                           className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
                           title="Save order"
                         >
-                          Save
+                          <Save className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => setEditing(t)}
@@ -318,7 +380,7 @@ export default function TaxonomyPage() {
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           onSaved={loadTerms}
-          existingCategories={categories}
+          existingCategories={categories.map((c) => c.name)}
         />
       )}
       {editing && (
@@ -327,7 +389,7 @@ export default function TaxonomyPage() {
           onClose={() => setEditing(null)}
           onSaved={loadTerms}
           term={editing}
-          existingCategories={categories}
+          existingCategories={categories.map((c) => c.name)}
         />
       )}
     </SidebarLayout>
