@@ -17,6 +17,7 @@ type Props = {
   onChange: (ids: string[]) => void;
   allowMultiple?: boolean;
   showOrderControls?: boolean; // allow reordering of selected
+  hidePrefix?: boolean; // ✅ add this line
 };
 
 export default function TaxonomyPicker({
