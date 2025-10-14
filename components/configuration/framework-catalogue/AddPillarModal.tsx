@@ -2,42 +2,59 @@
 
 import { useState } from "react";
 import Modal from "@/components/ui/Modal";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  onSaved: (payload: { code: string; name: string; description: string }) => Promise<void> | void;
+  onSaved: () => void;
 };
 
 export default function AddPillarModal({ open, onClose, onSaved }: Props) {
-  const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState<string>("");
+  const [canHold, setCanHold] = useState<boolean>(false);
+  const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    if (!code.trim() || !name.trim()) return;
-    await onSaved({ code: code.trim(), name: name.trim(), description: description.trim() });
+    if (!name.trim()) return alert("Name is required.");
+    setSaving(true);
+    const { error } = await supabase.from("pillar_catalogue").insert({
+      name: name.trim(),
+      description: description?.trim() || null,
+      can_have_indicators: canHold,
+    });
+    setSaving(false);
+    if (error) {
+      console.error(error);
+      alert("Failed to add pillar.");
+      return;
+    }
     onClose();
+    onSaved();
   }
 
   return (
     <Modal open={open} onClose={onClose} title="Add Pillar" width="max-w-lg">
       <div className="space-y-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Code</label>
-          <input className="mt-1 w-full border rounded px-2 py-1" value={code} onChange={(e) => setCode(e.target.value)} />
+          <label className="text-sm font-medium text-gray-700">Name</label>
+          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Name</label>
-          <input className="mt-1 w-full border rounded px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="text-sm font-medium text-gray-700">Description</label>
+          <textarea className="mt-1 w-full rounded border px-3 py-2 text-sm" rows={3} value={description || ""} onChange={(e) => setDescription(e.target.value)} />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea className="mt-1 w-full border rounded px-2 py-1" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={canHold} onChange={(e) => setCanHold(e.target.checked)} />
+          Pillar can hold indicators
+        </label>
+
         <div className="flex justify-end gap-2 pt-2">
           <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>Cancel</button>
-          <button className="px-3 py-2 text-sm rounded-md" style={{ background: "var(--gsc-blue)", color: "white" }} onClick={handleSave}>Save</button>
+          <button disabled={saving} onClick={handleSave} className="px-3 py-2 text-sm rounded-md text-white" style={{ background: "var(--gsc-blue)" }}>
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
       </div>
     </Modal>
