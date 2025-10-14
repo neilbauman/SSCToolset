@@ -1,150 +1,123 @@
 "use client";
 
 import { useState } from "react";
+import Modal from "@/components/ui/Modal";
+import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Loader2 } from "lucide-react";
 
-type AddIndicatorModalProps = {
+type Props = {
   open: boolean;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: () => Promise<void> | void;
 };
 
-export default function AddIndicatorModal({ open, onClose, onSaved }: AddIndicatorModalProps) {
-  const [form, setForm] = useState({
-    code: "",
-    name: "",
-    description: "",
-    unit: "",
-    type: "gradient",
-    topic: "",
-    data_type: "percentage",
-  });
+export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"gradient" | "categorical">("gradient");
+  const [unit, setUnit] = useState("");
+  const [topic, setTopic] = useState("SSC Framework");
+  const [taxonomyIds, setTaxonomyIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  async function handleSave() {
+  const save = async () => {
+    if (!code || !name) {
+      alert("Code and Name are required.");
+      return;
+    }
     setSaving(true);
-    setError(null);
+    const { data, error } = await supabase
+      .from("indicator_catalogue")
+      .insert([{ code, name, type, unit, topic }])
+      .select("id")
+      .single();
 
-    const { error } = await supabase.from("indicator_catalogue").insert([
-      {
-        code: form.code.trim(),
-        name: form.name.trim(),
-        description: form.description.trim(),
-        unit: form.unit.trim(),
-        type: form.type.trim(),
-        topic: form.topic.trim(),
-        data_type: form.data_type.trim(),
-      },
-    ]);
-
-    setSaving(false);
-
-    if (error) {
-      console.error("Failed to add indicator:", error);
-      setError("Failed to add indicator.");
+    if (error || !data) {
+      setSaving(false);
+      alert("Failed to create indicator.");
       return;
     }
 
+    // persist taxonomy links in the given order
+    if (taxonomyIds.length > 0) {
+      const rows = taxonomyIds.map((termId, idx) => ({
+        indicator_id: data.id,
+        term_id: termId,
+        sort_order: idx + 1,
+      }));
+      const { error: linkErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
+      if (linkErr) {
+        console.error(linkErr);
+        alert("Indicator created, but failed saving taxonomy links.");
+      }
+    }
+
     await onSaved();
+    setSaving(false);
     onClose();
-  }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        <h2 className="text-lg font-semibold mb-4 text-[var(--gsc-blue)]">Add Indicator</h2>
-
-        <div className="space-y-3">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add Indicator"
+      size="lg"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>Cancel</button>
+          <button
+            className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
+            onClick={save}
+            disabled={saving}
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <label className="block text-sm font-medium mb-1">Code</label>
+          <input value={code} onChange={(e) => setCode(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Code</label>
-            <input
-              name="code"
-              value={form.code}
-              onChange={handleChange}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
+            <label className="block text-sm font-medium mb-1">Type</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as any)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            >
+              <option value="gradient">gradient</option>
+              <option value="categorical">categorical</option>
+            </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700">Name</label>
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
+            <label className="block text-sm font-medium mb-1">Unit</label>
+            <input value={unit} onChange={(e) => setUnit(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700">Description</label>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              className="w-full border rounded px-2 py-1 text-sm"
-              rows={2}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Unit</label>
-              <input
-                name="unit"
-                value={form.unit}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Type</label>
-              <input
-                name="type"
-                value={form.type}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Topic</label>
-            <input
-              name="topic"
-              value={form.topic}
-              onChange={handleChange}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
+            <label className="block text-sm font-medium mb-1">Topic</label>
+            <input value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-
-        <div className="flex justify-end gap-2 mt-6">
-          <button
-            onClick={onClose}
-            className="px-3 py-2 rounded-md text-sm border text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-3 py-2 rounded-md text-sm text-white"
-            style={{ backgroundColor: "var(--gsc-blue)" }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </button>
+        <div>
+          <label className="block text-sm font-medium mb-2">Taxonomy terms (ordered)</label>
+          <TaxonomyPicker
+            selectedIds={taxonomyIds}
+            onChange={setTaxonomyIds}
+            allowMultiple
+            showOrderControls
+          />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
