@@ -3,78 +3,46 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import Modal from "@/components/ui/Modal";
+import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 
 type Props = {
   open: boolean;
-  indicatorId: string;
   onClose: () => void;
+  indicatorId: string;
   onSaved: () => Promise<void>;
-};
-
-type Term = {
-  id: string;
-  category: string;
-  name: string;
-  code: string;
-  category_order: number;
-  sort_order: number;
 };
 
 export default function EditIndicatorModal({
   open,
-  indicatorId,
   onClose,
+  indicatorId,
   onSaved,
 }: Props) {
   const [indicator, setIndicator] = useState<any>(null);
-  const [taxonomy, setTaxonomy] = useState<Term[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedTaxonomyIds, setSelectedTaxonomyIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open && indicatorId) {
-      loadIndicator();
-      loadTaxonomy();
-    }
+    if (open && indicatorId) loadIndicator();
   }, [open, indicatorId]);
 
   async function loadIndicator() {
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("*")
+      .select(
+        "id, code, name, type, unit, topic, indicator_taxonomy_links (taxonomy_id)"
+      )
       .eq("id", indicatorId)
       .single();
 
-    if (!error && data) {
-      setIndicator(data);
-      const { data: links } = await supabase
-        .from("indicator_taxonomy_links")
-        .select("term_id")
-        .eq("indicator_id", indicatorId);
-      setSelectedIds((links || []).map((l) => l.term_id));
+    if (error) {
+      console.error("Failed to load indicator:", error);
+      return;
     }
-  }
 
-  async function loadTaxonomy() {
-    const { data, error } = await supabase
-      .from("taxonomy_terms")
-      .select("id, category, name, code, category_order, sort_order")
-      .order("category_order")
-      .order("category")
-      .order("sort_order");
-    if (error) console.error(error);
-    setTaxonomy(data || []);
-  }
-
-  const grouped = taxonomy.reduce<Record<string, Term[]>>((acc, t) => {
-    if (!acc[t.category]) acc[t.category] = [];
-    acc[t.category].push(t);
-    return acc;
-  }, {});
-
-  function toggleTerm(id: string) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    setIndicator(data);
+    setSelectedTaxonomyIds(
+      data.indicator_taxonomy_links?.map((l: any) => l.taxonomy_id) || []
     );
   }
 
@@ -82,7 +50,7 @@ export default function EditIndicatorModal({
     if (!indicator) return;
     setSaving(true);
 
-    const { error: updErr } = await supabase
+    const { error } = await supabase
       .from("indicator_catalogue")
       .update({
         code: indicator.code,
@@ -91,112 +59,130 @@ export default function EditIndicatorModal({
         unit: indicator.unit,
         topic: indicator.topic,
       })
-      .eq("id", indicator.id);
+      .eq("id", indicatorId);
 
-    if (updErr) {
-      console.error("Update failed:", updErr);
-      alert("Error saving indicator.");
+    if (error) {
+      console.error("Failed to update indicator:", error);
+      alert("Error updating indicator.");
       setSaving(false);
       return;
     }
 
-    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", indicator.id);
+    // Delete old taxonomy links
+    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", indicatorId);
 
-    if (selectedIds.length > 0) {
-      const links = selectedIds.map((term_id) => ({
-        indicator_id: indicator.id,
-        term_id,
+    // Insert new taxonomy links
+    if (selectedTaxonomyIds.length > 0) {
+      const inserts = selectedTaxonomyIds.map((tid) => ({
+        indicator_id: indicatorId,
+        taxonomy_id: tid,
       }));
-      await supabase.from("indicator_taxonomy_links").insert(links);
+      const { error: linkErr } = await supabase
+        .from("indicator_taxonomy_links")
+        .insert(inserts);
+      if (linkErr) console.error("Failed to insert taxonomy links:", linkErr);
     }
 
     setSaving(false);
-    onClose();
     await onSaved();
+    onClose();
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Edit Indicator"
-      width="max-w-2xl"
-    >
-      {!indicator ? (
-        <p className="text-sm text-gray-500">Loading indicator...</p>
-      ) : (
+    <Modal open={open} onClose={onClose} title="Edit Indicator" width="max-w-2xl">
+      {indicator ? (
         <div className="space-y-4">
-          {/* Indicator fields */}
-          <div className="grid grid-cols-2 gap-4">
-            {["code", "name", "unit", "topic"].map((field) => (
-              <div key={field}>
-                <label className="text-sm font-medium text-gray-700 capitalize">
-                  {field}
-                </label>
-                <input
-                  value={indicator[field] || ""}
-                  onChange={(e) =>
-                    setIndicator((prev: any) => ({
-                      ...prev,
-                      [field]: e.target.value,
-                    }))
-                  }
-                  className="w-full border rounded-md px-2 py-1 text-sm"
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* Taxonomy */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">
-              Taxonomy Terms
-            </h3>
-            {Object.entries(grouped).map(([cat, list]) => (
-              <div key={cat}>
-                <div className="text-[13px] font-semibold text-[var(--gsc-blue)] mb-1">
-                  {cat}
-                </div>
-                <div className="grid grid-cols-2 gap-1 ml-2">
-                  {list.map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex items-center gap-1 text-xs text-gray-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(t.id)}
-                        onChange={() => toggleTerm(t.id)}
-                      />
-                      {t.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <label className="text-sm font-medium text-gray-700">Code</label>
+            <input
+              type="text"
+              value={indicator.code}
+              onChange={(e) =>
+                setIndicator({ ...indicator, code: e.target.value })
+              }
+              className="mt-1 w-full border rounded-md p-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700">Name</label>
+            <input
+              type="text"
+              value={indicator.name}
+              onChange={(e) =>
+                setIndicator({ ...indicator, name: e.target.value })
+              }
+              className="mt-1 w-full border rounded-md p-2 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700">Type</label>
+              <input
+                type="text"
+                value={indicator.type}
+                onChange={(e) =>
+                  setIndicator({ ...indicator, type: e.target.value })
+                }
+                className="mt-1 w-full border rounded-md p-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Unit</label>
+              <input
+                type="text"
+                value={indicator.unit}
+                onChange={(e) =>
+                  setIndicator({ ...indicator, unit: e.target.value })
+                }
+                className="mt-1 w-full border rounded-md p-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Topic</label>
+              <input
+                type="text"
+                value={indicator.topic}
+                onChange={(e) =>
+                  setIndicator({ ...indicator, topic: e.target.value })
+                }
+                className="mt-1 w-full border rounded-md p-2 text-sm"
+              />
+            </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-2">
+          {/* Taxonomy Terms */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              Taxonomy Terms
+            </label>
+            <TaxonomyPicker
+              selectedIds={selectedTaxonomyIds}
+              onChange={setSelectedTaxonomyIds}
+              allowMultiple
+              hidePrefix
+            />
+          </div>
+
+          {/* Save / Cancel */}
+          <div className="flex justify-end gap-2 pt-3 border-t">
             <button
               onClick={onClose}
-              className="px-3 py-2 text-sm rounded-md border text-gray-700 hover:bg-gray-50"
+              className="px-3 py-2 text-sm rounded-md border text-gray-600"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-2 text-sm rounded-md text-white"
-              style={{
-                background: "var(--gsc-blue)",
-                opacity: saving ? 0.6 : 1,
-              }}
+              className="px-3 py-2 text-sm rounded-md"
+              style={{ background: "var(--gsc-blue)", color: "white" }}
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
+      ) : (
+        <div className="text-gray-500 text-sm">Loading indicator...</div>
       )}
     </Modal>
   );
