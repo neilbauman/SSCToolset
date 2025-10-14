@@ -1,192 +1,168 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Modal from "@/components/ui/Modal";
+import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Loader2 } from "lucide-react";
 
-type EditIndicatorModalProps = {
+type Props = {
   open: boolean;
   indicatorId: string;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: () => Promise<void> | void;
 };
 
-export default function EditIndicatorModal({
-  open,
-  indicatorId,
-  onClose,
-  onSaved,
-}: EditIndicatorModalProps) {
-  const [form, setForm] = useState({
-    code: "",
-    name: "",
-    description: "",
-    unit: "",
-    type: "",
-    topic: "",
-    data_type: "",
-  });
-  const [loading, setLoading] = useState(true);
+type Indicator = {
+  id: string;
+  code: string;
+  name: string;
+  type: "gradient" | "categorical";
+  unit: string;
+  topic: string;
+};
+
+export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved }: Props) {
+  const [model, setModel] = useState<Indicator | null>(null);
+  const [taxonomyIds, setTaxonomyIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open && indicatorId) loadIndicator();
-  }, [indicatorId, open]);
+    if (!open) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("indicator_catalogue")
+        .select("id, code, name, type, unit, topic")
+        .eq("id", indicatorId)
+        .single();
+      if (!error && data) setModel(data as Indicator);
 
-  if (!open) return null;
+      const { data: links } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("term_id, sort_order")
+        .eq("indicator_id", indicatorId)
+        .order("sort_order", { ascending: true });
+      setTaxonomyIds((links || []).sort((a,b)=> (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l: any) => l.term_id));
+    })();
+  }, [open, indicatorId]);
 
-  async function loadIndicator() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("indicator_catalogue")
-      .select("code, name, description, unit, type, topic, data_type")
-      .eq("id", indicatorId)
-      .single();
+  const updateField = (k: keyof Indicator, v: any) => {
+    if (!model) return;
+    setModel({ ...model, [k]: v });
+  };
 
-    if (error) {
-      console.error("Failed to load indicator:", error);
-    } else {
-      setForm(data);
-    }
-    setLoading(false);
-  }
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  }
-
-  async function handleSave() {
+  const save = async () => {
+    if (!model) return;
     setSaving(true);
-    setError(null);
 
     const { error } = await supabase
       .from("indicator_catalogue")
       .update({
-        code: form.code.trim(),
-        name: form.name.trim(),
-        description: form.description.trim(),
-        unit: form.unit.trim(),
-        type: form.type.trim(),
-        topic: form.topic.trim(),
-        data_type: form.data_type.trim(),
+        code: model.code,
+        name: model.name,
+        type: model.type,
+        unit: model.unit,
+        topic: model.topic,
       })
-      .eq("id", indicatorId);
-
-    setSaving(false);
-
+      .eq("id", model.id);
     if (error) {
-      console.error("Failed to update indicator:", error);
-      setError("Failed to update indicator.");
+      setSaving(false);
+      alert("Failed to update indicator.");
       return;
     }
 
+    // replace taxonomy links with the ordered set
+    const { error: delErr } = await supabase
+      .from("indicator_taxonomy_links")
+      .delete()
+      .eq("indicator_id", model.id);
+    if (delErr) {
+      setSaving(false);
+      alert("Updated indicator, but failed to reset taxonomy links.");
+      return;
+    }
+
+    if (taxonomyIds.length > 0) {
+      const rows = taxonomyIds.map((termId, idx) => ({
+        indicator_id: model.id,
+        term_id: termId,
+        sort_order: idx + 1,
+      }));
+      const { error: insErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
+      if (insErr) {
+        setSaving(false);
+        alert("Updated indicator, but failed to save taxonomy links.");
+        return;
+      }
+    }
+
     await onSaved();
+    setSaving(false);
     onClose();
-  }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-        <h2 className="text-lg font-semibold mb-4 text-[var(--gsc-blue)]">Edit Indicator</h2>
-
-        {loading ? (
-          <p className="text-gray-500 text-sm">Loading...</p>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Code</label>
-              <input
-                name="code"
-                value={form.code}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
-              <input
-                name="name"
-                value={form.name}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Description</label>
-              <textarea
-                name="description"
-                value={form.description}
-                onChange={handleChange}
-                rows={2}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Unit</label>
-                <input
-                  name="unit"
-                  value={form.unit}
-                  onChange={handleChange}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Type</label>
-                <input
-                  name="type"
-                  value={form.type}
-                  onChange={handleChange}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Topic</label>
-              <input
-                name="topic"
-                value={form.topic}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Data Type</label>
-              <input
-                name="data_type"
-                value={form.data_type}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-          </div>
-        )}
-
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-
-        <div className="flex justify-end gap-2 mt-6">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit Indicator"
+      size="lg"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>Cancel</button>
           <button
-            onClick={onClose}
-            className="px-3 py-2 rounded-md text-sm border text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
+            className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
+            onClick={save}
             disabled={saving}
-            className="px-3 py-2 rounded-md text-sm text-white"
-            style={{ backgroundColor: "var(--gsc-blue)" }}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save changes
           </button>
         </div>
-      </div>
-    </div>
+      }
+    >
+      {!model ? (
+        <div className="text-sm text-gray-500 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Code</label>
+              <input value={model.code} onChange={(e) => updateField("code", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Type</label>
+              <select value={model.type} onChange={(e) => updateField("type", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm">
+                <option value="gradient">gradient</option>
+                <option value="categorical">categorical</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Unit</label>
+              <input value={model.unit} onChange={(e) => updateField("unit", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <input value={model.name} onChange={(e) => updateField("name", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Topic</label>
+            <input value={model.topic} onChange={(e) => updateField("topic", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Taxonomy terms (ordered)</label>
+            <TaxonomyPicker
+              selectedIds={taxonomyIds}
+              onChange={setTaxonomyIds}
+              allowMultiple
+              showOrderControls
+            />
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
