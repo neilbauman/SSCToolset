@@ -2,155 +2,144 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 
-interface AddIndicatorModalProps {
+type AddIndicatorModalProps = {
   open: boolean;
   onClose: () => void;
-  onSaved?: () => void;
-}
+  onSaved: () => Promise<void>;
+};
 
-/**
- * Plain React + Tailwind modal — no Shadcn dependencies.
- */
-export default function AddIndicatorModal({
-  open,
-  onClose,
-  onSaved,
-}: AddIndicatorModalProps) {
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [unit, setUnit] = useState("% households");
-  const [type, setType] = useState("gradient");
-  const [topic, setTopic] = useState("SSC Framework");
+export default function AddIndicatorModal({ open, onClose, onSaved }: AddIndicatorModalProps) {
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    description: "",
+    unit: "",
+    type: "gradient",
+    topic: "",
+    data_type: "percentage",
+  });
   const [saving, setSaving] = useState(false);
-  const [selectedTaxonomies, setSelectedTaxonomies] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
-  async function saveIndicator() {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  async function handleSave() {
     setSaving(true);
+    setError(null);
+
     const { error } = await supabase.from("indicator_catalogue").insert([
       {
-        code,
-        name,
-        unit,
-        type,
-        topic,
-        taxonomy_terms: selectedTaxonomies,
+        code: form.code.trim(),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        unit: form.unit.trim(),
+        type: form.type.trim(),
+        topic: form.topic.trim(),
+        data_type: form.data_type.trim(),
       },
     ]);
+
     setSaving(false);
 
     if (error) {
-      console.error("Error saving indicator:", error);
-      alert("Failed to save indicator.");
-    } else {
-      onSaved?.();
-      onClose();
+      console.error("Failed to add indicator:", error);
+      setError("Failed to add indicator.");
+      return;
     }
+
+    await onSaved();
+    onClose();
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Add Indicator
-        </h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
+        <h2 className="text-lg font-semibold mb-4 text-[var(--gsc-blue)]">Add Indicator</h2>
 
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Code
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Code</label>
             <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g. SSC_P1"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              name="code"
+              value={form.code}
+              onChange={handleChange}
+              className="w-full border rounded px-2 py-1 text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Name</label>
             <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Indicator name"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              className="w-full border rounded px-2 py-1 text-sm"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Description</label>
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              className="w-full border rounded px-2 py-1 text-sm"
+              rows={2}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Unit</label>
               <input
-                type="text"
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="% households"
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                name="unit"
+                value={form.unit}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Type
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Type</label>
               <input
-                type="text"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                placeholder="gradient / categorical"
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                name="type"
+                value={form.type}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Topic
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Topic</label>
             <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="SSC Framework"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Taxonomy
-            </label>
-            <TaxonomyPicker
-              selectedIds={selectedTaxonomies}
-              onChange={setSelectedTaxonomies}
-              allowMultiple
+              name="topic"
+              value={form.topic}
+              onChange={handleChange}
+              className="w-full border rounded px-2 py-1 text-sm"
             />
           </div>
         </div>
 
+        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+
         <div className="flex justify-end gap-2 mt-6">
           <button
-            type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+            className="px-3 py-2 rounded-md text-sm border text-gray-700 hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
-            type="button"
-            onClick={saveIndicator}
+            onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+            className="px-3 py-2 rounded-md text-sm text-white"
+            style={{ backgroundColor: "var(--gsc-blue)" }}
           >
             {saving ? "Saving..." : "Save"}
           </button>
