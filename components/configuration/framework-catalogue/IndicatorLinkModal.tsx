@@ -1,176 +1,172 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
-import { Plus, Trash2, Loader2 } from "lucide-react";
-
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-  entity: { type: "pillar" | "theme" | "subtheme"; id: string; name: string };
-};
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Loader2, Trash2, Plus } from "lucide-react";
 
 type Indicator = {
   id: string;
   code: string;
   name: string;
-  topic: string | null;
+  topic?: string;
 };
 
 type LinkRow = {
   id: string;
   indicator_id: string;
-  indicator_catalogue: Indicator | null;
+  indicator_catalogue?: Indicator;
 };
 
-export default function IndicatorLinkModal({ open, onClose, onSaved, entity }: Props) {
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  pillarId?: string;
+  themeId?: string;
+  subthemeId?: string;
+};
+
+export default function IndicatorLinkModal({
+  open,
+  onClose,
+  onSaved,
+  pillarId,
+  themeId,
+  subthemeId,
+}: Props) {
   const [loading, setLoading] = useState(true);
-  const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
   const [links, setLinks] = useState<LinkRow[]>([]);
-  const [selected, setSelected] = useState<string>("");
+  const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
+  const [selected, setSelected] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) loadAll();
   }, [open]);
 
-  async function loadData() {
+  async function loadAll() {
     setLoading(true);
 
-    // Current links for this entity
-    const { data: l, error: lerr } = await supabase
-      .from("catalogue_indicator_links")
-      .select("id,indicator_id,indicator_catalogue(id,code,name,topic)")
-      .eq(`${entity.type}_id`, entity.id);
-    if (lerr) console.error(lerr);
+    const { data: lData, error: lErr } = await supabase
+      .from("framework_indicator_links")
+      .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
+      .eq(pillarId ? "pillar_id" : themeId ? "theme_id" : "subtheme_id", pillarId || themeId || subthemeId);
 
-    // All indicators to choose from
-    const { data: inds, error: ierr } = await supabase
+    const { data: iData, error: iErr } = await supabase
       .from("indicator_catalogue")
-      .select("id,code,name,topic")
-      .order("name", { ascending: true });
-    if (ierr) console.error(ierr);
+      .select("id, code, name, topic")
+      .order("code");
 
-    setLinks((l || []) as LinkRow[]);
-    setAllIndicators((inds || []) as Indicator[]);
+    if (lErr || iErr) console.error(lErr || iErr);
+
+    // normalize nested Supabase response
+    const safeLinks: LinkRow[] = (lData || []).map((l: any) => ({
+      id: l.id,
+      indicator_id: l.indicator_id,
+      indicator_catalogue: Array.isArray(l.indicator_catalogue)
+        ? l.indicator_catalogue[0]
+        : l.indicator_catalogue,
+    }));
+
+    setLinks(safeLinks);
+    setAllIndicators((iData || []) as Indicator[]);
     setSelected("");
     setLoading(false);
   }
 
-  const unlinked = useMemo(() => {
-    const linkedIds = new Set(links.map((x) => x.indicator_id));
-    return allIndicators.filter((i) => !linkedIds.has(i.id));
-  }, [allIndicators, links]);
-
-  async function addLink() {
-    if (!selected) return;
-    const payload: Record<string, any> = {
+  async function handleAdd() {
+    if (!selected) return alert("Select an indicator first.");
+    setSaving(true);
+    const payload: any = {
       indicator_id: selected,
-      pillar_id: null,
-      theme_id: null,
-      subtheme_id: null,
+      pillar_id: pillarId || null,
+      theme_id: themeId || null,
+      subtheme_id: subthemeId || null,
     };
-    payload[`${entity.type}_id`] = entity.id;
-
-    const { error } = await supabase.from("catalogue_indicator_links").insert(payload);
+    const { error } = await supabase.from("framework_indicator_links").insert(payload);
+    setSaving(false);
     if (error) {
       console.error(error);
-      alert("Failed to add indicator.");
-      return;
+      alert("Failed to link indicator.");
+    } else {
+      await loadAll();
+      onSaved();
     }
-    await loadData();
-    onSaved();
   }
 
-  async function removeLink(linkId: string) {
-    const { error } = await supabase
-      .from("catalogue_indicator_links")
-      .delete()
-      .eq("id", linkId);
+  async function handleDelete(id: string) {
+    if (!confirm("Remove this indicator link?")) return;
+    const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
     if (error) {
       console.error(error);
-      alert("Failed to remove link.");
-      return;
+      alert("Failed to delete link.");
+    } else {
+      await loadAll();
+      onSaved();
     }
-    await loadData();
-    onSaved();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`} width="max-w-2xl">
+    <Modal open={open} onClose={onClose} title="Linked Indicators" width="max-w-2xl">
       {loading ? (
         <div className="flex items-center gap-2 text-gray-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading...
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Linked list */}
-          <div>
-            <div className="text-sm font-medium mb-2" style={{ color: "var(--gsc-gray)" }}>
-              Linked Indicators
-            </div>
-            {links.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No indicators linked.</p>
-            ) : (
-              <ul className="divide-y">
-                {links
-                  .slice()
-                  .sort((a, b) =>
-                    (a.indicator_catalogue?.name || "").localeCompare(
-                      b.indicator_catalogue?.name || ""
-                    )
-                  )
-                  .map((lnk) => (
-                    <li key={lnk.id} className="flex items-center justify-between py-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-gray-800 truncate">
-                          {lnk.indicator_catalogue?.name}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {lnk.indicator_catalogue?.code}
-                          {lnk.indicator_catalogue?.topic
-                            ? ` • ${lnk.indicator_catalogue.topic}`
-                            : ""}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeLink(lnk.id)}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                        title="Unlink indicator"
-                      >
-                        <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Add new */}
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2 items-center">
             <select
-              className="flex-1 border rounded p-2 text-sm"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
+              className="flex-1 border rounded px-3 py-2 text-sm"
             >
               <option value="">Select indicator…</option>
-              {unlinked.map((i) => (
+              {allIndicators.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name} ({i.code})
+                  {i.code} — {i.name}
                 </option>
               ))}
             </select>
             <button
-              onClick={addLink}
+              onClick={handleAdd}
+              disabled={!selected || saving}
               className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
-              style={{ background: "var(--gsc-blue)", color: "white" }}
+              style={{
+                background: "var(--gsc-blue)",
+                color: "white",
+                opacity: saving ? 0.7 : 1,
+              }}
             >
-              <Plus className="w-4 h-4" />
-              Add
+              <Plus className="w-4 h-4" /> Add
             </button>
           </div>
+
+          {links.length === 0 ? (
+            <p className="text-sm text-gray-500 italic">No linked indicators yet.</p>
+          ) : (
+            <ul className="divide-y border rounded-md bg-white">
+              {links.map((l) => (
+                <li key={l.id} className="flex justify-between items-center px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-medium text-gray-800">
+                      {l.indicator_catalogue?.code} — {l.indicator_catalogue?.name}
+                    </div>
+                    {l.indicator_catalogue?.topic && (
+                      <div className="text-xs text-gray-500">{l.indicator_catalogue.topic}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+                    title="Delete link"
+                  >
+                    <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </Modal>
