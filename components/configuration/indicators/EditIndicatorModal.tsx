@@ -4,76 +4,49 @@ import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2 } from "lucide-react";
 
 type Props = {
   open: boolean;
-  indicatorId: string;
   onClose: () => void;
-  onSaved: () => Promise<void> | void;
+  onSaved: () => void;
+  indicatorId: string;
 };
 
-type Indicator = {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
-  unit: string;
-  topic: string;
-};
-
-export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved }: Props) {
-  const [indicator, setIndicator] = useState<Indicator | null>(null);
-  const [selectedTaxonomyIds, setSelectedTaxonomyIds] = useState<string[]>([]);
+export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [indicator, setIndicator] = useState<any>(null);
+  const [selectedTaxonomyIds, setSelectedTaxonomyIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!open) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, indicatorId]);
+    if (open) load();
+  }, [open]);
 
   async function load() {
     setLoading(true);
-    // indicator
-    const { data: ind, error } = await supabase
+    const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("id, code, name, type, unit, topic")
+      .select("*")
       .eq("id", indicatorId)
       .single();
-
-    if (error || !ind) {
-      console.error("Failed to load indicator:", error);
+    if (error) {
+      console.error(error);
       setLoading(false);
       return;
     }
-    setIndicator(ind);
+    setIndicator(data);
 
-    // taxonomy links
-    const { data: links, error: linkErr } = await supabase
+    const { data: links } = await supabase
       .from("indicator_taxonomy")
-      .select("term_id")
+      .select("taxonomy_id")
       .eq("indicator_id", indicatorId);
-
-    if (linkErr) {
-      console.error("Failed to load indicator taxonomy:", linkErr);
-      setSelectedTaxonomyIds([]);
-      setLoading(false);
-      return;
-    }
-
-    setSelectedTaxonomyIds((links || []).map((l) => l.term_id));
+    setSelectedTaxonomyIds(links?.map((l) => l.taxonomy_id) || []);
     setLoading(false);
   }
 
-  async function handleSave() {
-    if (!indicator) return;
-
+  async function save() {
     setSaving(true);
-
-    // 1) Update indicator core fields
-    const { error: upErr } = await supabase
+    const { error } = await supabase
       .from("indicator_catalogue")
       .update({
         code: indicator.code,
@@ -81,112 +54,90 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
         type: indicator.type,
         unit: indicator.unit,
         topic: indicator.topic,
-        data_type: indicator.unit?.includes("%") ? "percentage" : null,
       })
-      .eq("id", indicator.id);
+      .eq("id", indicatorId);
 
-    if (upErr) {
-      console.error("Failed to update indicator:", upErr);
+    if (error) {
       alert("Failed to update indicator.");
+      console.error(error);
       setSaving(false);
       return;
     }
 
-    // 2) Replace taxonomy links (simplest).
-    const { error: delErr } = await supabase
-      .from("indicator_taxonomy")
-      .delete()
-      .eq("indicator_id", indicator.id);
-
-    if (delErr) {
-      console.error("Failed to clear taxonomy:", delErr);
-      alert("Indicator updated, but clearing taxonomy failed.");
-      setSaving(false);
-      await onSaved();
-      onClose();
-      return;
-    }
-
+    await supabase.from("indicator_taxonomy").delete().eq("indicator_id", indicatorId);
     if (selectedTaxonomyIds.length > 0) {
-      const rows = selectedTaxonomyIds.map((term_id) => ({
-        indicator_id: indicator.id,
-        term_id,
+      const links = selectedTaxonomyIds.map((tid) => ({
+        indicator_id: indicatorId,
+        taxonomy_id: tid,
       }));
-      const { error: insErr } = await supabase.from("indicator_taxonomy").insert(rows);
-      if (insErr) {
-        console.error("Failed to add taxonomy:", insErr);
-        alert("Indicator updated, but saving taxonomy failed.");
-        setSaving(false);
-        await onSaved();
-        onClose();
-        return;
-      }
+      await supabase.from("indicator_taxonomy").insert(links);
     }
 
     setSaving(false);
-    await onSaved();
+    onSaved();
     onClose();
   }
 
+  if (!indicator) return null;
+
   return (
-    <Modal open={open} onClose={onClose} title="Edit Indicator" width="max-w-2xl">
-      {loading || !indicator ? (
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading...
-        </div>
+    <Modal open={open} onClose={onClose} title="Edit Indicator">
+      {loading ? (
+        <p className="text-sm text-gray-500 italic">Loading...</p>
       ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Code</label>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-sm text-[var(--gsc-gray)]">
+              Code
               <input
-                className="w-full border rounded-md px-3 py-2"
                 value={indicator.code}
                 onChange={(e) => setIndicator({ ...indicator, code: e.target.value })}
+                className="w-full border rounded-md px-2 py-1 mt-1 text-sm"
               />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Type</label>
+            </label>
+            <label className="text-sm text-[var(--gsc-gray)]">
+              Type
               <select
-                className="w-full border rounded-md px-3 py-2"
                 value={indicator.type}
                 onChange={(e) => setIndicator({ ...indicator, type: e.target.value })}
+                className="w-full border rounded-md px-2 py-1 mt-1 text-sm"
               >
                 <option value="gradient">gradient</option>
                 <option value="categorical">categorical</option>
               </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Name</label>
-              <input
-                className="w-full border rounded-md px-3 py-2"
-                value={indicator.name}
-                onChange={(e) => setIndicator({ ...indicator, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Unit</label>
-              <input
-                className="w-full border rounded-md px-3 py-2"
-                value={indicator.unit}
-                onChange={(e) => setIndicator({ ...indicator, unit: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Topic</label>
-              <input
-                className="w-full border rounded-md px-3 py-2"
-                value={indicator.topic}
-                onChange={(e) => setIndicator({ ...indicator, topic: e.target.value })}
-              />
-            </div>
+            </label>
           </div>
 
-          <div className="pt-2 border-t">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Taxonomy Terms</label>
-              <span className="text-xs text-gray-400">{selectedTaxonomyIds.length} selected</span>
-            </div>
+          <label className="text-sm text-[var(--gsc-gray)]">
+            Name
+            <input
+              value={indicator.name}
+              onChange={(e) => setIndicator({ ...indicator, name: e.target.value })}
+              className="w-full border rounded-md px-2 py-1 mt-1 text-sm"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-sm text-[var(--gsc-gray)]">
+              Unit
+              <input
+                value={indicator.unit}
+                onChange={(e) => setIndicator({ ...indicator, unit: e.target.value })}
+                className="w-full border rounded-md px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+            <label className="text-sm text-[var(--gsc-gray)]">
+              Topic
+              <input
+                value={indicator.topic}
+                onChange={(e) => setIndicator({ ...indicator, topic: e.target.value })}
+                className="w-full border rounded-md px-2 py-1 mt-1 text-sm"
+              />
+            </label>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-[var(--gsc-blue)] mb-1">Taxonomy Terms</p>
             <TaxonomyPicker
               selectedIds={selectedTaxonomyIds}
               onChange={setSelectedTaxonomyIds}
@@ -194,18 +145,19 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={onClose}
+              className="px-3 py-2 text-sm rounded-md border text-[var(--gsc-gray)] hover:bg-[var(--gsc-light-gray)]"
+            >
               Cancel
             </button>
             <button
-              onClick={handleSave}
               disabled={saving}
-              className="px-3 py-2 text-sm rounded-md text-white flex items-center gap-2"
-              style={{ background: "var(--gsc-green)" }}
+              onClick={save}
+              className="px-3 py-2 text-sm rounded-md bg-[var(--gsc-green)] text-white hover:bg-green-700"
             >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Save
+              {saving ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
