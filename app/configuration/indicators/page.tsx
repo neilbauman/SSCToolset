@@ -26,7 +26,7 @@ export default function IndicatorsPage() {
 
   const headerProps = {
     title: "Indicator Catalogue",
-    group: "configuration" as const,
+    group: "ssc-config" as const,
     description: "Manage indicators used throughout the SSC Toolset.",
     breadcrumbs: (
       <Breadcrumbs
