@@ -15,6 +15,13 @@ const tools = [
     icon: Layers,
   },
   {
+    id: "indicator-library",
+    title: "Indicator Library",
+    description: "Define and manage indicators for SSC scoring.",
+    href: "/configuration/indicators",
+    icon: BarChart,
+  },
+  {
     id: "comprehensive-framework",
     title: "Comprehensive Framework Editor",
     description: "Future: Configure and manage a broader SSC framework.",
@@ -27,13 +34,6 @@ const tools = [
     description: "Future: Manage SSC pillars, themes, and subthemes catalogue.",
     href: "#",
     icon: BookOpen,
-  },
-  {
-    id: "indicator-library",
-    title: "Indicator Library",
-    description: "Future: Define and manage indicators for SSC scoring.",
-    href: "#",
-    icon: BarChart,
   },
 ];
 
