@@ -6,6 +6,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddTaxonomyTermModal from "@/components/configuration/taxonomy/AddTaxonomyTermModal";
 import EditTaxonomyTermModal from "@/components/configuration/taxonomy/EditTaxonomyTermModal";
+import AddCategoryModal from "@/components/configuration/taxonomy/AddCategoryModal";
 import {
   Plus,
   Edit2,
@@ -39,6 +40,7 @@ export default function TaxonomyPage() {
 
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState<Term | null>(null);
+  const [openAddCategory, setOpenAddCategory] = useState(false);
 
   const headerProps = {
     title: "Taxonomy Manager",
@@ -215,24 +217,32 @@ export default function TaxonomyPage() {
         >
           Taxonomy
         </h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadTerms}
-            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
-            title="Reload"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Reload
-          </button>
-          <button
-            onClick={() => setOpenAdd(true)}
-            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
-            style={{ background: "var(--gsc-blue)", color: "white" }}
-          >
-            <Plus className="w-4 h-4" />
-            Add Term
-          </button>
-        </div>
+       <div className="flex items-center gap-2">
+  <button
+    onClick={loadTerms}
+    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
+    title="Reload"
+  >
+    <RefreshCcw className="w-4 h-4" />
+    Reload
+  </button>
+  <button
+    onClick={() => setOpenAddCategory(true)}
+    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
+    style={{ color: "var(--gsc-blue)", borderColor: "var(--gsc-blue)" }}
+  >
+    <Plus className="w-4 h-4" />
+    Add Category
+  </button>
+  <button
+    onClick={() => setOpenAdd(true)}
+    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
+    style={{ background: "var(--gsc-blue)", color: "white" }}
+  >
+    <Plus className="w-4 h-4" />
+    Add Term
+  </button>
+</div>
       </div>
 
       {loading ? (
@@ -392,6 +402,13 @@ export default function TaxonomyPage() {
           existingCategories={categories.map((c) => c.name)}
         />
       )}
+      {openAddCategory && (
+  <AddCategoryModal
+    open={openAddCategory}
+    onClose={() => setOpenAddCategory(false)}
+    onSaved={loadTerms}
+  />
+)}
     </SidebarLayout>
   );
 }
