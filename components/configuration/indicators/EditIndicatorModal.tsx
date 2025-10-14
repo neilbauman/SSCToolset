@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 
-interface EditIndicatorModalProps {
+type EditIndicatorModalProps = {
   open: boolean;
-  indicatorId: string | null;
+  indicatorId: string;
   onClose: () => void;
-  onSaved?: () => void;
-}
+  onSaved: () => Promise<void>;
+};
 
 export default function EditIndicatorModal({
   open,
@@ -17,164 +16,172 @@ export default function EditIndicatorModal({
   onClose,
   onSaved,
 }: EditIndicatorModalProps) {
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    description: "",
+    unit: "",
+    type: "",
+    topic: "",
+    data_type: "",
+  });
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [unit, setUnit] = useState("");
-  const [type, setType] = useState("");
-  const [topic, setTopic] = useState("");
-  const [selectedTaxonomies, setSelectedTaxonomies] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadIndicator() {
-      if (!indicatorId) return;
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("indicator_catalogue")
-        .select("*")
-        .eq("id", indicatorId)
-        .single();
-
-      if (error) {
-        console.error("Error loading indicator:", error);
-      } else if (data) {
-        setName(data.name || "");
-        setCode(data.code || "");
-        setUnit(data.unit || "");
-        setType(data.type || "");
-        setTopic(data.topic || "");
-        setSelectedTaxonomies(data.taxonomy_terms || []);
-      }
-      setLoading(false);
-    }
-    loadIndicator();
-  }, [indicatorId]);
-
-  async function saveIndicator() {
-    if (!indicatorId) return;
-    setSaving(true);
-    const { error } = await supabase
-      .from("indicator_catalogue")
-      .update({
-        name,
-        code,
-        unit,
-        type,
-        topic,
-        taxonomy_terms: selectedTaxonomies,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", indicatorId);
-    setSaving(false);
-
-    if (error) {
-      console.error("Error updating indicator:", error);
-      alert("Failed to update indicator.");
-    } else {
-      onSaved?.();
-      onClose();
-    }
-  }
+    if (open && indicatorId) loadIndicator();
+  }, [indicatorId, open]);
 
   if (!open) return null;
 
+  async function loadIndicator() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("indicator_catalogue")
+      .select("code, name, description, unit, type, topic, data_type")
+      .eq("id", indicatorId)
+      .single();
+
+    if (error) {
+      console.error("Failed to load indicator:", error);
+    } else {
+      setForm(data);
+    }
+    setLoading(false);
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+
+    const { error } = await supabase
+      .from("indicator_catalogue")
+      .update({
+        code: form.code.trim(),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        unit: form.unit.trim(),
+        type: form.type.trim(),
+        topic: form.topic.trim(),
+        data_type: form.data_type.trim(),
+      })
+      .eq("id", indicatorId);
+
+    setSaving(false);
+
+    if (error) {
+      console.error("Failed to update indicator:", error);
+      setError("Failed to update indicator.");
+      return;
+    }
+
+    await onSaved();
+    onClose();
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Edit Indicator
-        </h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
+        <h2 className="text-lg font-semibold mb-4 text-[var(--gsc-blue)]">Edit Indicator</h2>
 
         {loading ? (
-          <p className="text-sm text-gray-500">Loading...</p>
+          <p className="text-gray-500 text-sm">Loading...</p>
         ) : (
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Code
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Code</label>
               <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                name="code"
+                value={form.code}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Name
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                name="name"
+                value={form.name}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Description</label>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                rows={2}
+                className="w-full border rounded px-2 py-1 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Unit
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Unit</label>
                 <input
-                  type="text"
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                  name="unit"
+                  value={form.unit}
+                  onChange={handleChange}
+                  className="w-full border rounded px-2 py-1 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Type
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Type</label>
                 <input
-                  type="text"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                  name="type"
+                  value={form.type}
+                  onChange={handleChange}
+                  className="w-full border rounded px-2 py-1 text-sm"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Topic
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Topic</label>
               <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                name="topic"
+                value={form.topic}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Taxonomy
-              </label>
-              <TaxonomyPicker
-                selectedIds={selectedTaxonomies}
-                onChange={setSelectedTaxonomies}
-                allowMultiple
+              <label className="block text-sm font-medium text-gray-700">Data Type</label>
+              <input
+                name="data_type"
+                value={form.data_type}
+                onChange={handleChange}
+                className="w-full border rounded px-2 py-1 text-sm"
               />
             </div>
           </div>
         )}
 
+        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+
         <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-100"
+            className="px-3 py-2 rounded-md text-sm border text-gray-700 hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
-            onClick={saveIndicator}
+            onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+            className="px-3 py-2 rounded-md text-sm text-white"
+            style={{ backgroundColor: "var(--gsc-blue)" }}
           >
             {saving ? "Saving..." : "Save"}
           </button>
