@@ -6,7 +6,15 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddIndicatorModal from "@/components/configuration/indicators/AddIndicatorModal";
 import EditIndicatorModal from "@/components/configuration/indicators/EditIndicatorModal";
-import { Plus, Edit2, Trash2, Loader2, ArrowUpDown } from "lucide-react";
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Loader2,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 type Indicator = {
   id: string;
@@ -17,17 +25,33 @@ type Indicator = {
   topic: string;
   created_at?: string;
   taxonomy_names?: string;
+  taxonomy_ids?: string[];
+};
+
+type TaxonomyTerm = {
+  id: string;
+  category: string;
+  name: string;
+  category_order?: number;
+  sort_order?: number;
 };
 
 type SortKey = "code" | "name" | "type" | "unit" | "topic" | "created_at";
 
 export default function IndicatorsPage() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [taxonomy, setTaxonomy] = useState<Record<string, TaxonomyTerm[]>>({});
   const [loading, setLoading] = useState(true);
+
   const [openAdd, setOpenAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortAsc, setSortAsc] = useState(false);
+
+  const [filterOpen, setFilterOpen] = useState(true);
+  const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
+  const [appliedTerms, setAppliedTerms] = useState<string[]>([]);
 
   const headerProps = {
     title: "Indicator Catalogue",
@@ -44,6 +68,7 @@ export default function IndicatorsPage() {
     ),
   };
 
+  // ---------- Load all ----------
   useEffect(() => {
     loadAll();
   }, []);
@@ -51,6 +76,7 @@ export default function IndicatorsPage() {
   async function loadAll() {
     setLoading(true);
 
+    // 1. Indicators + linked taxonomy
     const { data, error } = await supabase
       .from("indicator_catalogue")
       .select(`
@@ -62,7 +88,7 @@ export default function IndicatorsPage() {
         topic,
         created_at,
         indicator_taxonomy_links (
-          taxonomy_terms (name)
+          taxonomy_terms ( id, name )
         )
       `)
       .order("created_at", { ascending: false });
@@ -74,7 +100,7 @@ export default function IndicatorsPage() {
       return;
     }
 
-    const indicatorsWithTaxonomy =
+    const inds =
       (data || []).map((ind: any) => ({
         ...ind,
         taxonomy_names:
@@ -82,27 +108,62 @@ export default function IndicatorsPage() {
             ?.map((l: any) => l.taxonomy_terms?.name)
             .filter(Boolean)
             .join(", ") || "—",
+        taxonomy_ids:
+          ind.indicator_taxonomy_links
+            ?.map((l: any) => l.taxonomy_terms?.id)
+            .filter(Boolean) || [],
       })) || [];
 
-    setIndicators(indicatorsWithTaxonomy);
+    setIndicators(inds);
+
+    // 2. Taxonomy
+    const { data: terms, error: tErr } = await supabase
+      .from("taxonomy_terms")
+      .select("id, category, name, category_order, sort_order")
+      .order("category_order", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+
+    if (tErr) {
+      console.error("Error loading taxonomy:", tErr);
+      setTaxonomy({});
+      setLoading(false);
+      return;
+    }
+
+    const grouped: Record<string, TaxonomyTerm[]> = {};
+    (terms || []).forEach((t) => {
+      if (!grouped[t.category]) grouped[t.category] = [];
+      grouped[t.category].push(t);
+    });
+    setTaxonomy(grouped);
     setLoading(false);
   }
 
-  async function deleteIndicator(id: string) {
-    if (!confirm("Delete this indicator?")) return;
-
-    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", id);
-    const { error } = await supabase.from("indicator_catalogue").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete indicator:", error);
-      alert("Error deleting indicator.");
-    } else {
-      loadAll();
+  // ---------- Filtering ----------
+  useEffect(() => {
+    const saved = localStorage.getItem("ssc_taxonomy_filters");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setSelectedTerms(parsed);
+      setAppliedTerms(parsed);
     }
-  }
+  }, []);
 
+  useEffect(() => {
+    localStorage.setItem("ssc_taxonomy_filters", JSON.stringify(appliedTerms));
+  }, [appliedTerms]);
+
+  const filtered = useMemo(() => {
+    if (appliedTerms.length === 0) return indicators;
+    return indicators.filter((ind) =>
+      ind.taxonomy_ids?.some((id) => appliedTerms.includes(id))
+    );
+  }, [indicators, appliedTerms]);
+
+  // ---------- Sorting ----------
   const sorted = useMemo(() => {
-    const copy = [...indicators];
+    const copy = [...filtered];
     copy.sort((a, b) => {
       const av = (a[sortKey] ?? "") as string;
       const bv = (b[sortKey] ?? "") as string;
@@ -111,12 +172,11 @@ export default function IndicatorsPage() {
       return 0;
     });
     return copy;
-  }, [indicators, sortKey, sortAsc]);
+  }, [filtered, sortKey, sortAsc]);
 
   function toggleSort(col: SortKey) {
-    if (col === sortKey) {
-      setSortAsc((s) => !s);
-    } else {
+    if (col === sortKey) setSortAsc((s) => !s);
+    else {
       setSortKey(col);
       setSortAsc(true);
     }
@@ -127,7 +187,6 @@ export default function IndicatorsPage() {
       <button
         onClick={() => toggleSort(col)}
         className="inline-flex items-center gap-1 text-left"
-        title="Sort"
       >
         <span>{label}</span>
         <ArrowUpDown
@@ -139,8 +198,91 @@ export default function IndicatorsPage() {
     );
   }
 
+  async function deleteIndicator(id: string) {
+    if (!confirm("Delete this indicator?")) return;
+    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", id);
+    const { error } = await supabase.from("indicator_catalogue").delete().eq("id", id);
+    if (error) alert("Error deleting indicator.");
+    else loadAll();
+  }
+
+  // ---------- Render ----------
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Filters */}
+      <div className="mb-4 border rounded-md bg-white">
+        <div
+          className="flex justify-between items-center px-3 py-2 cursor-pointer select-none border-b"
+          style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
+          onClick={() => setFilterOpen(!filterOpen)}
+        >
+          <h3 className="font-semibold text-sm">Filter by Taxonomy</h3>
+          {filterOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </div>
+
+        {filterOpen && (
+          <div className="max-h-[400px] overflow-y-auto p-3 text-sm">
+            {Object.keys(taxonomy).length === 0 ? (
+              <p className="text-gray-500 text-sm italic">No taxonomy terms available.</p>
+            ) : (
+              Object.entries(taxonomy).map(([category, terms]) => (
+                <div key={category} className="mb-3">
+                  <div className="font-medium text-gray-800 mb-1">{category}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {terms.map((term) => (
+                      <label
+                        key={term.id}
+                        className="inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTerms.includes(term.id)}
+                          onChange={(e) =>
+                            setSelectedTerms((prev) =>
+                              e.target.checked
+                                ? [...prev, term.id]
+                                : prev.filter((id) => id !== term.id)
+                            )
+                          }
+                          className="accent-[var(--gsc-blue)]"
+                        />
+                        <span className="text-xs text-gray-600">{term.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {filterOpen && (
+          <div
+            className="flex justify-end gap-2 border-t px-3 py-2 sticky bottom-0 bg-white"
+            style={{ borderColor: "var(--gsc-light-gray)" }}
+          >
+            <button
+              onClick={() => {
+                setSelectedTerms([]);
+                setAppliedTerms([]);
+                localStorage.removeItem("ssc_taxonomy_filters");
+              }}
+              className="px-3 py-1 text-sm rounded border text-gray-600 hover:bg-gray-50"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setAppliedTerms([...selectedTerms])}
+              className="px-3 py-1 text-sm rounded"
+              style={{ background: "var(--gsc-blue)", color: "white" }}
+            >
+              Apply
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Table header */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
           Indicators
@@ -154,16 +296,19 @@ export default function IndicatorsPage() {
         </button>
       </div>
 
+      {/* Table */}
       {loading ? (
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading indicators...
         </div>
-      ) : indicators.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <p className="text-sm text-gray-500 italic">No indicators found.</p>
       ) : (
         <div className="border rounded-md overflow-hidden bg-white">
           <table className="w-full text-sm">
-            <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
+            <thead
+              style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
+            >
               <tr>
                 <th className="text-left px-3 py-2 font-medium">
                   <SortBtn label="Code" col="code" />
@@ -196,11 +341,11 @@ export default function IndicatorsPage() {
                   <td className="px-3 py-2">{ind.unit}</td>
                   <td className="px-3 py-2">{ind.topic}</td>
                   <td
-  className="px-3 py-2 text-xs text-gray-500 leading-snug whitespace-normal break-words"
-  style={{ maxWidth: "16rem" }}
->
-  {ind.taxonomy_names || "—"}
-</td>
+                    className="px-3 py-2 text-xs text-gray-500 leading-snug whitespace-normal break-words"
+                    style={{ maxWidth: "16rem" }}
+                  >
+                    {ind.taxonomy_names || "—"}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
                       <button
@@ -208,14 +353,20 @@ export default function IndicatorsPage() {
                         className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
                         title="Edit"
                       >
-                        <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                        <Edit2
+                          className="w-4 h-4"
+                          style={{ color: "var(--gsc-blue)" }}
+                        />
                       </button>
                       <button
                         onClick={() => deleteIndicator(ind.id)}
                         className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                        <Trash2
+                          className="w-4 h-4"
+                          style={{ color: "var(--gsc-red)" }}
+                        />
                       </button>
                     </div>
                   </td>
@@ -228,7 +379,11 @@ export default function IndicatorsPage() {
 
       {/* Modals */}
       {openAdd && (
-        <AddIndicatorModal open={openAdd} onClose={() => setOpenAdd(false)} onSaved={loadAll} />
+        <AddIndicatorModal
+          open={openAdd}
+          onClose={() => setOpenAdd(false)}
+          onSaved={loadAll}
+        />
       )}
       {editingId && (
         <EditIndicatorModal
