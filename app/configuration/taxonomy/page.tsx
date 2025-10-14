@@ -156,7 +156,7 @@ export default function TaxonomyPage() {
       return;
 
     const { error: linkErr } = await supabase
-      .from("indicator_taxonomy_links")
+      .from("indicator_taxonomy")
       .delete()
       .eq("term_id", term.id);
     if (linkErr) {
@@ -210,6 +210,7 @@ export default function TaxonomyPage() {
     await loadTerms();
   }
 
+  // ✅ Return JSX starts cleanly here
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="flex justify-between items-center mb-4">
@@ -219,32 +220,32 @@ export default function TaxonomyPage() {
         >
           Taxonomy
         </h2>
-       <div className="flex items-center gap-2">
-  <button
-    onClick={loadTerms}
-    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
-    title="Reload"
-  >
-    <RefreshCcw className="w-4 h-4" />
-    Reload
-  </button>
-  <button
-    onClick={() => setOpenAddCategory(true)}
-    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
-    style={{ color: "var(--gsc-blue)", borderColor: "var(--gsc-blue)" }}
-  >
-    <Plus className="w-4 h-4" />
-    Add Category
-  </button>
-  <button
-    onClick={() => setOpenAdd(true)}
-    className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
-    style={{ background: "var(--gsc-blue)", color: "white" }}
-  >
-    <Plus className="w-4 h-4" />
-    Add Term
-  </button>
-</div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadTerms}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
+            title="Reload"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Reload
+          </button>
+          <button
+            onClick={() => setOpenAddCategory(true)}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border"
+            style={{ color: "var(--gsc-blue)", borderColor: "var(--gsc-blue)" }}
+          >
+            <Plus className="w-4 h-4" />
+            Add Category
+          </button>
+          <button
+            onClick={() => setOpenAdd(true)}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
+            style={{ background: "var(--gsc-blue)", color: "white" }}
+          >
+            <Plus className="w-4 h-4" />
+            Add Term
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -259,7 +260,6 @@ export default function TaxonomyPage() {
             const list = byCat[cat.name] || [];
             return (
               <div key={cat.name} className="bg-white border rounded-md">
-                {/* Category header with reordering controls */}
                 <div
                   className="flex justify-between items-center px-3 py-2 border-b text-sm font-semibold"
                   style={{
@@ -271,6 +271,13 @@ export default function TaxonomyPage() {
                     <span>{cat.name}</span>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setEditingCategory(cat.name)}
+                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+                      title="Edit category"
+                    >
+                      <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                    </button>
                     <button
                       className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                       disabled={catIdx === 0}
@@ -303,60 +310,18 @@ export default function TaxonomyPage() {
                 {/* Terms list */}
                 <ul className="divide-y">
                   {list.map((t, idx) => (
-                    <li
-                      key={t.id}
-                      className="flex items-center gap-3 px-3 py-2 text-sm"
-                    >
+                    <li key={t.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                       <div className="flex-1">
-                        <div className="font-medium text-gray-800">
-                          {t.name}
-                        </div>
+                        <div className="font-medium text-gray-800">{t.name}</div>
                         <div className="text-xs text-gray-500">
-                          {t.code}{" "}
-                          {t.description ? `• ${t.description}` : ""}
+                          {t.code} {t.description ? `• ${t.description}` : ""}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-  <button
-    onClick={() => setEditingCategory(cat.name)}
-    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
-    title="Edit category"
-  >
-    <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
-  </button>
-  <button
-    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
-    disabled={catIdx === 0}
-    onClick={() => moveCategory(cat.name, "up")}
-    title="Move category up"
-  >
-    <ArrowUp
-      className={`w-4 h-4 ${
-        catIdx === 0 ? "text-gray-300" : "text-gray-600"
-      }`}
-    />
-  </button>
-  <button
-    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
-    disabled={catIdx === categories.length - 1}
-    onClick={() => moveCategory(cat.name, "down")}
-    title="Move category down"
-  >
-    <ArrowDown
-      className={`w-4 h-4 ${
-        catIdx === categories.length - 1
-          ? "text-gray-300"
-          : "text-gray-600"
-      }`}
-    />
-  </button>
-</div>
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === 0}
-                          onClick={() =>
-                            moveWithinCategory(cat.name, t.id, "up")
-                          }
+                          onClick={() => moveWithinCategory(cat.name, t.id, "up")}
                           title="Move up"
                         >
                           <ArrowUp
@@ -368,23 +333,17 @@ export default function TaxonomyPage() {
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === list.length - 1}
-                          onClick={() =>
-                            moveWithinCategory(cat.name, t.id, "down")
-                          }
+                          onClick={() => moveWithinCategory(cat.name, t.id, "down")}
                           title="Move down"
                         >
                           <ArrowDown
                             className={`w-4 h-4 ${
-                              idx === list.length - 1
-                                ? "text-gray-300"
-                                : "text-gray-600"
+                              idx === list.length - 1 ? "text-gray-300" : "text-gray-600"
                             }`}
                           />
                         </button>
                         <button
-                          onClick={async () =>
-                            await saveOrderForCategory(cat.name)
-                          }
+                          onClick={async () => await saveOrderForCategory(cat.name)}
                           className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
                           title="Save order"
                         >
@@ -439,20 +398,20 @@ export default function TaxonomyPage() {
         />
       )}
       {openAddCategory && (
-  <AddCategoryModal
-    open={openAddCategory}
-    onClose={() => setOpenAddCategory(false)}
-    onSaved={loadTerms}
-  />
-)}
+        <AddCategoryModal
+          open={openAddCategory}
+          onClose={() => setOpenAddCategory(false)}
+          onSaved={loadTerms}
+        />
+      )}
       {editingCategory && (
-  <EditCategoryModal
-    open={!!editingCategory}
-    onClose={() => setEditingCategory(null)}
-    onSaved={loadTerms}
-    categoryName={editingCategory}
-  />
-)}
+        <EditCategoryModal
+          open={!!editingCategory}
+          onClose={() => setEditingCategory(null)}
+          onSaved={loadTerms}
+          categoryName={editingCategory}
+        />
+      )}
     </SidebarLayout>
   );
 }
