@@ -6,7 +6,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddIndicatorModal from "@/components/configuration/indicators/AddIndicatorModal";
 import EditIndicatorModal from "@/components/configuration/indicators/EditIndicatorModal";
-import { Plus, Edit2, Trash2, Loader2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Loader2, ArrowUpDown } from "lucide-react";
 
 type Indicator = {
   id: string;
@@ -15,6 +15,7 @@ type Indicator = {
   type: string;
   unit: string;
   topic: string;
+  taxonomy_terms?: string[]; // array of linked taxonomy UUIDs or names
   created_at?: string;
 };
 
@@ -23,6 +24,8 @@ export default function IndicatorsPage() {
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<keyof Indicator>("code");
+  const [sortAsc, setSortAsc] = useState(true);
 
   const headerProps = {
     title: "Indicator Catalogue",
@@ -47,8 +50,9 @@ export default function IndicatorsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("id, code, name, type, unit, topic, created_at")
+      .select("id, code, name, type, unit, topic, taxonomy_terms, created_at")
       .order("created_at", { ascending: false });
+
     if (error) {
       console.error("Error loading indicators:", error);
     } else {
@@ -56,6 +60,21 @@ export default function IndicatorsPage() {
     }
     setLoading(false);
   }
+
+  function toggleSort(field: keyof Indicator) {
+    if (field === sortField) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  }
+
+  const sortedIndicators = [...indicators].sort((a, b) => {
+    const aVal = (a[sortField] || "").toString().toLowerCase();
+    const bVal = (b[sortField] || "").toString().toLowerCase();
+    return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
 
   async function deleteIndicator(id: string) {
     if (!confirm("Delete this indicator?")) return;
@@ -70,56 +89,115 @@ export default function IndicatorsPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">Indicators</h2>
+      {/* Header */}
+      <div className="flex justify-between items-center mb-5">
+        <h2
+          className="text-xl font-semibold"
+          style={{ color: "var(--gsc-blue)" }}
+        >
+          Indicators
+        </h2>
         <button
           onClick={() => setOpenAdd(true)}
-          className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-md text-white"
+          style={{ backgroundColor: "var(--gsc-blue)" }}
         >
           <Plus className="w-4 h-4" /> Add Indicator
         </button>
       </div>
 
+      {/* Table */}
       {loading ? (
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
+        <div className="flex items-center gap-2 text-gray-600 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading indicators...
         </div>
       ) : indicators.length === 0 ? (
         <p className="text-sm text-gray-500 italic">No indicators found.</p>
       ) : (
-        <div className="border rounded-md overflow-hidden">
+        <div
+          className="border rounded-lg overflow-hidden"
+          style={{ borderColor: "var(--gsc-light-gray)" }}
+        >
           <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-gray-700">
+            <thead
+              className="text-gray-700"
+              style={{
+                backgroundColor: "var(--gsc-beige)",
+                borderBottom: "2px solid var(--gsc-light-gray)",
+              }}
+            >
               <tr>
-                <th className="text-left px-3 py-2 font-medium">Code</th>
-                <th className="text-left px-3 py-2 font-medium">Name</th>
-                <th className="text-left px-3 py-2 font-medium">Type</th>
-                <th className="text-left px-3 py-2 font-medium">Unit</th>
-                <th className="text-left px-3 py-2 font-medium">Topic</th>
-                <th className="text-right px-3 py-2 font-medium">Actions</th>
+                {[
+                  ["code", "Code"],
+                  ["name", "Name"],
+                  ["type", "Type"],
+                  ["unit", "Unit"],
+                  ["topic", "Topic"],
+                  ["taxonomy_terms", "Taxonomy Terms"],
+                ].map(([field, label]) => (
+                  <th
+                    key={field}
+                    className="px-3 py-2 font-semibold text-left cursor-pointer select-none"
+                    onClick={() => toggleSort(field as keyof Indicator)}
+                  >
+                    <div className="flex items-center gap-1">
+                      {label}
+                      <ArrowUpDown
+                        className={`w-3 h-3 transition-transform ${
+                          sortField === field
+                            ? sortAsc
+                              ? "text-[var(--gsc-blue)] rotate-180"
+                              : "text-[var(--gsc-blue)]"
+                            : "text-gray-400"
+                        }`}
+                      />
+                    </div>
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right font-semibold">Actions</th>
               </tr>
             </thead>
+
             <tbody>
-              {indicators.map((ind) => (
-                <tr key={ind.id} className="border-t hover:bg-gray-50">
+              {sortedIndicators.map((ind) => (
+                <tr
+                  key={ind.id}
+                  className="border-t hover:bg-[var(--gsc-beige)] transition-colors"
+                  style={{ borderColor: "var(--gsc-light-gray)" }}
+                >
                   <td className="px-3 py-2">{ind.code}</td>
                   <td className="px-3 py-2">{ind.name}</td>
                   <td className="px-3 py-2">{ind.type}</td>
                   <td className="px-3 py-2">{ind.unit}</td>
                   <td className="px-3 py-2">{ind.topic}</td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {Array.isArray(ind.taxonomy_terms) && ind.taxonomy_terms.length > 0
+                      ? ind.taxonomy_terms.join(", ")
+                      : "—"}
+                  </td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => setEditingId(ind.id)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                    >
-                      <Edit2 className="w-4 h-4 text-blue-600" />
-                    </button>
-                    <button
-                      onClick={() => deleteIndicator(ind.id)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingId(ind.id)}
+                        className="p-1 rounded hover:bg-[var(--gsc-light-gray)]"
+                        title="Edit"
+                      >
+                        <Edit2
+                          className="w-4 h-4"
+                          style={{ color: "var(--gsc-blue)" }}
+                        />
+                      </button>
+                      <button
+                        onClick={() => deleteIndicator(ind.id)}
+                        className="p-1 rounded hover:bg-[var(--gsc-light-gray)]"
+                        title="Delete"
+                      >
+                        <Trash2
+                          className="w-4 h-4"
+                          style={{ color: "var(--gsc-red)" }}
+                        />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
