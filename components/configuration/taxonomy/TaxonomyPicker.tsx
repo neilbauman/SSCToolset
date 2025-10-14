@@ -1,112 +1,194 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2 } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 
-interface TaxonomyTerm {
+export type TaxonomyTerm = {
   id: string;
+  category: string;
+  code: string;
   name: string;
-  category?: string | null;
-}
+  description?: string | null;
+};
 
-interface TaxonomyPickerProps {
+type Props = {
   selectedIds: string[];
-  onChange: (value: string[]) => void;
+  onChange: (ids: string[]) => void;
   allowMultiple?: boolean;
-}
+  showOrderControls?: boolean; // allow reordering of selected
+};
 
-/**
- * TaxonomyPicker — a simple, dependency-free taxonomy selector.
- */
 export default function TaxonomyPicker({
   selectedIds,
   onChange,
-  allowMultiple = false,
-}: TaxonomyPickerProps) {
+  allowMultiple = true,
+  showOrderControls = true,
+}: Props) {
   const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [q, setQ] = useState("");
 
   useEffect(() => {
-    async function loadTerms() {
-      setLoading(true);
+    (async () => {
       const { data, error } = await supabase
         .from("taxonomy_terms")
-        .select("id, name, category")
+        .select("id, category, code, name, description")
         .order("category", { ascending: true })
-        .order("name", { ascending: true });
-      if (error) {
-        console.error("Failed to load taxonomy terms:", error);
-      } else {
+        .order("code", { ascending: true });
+      if (!error) {
         setTerms(data || []);
+        const cats: Record<string, boolean> = {};
+        (data || []).forEach((t) => { if (!(t.category in cats)) cats[t.category] = true; });
+        setOpenGroups(cats);
       }
-      setLoading(false);
-    }
-    loadTerms();
+    })();
   }, []);
 
-  function toggleTerm(id: string) {
+  const grouped = useMemo(() => {
+    const list = q.trim()
+      ? terms.filter(t =>
+          t.name.toLowerCase().includes(q.toLowerCase()) ||
+          t.code.toLowerCase().includes(q.toLowerCase()) ||
+          (t.category || "").toLowerCase().includes(q.toLowerCase()))
+      : terms;
+    const map: Record<string, TaxonomyTerm[]> = {};
+    for (const t of list) {
+      map[t.category] = map[t.category] || [];
+      map[t.category].push(t);
+    }
+    return map;
+  }, [terms, q]);
+
+  const toggle = (termId: string) => {
     if (allowMultiple) {
-      if (selectedIds.includes(id)) {
-        onChange(selectedIds.filter((x) => x !== id));
+      if (selectedIds.includes(termId)) {
+        onChange(selectedIds.filter((id) => id !== termId));
       } else {
-        onChange([...selectedIds, id]);
+        onChange([...selectedIds, termId]);
       }
     } else {
-      onChange([id]);
+      onChange(selectedIds.includes(termId) ? [] : [termId]);
     }
-  }
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-gray-500 text-sm">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading taxonomy…
-      </div>
-    );
-  }
+  const move = (idx: number, dir: -1 | 1) => {
+    const next = [...selectedIds];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    onChange(next);
+  };
 
-  if (!terms.length) {
-    return (
-      <p className="text-sm text-gray-500 italic">
-        No taxonomy terms found.
-      </p>
-    );
-  }
+  const removeAt = (idx: number) => {
+    const next = [...selectedIds];
+    next.splice(idx, 1);
+    onChange(next);
+  };
 
-  // Group by category (e.g. SSC, Vulnerability, Hazard)
-  const grouped = terms.reduce((acc, t) => {
-    const cat = t.category || "Uncategorized";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(t);
-    return acc;
-  }, {} as Record<string, TaxonomyTerm[]>);
+  const getDisplay = (id: string) => {
+    const t = terms.find((x) => x.id === id);
+    return t ? `${t.category}: ${t.code} — ${t.name}` : id;
+    };
 
   return (
-    <div className="space-y-4">
-      {Object.entries(grouped).map(([cat, catTerms]) => (
-        <div key={cat}>
-          <h4 className="text-xs uppercase tracking-wide font-semibold text-gray-600 mb-1">
-            {cat}
-          </h4>
-          <div className="grid grid-cols-2 gap-1">
-            {catTerms.map((term) => (
-              <label
-                key={term.id}
-                className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(term.id)}
-                  onChange={() => toggleTerm(term.id)}
-                  className="h-4 w-4 accent-blue-600 border-gray-300 rounded-sm"
-                />
-                <span>{term.name}</span>
-              </label>
-            ))}
+    <div className="border rounded-lg">
+      {/* Selected pills with ordering */}
+      <div className="p-3 border-b bg-[color:var(--gsc-beige)]">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-[color:var(--gsc-gray)]">Selected terms</span>
+          <div className="flex gap-2">
+            <ArrowUpAZ className="w-4 h-4 text-[color:var(--gsc-blue)]" />
+            <ArrowDownAZ className="w-4 h-4 text-[color:var(--gsc-blue)]" />
           </div>
         </div>
-      ))}
+
+        {selectedIds.length === 0 ? (
+          <p className="text-xs text-gray-500 italic">None selected.</p>
+        ) : (
+          <ul className="space-y-2">
+            {selectedIds.map((id, idx) => (
+              <li key={id} className="flex items-center justify-between bg-white border rounded-md px-2 py-1">
+                <div className="flex items-center gap-2">
+                  {showOrderControls && <GripVertical className="w-4 h-4 text-gray-400" />}
+                  <span className="text-sm">{getDisplay(id)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {showOrderControls && (
+                    <>
+                      <button className="p-1 hover:bg-gray-100 rounded" onClick={() => move(idx, -1)} title="Move up">
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button className="p-1 hover:bg-gray-100 rounded" onClick={() => move(idx, 1)} title="Move down">
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                  <button className="p-1 hover:bg-gray-100 rounded" onClick={() => removeAt(idx)} title="Remove">
+                    <X className="w-4 h-4 text-[color:var(--gsc-red)]" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="p-3 border-b bg-white">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search terms by name, code, or category…"
+          className="w-full border rounded-md px-3 py-2 text-sm"
+        />
+      </div>
+
+      {/* Available terms grouped */}
+      <div className="p-3 max-h-64 overflow-auto bg-white">
+        {Object.entries(grouped).map(([category, list]) => (
+          <div key={category} className="mb-3">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-2 py-1 rounded hover:bg-gray-50"
+              onClick={() => setOpenGroups((g) => ({ ...g, [category]: !g[category] }))}
+            >
+              <span className="text-sm font-semibold text-[color:var(--gsc-blue)]">{category}</span>
+              {openGroups[category] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            {openGroups[category] && (
+              <ul className="mt-1 space-y-1">
+                {list.map((t) => {
+                  const selected = selectedIds.includes(t.id);
+                  return (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggle(t.id)}
+                        className={`w-full text-left flex items-center justify-between px-2 py-1 rounded border ${
+                          selected ? "bg-[color:var(--gsc-beige)] border-[color:var(--gsc-blue)]" : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className="text-sm">
+                          <span className="font-mono mr-1">{t.code}</span>
+                          {t.name}
+                        </span>
+                        <span className={`ml-2 text-xs inline-flex items-center gap-1 ${selected ? "text-[color:var(--gsc-green)]" : "text-gray-500"}`}>
+                          {selected ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                          {selected ? "Selected" : "Add"}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ))}
+        {Object.keys(grouped).length === 0 && (
+          <p className="text-xs text-gray-500 italic">No terms found.</p>
+        )}
+      </div>
     </div>
   );
 }
