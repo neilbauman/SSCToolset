@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
@@ -17,54 +17,94 @@ export default function DeleteCategoryModal({
   categoryName,
   onDeleted,
 }: Props) {
-  const [deleting, setDeleting] = useState(false);
+  const [mode, setMode] = useState<"cascade" | "reassign">("cascade");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [targetCategory, setTargetCategory] = useState<string>("");
   const [confirmText, setConfirmText] = useState("");
+  const [processing, setProcessing] = useState(false);
 
-  async function handleDelete() {
+  useEffect(() => {
+    if (open) fetchCategories();
+  }, [open]);
+
+  async function fetchCategories() {
+    const { data, error } = await supabase
+      .from("taxonomy_terms")
+      .select("category")
+      .not("category", "is", null);
+
+    if (error) {
+      console.error("Error loading categories:", error);
+      return;
+    }
+
+    const unique = Array.from(new Set((data || []).map((d) => d.category))).filter(
+      (c) => c !== categoryName
+    );
+    setCategories(unique);
+    if (unique.length > 0) setTargetCategory(unique[0]);
+  }
+
+  async function handleConfirm() {
     if (confirmText.trim().toLowerCase() !== categoryName.trim().toLowerCase()) {
       alert("Please type the category name exactly to confirm.");
       return;
     }
 
-    setDeleting(true);
+    setProcessing(true);
 
-    // 1️⃣ Fetch all term IDs in this category
-    const { data: terms, error: termsErr } = await supabase
+    // 1️⃣ Fetch terms in this category
+    const { data: terms, error: termErr } = await supabase
       .from("taxonomy_terms")
       .select("id")
       .eq("category", categoryName);
 
-    if (termsErr) {
-      console.error("Failed to load terms:", termsErr);
+    if (termErr) {
+      console.error("Error fetching category terms:", termErr);
       alert("Error fetching category terms.");
-      setDeleting(false);
+      setProcessing(false);
       return;
     }
 
     const termIds = (terms || []).map((t) => t.id);
+
     if (termIds.length > 0) {
-      // 2️⃣ Remove indicator links referencing these terms
-      const { error: linkErr } = await supabase
-        .from("indicator_taxonomy")
-        .delete()
-        .in("term_id", termIds);
-      if (linkErr) console.warn("Error removing links:", linkErr);
+      if (mode === "cascade") {
+        // 2️⃣ Delete indicator links
+        const { error: linkErr } = await supabase
+          .from("indicator_taxonomy")
+          .delete()
+          .in("term_id", termIds);
+        if (linkErr) console.warn("Error removing linked indicators:", linkErr);
 
-      // 3️⃣ Delete all taxonomy terms in this category
-      const { error: delErr } = await supabase
-        .from("taxonomy_terms")
-        .delete()
-        .eq("category", categoryName);
+        // 3️⃣ Delete terms
+        const { error: delErr } = await supabase
+          .from("taxonomy_terms")
+          .delete()
+          .eq("category", categoryName);
+        if (delErr) {
+          console.error("Error deleting terms:", delErr);
+          alert("Failed to delete terms.");
+          setProcessing(false);
+          return;
+        }
+      } else if (mode === "reassign" && targetCategory) {
+        // 2️⃣ Reassign all terms to targetCategory
+        const { error: updErr } = await supabase
+          .from("taxonomy_terms")
+          .update({ category: targetCategory })
+          .eq("category", categoryName);
 
-      if (delErr) {
-        console.error("Failed to delete terms:", delErr);
-        alert("Failed to delete category terms.");
-        setDeleting(false);
-        return;
+        if (updErr) {
+          console.error("Error reassigning terms:", updErr);
+          alert("Failed to reassign terms.");
+          setProcessing(false);
+          return;
+        }
       }
     }
 
-    setDeleting(false);
+    setProcessing(false);
     onClose();
     await onDeleted();
   }
@@ -78,16 +118,56 @@ export default function DeleteCategoryModal({
     >
       <div className="space-y-4 text-sm text-gray-700">
         <p>
-          You are about to permanently delete the entire category{" "}
+          You are about to remove the category{" "}
           <span className="font-semibold text-[var(--gsc-red)]">
             {categoryName}
           </span>
           .
         </p>
-        <p className="text-[13px] text-gray-600">
-          This will also remove all taxonomy terms in the category and any
-          indicator links referencing those terms.
-        </p>
+
+        <div className="border rounded-md bg-[var(--gsc-beige)] px-3 py-2 text-[13px] text-gray-700">
+          <p className="font-medium mb-1">Choose what to do with its terms:</p>
+          <label className="flex items-center gap-2 text-sm mb-1">
+            <input
+              type="radio"
+              name="mode"
+              value="cascade"
+              checked={mode === "cascade"}
+              onChange={() => setMode("cascade")}
+            />
+            Delete all terms and their indicator links (safe cascade)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="mode"
+              value="reassign"
+              checked={mode === "reassign"}
+              onChange={() => setMode("reassign")}
+            />
+            Reassign all terms to another category
+          </label>
+
+          {mode === "reassign" && (
+            <div className="mt-2 ml-5">
+              <select
+                value={targetCategory}
+                onChange={(e) => setTargetCategory(e.target.value)}
+                className="w-full border rounded-md px-2 py-1 text-sm"
+              >
+                {categories.length === 0 ? (
+                  <option value="">No other categories available</option>
+                ) : (
+                  categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          )}
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -110,15 +190,15 @@ export default function DeleteCategoryModal({
             Cancel
           </button>
           <button
-            onClick={handleDelete}
-            disabled={deleting}
+            onClick={handleConfirm}
+            disabled={processing}
             className="px-3 py-2 text-sm rounded-md text-white"
             style={{
               background: "var(--gsc-red)",
-              opacity: deleting ? 0.6 : 1,
+              opacity: processing ? 0.6 : 1,
             }}
           >
-            {deleting ? "Deleting..." : "Delete Category"}
+            {processing ? "Processing..." : "Confirm Delete"}
           </button>
         </div>
       </div>
