@@ -40,7 +40,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
         indicator_id: data.id,
         taxonomy_id: tid,
       }));
-      await supabase.from("indicator_taxonomy").insert(links);
+      await supabase.from("indicator_taxonomy_links").insert(links);
     }
 
     setSaving(false);
