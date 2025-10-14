@@ -16,26 +16,16 @@ type Indicator = {
   unit: string;
   topic: string;
   created_at?: string;
+  taxonomy_names?: string;
 };
-
-type Term = {
-  id: string;
-  code: string;
-  name: string;
-  category: string;
-};
-
-type IndicatorTerms = Record<string, Term[]>;
 
 type SortKey = "code" | "name" | "type" | "unit" | "topic" | "created_at";
 
 export default function IndicatorsPage() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
-  const [termsByIndicator, setTermsByIndicator] = useState<IndicatorTerms>({});
   const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -61,89 +51,47 @@ export default function IndicatorsPage() {
   async function loadAll() {
     setLoading(true);
 
-    // 1) Indicators
-    const { data: inds, error } = await supabase
+    const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("id, code, name, type, unit, topic, created_at")
+      .select(`
+        id,
+        code,
+        name,
+        type,
+        unit,
+        topic,
+        created_at,
+        indicator_taxonomy_links (
+          taxonomy_terms (name)
+        )
+      `)
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error loading indicators:", error);
       setIndicators([]);
-      setTermsByIndicator({});
       setLoading(false);
       return;
     }
 
-    setIndicators(inds || []);
+    const indicatorsWithTaxonomy =
+      (data || []).map((ind: any) => ({
+        ...ind,
+        taxonomy_names:
+          ind.indicator_taxonomy_links
+            ?.map((l: any) => l.taxonomy_terms?.name)
+            .filter(Boolean)
+            .join(", ") || "—",
+      })) || [];
 
-    // 2) Taxonomy (indicator_taxonomy -> taxonomy_terms)
-    if (!inds || inds.length === 0) {
-      setTermsByIndicator({});
-      setLoading(false);
-      return;
-    }
-
-    const ids = inds.map((i) => i.id);
-
-    const { data: links, error: linkErr } = await supabase
-      .from("indicator_taxonomy")
-      .select("indicator_id, term_id")
-      .in("indicator_id", ids);
-
-    if (linkErr) {
-      console.error("Error loading indicator_taxonomy:", linkErr);
-      setTermsByIndicator({});
-      setLoading(false);
-      return;
-    }
-
-    const termIds = Array.from(new Set((links || []).map((l) => l.term_id)));
-    if (termIds.length === 0) {
-      setTermsByIndicator({});
-      setLoading(false);
-      return;
-    }
-
-    const { data: terms, error: termsErr } = await supabase
-      .from("taxonomy_terms")
-      .select("id, code, name, category")
-      .in("id", termIds);
-
-    if (termsErr) {
-      console.error("Error loading taxonomy_terms:", termsErr);
-      setTermsByIndicator({});
-      setLoading(false);
-      return;
-    }
-
-    const termMap = new Map(terms!.map((t) => [t.id, t]));
-    const grouped: IndicatorTerms = {};
-    (links || []).forEach((lnk) => {
-      const t = termMap.get(lnk.term_id);
-      if (!t) return;
-      if (!grouped[lnk.indicator_id]) grouped[lnk.indicator_id] = [];
-      grouped[lnk.indicator_id].push(t);
-    });
-
-    setTermsByIndicator(grouped);
+    setIndicators(indicatorsWithTaxonomy);
     setLoading(false);
   }
 
   async function deleteIndicator(id: string) {
     if (!confirm("Delete this indicator?")) return;
 
-    // Clean join rows first
-    const { error: jtErr } = await supabase
-      .from("indicator_taxonomy")
-      .delete()
-      .eq("indicator_id", id);
-    if (jtErr) {
-      console.error("Failed to delete taxonomy links:", jtErr);
-      alert("Error deleting taxonomy links.");
-      return;
-    }
-
+    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", id);
     const { error } = await supabase.from("indicator_catalogue").delete().eq("id", id);
     if (error) {
       console.error("Failed to delete indicator:", error);
@@ -182,7 +130,11 @@ export default function IndicatorsPage() {
         title="Sort"
       >
         <span>{label}</span>
-        <ArrowUpDown className={`w-3.5 h-3.5 ${sortKey === col ? "text-[var(--gsc-blue)]" : "text-gray-400"}`} />
+        <ArrowUpDown
+          className={`w-3.5 h-3.5 ${
+            sortKey === col ? "text-[var(--gsc-blue)]" : "text-gray-400"
+          }`}
+        />
       </button>
     );
   }
@@ -213,70 +165,59 @@ export default function IndicatorsPage() {
           <table className="w-full text-sm">
             <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
               <tr>
-                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Code" col="code" /></th>
-                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Name" col="name" /></th>
-                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Type" col="type" /></th>
-                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Unit" col="unit" /></th>
-                <th className="text-left px-3 py-2 font-medium"><SortBtn label="Topic" col="topic" /></th>
+                <th className="text-left px-3 py-2 font-medium">
+                  <SortBtn label="Code" col="code" />
+                </th>
+                <th className="text-left px-3 py-2 font-medium">
+                  <SortBtn label="Name" col="name" />
+                </th>
+                <th className="text-left px-3 py-2 font-medium">
+                  <SortBtn label="Type" col="type" />
+                </th>
+                <th className="text-left px-3 py-2 font-medium">
+                  <SortBtn label="Unit" col="unit" />
+                </th>
+                <th className="text-left px-3 py-2 font-medium">
+                  <SortBtn label="Topic" col="topic" />
+                </th>
                 <th className="text-left px-3 py-2 font-medium">Taxonomy</th>
                 <th className="text-right px-3 py-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((ind) => {
-                const t = termsByIndicator[ind.id] || [];
-                return (
-                  <tr key={ind.id} className="border-t hover:bg-[var(--gsc-beige)]/40">
-                    <td className="px-3 py-2">{ind.code}</td>
-                    <td className="px-3 py-2">{ind.name}</td>
-                    <td className="px-3 py-2">{ind.type}</td>
-                    <td className="px-3 py-2">{ind.unit}</td>
-                    <td className="px-3 py-2">{ind.topic}</td>
-                    <td className="px-3 py-2">
-                      {t.length === 0 ? (
-                        <span className="text-xs text-gray-400">—</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {t
-                            .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
-                            .map((term) => (
-                              <span
-                                key={term.id}
-                                className="text-[11px] px-2 py-[2px] rounded-full border"
-                                style={{
-                                  borderColor: "var(--gsc-light-gray)",
-                                  background: "white",
-                                  color: "var(--gsc-gray)",
-                                }}
-                                title={`${term.category} • ${term.code}`}
-                              >
-                                {term.name}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setEditingId(ind.id)}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
-                        </button>
-                        <button
-                          onClick={() => deleteIndicator(ind.id)}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {sorted.map((ind) => (
+                <tr
+                  key={ind.id}
+                  className="border-t hover:bg-[var(--gsc-beige)]/40 transition"
+                >
+                  <td className="px-3 py-2">{ind.code}</td>
+                  <td className="px-3 py-2">{ind.name}</td>
+                  <td className="px-3 py-2">{ind.type}</td>
+                  <td className="px-3 py-2">{ind.unit}</td>
+                  <td className="px-3 py-2">{ind.topic}</td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {ind.taxonomy_names || <span className="text-xs text-gray-400">—</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => setEditingId(ind.id)}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                      </button>
+                      <button
+                        onClick={() => deleteIndicator(ind.id)}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -284,13 +225,8 @@ export default function IndicatorsPage() {
 
       {/* Modals */}
       {openAdd && (
-        <AddIndicatorModal
-          open={openAdd}
-          onClose={() => setOpenAdd(false)}
-          onSaved={loadAll}
-        />
+        <AddIndicatorModal open={openAdd} onClose={() => setOpenAdd(false)} onSaved={loadAll} />
       )}
-
       {editingId && (
         <EditIndicatorModal
           open={!!editingId}
