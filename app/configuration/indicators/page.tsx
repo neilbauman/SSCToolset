@@ -15,7 +15,7 @@ type Indicator = {
   type: string;
   unit: string;
   topic: string;
-  taxonomy_terms?: string[]; // array of linked taxonomy UUIDs or names
+  data_type: string;
   created_at?: string;
 };
 
@@ -50,7 +50,7 @@ export default function IndicatorsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .select("id, code, name, type, unit, topic, taxonomy_terms, created_at")
+      .select("id, code, name, type, unit, topic, data_type, created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -91,10 +91,7 @@ export default function IndicatorsPage() {
     <SidebarLayout headerProps={headerProps}>
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
-        <h2
-          className="text-xl font-semibold"
-          style={{ color: "var(--gsc-blue)" }}
-        >
+        <h2 className="text-xl font-semibold" style={{ color: "var(--gsc-blue)" }}>
           Indicators
         </h2>
         <button
@@ -133,7 +130,7 @@ export default function IndicatorsPage() {
                   ["type", "Type"],
                   ["unit", "Unit"],
                   ["topic", "Topic"],
-                  ["taxonomy_terms", "Taxonomy Terms"],
+                  ["data_type", "Data Type"],
                 ].map(([field, label]) => (
                   <th
                     key={field}
@@ -170,11 +167,7 @@ export default function IndicatorsPage() {
                   <td className="px-3 py-2">{ind.type}</td>
                   <td className="px-3 py-2">{ind.unit}</td>
                   <td className="px-3 py-2">{ind.topic}</td>
-                  <td className="px-3 py-2 text-gray-700">
-                    {Array.isArray(ind.taxonomy_terms) && ind.taxonomy_terms.length > 0
-                      ? ind.taxonomy_terms.join(", ")
-                      : "—"}
-                  </td>
+                  <td className="px-3 py-2">{ind.data_type}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-1">
                       <button
@@ -182,20 +175,14 @@ export default function IndicatorsPage() {
                         className="p-1 rounded hover:bg-[var(--gsc-light-gray)]"
                         title="Edit"
                       >
-                        <Edit2
-                          className="w-4 h-4"
-                          style={{ color: "var(--gsc-blue)" }}
-                        />
+                        <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
                       </button>
                       <button
                         onClick={() => deleteIndicator(ind.id)}
                         className="p-1 rounded hover:bg-[var(--gsc-light-gray)]"
                         title="Delete"
                       >
-                        <Trash2
-                          className="w-4 h-4"
-                          style={{ color: "var(--gsc-red)" }}
-                        />
+                        <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
                       </button>
                     </div>
                   </td>
