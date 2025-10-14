@@ -240,7 +240,7 @@ export default function IndicatorsPage() {
         <EditIndicatorModal
           open={openAdd}
           onClose={() => setOpenAdd(false)}
-          onSave={loadAll}
+          onSaved={loadAll}
         />
       )}
       {editing && (
