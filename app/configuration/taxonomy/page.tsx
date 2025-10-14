@@ -8,6 +8,7 @@ import AddTaxonomyTermModal from "@/components/configuration/taxonomy/AddTaxonom
 import EditTaxonomyTermModal from "@/components/configuration/taxonomy/EditTaxonomyTermModal";
 import AddCategoryModal from "@/components/configuration/taxonomy/AddCategoryModal";
 import EditCategoryModal from "@/components/configuration/taxonomy/EditCategoryModal";
+import DeleteCategoryModal from "@/components/configuration/taxonomy/DeleteCategoryModal";
 import {
   Plus,
   Edit2,
@@ -43,6 +44,7 @@ export default function TaxonomyPage() {
   const [editing, setEditing] = useState<Term | null>(null);
   const [openAddCategory, setOpenAddCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
 
   const headerProps = {
     title: "Taxonomy Manager",
@@ -90,7 +92,6 @@ export default function TaxonomyPage() {
       category_order: t.category_order ?? 0,
     })) as Term[];
 
-    // group by category
     const grouped: TermsByCategory = {};
     for (const t of list) {
       if (!grouped[t.category]) grouped[t.category] = [];
@@ -109,7 +110,6 @@ export default function TaxonomyPage() {
     setLoading(false);
   }
 
-  /** Save within-category order */
   async function saveOrderForCategory(category: string) {
     const list = (byCat[category] || []).map((t, idx) => ({
       ...t,
@@ -131,7 +131,6 @@ export default function TaxonomyPage() {
     }
   }
 
-  /** Move term within a category (local only until Save) */
   function moveWithinCategory(category: string, id: string, dir: "up" | "down") {
     setByCat((prev) => {
       const copy = { ...prev };
@@ -146,7 +145,6 @@ export default function TaxonomyPage() {
     });
   }
 
-  /** Delete term */
   async function deleteTerm(term: Term) {
     if (
       !confirm(
@@ -177,7 +175,6 @@ export default function TaxonomyPage() {
     }
   }
 
-  /** Category-level reordering */
   const categories = useMemo(() => {
     const cats = Object.keys(byCat).map((cat) => ({
       name: cat,
@@ -198,7 +195,6 @@ export default function TaxonomyPage() {
       reordered[currentIdx],
     ];
 
-    // persist new order
     await Promise.all(
       reordered.map((cat, idx) =>
         supabase
@@ -210,7 +206,6 @@ export default function TaxonomyPage() {
     await loadTerms();
   }
 
-  // ✅ Return JSX starts cleanly here
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="flex justify-between items-center mb-4">
@@ -279,6 +274,13 @@ export default function TaxonomyPage() {
                       <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
                     </button>
                     <button
+                      onClick={() => setDeletingCategory(cat.name)}
+                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+                      title="Delete category"
+                    >
+                      <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                    </button>
+                    <button
                       className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                       disabled={catIdx === 0}
                       onClick={() => moveCategory(cat.name, "up")}
@@ -307,10 +309,12 @@ export default function TaxonomyPage() {
                   </div>
                 </div>
 
-                {/* Terms list */}
                 <ul className="divide-y">
                   {list.map((t, idx) => (
-                    <li key={t.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <li
+                      key={t.id}
+                      className="flex items-center gap-3 px-3 py-2 text-sm"
+                    >
                       <div className="flex-1">
                         <div className="font-medium text-gray-800">{t.name}</div>
                         <div className="text-xs text-gray-500">
@@ -321,7 +325,9 @@ export default function TaxonomyPage() {
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === 0}
-                          onClick={() => moveWithinCategory(cat.name, t.id, "up")}
+                          onClick={() =>
+                            moveWithinCategory(cat.name, t.id, "up")
+                          }
                           title="Move up"
                         >
                           <ArrowUp
@@ -333,17 +339,23 @@ export default function TaxonomyPage() {
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === list.length - 1}
-                          onClick={() => moveWithinCategory(cat.name, t.id, "down")}
+                          onClick={() =>
+                            moveWithinCategory(cat.name, t.id, "down")
+                          }
                           title="Move down"
                         >
                           <ArrowDown
                             className={`w-4 h-4 ${
-                              idx === list.length - 1 ? "text-gray-300" : "text-gray-600"
+                              idx === list.length - 1
+                                ? "text-gray-300"
+                                : "text-gray-600"
                             }`}
                           />
                         </button>
                         <button
-                          onClick={async () => await saveOrderForCategory(cat.name)}
+                          onClick={async () =>
+                            await saveOrderForCategory(cat.name)
+                          }
                           className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
                           title="Save order"
                         >
@@ -410,6 +422,14 @@ export default function TaxonomyPage() {
           onClose={() => setEditingCategory(null)}
           onSaved={loadTerms}
           categoryName={editingCategory}
+        />
+      )}
+      {deletingCategory && (
+        <DeleteCategoryModal
+          open={!!deletingCategory}
+          onClose={() => setDeletingCategory(null)}
+          categoryName={deletingCategory}
+          onDeleted={loadTerms}
         />
       )}
     </SidebarLayout>
