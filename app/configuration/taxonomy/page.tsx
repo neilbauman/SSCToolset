@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import Modal from "@/components/ui/modal";
+import Modal from "@/components/ui/Modal";
 import AddTaxonomyTermModal from "@/components/configuration/taxonomy/AddTaxonomyTermModal";
 import EditTaxonomyTermModal from "@/components/configuration/taxonomy/EditTaxonomyTermModal";
 import {
