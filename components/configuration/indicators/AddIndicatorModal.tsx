@@ -27,6 +27,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       return;
     }
     setSaving(true);
+
     const { data, error } = await supabase
       .from("indicator_catalogue")
       .insert([{ code, name, type, unit, topic }])
@@ -39,7 +40,6 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       return;
     }
 
-    // persist taxonomy links in the given order
     if (taxonomyIds.length > 0) {
       const rows = taxonomyIds.map((termId, idx) => ({
         indicator_id: data.id,
@@ -47,10 +47,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
         sort_order: idx + 1,
       }));
       const { error: linkErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
-      if (linkErr) {
-        console.error(linkErr);
-        alert("Indicator created, but failed saving taxonomy links.");
-      }
+      if (linkErr) console.error(linkErr);
     }
 
     await onSaved();
@@ -59,33 +56,26 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add Indicator"
-      size="lg"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>Cancel</button>
-          <button
-            className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
-            onClick={save}
-            disabled={saving}
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
-          </button>
-        </div>
-      }
-    >
+    <Modal open={open} onClose={onClose} title="Add Indicator" width="max-w-3xl">
       <div className="space-y-3">
         <div>
           <label className="block text-sm font-medium mb-1">Code</label>
-          <input value={code} onChange={(e) => setCode(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="w-full border rounded-md px-3 py-2 text-sm"
+          />
         </div>
+
         <div>
           <label className="block text-sm font-medium mb-1">Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full border rounded-md px-3 py-2 text-sm"
+          />
         </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Type</label>
@@ -98,24 +88,52 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
               <option value="categorical">categorical</option>
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium mb-1">Unit</label>
-            <input value={unit} onChange={(e) => setUnit(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            <input
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
           </div>
+
           <div>
             <label className="block text-sm font-medium mb-1">Topic</label>
-            <input value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            <input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2">Taxonomy terms (ordered)</label>
+          <label className="block text-sm font-medium mb-2">
+            Taxonomy terms (ordered)
+          </label>
           <TaxonomyPicker
             selectedIds={taxonomyIds}
             onChange={setTaxonomyIds}
             allowMultiple
             showOrderControls
           />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-4">
+          <button
+            onClick={onClose}
+            className="px-3 py-2 text-sm rounded-md border"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
+          </button>
         </div>
       </div>
     </Modal>
