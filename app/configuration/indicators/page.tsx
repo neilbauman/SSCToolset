@@ -246,9 +246,9 @@ export default function IndicatorsPage() {
       {editing && (
         <EditIndicatorModal
           open={!!editing}
-          indicator={editing}
+          indicatorId={editing?.id ?? null}   // ✅ pass the ID only
           onClose={() => setEditing(null)}
-          onSave={loadAll}
+          onSaved={loadAll}                   // ✅ matches the correct prop name
         />
       )}
     </SidebarLayout>
