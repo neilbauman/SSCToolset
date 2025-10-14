@@ -115,7 +115,14 @@ export default function CataloguePage() {
       {editTheme && <EditThemeModal open theme={editTheme} onClose={() => setEditTheme(null)} onSaved={load} />}
       {addSubFor && <AddSubthemeModal open theme={addSubFor} onClose={() => setAddSubFor(null)} onSaved={load} />}
       {editSub && <EditSubthemeModal open subtheme={editSub} onClose={() => setEditSub(null)} onSaved={load} />}
-      {openLinkModal && linkTarget && <IndicatorLinkModal open onClose={() => setOpenLinkModal(false)} entity={linkTarget} onSaved={load} />}
+      {openLinkModal && linkTarget && (
+  <IndicatorLinkModal
+    open={openLinkModal}
+    onClose={() => setOpenLinkModal(false)}
+    entity={linkTarget}
+    onSaved={load}
+  />
+)}
     </div>
   );
 }
