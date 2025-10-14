@@ -31,12 +31,12 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("taxonomy_terms")
         .select("id, category, code, name")
         .order("category", { ascending: true })
         .order("code", { ascending: true });
-      if (!error && data) setTerms(data);
+      if (data) setTerms(data);
     })();
   }, [open]);
 
@@ -65,14 +65,17 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       return;
     }
 
-    // Save selected taxonomy terms
+    // Save taxonomy links
     if (selected.length > 0) {
       const rows = selected.map((termId, idx) => ({
         indicator_id: data.id,
         term_id: termId,
         sort_order: idx + 1,
       }));
-      await supabase.from("indicator_taxonomy_links").insert(rows);
+      const { error: linkErr } = await supabase
+        .from("indicator_taxonomy_links")
+        .insert(rows);
+      if (linkErr) console.error(linkErr);
     }
 
     await onSaved();
@@ -86,6 +89,10 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     acc[t.category].push(t);
     return acc;
   }, {});
+
+  // Clean name without prefix
+  const cleanName = (s: string) =>
+    s.replace(/^.*?:/, "").replace(/\s+/g, " ").trim();
 
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator" width="max-w-3xl">
@@ -143,37 +150,46 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
         {/* Taxonomy selection */}
         <div>
           <h3 className="text-sm font-medium text-[color:var(--gsc-blue)] mb-2">
-            Select Taxonomy Terms
+            Taxonomy Terms
           </h3>
-          <div className="max-h-72 overflow-y-auto border rounded-md p-3 bg-[color:var(--gsc-beige)]">
-            {Object.entries(grouped).map(([cat, list]) => (
-              <div key={cat} className="mb-3">
-                <h4 className="text-sm font-semibold text-[color:var(--gsc-gray)] mb-1">
-                  {cat}
-                </h4>
-                <div className="grid grid-cols-2 gap-x-3">
-                  {list.map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1 hover:bg-gray-50"
-                    >
+          <div className="max-h-80 overflow-y-auto border rounded-md p-3 bg-[color:var(--gsc-beige)]">
+            {Object.entries(grouped).map(([cat, list]) => {
+              const groupTerm = list.find((t) => cleanName(t.code) === cat.toLowerCase());
+              const groupId = groupTerm?.id;
+              return (
+                <div key={cat} className="mb-3">
+                  <div className="flex items-center mb-1">
+                    {groupId && (
                       <input
                         type="checkbox"
-                        checked={selected.includes(t.id)}
-                        onChange={() => toggle(t.id)}
-                        className="accent-[color:var(--gsc-blue)]"
+                        checked={selected.includes(groupId)}
+                        onChange={() => toggle(groupId)}
+                        className="mr-2 accent-[color:var(--gsc-blue)]"
                       />
-                      <span className="truncate">
-                        <span className="font-mono text-xs text-gray-600 mr-1">
-                          {t.code}
-                        </span>
-                        {t.name}
-                      </span>
-                    </label>
-                  ))}
+                    )}
+                    <h4 className="text-sm font-semibold text-[color:var(--gsc-gray)]">
+                      {cat}
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3">
+                    {list.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1 hover:bg-gray-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(t.id)}
+                          onChange={() => toggle(t.id)}
+                          className="accent-[color:var(--gsc-blue)]"
+                        />
+                        <span className="truncate">{cleanName(t.name)}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {terms.length === 0 && (
               <p className="text-xs text-gray-500 italic">
                 No taxonomy terms found.
@@ -182,6 +198,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           </div>
         </div>
 
+        {/* Footer */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
