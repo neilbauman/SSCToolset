@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Pencil, Trash2, Plus, Loader2, Search } from "lucide-react";
-import EditIndicatorModal from "@/components/configuration/EditIndicatorModal";
+import EditIndicatorModal from "@/components/configuration/indicators/EditIndicatorModal";
 import FrameworkLinkDisplay from "@/components/configuration/FrameworkLinkDisplay";
 
 type Indicator = {
