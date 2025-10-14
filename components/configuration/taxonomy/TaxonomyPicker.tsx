@@ -1,195 +1,86 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { ArrowDownAZ, ArrowUpAZ, ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 
-export type TaxonomyTerm = {
+type TaxonomyTerm = {
   id: string;
   category: string;
   code: string;
   name: string;
-  description?: string | null;
 };
 
 type Props = {
   selectedIds: string[];
   onChange: (ids: string[]) => void;
-  allowMultiple?: boolean;
-  showOrderControls?: boolean; // allow reordering of selected
-  hidePrefix?: boolean; // ✅ add this line
+  hidePrefix?: boolean;
 };
 
-export default function TaxonomyPicker({
-  selectedIds,
-  onChange,
-  allowMultiple = true,
-  showOrderControls = true,
-}: Props) {
+export default function TaxonomyPicker({ selectedIds, onChange, hidePrefix = true }: Props) {
   const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("taxonomy_terms")
-        .select("id, category, code, name, description")
-        .order("category", { ascending: true })
-        .order("code", { ascending: true });
-      if (!error) {
-        setTerms(data || []);
-        const cats: Record<string, boolean> = {};
-        (data || []).forEach((t) => { if (!(t.category in cats)) cats[t.category] = true; });
-        setOpenGroups(cats);
-      }
-    })();
+    loadTerms();
   }, []);
 
-  const grouped = useMemo(() => {
-    const list = q.trim()
-      ? terms.filter(t =>
-          t.name.toLowerCase().includes(q.toLowerCase()) ||
-          t.code.toLowerCase().includes(q.toLowerCase()) ||
-          (t.category || "").toLowerCase().includes(q.toLowerCase()))
-      : terms;
-    const map: Record<string, TaxonomyTerm[]> = {};
-    for (const t of list) {
-      map[t.category] = map[t.category] || [];
-      map[t.category].push(t);
-    }
-    return map;
-  }, [terms, q]);
+  async function loadTerms() {
+    setLoading(true);
+    const { data, error } = await supabase.from("taxonomy_terms").select("*").order("category, code");
+    if (error) console.error("Error loading taxonomy terms:", error);
+    else setTerms(data || []);
+    setLoading(false);
+  }
 
-  const toggle = (termId: string) => {
-    if (allowMultiple) {
-      if (selectedIds.includes(termId)) {
-        onChange(selectedIds.filter((id) => id !== termId));
-      } else {
-        onChange([...selectedIds, termId]);
-      }
-    } else {
-      onChange(selectedIds.includes(termId) ? [] : [termId]);
-    }
-  };
+  const grouped = terms.reduce((acc: Record<string, TaxonomyTerm[]>, term) => {
+    if (!acc[term.category]) acc[term.category] = [];
+    acc[term.category].push(term);
+    return acc;
+  }, {});
 
-  const move = (idx: number, dir: -1 | 1) => {
-    const next = [...selectedIds];
-    const swap = idx + dir;
-    if (swap < 0 || swap >= next.length) return;
-    [next[idx], next[swap]] = [next[swap], next[idx]];
-    onChange(next);
-  };
+  function toggle(id: string) {
+    const newIds = selectedIds.includes(id)
+      ? selectedIds.filter((x) => x !== id)
+      : [...selectedIds, id];
+    onChange(newIds);
+  }
 
-  const removeAt = (idx: number) => {
-    const next = [...selectedIds];
-    next.splice(idx, 1);
-    onChange(next);
-  };
-
-  const getDisplay = (id: string) => {
-    const t = terms.find((x) => x.id === id);
-    return t ? `${t.category}: ${t.code} — ${t.name}` : id;
-    };
+  if (loading) return <p className="text-sm text-gray-500 italic">Loading taxonomy terms...</p>;
 
   return (
-    <div className="border rounded-lg">
-      {/* Selected pills with ordering */}
-      <div className="p-3 border-b bg-[color:var(--gsc-beige)]">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-[color:var(--gsc-gray)]">Selected terms</span>
-          <div className="flex gap-2">
-            <ArrowUpAZ className="w-4 h-4 text-[color:var(--gsc-blue)]" />
-            <ArrowDownAZ className="w-4 h-4 text-[color:var(--gsc-blue)]" />
+    <div className="space-y-6 bg-[var(--gsc-beige)] p-3 rounded-md border border-[var(--gsc-light-gray)]">
+      {Object.entries(grouped).map(([category, items]) => {
+        const groupTerm = items.find((t) => t.code === category.toLowerCase());
+        const groupSelected = groupTerm && selectedIds.includes(groupTerm.id);
+        return (
+          <div key={category}>
+            <div className="font-semibold text-[var(--gsc-blue)] mb-1 flex items-center gap-2">
+              {groupTerm && (
+                <input
+                  type="checkbox"
+                  checked={groupSelected}
+                  onChange={() => toggle(groupTerm.id)}
+                />
+              )}
+              <span>{category}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 ml-2">
+              {items
+                .filter((t) => t.id !== groupTerm?.id)
+                .map((t) => (
+                  <label key={t.id} className="flex items-center gap-2 text-sm text-[var(--gsc-gray)]">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(t.id)}
+                      onChange={() => toggle(t.id)}
+                    />
+                    {hidePrefix ? t.name : `${t.code} ${t.name}`}
+                  </label>
+                ))}
+            </div>
           </div>
-        </div>
-
-        {selectedIds.length === 0 ? (
-          <p className="text-xs text-gray-500 italic">None selected.</p>
-        ) : (
-          <ul className="space-y-2">
-            {selectedIds.map((id, idx) => (
-              <li key={id} className="flex items-center justify-between bg-white border rounded-md px-2 py-1">
-                <div className="flex items-center gap-2">
-                  {showOrderControls && <GripVertical className="w-4 h-4 text-gray-400" />}
-                  <span className="text-sm">{getDisplay(id)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {showOrderControls && (
-                    <>
-                      <button className="p-1 hover:bg-gray-100 rounded" onClick={() => move(idx, -1)} title="Move up">
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <button className="p-1 hover:bg-gray-100 rounded" onClick={() => move(idx, 1)} title="Move down">
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                  <button className="p-1 hover:bg-gray-100 rounded" onClick={() => removeAt(idx)} title="Remove">
-                    <X className="w-4 h-4 text-[color:var(--gsc-red)]" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Search */}
-      <div className="p-3 border-b bg-white">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search terms by name, code, or category…"
-          className="w-full border rounded-md px-3 py-2 text-sm"
-        />
-      </div>
-
-      {/* Available terms grouped */}
-      <div className="p-3 max-h-64 overflow-auto bg-white">
-        {Object.entries(grouped).map(([category, list]) => (
-          <div key={category} className="mb-3">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-2 py-1 rounded hover:bg-gray-50"
-              onClick={() => setOpenGroups((g) => ({ ...g, [category]: !g[category] }))}
-            >
-              <span className="text-sm font-semibold text-[color:var(--gsc-blue)]">{category}</span>
-              {openGroups[category] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-            {openGroups[category] && (
-              <ul className="mt-1 space-y-1">
-                {list.map((t) => {
-                  const selected = selectedIds.includes(t.id);
-                  return (
-                    <li key={t.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggle(t.id)}
-                        className={`w-full text-left flex items-center justify-between px-2 py-1 rounded border ${
-                          selected ? "bg-[color:var(--gsc-beige)] border-[color:var(--gsc-blue)]" : "hover:bg-gray-50"
-                        }`}
-                      >
-                        <span className="text-sm">
-                          <span className="font-mono mr-1">{t.code}</span>
-                          {t.name}
-                        </span>
-                        <span className={`ml-2 text-xs inline-flex items-center gap-1 ${selected ? "text-[color:var(--gsc-green)]" : "text-gray-500"}`}>
-                          {selected ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                          {selected ? "Selected" : "Add"}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        ))}
-        {Object.keys(grouped).length === 0 && (
-          <p className="text-xs text-gray-500 italic">No terms found.</p>
-        )}
-      </div>
+        );
+      })}
     </div>
   );
 }
