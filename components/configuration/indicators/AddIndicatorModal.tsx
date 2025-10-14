@@ -82,7 +82,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
         term_id,
       }));
       const { error: linkErr } = await supabase
-        .from("indicator_taxonomy")
+        .from("indicator_taxonomy_links")
         .insert(links);
       if (linkErr) console.error("Link error:", linkErr);
     }
