@@ -5,36 +5,18 @@ import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, Trash2, Plus } from "lucide-react";
 
-type Indicator = {
-  id: string;
-  code: string;
-  name: string;
-  topic?: string;
-};
-
-type LinkRow = {
-  id: string;
-  indicator_id: string;
-  indicator_catalogue?: Indicator;
-};
+type Indicator = { id: string; code: string; name: string; topic?: string };
+type LinkRow = { id: string; indicator_id: string; indicator_catalogue?: Indicator };
+type EntityRef = { id: string; type: "pillar" | "theme" | "subtheme"; name: string };
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  pillarId?: string;
-  themeId?: string;
-  subthemeId?: string;
+  entity: EntityRef;
 };
 
-export default function IndicatorLinkModal({
-  open,
-  onClose,
-  onSaved,
-  pillarId,
-  themeId,
-  subthemeId,
-}: Props) {
+export default function IndicatorLinkModal({ open, onClose, onSaved, entity }: Props) {
   const [loading, setLoading] = useState(true);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
@@ -42,16 +24,18 @@ export default function IndicatorLinkModal({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) loadAll();
-  }, [open]);
+    if (open && entity?.id) loadAll();
+  }, [open, entity?.id]);
 
   async function loadAll() {
     setLoading(true);
+    const filterCol =
+      entity.type === "pillar" ? "pillar_id" : entity.type === "theme" ? "theme_id" : "subtheme_id";
 
     const { data: lData, error: lErr } = await supabase
       .from("framework_indicator_links")
       .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
-      .eq(pillarId ? "pillar_id" : themeId ? "theme_id" : "subtheme_id", pillarId || themeId || subthemeId);
+      .eq(filterCol, entity.id);
 
     const { data: iData, error: iErr } = await supabase
       .from("indicator_catalogue")
@@ -60,7 +44,6 @@ export default function IndicatorLinkModal({
 
     if (lErr || iErr) console.error(lErr || iErr);
 
-    // normalize nested Supabase response
     const safeLinks: LinkRow[] = (lData || []).map((l: any) => ({
       id: l.id,
       indicator_id: l.indicator_id,
@@ -80,9 +63,9 @@ export default function IndicatorLinkModal({
     setSaving(true);
     const payload: any = {
       indicator_id: selected,
-      pillar_id: pillarId || null,
-      theme_id: themeId || null,
-      subtheme_id: subthemeId || null,
+      pillar_id: entity.type === "pillar" ? entity.id : null,
+      theme_id: entity.type === "theme" ? entity.id : null,
+      subtheme_id: entity.type === "subtheme" ? entity.id : null,
     };
     const { error } = await supabase.from("framework_indicator_links").insert(payload);
     setSaving(false);
@@ -108,7 +91,12 @@ export default function IndicatorLinkModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Linked Indicators" width="max-w-2xl">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Linked Indicators • ${entity.name}`}
+      width="max-w-2xl"
+    >
       {loading ? (
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading...
@@ -153,7 +141,9 @@ export default function IndicatorLinkModal({
                       {l.indicator_catalogue?.code} — {l.indicator_catalogue?.name}
                     </div>
                     {l.indicator_catalogue?.topic && (
-                      <div className="text-xs text-gray-500">{l.indicator_catalogue.topic}</div>
+                      <div className="text-xs text-gray-500">
+                        {l.indicator_catalogue.topic}
+                      </div>
                     )}
                   </div>
                   <button
