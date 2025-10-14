@@ -30,32 +30,32 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("indicator_catalogue")
         .select("id, code, name, type, unit, topic")
         .eq("id", indicatorId)
         .single();
-      if (!error && data) setModel(data as Indicator);
+      if (data) setModel(data as Indicator);
 
       const { data: links } = await supabase
         .from("indicator_taxonomy_links")
         .select("term_id, sort_order")
         .eq("indicator_id", indicatorId)
         .order("sort_order", { ascending: true });
-      setTaxonomyIds((links || []).sort((a,b)=> (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l: any) => l.term_id));
+      setTaxonomyIds((links || []).map((l: any) => l.term_id));
     })();
   }, [open, indicatorId]);
 
-  const updateField = (k: keyof Indicator, v: any) => {
+  const updateField = (key: keyof Indicator, value: any) => {
     if (!model) return;
-    setModel({ ...model, [k]: v });
+    setModel({ ...model, [key]: value });
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true);
 
-    const { error } = await supabase
+    await supabase
       .from("indicator_catalogue")
       .update({
         code: model.code,
@@ -65,22 +65,8 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
         topic: model.topic,
       })
       .eq("id", model.id);
-    if (error) {
-      setSaving(false);
-      alert("Failed to update indicator.");
-      return;
-    }
 
-    // replace taxonomy links with the ordered set
-    const { error: delErr } = await supabase
-      .from("indicator_taxonomy_links")
-      .delete()
-      .eq("indicator_id", model.id);
-    if (delErr) {
-      setSaving(false);
-      alert("Updated indicator, but failed to reset taxonomy links.");
-      return;
-    }
+    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", model.id);
 
     if (taxonomyIds.length > 0) {
       const rows = taxonomyIds.map((termId, idx) => ({
@@ -88,12 +74,7 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
         term_id: termId,
         sort_order: idx + 1,
       }));
-      const { error: insErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
-      if (insErr) {
-        setSaving(false);
-        alert("Updated indicator, but failed to save taxonomy links.");
-        return;
-      }
+      await supabase.from("indicator_taxonomy_links").insert(rows);
     }
 
     await onSaved();
@@ -102,26 +83,9 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Edit Indicator"
-      size="lg"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button className="px-3 py-2 text-sm rounded-md border" onClick={onClose}>Cancel</button>
-          <button
-            className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
-            onClick={save}
-            disabled={saving}
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save changes
-          </button>
-        </div>
-      }
-    >
+    <Modal open={open} onClose={onClose} title="Edit Indicator" width="max-w-3xl">
       {!model ? (
-        <div className="text-sm text-gray-500 flex items-center gap-2">
+        <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : (
@@ -129,37 +93,77 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Code</label>
-              <input value={model.code} onChange={(e) => updateField("code", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+              <input
+                value={model.code}
+                onChange={(e) => updateField("code", e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
-              <select value={model.type} onChange={(e) => updateField("type", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm">
+              <select
+                value={model.type}
+                onChange={(e) => updateField("type", e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              >
                 <option value="gradient">gradient</option>
                 <option value="categorical">categorical</option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Unit</label>
-              <input value={model.unit} onChange={(e) => updateField("unit", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+              <input
+                value={model.unit}
+                onChange={(e) => updateField("unit", e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input value={model.name} onChange={(e) => updateField("name", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Topic</label>
-            <input value={model.topic} onChange={(e) => updateField("topic", e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Taxonomy terms (ordered)</label>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <input
+              value={model.name}
+              onChange={(e) => updateField("name", e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Topic</label>
+            <input
+              value={model.topic}
+              onChange={(e) => updateField("topic", e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Taxonomy terms (ordered)
+            </label>
             <TaxonomyPicker
               selectedIds={taxonomyIds}
               onChange={setTaxonomyIds}
               allowMultiple
               showOrderControls
             />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <button
+              onClick={onClose}
+              className="px-3 py-2 text-sm rounded-md border"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save changes
+            </button>
           </div>
         </div>
       )}
