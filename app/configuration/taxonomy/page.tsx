@@ -7,6 +7,7 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddTaxonomyTermModal from "@/components/configuration/taxonomy/AddTaxonomyTermModal";
 import EditTaxonomyTermModal from "@/components/configuration/taxonomy/EditTaxonomyTermModal";
 import AddCategoryModal from "@/components/configuration/taxonomy/AddCategoryModal";
+import EditCategoryModal from "@/components/configuration/taxonomy/EditCategoryModal";
 import {
   Plus,
   Edit2,
@@ -41,6 +42,7 @@ export default function TaxonomyPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState<Term | null>(null);
   const [openAddCategory, setOpenAddCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
 
   const headerProps = {
     title: "Taxonomy Manager",
@@ -315,6 +317,40 @@ export default function TaxonomyPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+  <button
+    onClick={() => setEditingCategory(cat.name)}
+    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+    title="Edit category"
+  >
+    <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+  </button>
+  <button
+    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+    disabled={catIdx === 0}
+    onClick={() => moveCategory(cat.name, "up")}
+    title="Move category up"
+  >
+    <ArrowUp
+      className={`w-4 h-4 ${
+        catIdx === 0 ? "text-gray-300" : "text-gray-600"
+      }`}
+    />
+  </button>
+  <button
+    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
+    disabled={catIdx === categories.length - 1}
+    onClick={() => moveCategory(cat.name, "down")}
+    title="Move category down"
+  >
+    <ArrowDown
+      className={`w-4 h-4 ${
+        catIdx === categories.length - 1
+          ? "text-gray-300"
+          : "text-gray-600"
+      }`}
+    />
+  </button>
+</div>
                         <button
                           className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
                           disabled={idx === 0}
@@ -407,6 +443,14 @@ export default function TaxonomyPage() {
     open={openAddCategory}
     onClose={() => setOpenAddCategory(false)}
     onSaved={loadTerms}
+  />
+)}
+      {editingCategory && (
+  <EditCategoryModal
+    open={!!editingCategory}
+    onClose={() => setEditingCategory(null)}
+    onSaved={loadTerms}
+    categoryName={editingCategory}
   />
 )}
     </SidebarLayout>
