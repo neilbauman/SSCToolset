@@ -37,19 +37,19 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data: indicator } = await supabase
+      const { data: ind } = await supabase
         .from("indicator_catalogue")
         .select("id, code, name, type, unit, topic")
         .eq("id", indicatorId)
         .single();
-      if (indicator) setModel(indicator);
+      if (ind) setModel(ind);
 
-      const { data: taxonomy } = await supabase
+      const { data: termData } = await supabase
         .from("taxonomy_terms")
         .select("id, category, code, name")
         .order("category", { ascending: true })
         .order("code", { ascending: true });
-      if (taxonomy) setTerms(taxonomy);
+      if (termData) setTerms(termData);
 
       const { data: links } = await supabase
         .from("indicator_taxonomy_links")
@@ -65,7 +65,7 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
     );
   };
 
-  const update = async () => {
+  const save = async () => {
     if (!model) return;
     setSaving(true);
 
@@ -101,6 +101,9 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
     acc[t.category].push(t);
     return acc;
   }, {});
+
+  const cleanName = (s: string) =>
+    s.replace(/^.*?:/, "").replace(/\s+/g, " ").trim();
 
   if (!model)
     return (
@@ -169,38 +172,48 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
           <h3 className="text-sm font-medium text-[color:var(--gsc-blue)] mb-2">
             Taxonomy Terms
           </h3>
-          <div className="max-h-72 overflow-y-auto border rounded-md p-3 bg-[color:var(--gsc-beige)]">
-            {Object.entries(grouped).map(([cat, list]) => (
-              <div key={cat} className="mb-3">
-                <h4 className="text-sm font-semibold text-[color:var(--gsc-gray)] mb-1">
-                  {cat}
-                </h4>
-                <div className="grid grid-cols-2 gap-x-3">
-                  {list.map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1 hover:bg-gray-50"
-                    >
+          <div className="max-h-80 overflow-y-auto border rounded-md p-3 bg-[color:var(--gsc-beige)]">
+            {Object.entries(grouped).map(([cat, list]) => {
+              const groupTerm = list.find((t) => cleanName(t.code) === cat.toLowerCase());
+              const groupId = groupTerm?.id;
+              return (
+                <div key={cat} className="mb-3">
+                  <div className="flex items-center mb-1">
+                    {groupId && (
                       <input
                         type="checkbox"
-                        checked={selected.includes(t.id)}
-                        onChange={() => toggle(t.id)}
-                        className="accent-[color:var(--gsc-blue)]"
+                        checked={selected.includes(groupId)}
+                        onChange={() => toggle(groupId)}
+                        className="mr-2 accent-[color:var(--gsc-blue)]"
                       />
-                      <span className="truncate">
-                        <span className="font-mono text-xs text-gray-600 mr-1">
-                          {t.code}
-                        </span>
-                        {t.name}
-                      </span>
-                    </label>
-                  ))}
+                    )}
+                    <h4 className="text-sm font-semibold text-[color:var(--gsc-gray)]">
+                      {cat}
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3">
+                    {list.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1 hover:bg-gray-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(t.id)}
+                          onChange={() => toggle(t.id)}
+                          className="accent-[color:var(--gsc-blue)]"
+                        />
+                        <span className="truncate">{cleanName(t.name)}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
+        {/* Footer */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
@@ -209,7 +222,7 @@ export default function EditIndicatorModal({ open, indicatorId, onClose, onSaved
             Cancel
           </button>
           <button
-            onClick={update}
+            onClick={save}
             disabled={saving}
             className="px-3 py-2 text-sm rounded-md bg-[color:var(--gsc-blue)] text-white hover:opacity-90 flex items-center gap-2"
           >
