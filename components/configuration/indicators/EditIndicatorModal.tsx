@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Modal from "@/components/ui/modal";
+import Modal from "@/components/ui/Modal";
 import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
