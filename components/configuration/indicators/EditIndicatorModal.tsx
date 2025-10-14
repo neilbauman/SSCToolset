@@ -48,7 +48,7 @@ export default function EditIndicatorModal({
     if (!error && data) {
       setIndicator(data);
       const { data: links } = await supabase
-        .from("indicator_taxonomy")
+        .from("indicator_taxonomy_links")
         .select("term_id")
         .eq("indicator_id", indicatorId);
       setSelectedIds((links || []).map((l) => l.term_id));
@@ -100,14 +100,14 @@ export default function EditIndicatorModal({
       return;
     }
 
-    await supabase.from("indicator_taxonomy").delete().eq("indicator_id", indicator.id);
+    await supabase.from("indicator_taxonomy_links").delete().eq("indicator_id", indicator.id);
 
     if (selectedIds.length > 0) {
       const links = selectedIds.map((term_id) => ({
         indicator_id: indicator.id,
         term_id,
       }));
-      await supabase.from("indicator_taxonomy").insert(links);
+      await supabase.from("indicator_taxonomy_links").insert(links);
     }
 
     setSaving(false);
