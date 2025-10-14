@@ -195,8 +195,8 @@ export default function IndicatorsPage() {
                   <td className="px-3 py-2">{ind.type}</td>
                   <td className="px-3 py-2">{ind.unit}</td>
                   <td className="px-3 py-2">{ind.topic}</td>
-                  <td className="px-3 py-2 text-gray-700">
-                    {ind.taxonomy_names || <span className="text-xs text-gray-400">—</span>}
+                  <td className="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">
+                    {ind.taxonomy_names || "—"}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
