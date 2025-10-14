@@ -46,7 +46,9 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
 
   async function save() {
     setSaving(true);
-    const { error } = await supabase
+
+    // Update main indicator fields
+    const { error: updateError } = await supabase
       .from("indicator_catalogue")
       .update({
         code: indicator.code,
@@ -57,27 +59,51 @@ export default function EditIndicatorModal({ open, onClose, onSaved, indicatorId
       })
       .eq("id", indicatorId);
 
-    if (error) {
+    if (updateError) {
       alert("Failed to update indicator.");
-      console.error(error);
+      console.error(updateError);
       setSaving(false);
       return;
     }
 
-    await supabase.from("indicator_taxonomy").delete().eq("indicator_id", indicatorId);
-    if (selectedTaxonomyIds.length > 0) {
-      const links = selectedTaxonomyIds.map((tid) => ({
+    // Fetch current taxonomy links
+    const { data: existingLinks, error: fetchError } = await supabase
+      .from("indicator_taxonomy")
+      .select("taxonomy_id")
+      .eq("indicator_id", indicatorId);
+
+    if (fetchError) {
+      console.error("Failed to load current taxonomy links:", fetchError);
+    }
+
+    const existingIds = existingLinks?.map((l) => l.taxonomy_id) || [];
+    const toRemove = existingIds.filter((id) => !selectedTaxonomyIds.includes(id));
+    const toAdd = selectedTaxonomyIds.filter((id) => !existingIds.includes(id));
+
+    // Remove deselected
+    if (toRemove.length > 0) {
+      const { error: delError } = await supabase
+        .from("indicator_taxonomy")
+        .delete()
+        .eq("indicator_id", indicatorId)
+        .in("taxonomy_id", toRemove);
+      if (delError) console.error("Failed to delete taxonomy links:", delError);
+    }
+
+    // Add new ones
+    if (toAdd.length > 0) {
+      const inserts = toAdd.map((tid) => ({
         indicator_id: indicatorId,
         taxonomy_id: tid,
       }));
-      await supabase.from("indicator_taxonomy").insert(links);
+      const { error: insError } = await supabase.from("indicator_taxonomy").insert(inserts);
+      if (insError) console.error("Failed to insert taxonomy links:", insError);
     }
 
     setSaving(false);
     onSaved();
     onClose();
   }
-
   if (!indicator) return null;
 
   return (
