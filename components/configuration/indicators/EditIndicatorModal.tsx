@@ -7,7 +7,7 @@ import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 
 interface EditIndicatorModalProps {
   open: boolean;
-  indicatorId: string | null;
+  indicatorId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }
