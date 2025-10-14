@@ -216,7 +216,20 @@ export default function IndicatorsPage() {
           style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
           onClick={() => setFilterOpen(!filterOpen)}
         >
-          <h3 className="font-semibold text-sm">Filter by Taxonomy</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-sm">Filter by Taxonomy</h3>
+            {appliedTerms.length > 0 && (
+              <span
+                className="text-xs px-2 py-[2px] rounded-full"
+                style={{
+                  background: "var(--gsc-blue)",
+                  color: "white",
+                }}
+              >
+                {appliedTerms.length} active
+              </span>
+            )}
+          </div>
           {filterOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
 
