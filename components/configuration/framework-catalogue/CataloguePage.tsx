@@ -164,7 +164,10 @@ export default function CataloguePage() {
     if (created) await loadTree();
   }
   async function handleUpdatePillar(id: string, patch: Partial<Pillar>) {
-    await updatePillar(id, patch);
+    await updatePillar(id, {
++   ...patch,
++   description: patch.description ?? undefined,
++ });
     await loadTree();
   }
   async function handleDeletePillar(p: Pillar) {
