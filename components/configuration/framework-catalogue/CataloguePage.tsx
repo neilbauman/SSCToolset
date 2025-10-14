@@ -1,367 +1,336 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  Plus,
-  Edit2,
-  Trash2,
-  ArrowUp,
-  ArrowDown,
-  Loader2,
-  RefreshCcw,
-} from "lucide-react";
+import { Plus, Edit2, Trash2, RefreshCcw, ChevronDown, ChevronRight } from "lucide-react";
 import AddPillarModal from "./AddPillarModal";
-import EditPillarModal from "./EditPillarModal";
 import AddThemeModal from "./AddThemeModal";
-import EditThemeModal from "./EditThemeModal";
 import AddSubthemeModal from "./AddSubthemeModal";
+import EditPillarModal from "./EditPillarModal";
+import EditThemeModal from "./EditThemeModal";
 import EditSubthemeModal from "./EditSubthemeModal";
 
-/* ---------- Types ---------- */
 export type Pillar = {
   id: string;
-  code: string;
   name: string;
   description: string | null;
-  sort_order: number | null;
-  themes?: Theme[];
+  can_have_indicators: boolean | null;
 };
+
 export type Theme = {
   id: string;
-  pillar_id: string;
-  code: string;
+  pillar_id: string | null;
   name: string;
   description: string | null;
+  can_have_indicators: boolean | null;
   sort_order: number | null;
-  subthemes?: Subtheme[];
 };
+
 export type Subtheme = {
   id: string;
-  theme_id: string;
-  code: string;
+  theme_id: string | null;
   name: string;
   description: string | null;
+  can_have_indicators: boolean | null;
   sort_order: number | null;
 };
 
-/* ---------- Component ---------- */
-export default function CataloguePage() {
-  const [pillars, setPillars] = useState<Pillar[]>([]);
-  const [expandedPillars, setExpandedPillars] = useState<Record<string, boolean>>({});
-  const [expandedThemes, setExpandedThemes] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+type Tree = Array<
+  Pillar & {
+    themes: Array<
+      Theme & {
+        subthemes: Subtheme[];
+      }
+    >;
+  }
+>;
 
-  // Modals
-  const [showAddPillar, setShowAddPillar] = useState(false);
+export default function CataloguePage() {
+  const [tree, setTree] = useState<Tree>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Modals state
+  const [openAddPillar, setOpenAddPillar] = useState(false);
+  const [addThemeFor, setAddThemeFor] = useState<Pillar | null>(null);
+  const [addSubthemeFor, setAddSubthemeFor] = useState<Theme | null>(null);
+
   const [editPillar, setEditPillar] = useState<Pillar | null>(null);
-  const [addThemeParent, setAddThemeParent] = useState<Pillar | null>(null);
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
-  const [addSubthemeParent, setAddSubthemeParent] = useState<Theme | null>(null);
   const [editSubtheme, setEditSubtheme] = useState<Subtheme | null>(null);
 
-  /* ---------- Load full hierarchy ---------- */
   useEffect(() => {
-    loadTree();
+    loadAll();
   }, []);
 
-  async function loadTree() {
-    setLoading(true);
+  async function loadAll() {
+    // Load pillars, themes, subthemes in parallel and assemble
+    const [pillarsRes, themesRes, subsRes] = await Promise.all([
+      supabase.from("pillar_catalogue").select("id,name,description,can_have_indicators").order("name", { ascending: true }),
+      supabase.from("theme_catalogue").select("id,pillar_id,name,description,can_have_indicators,sort_order").order("sort_order", { ascending: true, nullsFirst: true }).order("name", { ascending: true }),
+      supabase.from("subtheme_catalogue").select("id,theme_id,name,description,can_have_indicators,sort_order").order("sort_order", { ascending: true, nullsFirst: true }).order("name", { ascending: true }),
+    ]);
 
-    const { data: pillarsData, error: pillarErr } = await supabase
-      .from("pillar_catalogue")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    if (pillarErr) {
-      console.error("Error loading pillars:", pillarErr);
-      setPillars([]);
-      setLoading(false);
+    if (pillarsRes.error || themesRes.error || subsRes.error) {
+      console.error("Load error", pillarsRes.error || themesRes.error || subsRes.error);
+      setTree([]);
       return;
     }
 
-    const { data: themesData, error: themeErr } = await supabase
-      .from("theme_catalogue")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    const { data: subthemesData, error: subErr } = await supabase
-      .from("subtheme_catalogue")
-      .select("*")
-      .order("sort_order", { ascending: true });
+    const pillars = (pillarsRes.data || []) as Pillar[];
+    const themes = (themesRes.data || []) as Theme[];
+    const subs = (subsRes.data || []) as Subtheme[];
 
-    if (themeErr || subErr) {
-      console.error("Error loading themes/subthemes:", themeErr || subErr);
-      setPillars(pillarsData || []);
-      setLoading(false);
-      return;
+    const themesByPillar = new Map<string, Theme[]>();
+    for (const t of themes) {
+      const key = t.pillar_id ?? "__none__";
+      if (!themesByPillar.has(key)) themesByPillar.set(key, []);
+      themesByPillar.get(key)!.push(t);
     }
 
-    // Nest hierarchy
-    const subMap = (subthemesData || []).reduce<Record<string, Subtheme[]>>((acc, s) => {
-      if (!acc[s.theme_id]) acc[s.theme_id] = [];
-      acc[s.theme_id].push(s);
-      return acc;
-    }, {});
+    const subsByTheme = new Map<string, Subtheme[]>();
+    for (const s of subs) {
+      const key = s.theme_id ?? "__none__";
+      if (!subsByTheme.has(key)) subsByTheme.set(key, []);
+      subsByTheme.get(key)!.push(s);
+    }
 
-    const themeMap = (themesData || []).reduce<Record<string, Theme[]>>((acc, t) => {
-      if (!acc[t.pillar_id]) acc[t.pillar_id] = [];
-      acc[t.pillar_id].push({ ...t, subthemes: subMap[t.id] || [] });
-      return acc;
-    }, {});
-
-    const tree = (pillarsData || []).map((p) => ({
+    const assembled: Tree = pillars.map((p) => ({
       ...p,
-      themes: themeMap[p.id] || [],
+      themes: (themesByPillar.get(p.id) || []).map((t) => ({
+        ...t,
+        subthemes: subsByTheme.get(t.id) || [],
+      })),
     }));
 
-    setPillars(tree);
-    setExpandedPillars({});
-    setExpandedThemes({});
-    setLoading(false);
+    setTree(assembled);
   }
 
-  /* ---------- Helpers ---------- */
-  const toggle = (id: string, fn: any) => fn((p: any) => ({ ...p, [id]: !p[id] }));
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
-  const confirmDelete = async (msg: string, table: string, id: string) => {
-    if (!confirm(msg)) return;
-    const { error } = await supabase.from(table).delete().eq("id", id);
+  /** Deletes respect DB cascade (Theme->Subtheme; Pillar->Theme->Subtheme) */
+  async function deletePillar(p: Pillar) {
+    if (!confirm(`Delete pillar "${p.name}"?\n\nThis also deletes its themes and subthemes.`)) return;
+    const { error } = await supabase.from("pillar_catalogue").delete().eq("id", p.id);
     if (error) {
-      console.error("Delete failed:", error);
-      alert("Failed to delete: " + error.message);
-    } else {
-      await loadTree();
+      console.error(error);
+      alert("Delete failed.");
+      return;
     }
-  };
+    await loadAll();
+  }
 
-  const hasData = useMemo(() => (pillars || []).length > 0, [pillars]);
+  async function deleteTheme(t: Theme) {
+    if (!confirm(`Delete theme "${t.name}" and its subthemes?`)) return;
+    const { error } = await supabase.from("theme_catalogue").delete().eq("id", t.id);
+    if (error) {
+      console.error(error);
+      alert("Delete failed.");
+      return;
+    }
+    await loadAll();
+  }
 
-  /* ---------- UI ---------- */
+  async function deleteSubtheme(s: Subtheme) {
+    if (!confirm(`Delete subtheme "${s.name}"?`)) return;
+    const { error } = await supabase.from("subtheme_catalogue").delete().eq("id", s.id);
+    if (error) {
+      console.error(error);
+      alert("Delete failed.");
+      return;
+    }
+    await loadAll();
+  }
+
+  const hasData = useMemo(() => tree.length > 0, [tree]);
+
   return (
     <div>
-      <div className="flex justify-between mb-3">
-        <h2 className="text-lg font-semibold text-[var(--gsc-blue)]">
+      {/* Toolbar */}
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
           Framework Catalogue
         </h2>
-        <div className="flex gap-2">
-          <button
-            onClick={loadTree}
-            className="px-3 py-2 text-sm border rounded-md flex items-center gap-1"
-          >
-            <RefreshCcw className="w-4 h-4" /> Reload
+        <div className="flex items-center gap-2">
+          <button onClick={loadAll} className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border" title="Reload">
+            <RefreshCcw className="w-4 h-4" />
+            Reload
           </button>
           <button
-            onClick={() => setShowAddPillar(true)}
-            className="px-3 py-2 text-sm rounded-md flex items-center gap-1 text-white"
-            style={{ background: "var(--gsc-blue)" }}
+            onClick={() => setOpenAddPillar(true)}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
+            style={{ background: "var(--gsc-blue)", color: "white" }}
           >
-            <Plus className="w-4 h-4" /> Add Pillar
+            <Plus className="w-4 h-4" />
+            Add Pillar
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 bg-[var(--gsc-beige)] border text-sm font-medium text-[var(--gsc-gray)]">
-        <div className="col-span-3 p-2">Type / Code</div>
-        <div className="col-span-7 p-2">Name / Description</div>
-        <div className="col-span-2 p-2 text-right">Actions</div>
+      {/* Header */}
+      <div className="grid grid-cols-12 bg-[var(--gsc-beige)] border text-sm text-[var(--gsc-gray)] rounded-t-md">
+        <div className="col-span-4 px-3 py-2 font-medium">Type / Code</div>
+        <div className="col-span-6 px-3 py-2 font-medium">Name / Description</div>
+        <div className="col-span-2 px-3 py-2 font-medium text-right">Actions</div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-gray-500 text-sm mt-3">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading catalogue…
-        </div>
-      ) : !hasData ? (
-        <p className="text-sm text-gray-500 italic mt-3">No pillars yet.</p>
-      ) : (
-        <div className="divide-y">
-          {pillars.map((p) => (
-            <div key={p.id}>
-              {/* ---- PILLAR ---- */}
-              <div className="grid grid-cols-12 text-sm">
-                <div className="col-span-3 flex items-center gap-2 p-2">
-                  <button onClick={() => toggle(p.id, setExpandedPillars)}>
-                    {expandedPillars[p.id] ? (
-                      <ArrowDown className="w-4 h-4" />
-                    ) : (
-                      <ArrowUp className="w-4 h-4 rotate-180" />
-                    )}
-                  </button>
-                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
-                    pillar
-                  </span>
-                  <span className="text-xs text-gray-500">{p.code}</span>
-                </div>
-                <div className="col-span-7 p-2">
-                  <div className="font-medium">{p.name}</div>
-                  {p.description && (
-                    <div className="text-xs text-gray-500">{p.description}</div>
-                  )}
-                </div>
-                <div className="col-span-2 p-2 flex justify-end gap-1">
-                  <button
-                    onClick={() =>
-                      confirmDelete(
-                        `Delete pillar "${p.name}"? This will also delete its themes and subthemes.`,
-                        "pillar_catalogue",
-                        p.id
-                      )
-                    }
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4 text-[var(--gsc-red)]" />
-                  </button>
-                  <button onClick={() => setEditPillar(p)} title="Edit">
-                    <Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" />
-                  </button>
-                  <button onClick={() => setAddThemeParent(p)} title="Add Theme">
-                    <Plus className="w-4 h-4 text-gray-700" />
-                  </button>
-                </div>
-              </div>
-
-              {/* ---- THEMES ---- */}
-              {expandedPillars[p.id] &&
-                (p.themes || []).map((t) => (
-                  <div
-                    key={t.id}
-                    className="grid grid-cols-12 text-sm border-t"
-                    style={{ paddingLeft: 24 }}
-                  >
-                    <div className="col-span-3 flex items-center gap-2 p-2">
-                      <button onClick={() => toggle(t.id, setExpandedThemes)}>
-                        {expandedThemes[t.id] ? (
-                          <ArrowDown className="w-4 h-4" />
-                        ) : (
-                          <ArrowUp className="w-4 h-4 rotate-180" />
-                        )}
+      {/* Body */}
+      <div className="border border-t-0 rounded-b-md bg-white">
+        {!hasData ? (
+          <p className="text-sm text-gray-500 italic px-3 py-3">No pillars yet.</p>
+        ) : (
+          <div className="divide-y">
+            {tree.map((p) => {
+              const pOpen = expanded.has(p.id);
+              return (
+                <div key={p.id} className="text-sm">
+                  {/* Pillar row */}
+                  <div className="grid grid-cols-12 items-center px-3 py-2 hover:bg-[var(--gsc-beige)]/40">
+                    <div className="col-span-4 flex items-center gap-2">
+                      <button onClick={() => toggleExpand(p.id)} className="text-gray-500">
+                        {pOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </button>
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                        theme
+                      <span className="px-2 py-[2px] rounded text-xs font-medium" style={{ background: "#e6eef6", color: "var(--gsc-blue)" }}>
+                        pillar
                       </span>
-                      <span className="text-xs text-gray-500">{t.code}</span>
                     </div>
-                    <div className="col-span-7 p-2">
-                      <div className="font-medium">{t.name}</div>
-                      {t.description && (
-                        <div className="text-xs text-gray-500">{t.description}</div>
-                      )}
+                    <div className="col-span-6">
+                      <div className="font-medium text-gray-800">{p.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {p.description || <span className="italic text-gray-400">—</span>}{" "}
+                        {p.can_have_indicators ? (
+                          <span className="ml-2 text-[10px] px-2 py-[1px] rounded-full" style={{ background: "#ecfdf5", color: "var(--gsc-green)", border: "1px solid #d1fae5" }}>
+                            can hold indicators
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="col-span-2 p-2 flex justify-end gap-1">
-                      <button
-                        onClick={() =>
-                          confirmDelete(
-                            `Delete theme "${t.name}" and its subthemes?`,
-                            "theme_catalogue",
-                            t.id
-                          )
-                        }
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4 text-[var(--gsc-red)]" />
-                      </button>
-                      <button onClick={() => setEditTheme(t)} title="Edit">
-                        <Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" />
-                      </button>
-                      <button
-                        onClick={() => setAddSubthemeParent(t)}
-                        title="Add Subtheme"
-                      >
-                        <Plus className="w-4 h-4 text-gray-700" />
-                      </button>
+                    <div className="col-span-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => setEditPillar(p)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Edit pillar">
+                          <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                        </button>
+                        <button onClick={() => deletePillar(p)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Delete pillar">
+                          <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                        </button>
+                        <button onClick={() => setAddThemeFor(p)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Add theme">
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-
-                    {/* ---- SUBTHEMES ---- */}
-                    {expandedThemes[t.id] &&
-                      (t.subthemes || []).map((s) => (
-                        <div
-                          key={s.id}
-                          className="col-span-12 grid grid-cols-12 text-sm border-t"
-                          style={{ paddingLeft: 48 }}
-                        >
-                          <div className="col-span-3 flex items-center gap-2 p-2">
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                              subtheme
-                            </span>
-                            <span className="text-xs text-gray-500">{s.code}</span>
-                          </div>
-                          <div className="col-span-7 p-2">
-                            <div className="font-medium">{s.name}</div>
-                            {s.description && (
-                              <div className="text-xs text-gray-500">
-                                {s.description}
-                              </div>
-                            )}
-                          </div>
-                          <div className="col-span-2 p-2 flex justify-end gap-1">
-                            <button
-                              onClick={() =>
-                                confirmDelete(
-                                  `Delete subtheme "${s.name}"?`,
-                                  "subtheme_catalogue",
-                                  s.id
-                                )
-                              }
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4 text-[var(--gsc-red)]" />
-                            </button>
-                            <button
-                              onClick={() => setEditSubtheme(s)}
-                              title="Edit"
-                            >
-                              <Edit2 className="w-4 h-4 text-[var(--gsc-blue)]" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
                   </div>
-                ))}
-            </div>
-          ))}
-        </div>
+
+                  {/* Themes */}
+                  {pOpen &&
+                    p.themes.map((t) => {
+                      const tOpen = expanded.has(t.id);
+                      return (
+                        <div key={t.id} className="pl-8 border-t">
+                          <div className="grid grid-cols-12 items-center px-3 py-2 hover:bg-[var(--gsc-beige)]/40">
+                            <div className="col-span-4 flex items-center gap-2">
+                              <button onClick={() => toggleExpand(t.id)} className="text-gray-500">
+                                {tOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                              </button>
+                              <span className="px-2 py-[2px] rounded text-xs font-medium" style={{ background: "#eaf7ee", color: "var(--gsc-green)" }}>
+                                theme
+                              </span>
+                              <span className="text-[11px] text-gray-500 ml-2">order: {t.sort_order ?? "—"}</span>
+                            </div>
+                            <div className="col-span-6">
+                              <div className="font-medium text-gray-800">{t.name}</div>
+                              <div className="text-xs text-gray-500">
+                                {t.description || <span className="italic text-gray-400">—</span>}{" "}
+                                {t.can_have_indicators ? (
+                                  <span className="ml-2 text-[10px] px-2 py-[1px] rounded-full" style={{ background: "#ecfdf5", color: "var(--gsc-green)", border: "1px solid #d1fae5" }}>
+                                    can hold indicators
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => setEditTheme(t)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Edit theme">
+                                  <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                                </button>
+                                <button onClick={() => deleteTheme(t)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Delete theme">
+                                  <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                                </button>
+                                <button onClick={() => setAddSubthemeFor(t)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Add subtheme">
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Subthemes */}
+                          {tOpen &&
+                            t.subthemes.map((s) => (
+                              <div key={s.id} className="pl-8 border-t">
+                                <div className="grid grid-cols-12 items-center px-3 py-2 hover:bg-[var(--gsc-beige)]/40">
+                                  <div className="col-span-4 flex items-center gap-2">
+                                    <span className="px-2 py-[2px] rounded text-xs font-medium" style={{ background: "#fff3e8", color: "var(--gsc-orange)" }}>
+                                      subtheme
+                                    </span>
+                                    <span className="text-[11px] text-gray-500 ml-2">order: {s.sort_order ?? "—"}</span>
+                                  </div>
+                                  <div className="col-span-6">
+                                    <div className="font-medium text-gray-800">{s.name}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {s.description || <span className="italic text-gray-400">—</span>}{" "}
+                                      {s.can_have_indicators ? (
+                                        <span className="ml-2 text-[10px] px-2 py-[1px] rounded-full" style={{ background: "#ecfdf5", color: "var(--gsc-green)", border: "1px solid #d1fae5" }}>
+                                          can hold indicators
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button onClick={() => setEditSubtheme(s)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Edit subtheme">
+                                        <Edit2 className="w-4 h-4" style={{ color: "var(--gsc-blue)" }} />
+                                      </button>
+                                      <button onClick={() => deleteSubtheme(s)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100" title="Delete subtheme">
+                                        <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {openAddPillar && <AddPillarModal open={openAddPillar} onClose={() => setOpenAddPillar(false)} onSaved={loadAll} />}
+
+      {addThemeFor && (
+        <AddThemeModal open={!!addThemeFor} pillar={addThemeFor} onClose={() => setAddThemeFor(null)} onSaved={loadAll} />
       )}
 
-      {/* ---- Modals ---- */}
-      {showAddPillar && (
-        <AddPillarModal open onClose={() => setShowAddPillar(false)} onSaved={loadTree} />
+      {addSubthemeFor && (
+        <AddSubthemeModal open={!!addSubthemeFor} theme={addSubthemeFor} onClose={() => setAddSubthemeFor(null)} onSaved={loadAll} />
       )}
+
       {editPillar && (
-        <EditPillarModal
-          open
-          pillar={editPillar}
-          onClose={() => setEditPillar(null)}
-          onSaved={loadTree}
-        />
+        <EditPillarModal open={!!editPillar} pillar={editPillar} onClose={() => setEditPillar(null)} onSaved={loadAll} />
       )}
-      {addThemeParent && (
-        <AddThemeModal
-          open
-          pillar={addThemeParent}
-          onClose={() => setAddThemeParent(null)}
-          onSaved={loadTree}
-        />
-      )}
-      {editTheme && (
-        <EditThemeModal
-          open
-          theme={editTheme}
-          onClose={() => setEditTheme(null)}
-          onSaved={loadTree}
-        />
-      )}
-      {addSubthemeParent && (
-        <AddSubthemeModal
-          open
-          theme={addSubthemeParent}
-          onClose={() => setAddSubthemeParent(null)}
-          onSaved={loadTree}
-        />
-      )}
+
+      {editTheme && <EditThemeModal open={!!editTheme} theme={editTheme} onClose={() => setEditTheme(null)} onSaved={loadAll} />}
+
       {editSubtheme && (
-        <EditSubthemeModal
-          open
-          subtheme={editSubtheme}
-          onClose={() => setEditSubtheme(null)}
-          onSaved={loadTree}
-        />
+        <EditSubthemeModal open={!!editSubtheme} subtheme={editSubtheme} onClose={() => setEditSubtheme(null)} onSaved={loadAll} />
       )}
     </div>
   );
