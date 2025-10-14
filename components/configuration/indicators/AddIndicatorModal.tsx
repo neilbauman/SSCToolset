@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
-import TaxonomyPicker from "@/components/configuration/taxonomy/TaxonomyPicker";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
+
+type Term = {
+  id: string;
+  category: string;
+  code: string;
+  name: string;
+};
 
 type Props = {
   open: boolean;
@@ -18,8 +24,27 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [type, setType] = useState<"gradient" | "categorical">("gradient");
   const [unit, setUnit] = useState("");
   const [topic, setTopic] = useState("SSC Framework");
-  const [taxonomyIds, setTaxonomyIds] = useState<string[]>([]);
+  const [terms, setTerms] = useState<Term[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("taxonomy_terms")
+        .select("id, category, code, name")
+        .order("category", { ascending: true })
+        .order("code", { ascending: true });
+      if (!error && data) setTerms(data);
+    })();
+  }, [open]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   const save = async () => {
     if (!code || !name) {
@@ -35,19 +60,19 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       .single();
 
     if (error || !data) {
-      setSaving(false);
       alert("Failed to create indicator.");
+      setSaving(false);
       return;
     }
 
-    if (taxonomyIds.length > 0) {
-      const rows = taxonomyIds.map((termId, idx) => ({
+    // Save selected taxonomy terms
+    if (selected.length > 0) {
+      const rows = selected.map((termId, idx) => ({
         indicator_id: data.id,
         term_id: termId,
         sort_order: idx + 1,
       }));
-      const { error: linkErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
-      if (linkErr) console.error(linkErr);
+      await supabase.from("indicator_taxonomy_links").insert(rows);
     }
 
     await onSaved();
@@ -55,28 +80,34 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     onClose();
   };
 
+  // Group taxonomy terms by category
+  const grouped = terms.reduce<Record<string, Term[]>>((acc, t) => {
+    acc[t.category] = acc[t.category] || [];
+    acc[t.category].push(t);
+    return acc;
+  }, {});
+
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator" width="max-w-3xl">
-      <div className="space-y-3">
-        <div>
-          <label className="block text-sm font-medium mb-1">Code</label>
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            className="w-full border rounded-md px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border rounded-md px-3 py-2 text-sm"
-          />
-        </div>
-
+      <div className="space-y-4">
+        {/* Basic indicator fields */}
         <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Code</label>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1">Type</label>
             <select
@@ -88,7 +119,9 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
               <option value="categorical">categorical</option>
             </select>
           </div>
+        </div>
 
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Unit</label>
             <input
@@ -97,7 +130,6 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
               className="w-full border rounded-md px-3 py-2 text-sm"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Topic</label>
             <input
@@ -108,22 +140,52 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           </div>
         </div>
 
+        {/* Taxonomy selection */}
         <div>
-          <label className="block text-sm font-medium mb-2">
-            Taxonomy terms (ordered)
-          </label>
-          <TaxonomyPicker
-            selectedIds={taxonomyIds}
-            onChange={setTaxonomyIds}
-            allowMultiple
-            showOrderControls
-          />
+          <h3 className="text-sm font-medium text-[color:var(--gsc-blue)] mb-2">
+            Select Taxonomy Terms
+          </h3>
+          <div className="max-h-72 overflow-y-auto border rounded-md p-3 bg-[color:var(--gsc-beige)]">
+            {Object.entries(grouped).map(([cat, list]) => (
+              <div key={cat} className="mb-3">
+                <h4 className="text-sm font-semibold text-[color:var(--gsc-gray)] mb-1">
+                  {cat}
+                </h4>
+                <div className="grid grid-cols-2 gap-x-3">
+                  {list.map((t) => (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1 hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(t.id)}
+                        onChange={() => toggle(t.id)}
+                        className="accent-[color:var(--gsc-blue)]"
+                      />
+                      <span className="truncate">
+                        <span className="font-mono text-xs text-gray-600 mr-1">
+                          {t.code}
+                        </span>
+                        {t.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {terms.length === 0 && (
+              <p className="text-xs text-gray-500 italic">
+                No taxonomy terms found.
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-4">
+        <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
-            className="px-3 py-2 text-sm rounded-md border"
+            className="px-3 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-100"
           >
             Cancel
           </button>
