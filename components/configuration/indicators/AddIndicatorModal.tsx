@@ -17,10 +17,19 @@ type Props = {
   onSaved: () => void;
 };
 
+const FALLBACK_TYPES = [
+  "gradient",
+  "binary",
+  "ratio",
+  "count",
+  "value",
+  "index",
+];
+
 export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState<string>(""); // now a select
   const [unit, setUnit] = useState("");
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
@@ -28,14 +37,39 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [typeOptions, setTypeOptions] = useState<string[]>(FALLBACK_TYPES);
 
-  // ─────────────────────────────
-  // Load taxonomy from taxonomy_terms
-  // ─────────────────────────────
   useEffect(() => {
-    if (open) loadTaxonomy();
+    if (open) {
+      loadTaxonomy();
+      loadTypeOptions();
+    }
   }, [open]);
 
+  // Load distinct types from existing indicators to respect DB constraint
+  async function loadTypeOptions() {
+    const { data, error } = await supabase
+      .from("indicator_catalogue")
+      .select("type")
+      .not("type", "is", null)
+      .neq("type", "")
+      .order("type", { ascending: true });
+
+    const opts =
+      !error && data
+        ? Array.from(new Set((data as { type: string }[]).map((r) => r.type))).filter(
+            Boolean
+          )
+        : [];
+
+    const finalOpts = opts.length > 0 ? opts : FALLBACK_TYPES;
+    setTypeOptions(finalOpts);
+
+    // make sure we have a valid default
+    setType((t) => (t ? t : finalOpts[0]));
+  }
+
+  // Load taxonomy from taxonomy_terms and group by category
   async function loadTaxonomy() {
     setLoading(true);
     const { data, error } = await supabase
@@ -67,9 +101,6 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     setLoading(false);
   }
 
-  // ─────────────────────────────
-  // Selection toggles
-  // ─────────────────────────────
   function toggleTerm(termId: string) {
     setSelectedTerms((prev) =>
       prev.includes(termId)
@@ -78,14 +109,14 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     );
   }
 
-  // ─────────────────────────────
-  // Save new indicator
-  // ─────────────────────────────
   async function handleSave() {
     if (!code.trim() || !name.trim()) {
       alert("Code and Name are required.");
       return;
     }
+
+    // ensure type is one of the allowed values
+    const validType = typeOptions.includes(type) ? type : typeOptions[0];
 
     setSaving(true);
 
@@ -93,7 +124,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       code: code.trim(),
       name: name.trim(),
       description: description || null,
-      type: type || null,
+      type: validType,
       unit: unit || null,
       topic: topic || null,
       data_type: "numeric",
@@ -109,8 +140,16 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       .select("id");
 
     if (error) {
-      console.error("Insert error:", error);
-      alert("Failed to save indicator: " + error.message);
+      // 23514 = check_violation
+      if ((error as any).code === "23514") {
+        alert(
+          "Failed to save indicator: the Type must be one of: " +
+            typeOptions.join(", ")
+        );
+      } else {
+        console.error("Insert error:", error);
+        alert("Failed to save indicator: " + error.message);
+      }
       setSaving(false);
       return;
     }
@@ -132,9 +171,6 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     onClose();
   }
 
-  // ─────────────────────────────
-  // Render modal
-  // ─────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator (NEW)">
       <div className="space-y-3">
@@ -168,12 +204,20 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
             <label className="block text-xs font-medium text-gray-600">
               Type
             </label>
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
+            <select
+              className="w-full border rounded px-2 py-1 text-sm bg-white"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              placeholder="e.g., gradient"
-            />
+            >
+              {typeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Must match allowed types enforced by the database.
+            </p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600">
