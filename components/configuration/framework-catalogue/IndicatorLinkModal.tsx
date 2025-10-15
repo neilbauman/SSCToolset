@@ -12,15 +12,8 @@ type Indicator = {
   topic: string;
 };
 
-type TaxonomyCategory = {
-  category: string;
-};
-
-type TaxonomyTerm = {
-  id: string;
-  name: string;
-  category: string;
-};
+type TaxonomyCategory = { category: string };
+type TaxonomyTerm = { id: string; name: string; category: string };
 
 type LinkRow = {
   id: string;
@@ -39,15 +32,12 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   const [loading, setLoading] = useState(true);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
-
-  // taxonomy filters
   const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
   const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedTerm, setSelectedTerm] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedTerm, setSelectedTerm] = useState("");
   const [search, setSearch] = useState("");
-
-  const [selectedIndicator, setSelectedIndicator] = useState<string>("");
+  const [selectedIndicator, setSelectedIndicator] = useState("");
 
   useEffect(() => {
     if (open) loadAll();
@@ -55,31 +45,26 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
 
   async function loadAll() {
     setLoading(true);
-
-    // Existing links for this entity
     const { data: l, error: linkErr } = await supabase
       .from("framework_indicator_links")
       .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
       .eq(`${entity.type}_id`, entity.id);
 
-    if (linkErr) console.error("Error loading links:", linkErr);
-    setLinks(l || []);
+    if (linkErr) console.error(linkErr);
 
-    // Load taxonomy categories that have linked indicators
-    const { data: cats, error: catErr } = await supabase
-      .from("taxonomy_terms")
-      .select("category")
-      .in(
-        "id",
-        supabase
-          .from("indicator_taxonomy_links")
-          .select("taxonomy_id") as any
-      );
+    // flatten nested select
+    const flatLinks =
+      (l || []).map((row: any) => ({
+        id: row.id,
+        indicator_id: row.indicator_id,
+        indicator_catalogue: row.indicator_catalogue?.[0] || row.indicator_catalogue,
+      })) as LinkRow[];
 
-    if (!catErr && cats) {
-      const uniqueCats = Array.from(new Set(cats.map((c) => c.category))).sort();
-      setCategories(uniqueCats.map((c) => ({ category: c })));
-    }
+    setLinks(flatLinks);
+
+    // taxonomy categories that have linked indicators
+    const { data: cats } = await supabase.rpc("distinct_taxonomy_categories_with_links");
+    if (cats) setCategories(cats.map((c: any) => ({ category: c.category })));
 
     setLoading(false);
   }
@@ -87,42 +72,29 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   async function loadTermsForCategory(cat: string) {
     setSelectedCategory(cat);
     setSelectedTerm("");
-    setAllIndicators([]);
-
     const { data, error } = await supabase
       .from("taxonomy_terms")
       .select("id, name, category")
       .eq("category", cat)
-      .in(
-        "id",
-        supabase.from("indicator_taxonomy_links").select("taxonomy_id") as any
-      )
       .order("name");
-
     if (!error && data) setTerms(data);
   }
 
   async function loadIndicatorsForTerm(termId?: string, searchQuery?: string) {
     setLoading(true);
-    let query = supabase
-      .from("indicator_catalogue")
-      .select("id, code, name, topic")
-      .order("code");
-
+    let query = supabase.from("indicator_catalogue").select("id, code, name, topic").order("code");
     if (searchQuery) query = query.ilike("name", `%${searchQuery}%`);
-
     if (termId) {
-      const { data: linkedIds } = await supabase
+      const { data: links } = await supabase
         .from("indicator_taxonomy_links")
         .select("indicator_id")
         .eq("taxonomy_id", termId);
-      const ids = linkedIds?.map((i) => i.indicator_id) || [];
+      const ids = links?.map((r) => r.indicator_id) || [];
       if (ids.length > 0) query = query.in("id", ids);
       else query = query.limit(0);
     }
-
-    const { data, error } = await query;
-    if (!error && data) setAllIndicators(data);
+    const { data } = await query;
+    setAllIndicators(data || []);
     setLoading(false);
   }
 
@@ -132,10 +104,8 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       indicator_id: selectedIndicator,
       [`${entity.type}_id`]: entity.id,
     });
-    if (error) {
-      console.error("Add failed:", error);
-      alert("Failed to link indicator.");
-    } else {
+    if (error) alert("Failed to link indicator.");
+    else {
       await loadAll();
       await onSaved();
     }
@@ -143,14 +113,9 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
 
   async function handleDelete(id: string) {
     if (!confirm("Remove this linked indicator?")) return;
-    const { error } = await supabase
-      .from("framework_indicator_links")
-      .delete()
-      .eq("id", id);
-    if (error) {
-      console.error("Delete failed:", error);
-      alert("Delete failed.");
-    } else {
+    const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
+    if (error) alert("Delete failed.");
+    else {
       await loadAll();
       await onSaved();
     }
@@ -225,7 +190,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             </div>
           </div>
 
-          {/* Add new link */}
+          {/* Add Indicator */}
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-600 mb-1">Select Indicator</label>
@@ -251,7 +216,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             </button>
           </div>
 
-          {/* Existing Links */}
+          {/* Linked Indicators */}
           <div className="border rounded-md">
             <table className="w-full text-sm">
               <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
