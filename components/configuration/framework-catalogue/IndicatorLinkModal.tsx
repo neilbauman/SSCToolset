@@ -25,26 +25,39 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   const [selectedTerm, setSelectedTerm] = useState<string>("all");
   const [selectedIndicator, setSelectedIndicator] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // Load taxonomy categories that have linked indicators
+  // ─────────────────────────────
+  // Load taxonomy categories with linked indicators
+  // ─────────────────────────────
   useEffect(() => {
     async function loadCategories() {
-      const { data: linkRows } = await supabase
+      const { data: linkRows, error: linkErr } = await supabase
         .from("indicator_taxonomy_links")
         .select("taxonomy_id");
-      const linkedTermIds = (linkRows || []).map((r) => r.taxonomy_id);
-      if (!linkedTermIds.length) return;
-      const { data: termsData } = await supabase
+      if (linkErr) {
+        console.error("Failed to load linked taxonomies:", linkErr);
+        return;
+      }
+      const linkedIds = (linkRows || []).map((r) => r.taxonomy_id);
+      if (linkedIds.length === 0) return;
+      const { data: termsData, error } = await supabase
         .from("taxonomy_terms")
         .select("id, category, name")
-        .in("id", linkedTermIds);
+        .in("id", linkedIds);
+      if (error) {
+        console.error("Error loading taxonomy_terms:", error);
+        return;
+      }
       const uniqueCats = Array.from(new Set((termsData || []).map((t) => t.category))).sort();
       setCategories(uniqueCats);
     }
     loadCategories();
   }, []);
 
+  // ─────────────────────────────
   // Load terms for selected category
+  // ─────────────────────────────
   useEffect(() => {
     if (selectedCategory === "all") {
       setTerms([]);
@@ -52,20 +65,24 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       return;
     }
     async function loadTerms() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("taxonomy_terms")
         .select("id, name, category")
         .eq("category", selectedCategory)
         .order("name");
-      setTerms(data || []);
+      if (!error && data) setTerms(data);
     }
     loadTerms();
   }, [selectedCategory]);
 
-  // Load indicators
+  // ─────────────────────────────
+  // Load indicators (filtered)
+  // ─────────────────────────────
   useEffect(() => {
     async function loadIndicators() {
+      setLoading(true);
       let indicatorIds: string[] = [];
+
       if (selectedTerm !== "all") {
         const { data } = await supabase
           .from("indicator_taxonomy_links")
@@ -84,29 +101,37 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           .in("taxonomy_id", ids);
         indicatorIds = (data || []).map((x) => x.indicator_id);
       }
-      const { data } = await supabase
+
+      const { data, error } = await supabase
         .from("indicator_catalogue")
         .select("id, code, name, topic")
         .in("id", indicatorIds)
         .order("code");
-      setIndicators(data || []);
+
+      if (!error && data) setIndicators(data);
+      setLoading(false);
     }
     loadIndicators();
   }, [selectedCategory, selectedTerm]);
 
-  // Load existing links
+  // ─────────────────────────────
+  // Load existing links for this catalogue entity
+  // ─────────────────────────────
   useEffect(() => {
     async function loadLinks() {
-      const { data } = await supabase
-        .from("framework_indicator_links")
+      const { data, error } = await supabase
+        .from("catalogue_indicator_links")
         .select("id, indicator_catalogue(id, code, name, topic)")
-        .eq("framework_item_id", entity.id);
-      setLinks(data || []);
+        .eq("catalogue_id", entity.id)
+        .eq("catalogue_type", entity.type);
+      if (!error && data) setLinks(data);
     }
     loadLinks();
-  }, [entity.id]);
+  }, [entity.id, entity.type]);
 
-  // Search filter
+  // ─────────────────────────────
+  // Search (client-side filter)
+  // ─────────────────────────────
   const filteredIndicators = useMemo(() => {
     if (!search) return indicators;
     return indicators.filter(
@@ -116,16 +141,20 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     );
   }, [indicators, search]);
 
-  // Add / delete links
+  // ─────────────────────────────
+  // Add / Remove indicators
+  // ─────────────────────────────
   async function handleAdd() {
     if (!selectedIndicator) return;
-    const { error } = await supabase.from("framework_indicator_links").insert({
-      framework_item_id: entity.id,
+    setLoading(true);
+    const { error } = await supabase.from("catalogue_indicator_links").insert({
+      catalogue_id: entity.id,
+      catalogue_type: entity.type,
       indicator_id: selectedIndicator,
-      relationship: "default",
     });
+    setLoading(false);
     if (error) {
-      console.error(error);
+      console.error("Failed to link indicator:", error);
       alert("Failed to link indicator.");
     } else {
       await onSaved();
@@ -134,12 +163,14 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   }
 
   async function handleDelete(id: string) {
-    const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
+    const { error } = await supabase.from("catalogue_indicator_links").delete().eq("id", id);
     if (error) alert("Delete failed.");
     else await onSaved();
   }
 
+  // ─────────────────────────────
   // Render
+  // ─────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       {/* Filters */}
@@ -205,9 +236,14 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           </select>
           <button
             onClick={handleAdd}
-            className="bg-[var(--gsc-blue)] text-white text-sm px-3 py-1 rounded-md shrink-0"
+            disabled={!selectedIndicator || loading}
+            className={`text-sm px-3 py-1 rounded-md shrink-0 ${
+              loading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-[var(--gsc-blue)] text-white hover:bg-[var(--gsc-blue-dark)]"
+            }`}
           >
-            Add
+            {loading ? "..." : "Add"}
           </button>
         </div>
       </div>
