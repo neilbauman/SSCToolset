@@ -85,3 +85,15 @@ export type CatalogueSubtheme = {
   can_have_indicators?: boolean;
   sort_order?: number;
 };
+
+// ─────────────────────────────────────────────
+// Catalogue ↔ Indicator Links
+// ─────────────────────────────────────────────
+export type FrameworkCatalogueIndicatorLink = {
+  id: string;
+  pillar_id?: string | null;
+  theme_id?: string | null;
+  subtheme_id?: string | null;
+  indicator_id: string;
+  created_at?: string;
+};
