@@ -1,15 +1,29 @@
-// app/configuration/framework-catalogue/page.tsx
-// Clean wrapper for Framework Catalogue configuration view
+"use client";
 
+import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import CataloguePage from "@/components/configuration/framework-catalogue/CataloguePage";
 
-/**
- * Framework Catalogue Page
- * 
- * This page renders the master catalogue for Pillars, Themes, and Subthemes.
- * The page component itself does not add its own layout wrapper — 
- * CataloguePage already includes SidebarLayout and breadcrumbs.
- */
 export default function FrameworkCataloguePage() {
-  return <CataloguePage />;
+  const headerProps = {
+    title: "Framework Catalogue",
+    group: "ssc-config" as const,
+    description:
+      "Manage the master list of Pillars, Themes, and Subthemes used to build framework versions.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Configuration", href: "/configuration" },
+          { label: "Framework Catalogue" },
+        ]}
+      />
+    ),
+  };
+
+  return (
+    <SidebarLayout headerProps={headerProps}>
+      <CataloguePage />
+    </SidebarLayout>
+  );
 }
