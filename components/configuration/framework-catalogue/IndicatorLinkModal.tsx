@@ -7,10 +7,14 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 type EntityType = "pillar" | "theme" | "subtheme";
 type Entity = { id: string; name: string; type: EntityType };
 type Indicator = { id: string; code: string; name: string; topic: string | null };
-type TaxonomyCategory = { category: string };
 type TaxonomyTerm = { id: string; name: string; category: string };
 
-type Props = { open: boolean; onClose: () => void; entity: Entity; onSaved: () => Promise<void> };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  entity: Entity;
+  onSaved: () => Promise<void>;
+};
 
 export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: Props) {
   const [categories, setCategories] = useState<string[]>([]);
@@ -80,6 +84,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   useEffect(() => {
     async function loadIndicators() {
       let indicatorIds: string[] = [];
+
       if (selectedTerm !== "all") {
         const { data } = await supabase
           .from("indicator_taxonomy_links")
@@ -136,15 +141,20 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   }, [indicators, search]);
 
   // ─────────────────────────────
-  // Link / delete actions
+  // Add / Delete links
   // ─────────────────────────────
   async function handleAdd() {
     if (!selectedIndicator) return;
-    const { error } = await supabase
-      .from("framework_indicator_links")
-      .insert({ framework_item_id: entity.id, indicator_id: selectedIndicator });
-    if (error) alert("Failed to link indicator.");
-    else {
+    const { error } = await supabase.from("framework_indicator_links").insert({
+      framework_item_id: entity.id,
+      indicator_id: selectedIndicator,
+      relationship: "default",
+    });
+
+    if (error) {
+      console.error("Failed to link indicator:", error);
+      alert("Failed to link indicator.");
+    } else {
       await onSaved();
       setSelectedIndicator("");
     }
@@ -233,7 +243,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
         </div>
       </div>
 
-      {/* Linked indicators */}
+      {/* Linked indicators table */}
       <div className="border-t pt-2 mt-2">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
