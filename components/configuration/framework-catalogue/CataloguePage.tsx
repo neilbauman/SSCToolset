@@ -2,164 +2,219 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { RefreshCcw, ChevronRight, ChevronDown } from "lucide-react";
+import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { ChevronRight, ChevronDown, RefreshCcw } from "lucide-react";
 import IndicatorLinkModal from "./IndicatorLinkModal";
 
-type EntityType = "pillar" | "theme" | "subtheme";
-type Entity = { id: string; name: string; type: EntityType };
-
-type Pillar = { id: string; name: string; description: string | null; themes?: Theme[] };
-type Theme = { id: string; pillar_id: string; name: string; description: string | null; subthemes?: Subtheme[] };
-type Subtheme = { id: string; theme_id: string; name: string; description: string | null };
+type Pillar = { id: string; name: string; description: string };
+type Theme = { id: string; name: string; description: string; pillar_id: string };
+type Subtheme = { id: string; name: string; description: string; theme_id: string };
+type IndicatorLink = {
+  pillar_id: string | null;
+  theme_id: string | null;
+  subtheme_id: string | null;
+  indicator_catalogue: { code: string; name: string } | null;
+};
 
 export default function CataloguePage() {
   const [pillars, setPillars] = useState<Pillar[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [subs, setSubs] = useState<Subtheme[]>([]);
+  const [indicatorMap, setIndicatorMap] = useState<Map<string, IndicatorLink>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openLinkModal, setOpenLinkModal] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<Entity | null>(null);
+  const [linkTarget, setLinkTarget] = useState<{ id: string; name: string; type: string } | null>(
+    null
+  );
 
-  useEffect(() => { loadCatalogue(); }, []);
+  const headerProps = {
+    title: "Framework Catalogue",
+    group: "ssc-config" as const,
+    description:
+      "Manage the master list of Pillars, Themes, and Subthemes used to build framework versions.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Configuration", href: "/configuration" },
+          { label: "Framework Catalogue" },
+        ]}
+      />
+    ),
+  };
+
+  useEffect(() => {
+    loadCatalogue();
+  }, []);
 
   async function loadCatalogue() {
-    setLoading(true);
-    const [p, t, s] = await Promise.all([
-      supabase.from("pillar_catalogue").select("id,name,description").order("name"),
-      supabase.from("theme_catalogue").select("id,name,description,pillar_id").order("name"),
-      supabase.from("subtheme_catalogue").select("id,name,description,theme_id").order("name"),
+    const [p, t, s, links] = await Promise.all([
+      supabase.from("pillar_catalogue").select("id, name, description").order("name"),
+      supabase.from("theme_catalogue").select("id, name, description, pillar_id").order("name"),
+      supabase
+        .from("subtheme_catalogue")
+        .select("id, name, description, theme_id")
+        .order("name"),
+      supabase
+        .from("catalogue_indicator_links")
+        .select("pillar_id, theme_id, subtheme_id, indicator_catalogue(code, name)"),
     ]);
-    if (p.error || t.error || s.error) {
-      console.error("Failed to load framework catalogue", p.error || t.error || s.error);
-      setLoading(false);
-      return;
-    }
-    const themes = (t.data || []).map((x) => ({
-      ...x,
-      subthemes: (s.data || []).filter((y) => y.theme_id === x.id),
-    }));
-    const tree = (p.data || []).map((x) => ({
-      ...x,
-      themes: themes.filter((y) => y.pillar_id === x.id),
-    }));
-    setPillars(tree);
-    setLoading(false);
+
+    setPillars(p.data || []);
+    setThemes(t.data || []);
+    setSubs(s.data || []);
+
+    const map = new Map<string, IndicatorLink>();
+    (links.data || []).forEach((l: IndicatorLink) => {
+      const key = l.pillar_id || l.theme_id || l.subtheme_id;
+      if (key) map.set(key, l);
+    });
+    setIndicatorMap(map);
   }
 
-  function toggle(id: string) {
+  function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
+  const renderSubthemes = (themeId: string) => {
+    const list = subs.filter((s) => s.theme_id === themeId);
+    if (!list.length) return null;
+    return (
+      <div className="pl-6 border-l border-gray-200">
+        {list.map((sub) => (
+          <div key={sub.id} className="flex justify-between py-1 border-b text-sm">
+            <div>
+              <div className="font-medium text-gray-800">{sub.name}</div>
+              {sub.description && (
+                <div className="text-gray-500 text-xs">{sub.description}</div>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <IndicatorBadge entityId={sub.id} map={indicatorMap} />
+              <button
+                onClick={() => {
+                  setLinkTarget({ id: sub.id, name: sub.name, type: "subtheme" });
+                  setOpenLinkModal(true);
+                }}
+                className="text-[var(--gsc-blue)] hover:underline text-xs"
+              >
+                Manage Indicators
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderThemes = (pillarId: string) => {
+    const list = themes.filter((t) => t.pillar_id === pillarId);
+    if (!list.length) return null;
+    return (
+      <div className="pl-4 border-l border-gray-200">
+        {list.map((theme) => {
+          const isOpen = expanded.has(theme.id);
+          return (
+            <div key={theme.id} className="border-b">
+              <div className="flex justify-between items-center py-2 text-sm">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => toggleExpand(theme.id)}>
+                    {isOpen ? (
+                      <ChevronDown size={14} className="text-gray-600" />
+                    ) : (
+                      <ChevronRight size={14} className="text-gray-600" />
+                    )}
+                  </button>
+                  <div>
+                    <div className="font-medium text-gray-800">{theme.name}</div>
+                    {theme.description && (
+                      <div className="text-gray-500 text-xs">{theme.description}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <IndicatorBadge entityId={theme.id} map={indicatorMap} />
+                  <button
+                    onClick={() => {
+                      setLinkTarget({ id: theme.id, name: theme.name, type: "theme" });
+                      setOpenLinkModal(true);
+                    }}
+                    className="text-[var(--gsc-blue)] hover:underline text-xs"
+                  >
+                    Manage Indicators
+                  </button>
+                </div>
+              </div>
+              {isOpen && renderSubthemes(theme.id)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[var(--gsc-blue)]">Framework Catalogue</h2>
-        <button onClick={loadCatalogue} className="flex items-center gap-1 text-sm border px-3 py-2 rounded-md">
-          <RefreshCcw className="w-4 h-4" /> Reload
+    <SidebarLayout headerProps={headerProps}>
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
+          Framework Catalogue
+        </h2>
+        <button
+          onClick={loadCatalogue}
+          className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-md"
+        >
+          <RefreshCcw size={14} /> Reload
         </button>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-gray-500">Loading catalogue...</p>
-      ) : (
-        <div className="space-y-3">
-          {pillars.map((pillar) => (
-            <div key={pillar.id} className="border rounded-md bg-white">
+      <div className="space-y-4">
+        {pillars.map((pillar) => {
+          const isOpen = expanded.has(pillar.id);
+          return (
+            <div key={pillar.id} className="border rounded-md">
               <div
-                className="flex justify-between items-center px-3 py-2 cursor-pointer font-semibold text-sm"
-                style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
-                onClick={() => toggle(pillar.id)}
+                className="flex justify-between items-center px-3 py-2 bg-[var(--gsc-beige)] border-b"
+                onClick={() => toggleExpand(pillar.id)}
               >
-                <div className="flex items-center gap-1">
-                  {expanded.has(pillar.id) ? (
-                    <ChevronDown className="w-4 h-4" />
+                <div className="flex items-center gap-2">
+                  {isOpen ? (
+                    <ChevronDown size={16} className="text-gray-700" />
                   ) : (
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight size={16} className="text-gray-700" />
                   )}
-                  {pillar.name}
+                  <div>
+                    <div className="font-semibold text-gray-800">{pillar.name}</div>
+                    {pillar.description && (
+                      <div className="text-xs text-gray-500">{pillar.description}</div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLinkTarget({ type: "pillar", id: pillar.id, name: pillar.name });
-                    setOpenLinkModal(true);
-                  }}
-                  className="text-xs text-[var(--gsc-blue)] hover:underline"
-                >
-                  Manage Indicators
-                </button>
+                <div className="flex items-center gap-4">
+                  <IndicatorBadge entityId={pillar.id} map={indicatorMap} />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLinkTarget({ id: pillar.id, name: pillar.name, type: "pillar" });
+                      setOpenLinkModal(true);
+                    }}
+                    className="text-[var(--gsc-blue)] hover:underline text-xs"
+                  >
+                    Manage Indicators
+                  </button>
+                </div>
               </div>
 
-              {expanded.has(pillar.id) && (
-                <div className="divide-y">
-                  {(pillar.themes || []).map((theme) => (
-                    <div key={theme.id}>
-                      <div
-                        className="flex justify-between items-center px-4 py-2 cursor-pointer"
-                        onClick={() => toggle(theme.id)}
-                      >
-                        <div className="flex items-center gap-1">
-                          {expanded.has(theme.id) ? (
-                            <ChevronDown className="w-4 h-4 text-gray-500" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-500" />
-                          )}
-                          <div>
-                            <div className="font-medium">{theme.name}</div>
-                            {theme.description && (
-                              <div className="text-xs text-gray-500">{theme.description}</div>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLinkTarget({ type: "theme", id: theme.id, name: theme.name });
-                            setOpenLinkModal(true);
-                          }}
-                          className="text-xs text-[var(--gsc-blue)] hover:underline"
-                        >
-                          Manage Indicators
-                        </button>
-                      </div>
-
-                      {expanded.has(theme.id) && theme.subthemes?.length ? (
-                        <div className="pl-6 border-l">
-                          {theme.subthemes.map((sub) => (
-                            <div
-                              key={sub.id}
-                              className="flex justify-between px-2 py-1 text-sm"
-                            >
-                              <div>
-                                <div>{sub.name}</div>
-                                {sub.description && (
-                                  <div className="text-xs text-gray-500">{sub.description}</div>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => {
-                                  setLinkTarget({ type: "subtheme", id: sub.id, name: sub.name });
-                                  setOpenLinkModal(true);
-                                }}
-                                className="text-xs text-[var(--gsc-blue)] hover:underline"
-                              >
-                                Manage Indicators
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {isOpen && renderThemes(pillar.id)}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       {openLinkModal && linkTarget && (
         <IndicatorLinkModal
@@ -169,6 +224,31 @@ export default function CataloguePage() {
           onSaved={loadCatalogue}
         />
       )}
-    </div>
+    </SidebarLayout>
+  );
+}
+
+function IndicatorBadge({
+  entityId,
+  map,
+}: {
+  entityId: string;
+  map: Map<string, IndicatorLink>;
+}) {
+  const link = map.get(entityId);
+  if (!link || !link.indicator_catalogue)
+    return (
+      <span className="text-xs italic text-gray-400" title="No linked indicator">
+        ⚠ Missing
+      </span>
+    );
+
+  return (
+    <span
+      className="text-xs font-medium text-[var(--gsc-blue)]"
+      title={link.indicator_catalogue.name}
+    >
+      {link.indicator_catalogue.code}
+    </span>
   );
 }
