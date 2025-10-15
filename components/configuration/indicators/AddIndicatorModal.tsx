@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react";
 type TaxonomyCategory = {
   id: string;
   name: string;
-  terms: { id: string; name: string }[];
+  taxonomy_terms: { id: string; name: string }[];
 };
 
 type Props = {
@@ -25,12 +25,25 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [taxonomy, setTaxonomy] = useState<TaxonomyCategory[]>([]);
-  const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
+  const [selectedTaxonomyIds, setSelectedTaxonomyIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) loadTaxonomy();
+    if (open) {
+      resetForm();
+      loadTaxonomy();
+    }
   }, [open]);
+
+  function resetForm() {
+    setCode("");
+    setName("");
+    setType("");
+    setUnit("");
+    setTopic("");
+    setDescription("");
+    setSelectedTaxonomyIds([]);
+  }
 
   async function loadTaxonomy() {
     const { data, error } = await supabase
@@ -42,19 +55,14 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       console.error("Error loading taxonomy:", error.message);
       return;
     }
-
-    const mapped =
-      data?.map((cat: any) => ({
-        id: cat.id,
-        name: cat.name,
-        terms: cat.taxonomy_terms || [],
-      })) || [];
-    setTaxonomy(mapped);
+    setTaxonomy(data || []);
   }
 
-  function toggleTerm(id: string) {
-    setSelectedTermIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  function toggleTerm(termId: string) {
+    setSelectedTaxonomyIds((prev) =>
+      prev.includes(termId)
+        ? prev.filter((id) => id !== termId)
+        : [...prev, termId]
     );
   }
 
@@ -66,7 +74,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
     setSaving(true);
 
-    const insertData = {
+    const newIndicator = {
       code: code.trim(),
       name: name.trim(),
       description: description || null,
@@ -82,7 +90,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .insert([insertData])
+      .insert([newIndicator])
       .select("id")
       .single();
 
@@ -94,15 +102,14 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     }
 
     const indicatorId = data?.id;
-    if (indicatorId && selectedTermIds.length > 0) {
-      const linkRows = selectedTermIds.map((termId) => ({
+    if (indicatorId && selectedTaxonomyIds.length > 0) {
+      const linkRows = selectedTaxonomyIds.map((termId) => ({
         indicator_id: indicatorId,
         taxonomy_id: termId,
       }));
       const { error: linkErr } = await supabase
         .from("indicator_taxonomy_links")
         .insert(linkRows);
-
       if (linkErr) console.error("Failed to link taxonomy terms:", linkErr);
     }
 
@@ -113,36 +120,35 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator">
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Code<span className="text-red-500">*</span>
-            </label>
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g., SSC_P1"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Name<span className="text-red-500">*</span>
-            </label>
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Indicator name"
-            />
-          </div>
+      <div className="space-y-4">
+        {/* Fields */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Code</label>
+          <input
+            type="text"
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g., SSC_P3_T2_S5"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Name</label>
+          <input
+            type="text"
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Indicator name"
+          />
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-600">Type</label>
             <input
+              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -152,6 +158,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           <div>
             <label className="block text-xs font-medium text-gray-600">Unit</label>
             <input
+              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
@@ -161,6 +168,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           <div>
             <label className="block text-xs font-medium text-gray-600">Topic</label>
             <input
+              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
@@ -169,37 +177,26 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-gray-600">
-            Description
-          </label>
-          <textarea
-            className="w-full border rounded px-2 py-1 text-sm"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-          />
-        </div>
-
+        {/* Taxonomy terms */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Taxonomy Terms
           </label>
-          <div className="space-y-2 max-h-64 overflow-y-auto border rounded p-2">
+          <div className="space-y-2 max-h-72 overflow-y-auto border rounded p-2">
             {taxonomy.map((cat) => (
               <div key={cat.id}>
                 <div className="font-medium text-xs text-[var(--gsc-blue)] mb-1">
                   {cat.name}
                 </div>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {cat.terms.map((term) => (
+                <div className="flex flex-wrap gap-2">
+                  {cat.taxonomy_terms?.map((term) => (
                     <label
                       key={term.id}
                       className="flex items-center gap-1 text-xs"
                     >
                       <input
                         type="checkbox"
-                        checked={selectedTermIds.includes(term.id)}
+                        checked={selectedTaxonomyIds.includes(term.id)}
                         onChange={() => toggleTerm(term.id)}
                       />
                       {term.name}
@@ -211,6 +208,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           </div>
         </div>
 
+        {/* Buttons */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
