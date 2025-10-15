@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
@@ -7,6 +6,8 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { ChevronRight, ChevronDown, RefreshCcw } from "lucide-react";
 import IndicatorLinkModal from "./IndicatorLinkModal";
 
+type EntityType = "pillar" | "theme" | "subtheme";
+type Entity = { id: string; name: string; type: EntityType };
 type Pillar = { id: string; name: string; description: string };
 type Theme = { id: string; name: string; description: string; pillar_id: string };
 type Subtheme = { id: string; name: string; description: string; theme_id: string };
@@ -24,9 +25,7 @@ export default function CataloguePage() {
   const [indicatorMap, setIndicatorMap] = useState<Map<string, IndicatorLink>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openLinkModal, setOpenLinkModal] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<{ id: string; name: string; type: string } | null>(
-    null
-  );
+  const [linkTarget, setLinkTarget] = useState<Entity | null>(null);
 
   const headerProps = {
     title: "Framework Catalogue",
@@ -68,7 +67,7 @@ export default function CataloguePage() {
       const indicator = Array.isArray(row.indicator_catalogue)
         ? row.indicator_catalogue[0]
         : row.indicator_catalogue;
-      map.set(key, { ...row, indicator_catalogue: indicator });
+      if (key) map.set(key, { ...row, indicator_catalogue: indicator });
     });
     setIndicatorMap(map);
   }
@@ -76,8 +75,7 @@ export default function CataloguePage() {
   function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   }
@@ -217,7 +215,7 @@ export default function CataloguePage() {
         <IndicatorLinkModal
           open={openLinkModal}
           onClose={() => setOpenLinkModal(false)}
-          entity={linkTarget}
+          entity={linkTarget as Entity}
           onSaved={loadCatalogue}
         />
       )}
