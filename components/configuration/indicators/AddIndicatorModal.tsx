@@ -25,7 +25,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [taxonomy, setTaxonomy] = useState<TaxonomyCategory[]>([]);
-  const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
+  const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -43,20 +43,18 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       return;
     }
 
-    const categories =
-      data?.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        terms: c.taxonomy_terms || [],
+    const mapped =
+      data?.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        terms: cat.taxonomy_terms || [],
       })) || [];
-    setTaxonomy(categories);
+    setTaxonomy(mapped);
   }
 
-  function toggleTerm(termId: string) {
-    setSelectedTerms((prev) =>
-      prev.includes(termId)
-        ? prev.filter((id) => id !== termId)
-        : [...prev, termId]
+  function toggleTerm(id: string) {
+    setSelectedTermIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
 
@@ -68,15 +66,15 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
     setSaving(true);
 
-    const newIndicator = {
+    const insertData = {
       code: code.trim(),
       name: name.trim(),
       description: description || null,
       type: type || null,
       unit: unit || null,
       topic: topic || null,
-      data_type: "numeric", // required default
-      input_schema: {}, // safe jsonb default
+      data_type: "numeric",
+      input_schema: {},
       formula: null,
       calculation_method: null,
       framework_ref_code: null,
@@ -84,8 +82,9 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .insert([newIndicator])
-      .select("id");
+      .insert([insertData])
+      .select("id")
+      .single();
 
     if (error) {
       console.error("Insert error:", error);
@@ -94,20 +93,17 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
       return;
     }
 
-    const indicatorId = data?.[0]?.id;
-    if (indicatorId && selectedTerms.length > 0) {
-      const linkRows = selectedTerms.map((termId) => ({
+    const indicatorId = data?.id;
+    if (indicatorId && selectedTermIds.length > 0) {
+      const linkRows = selectedTermIds.map((termId) => ({
         indicator_id: indicatorId,
         taxonomy_id: termId,
       }));
-
       const { error: linkErr } = await supabase
         .from("indicator_taxonomy_links")
         .insert(linkRows);
 
-      if (linkErr) {
-        console.error("Failed to link taxonomy terms:", linkErr);
-      }
+      if (linkErr) console.error("Failed to link taxonomy terms:", linkErr);
     }
 
     setSaving(false);
@@ -145,36 +141,30 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
 
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Type
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Type</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              placeholder="e.g., percentage"
+              placeholder="e.g., gradient"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Unit
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Unit</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="e.g., %"
+              placeholder="e.g., % households"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Topic
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Topic</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Shelter Access"
+              placeholder="e.g., SSC Framework"
             />
           </div>
         </div>
@@ -209,7 +199,7 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
                     >
                       <input
                         type="checkbox"
-                        checked={selectedTerms.includes(term.id)}
+                        checked={selectedTermIds.includes(term.id)}
                         onChange={() => toggleTerm(term.id)}
                       />
                       {term.name}
@@ -231,8 +221,8 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1.5 text-sm bg-[var(--gsc-blue)] text-white rounded flex items-center gap-2"
             disabled={saving}
+            className="px-3 py-1.5 text-sm bg-[var(--gsc-blue)] text-white rounded flex items-center gap-2"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? "Saving..." : "Save"}
