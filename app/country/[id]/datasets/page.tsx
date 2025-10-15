@@ -1,213 +1,170 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Database, Eye, Pencil, Trash2, Loader2, Download } from "lucide-react";
-import AddDatasetModal from "@/components/country/AddDatasetModal";
-import EditDatasetModal from "@/components/country/EditDatasetModal";
-import TemplateDownloadModal from "@/components/country/TemplateDownloadModal";
+import { Database, Plus, Loader2, Trash2, Eye } from "lucide-react";
+import DatasetWizard from "./DatasetWizard";
 import ConfirmDeleteModal from "@/components/country/ConfirmDeleteModal";
-import DatasetHealthBadge from "@/components/country/DatasetHealthBadge";
-import type { CountryParams } from "@/app/country/types";
 
-type Meta = {
+type CountryParams = { id: string };
+
+type DatasetMeta = {
   id: string;
   country_iso: string | null;
-  indicator_id: string | null;
   title: string;
-  description: string | null;
-  source: string | null;
+  data_type: "numeric" | "categorical" | null;
   admin_level: string | null;
-  upload_type: string | null;
-  theme: string | null;
   year?: number | null;
-  created_at: string | null;
+  created_at?: string | null;
 };
-
-type IndicatorLite = { id: string; name: string; data_type: string | null; theme: string | null };
-type Row = { admin_name?: string | null; admin_pcode: string; value: number | null };
 
 export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
-  const [countryName, setCountryName] = useState(countryIso);
-  const [datasets, setDatasets] = useState<Meta[]>([]);
-  const [indicators, setIndicators] = useState<Record<string, IndicatorLite>>({});
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [previewRows, setPreviewRows] = useState<Row[]>([]);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [deleteMeta, setDeleteMeta] = useState<Meta | null>(null);
-  const [openAdd, setOpenAdd] = useState(false);
-  const [openEdit, setOpenEdit] = useState<Meta | null>(null);
-  const [openTpl, setOpenTpl] = useState(false);
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Fetch datasets for this country
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("countries").select("name").eq("iso_code", countryIso).maybeSingle();
-      if (data?.name) setCountryName(data.name);
-    })();
+    const fetchData = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("id,country_iso,title,data_type,admin_level,year,created_at")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (error) console.error(error);
+      setDatasets(data || []);
+      setLoading(false);
+    };
+    fetchData();
   }, [countryIso]);
 
-  const loadAll = async () => {
-    const { data } = await supabase.from("dataset_metadata").select("*").eq("country_iso", countryIso).order("created_at", { ascending: false });
+  const refresh = async () => {
+    const { data } = await supabase
+      .from("dataset_metadata")
+      .select("id,country_iso,title,data_type,admin_level,year,created_at")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
     setDatasets(data || []);
-    const ids = Array.from(new Set((data || []).map(d => d.indicator_id).filter(Boolean))) as string[];
-    if (ids.length) {
-      const { data: ind } = await supabase.from("indicator_catalogue").select("id,name,data_type,theme").in("id", ids);
-      const map: Record<string, IndicatorLite> = {};
-      (ind || []).forEach(i => (map[i.id] = i));
-      setIndicators(map);
-    } else setIndicators({});
   };
 
-  useEffect(() => { loadAll(); }, [countryIso]);
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const { error } = await supabase.from("dataset_metadata").delete().eq("id", deleteId);
+    if (error) console.error(error);
+    setDeleteId(null);
+    refresh();
+  };
 
   const headerProps = {
-    title: `${countryName} – Other Datasets`,
-    group: "country-config" as const,
-    description: "Upload and manage additional datasets such as national statistics or gradient indicators.",
-    breadcrumbs: <Breadcrumbs items={[
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Country Configuration", href: "/country" },
-      { label: countryName, href: `/country/${countryIso}` },
-      { label: "Other Datasets" }
-    ]} />
-  };
-
-  const parseSource = (src: string | null) => {
-    if (!src) return "—";
-    try {
-      const j = JSON.parse(src);
-      if (j?.url) return (<a className="text-blue-600 hover:underline" href={j.url} target="_blank" rel="noreferrer">{j.name || j.url}</a>);
-      return j?.name || "—";
-    } catch { return src; }
-  };
-
-  const startPreview = async (m: Meta) => {
-    setPreviewId(m.id === previewId ? null : m.id);
-    if (m.id === previewId) return;
-    setLoadingPreview(true);
-    const { data } = await supabase.from("view_dataset_values_with_names").select("admin_name,admin_pcode,value").eq("dataset_id", m.id).limit(200);
-    setPreviewRows((data || []) as Row[]);
-    setLoadingPreview(false);
-  };
-
-  const handleDelete = async (id: string) => {
-    await supabase.from("dataset_values").delete().eq("dataset_id", id);
-    await supabase.from("dataset_metadata").delete().eq("id", id);
-    setDeleteMeta(null);
-    await loadAll();
+    title: `${countryIso} – Datasets`,
+    trailing: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country", href: `/country` },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Datasets" },
+        ]}
+      />
+    ),
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Country Datasets</h2>
-        <div className="flex gap-2">
-          <button onClick={() => setOpenTpl(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-blue)] hover:opacity-90">
-            <Download className="w-4 h-4" /> Template
-          </button>
-          <button onClick={() => setOpenAdd(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-[color:var(--gsc-red)] hover:opacity-90">
-            + Add Dataset
+      <div className="p-4 md:p-6 space-y-4">
+        {/* Top bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[color:var(--gsc-blue)]">
+            <Database className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">Country Datasets</h2>
+          </div>
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="flex items-center gap-2 bg-[color:var(--gsc-red)] text-white text-sm rounded-md px-3 py-2 hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Add Dataset
           </button>
         </div>
-      </div>
 
-      <div className="border rounded-lg p-3 shadow-sm bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="text-left px-2 py-1">Title</th>
-              <th className="text-left px-2 py-1">Indicator</th>
-              <th className="text-left px-2 py-1">Type</th>
-              <th className="text-left px-2 py-1">Admin Level</th>
-              <th className="text-left px-2 py-1">Data Type</th>
-              <th className="text-left px-2 py-1">Source</th>
-              <th className="text-center px-2 py-1">Health</th>
-              <th className="text-right px-2 py-1">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {datasets.map(d => {
-              const ind = d.indicator_id ? indicators[d.indicator_id] : null;
-              const active = previewId === d.id;
-              return (
-                <tr key={d.id} className={`border-b last:border-b-0 hover:bg-gray-50 cursor-pointer ${active ? "font-semibold" : ""}`} onClick={() => startPreview(d)}>
-                  <td className="px-2 py-1">{d.title}</td>
-                  <td className="px-2 py-1">{ind ? ind.name : "—"}</td>
-                  <td className="px-2 py-1">{d.upload_type || "—"}</td>
-                  <td className="px-2 py-1">{d.admin_level || "—"}</td>
-                  <td className="px-2 py-1">{ind?.data_type || "—"}</td>
-                  <td className="px-2 py-1">{parseSource(d.source)}</td>
-                  <td className="px-2 py-1 text-center"><DatasetHealthBadge datasetId={d.id} /></td>
-                  <td className="px-2 py-1">
-                    <div className="flex justify-end gap-2">
-                      <button className="p-1 rounded hover:bg-gray-100" title="Preview"><Eye className="w-4 h-4" /></button>
-                      <button className="p-1 rounded hover:bg-gray-100" title="Edit" onClick={e => { e.stopPropagation(); setOpenEdit(d); }}>
-                        <Pencil className="w-4 h-4" />
+        {/* Table of datasets */}
+        <div className="border rounded-lg bg-white overflow-hidden">
+          {loading ? (
+            <div className="p-6 flex items-center justify-center text-gray-500">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading datasets…
+            </div>
+          ) : datasets.length === 0 ? (
+            <div className="p-6 text-gray-500 text-sm text-center">
+              No datasets uploaded for this country yet.
+            </div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="text-left px-4 py-2">Title</th>
+                  <th className="text-left px-4 py-2">Type</th>
+                  <th className="text-left px-4 py-2">Admin</th>
+                  <th className="text-left px-4 py-2">Year</th>
+                  <th className="text-left px-4 py-2">Created</th>
+                  <th className="px-4 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {datasets.map((d) => (
+                  <tr key={d.id} className="border-b hover:bg-gray-50">
+                    <td className="px-4 py-2">{d.title}</td>
+                    <td className="px-4 py-2 capitalize">{d.data_type}</td>
+                    <td className="px-4 py-2">{d.admin_level}</td>
+                    <td className="px-4 py-2">{d.year ?? "—"}</td>
+                    <td className="px-4 py-2">
+                      {d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        onClick={() => alert("Coming soon: dataset details view")}
+                        className="text-gray-600 hover:text-[color:var(--gsc-blue)] mr-2"
+                        title="View details"
+                      >
+                        <Eye className="w-4 h-4" />
                       </button>
-                      <button className="p-1 rounded hover:bg-gray-100 text-[color:var(--gsc-red)]" title="Delete" onClick={e => { e.stopPropagation(); setDeleteMeta(d); }}>
+                      <button
+                        onClick={() => setDeleteId(d.id)}
+                        className="text-gray-600 hover:text-[color:var(--gsc-red)]"
+                        title="Delete dataset"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {!datasets.length && (
-              <tr><td colSpan={8} className="px-2 py-6 text-center text-gray-500">No datasets yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {previewId && (
-        <div className="mt-4 border rounded-lg bg-white shadow-sm">
-          <div className="flex items-center justify-between px-4 py-2 border-b">
-            <div className="font-semibold">Dataset Preview — {datasets.find(d => d.id === previewId)?.title}</div>
-            <button className="text-sm underline" onClick={() => setPreviewId(null)}>Close</button>
-          </div>
-          {loadingPreview ? (
-            <div className="p-6 text-sm text-gray-600 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="text-left px-2 py-1">Admin Name</th>
-                    <th className="text-left px-2 py-1">Admin PCode</th>
-                    <th className="text-left px-2 py-1">Value</th>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((r, i) => (
-                    <tr key={`${r.admin_pcode}-${i}`} className="border-b last:border-b-0">
-                      <td className="px-2 py-1">{r.admin_name ?? "—"}</td>
-                      <td className="px-2 py-1">{r.admin_pcode}</td>
-                      <td className="px-2 py-1">{r.value ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {!previewRows.length && (
-                    <tr><td colSpan={3} className="px-2 py-6 text-center text-gray-500">No rows.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-      )}
 
-      {openAdd && <AddDatasetModal open={openAdd} countryIso={countryIso} onClose={() => setOpenAdd(false)} onCreated={loadAll} />}
-      {openEdit && <EditDatasetModal open={!!openEdit} dataset={openEdit} onClose={() => setOpenEdit(null)} onSave={loadAll} />}
-      {openTpl && <TemplateDownloadModal open={openTpl} onClose={() => setOpenTpl(false)} countryIso={countryIso} />}
-      {deleteMeta && (
-        <ConfirmDeleteModal
-          open={!!deleteMeta}
-          message={`Delete dataset "${deleteMeta.title}" and all of its values?`}
-          onClose={() => setDeleteMeta(null)}
-          onConfirm={() => handleDelete(deleteMeta.id)}
-        />
-      )}
+        {/* Wizard */}
+        {wizardOpen && (
+          <DatasetWizard
+            countryIso={countryIso}
+            onClose={() => setWizardOpen(false)}
+            onSaved={refresh}
+          />
+        )}
+
+        {/* Confirm Delete */}
+        {deleteId && (
+          <ConfirmDeleteModal
+            open={!!deleteId}
+            onClose={() => setDeleteId(null)}
+            onConfirm={handleDelete}
+            message="Are you sure you want to delete this dataset and its values?"
+          />
+        )}
+      </div>
     </SidebarLayout>
   );
 }
