@@ -5,9 +5,6 @@ import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
 
-type Cat = { id: string; name: string };
-type Term = { id: string; name: string; category: string; category_order?: number; sort_order?: number };
-
 type Group = {
   id: string;
   name: string;
@@ -49,44 +46,44 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
   }
 
   async function loadTaxonomy() {
-    // Load categories
-    const { data: cats, error: cErr } = await supabase
+    console.log("📘 Loading taxonomy data...");
+
+    // Fetch categories
+    const { data: cats, error: catErr } = await supabase
       .from("taxonomy_categories")
       .select("id, name")
       .order("name", { ascending: true });
 
-    if (cErr) {
-      console.error("Failed to load taxonomy categories:", cErr.message);
+    if (catErr) {
+      console.error("❌ Failed to load taxonomy categories:", catErr.message);
       setGroups([]);
       return;
     }
 
-    // Load terms (authoritative ordering)
-    const { data: terms, error: tErr } = await supabase
+    // Fetch terms
+    const { data: terms, error: termErr } = await supabase
       .from("taxonomy_terms")
       .select("id, name, category, category_order, sort_order")
       .order("category_order", { ascending: true })
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
 
-    if (tErr) {
-      console.error("Failed to load taxonomy terms:", tErr.message);
+    if (termErr) {
+      console.error("❌ Failed to load taxonomy terms:", termErr.message);
       setGroups([]);
       return;
     }
 
-    const catList: Cat[] = (cats || []) as Cat[];
-    const termList: Term[] = (terms || []) as Term[];
-
-    // Group terms by matching taxonomy_terms.category === taxonomy_categories.name
-    const grouped: Group[] = catList.map((c) => ({
-      id: c.id,
-      name: c.name,
-      terms: termList
-        .filter((t) => t.category === c.name)
+    // Group manually
+    const grouped: Group[] = (cats || []).map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      terms: (terms || [])
+        .filter((t) => t.category === cat.name)
         .map((t) => ({ id: t.id, name: t.name })),
     }));
 
+    console.log("✅ Loaded taxonomy groups:", grouped);
     setGroups(grouped);
   }
 
@@ -125,18 +122,24 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
       .single();
 
     if (error) {
-      console.error("Insert indicator failed:", error);
+      console.error("❌ Failed to save indicator:", error);
       alert("Failed to save indicator: " + error.message);
       setSaving(false);
       return;
     }
 
-    const indicatorId = data?.id as string | undefined;
-
+    const indicatorId = data?.id;
     if (indicatorId && selectedTerms.length > 0) {
-      const rows = selectedTerms.map((taxonomy_id) => ({ indicator_id: indicatorId, taxonomy_id }));
-      const { error: linkErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
-      if (linkErr) console.error("Failed to link taxonomy terms:", linkErr);
+      const linkRows = selectedTerms.map((taxonomy_id) => ({
+        indicator_id: indicatorId,
+        taxonomy_id,
+      }));
+
+      const { error: linkErr } = await supabase
+        .from("indicator_taxonomy_links")
+        .insert(linkRows);
+
+      if (linkErr) console.error("⚠️ Failed to link taxonomy terms:", linkErr);
     }
 
     setSaving(false);
@@ -147,6 +150,7 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator (NEW)">
       <div className="space-y-3">
+        {/* Indicator Info */}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-600">
@@ -212,6 +216,7 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
           />
         </div>
 
+        {/* Taxonomy */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Taxonomy Terms</label>
           <div className="space-y-3 max-h-64 overflow-y-auto border rounded p-2">
@@ -240,6 +245,7 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
           </div>
         </div>
 
+        {/* Buttons */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
