@@ -1,208 +1,152 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
-import { Loader2, XCircle } from "lucide-react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Indicator = { id: string; code: string; name: string; topic: string };
-type TaxonomyCategory = { category: string };
-type TaxonomyTerm = { id: string; name: string; category: string };
-type LinkRow = { id: string; indicator_id: string; indicator_catalogue: Indicator };
+type Entity = { id: string; type: "pillar" | "theme" | "subtheme"; name: string };
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  entity: { type: "pillar" | "theme" | "subtheme"; id: string; name: string };
+  entity: Entity;
   onSaved: () => Promise<void>;
 };
 
 export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: Props) {
-  const [loading, setLoading] = useState(true);
-  const [links, setLinks] = useState<LinkRow[]>([]);
   const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
-  const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
-  const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedTerm, setSelectedTerm] = useState("");
+  const [links, setLinks] = useState<any[]>([]);
+  const [selected, setSelected] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [cats, setCats] = useState<string[]>([]);
+  const [terms, setTerms] = useState<string[]>([]);
+  const [catFilter, setCatFilter] = useState("All");
+  const [termFilter, setTermFilter] = useState("All");
   const [search, setSearch] = useState("");
-  const [selectedIndicator, setSelectedIndicator] = useState("");
 
   useEffect(() => {
-    if (open) loadAll();
+    if (open) load();
   }, [open]);
 
-  async function loadAll() {
+  async function load() {
     setLoading(true);
 
-    // existing links
+    // Load existing links for this entity
     const { data: l, error: linkErr } = await supabase
-      .from("framework_indicator_links")
-      .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
+      .from("framework_catalogue_indicator_links")
+      .select("id, indicator_id, indicator_catalogue (id, code, name, topic)")
       .eq(`${entity.type}_id`, entity.id);
-    if (linkErr) console.error(linkErr);
+    if (linkErr) console.error("Error loading links:", linkErr);
 
-    const flatLinks =
-      (l || []).map((r: any) => ({
-        id: r.id,
-        indicator_id: r.indicator_id,
-        indicator_catalogue: Array.isArray(r.indicator_catalogue)
-          ? r.indicator_catalogue[0]
-          : r.indicator_catalogue,
-      })) as LinkRow[];
-    setLinks(flatLinks);
+    // Load indicators with taxonomy references
+    const { data: inds, error: indErr } = await supabase
+      .from("indicator_catalogue")
+      .select("id, code, name, topic");
+    if (indErr) console.error("Error loading indicators:", indErr);
 
-    // load taxonomy categories that have linked indicators
-    const { data: linkTerms, error: ltErr } = await supabase
+    // Load taxonomy categories that actually have indicators
+    const { data: tax, error: taxErr } = await supabase
       .from("indicator_taxonomy_links")
-      .select("taxonomy_id");
-    if (ltErr) console.error(ltErr);
+      .select("taxonomy_terms (category, name)")
+      .not("indicator_id", "is", null);
+    if (taxErr) console.error("Error loading taxonomy categories:", taxErr);
 
-    const termIds = (linkTerms || []).map((l) => l.taxonomy_id);
-    if (termIds.length > 0) {
-      const { data: termCats, error: tcErr } = await supabase
-        .from("taxonomy_terms")
-        .select("category")
-        .in("id", termIds);
-      if (!tcErr && termCats) {
-        const cats = Array.from(new Set(termCats.map((t) => t.category))).sort();
-        setCategories(cats.map((c) => ({ category: c })));
-      }
-    }
+    const categories = Array.from(new Set(tax?.map((t: any) => t.taxonomy_terms?.category).filter(Boolean)));
+    const termsList = Array.from(new Set(tax?.map((t: any) => t.taxonomy_terms?.name).filter(Boolean)));
+
+    setCats(categories);
+    setTerms(termsList);
+    setLinks(l || []);
+    setAllIndicators(inds || []);
+    setSelected("");
     setLoading(false);
   }
 
-  async function loadTermsForCategory(cat: string) {
-    setSelectedCategory(cat);
-    setSelectedTerm("");
-    const { data, error } = await supabase
-      .from("taxonomy_terms")
-      .select("id, name, category")
-      .eq("category", cat)
-      .order("name");
-    if (!error && data) setTerms(data);
-  }
-
-  async function loadIndicatorsForTerm(termId?: string, searchQuery?: string) {
-    setLoading(true);
-    let query = supabase.from("indicator_catalogue").select("id, code, name, topic").order("code");
-    if (searchQuery) query = query.ilike("name", `%${searchQuery}%`);
-
-    if (termId) {
-      const { data: linked } = await supabase
-        .from("indicator_taxonomy_links")
-        .select("indicator_id")
-        .eq("taxonomy_id", termId);
-      const ids = linked?.map((l) => l.indicator_id) || [];
-      if (ids.length > 0) query = query.in("id", ids);
-      else query = query.limit(0);
-    }
-
-    const { data, error } = await query;
-    if (!error && data) setAllIndicators(data);
-    setLoading(false);
-  }
-
-  async function handleAdd() {
-    if (!selectedIndicator) return alert("Select an indicator first.");
-    const { error } = await supabase.from("framework_indicator_links").insert({
-      indicator_id: selectedIndicator,
+  async function addLink() {
+    if (!selected) return;
+    const { error } = await supabase.from("framework_catalogue_indicator_links").insert({
+      indicator_id: selected,
       [`${entity.type}_id`]: entity.id,
     });
-    if (error) alert("Failed to link indicator.");
-    else {
-      await loadAll();
-      await onSaved();
+    if (error) {
+      console.error("Failed to link indicator:", error);
+      alert("Failed to link indicator.");
+      return;
     }
+    await load();
+    await onSaved();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Remove this linked indicator?")) return;
-    const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
-    if (error) alert("Delete failed.");
-    else {
-      await loadAll();
-      await onSaved();
+  async function deleteLink(id: string) {
+    const { error } = await supabase.from("framework_catalogue_indicator_links").delete().eq("id", id);
+    if (error) {
+      console.error("Failed to unlink:", error);
+      alert("Failed to unlink indicator.");
+      return;
     }
+    await load();
   }
 
-  const filteredIndicators = useMemo(() => {
-    if (!search && !selectedTerm) return allIndicators;
-    return allIndicators.filter((i) =>
-      i.name.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [allIndicators, search, selectedTerm]);
+  const filteredIndicators = allIndicators.filter((ind) => {
+    const s = search.toLowerCase();
+    return ind.name.toLowerCase().includes(s) || ind.code.toLowerCase().includes(s);
+  });
 
   return (
-    <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`} width="max-w-3xl">
+    <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       {loading ? (
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading...
-        </div>
+        <div className="text-gray-500 text-sm">Loading...</div>
       ) : (
         <div className="space-y-4">
           {/* Filters */}
-          <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex flex-wrap items-end gap-2">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+              <label className="text-sm font-medium block">Category</label>
               <select
-                value={selectedCategory}
-                onChange={(e) => loadTermsForCategory(e.target.value)}
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
                 className="border rounded px-2 py-1 text-sm"
               >
-                <option value="">All</option>
-                {categories.map((c) => (
-                  <option key={c.category} value={c.category}>
-                    {c.category}
-                  </option>
+                <option>All</option>
+                {cats.map((c) => (
+                  <option key={c}>{c}</option>
                 ))}
               </select>
             </div>
-
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Term</label>
+              <label className="text-sm font-medium block">Term</label>
               <select
-                value={selectedTerm}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setSelectedTerm(id);
-                  loadIndicatorsForTerm(id, search);
-                }}
-                disabled={!selectedCategory}
+                value={termFilter}
+                onChange={(e) => setTermFilter(e.target.value)}
                 className="border rounded px-2 py-1 text-sm"
               >
-                <option value="">All</option>
+                <option>All</option>
                 {terms.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
+                  <option key={t}>{t}</option>
                 ))}
               </select>
             </div>
-
             <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
+              <label className="text-sm font-medium block">Search</label>
               <input
                 type="text"
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  if (selectedTerm) loadIndicatorsForTerm(selectedTerm, e.target.value);
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or code..."
-                className="border rounded px-2 py-1 text-sm w-full"
+                className="border rounded px-2 py-1 w-full text-sm"
               />
             </div>
           </div>
 
-          {/* Add */}
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Select Indicator</label>
+          {/* Select */}
+          <div>
+            <label className="text-sm font-medium block">Select Indicator</label>
+            <div className="flex items-center gap-2">
               <select
-                value={selectedIndicator}
-                onChange={(e) => setSelectedIndicator(e.target.value)}
-                className="w-full border rounded px-2 py-1 text-sm"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                className="border rounded px-2 py-1 flex-1 text-sm"
               >
                 <option value="">Select an indicator</option>
                 {filteredIndicators.map((i) => (
@@ -211,51 +155,53 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
                   </option>
                 ))}
               </select>
+              <button
+                onClick={addLink}
+                className="px-3 py-1 bg-[var(--gsc-blue)] text-white rounded text-sm"
+              >
+                Add
+              </button>
             </div>
-            <button
-              onClick={handleAdd}
-              className="px-3 py-2 text-sm rounded-md"
-              style={{ background: "var(--gsc-blue)", color: "white" }}
-            >
-              Add
-            </button>
           </div>
 
-          {/* Linked list */}
-          <div className="border rounded-md">
+          {/* Linked indicators */}
+          <div className="border rounded overflow-hidden">
             <table className="w-full text-sm">
-              <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
+              <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)]">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium">Code</th>
-                  <th className="text-left px-3 py-2 font-medium">Name</th>
-                  <th className="text-left px-3 py-2 font-medium">Topic</th>
-                  <th className="text-right px-3 py-2 font-medium">Actions</th>
+                  <th className="text-left px-2 py-1">Code</th>
+                  <th className="text-left px-2 py-1">Name</th>
+                  <th className="text-left px-2 py-1">Topic</th>
+                  <th className="text-right px-2 py-1">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {links.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-gray-400 italic text-center">
+                    <td colSpan={4} className="text-center text-gray-400 py-2 italic">
                       No indicators linked.
                     </td>
                   </tr>
                 ) : (
-                  links.map((l) => (
-                    <tr key={l.id} className="border-t hover:bg-gray-50">
-                      <td className="px-3 py-2">{l.indicator_catalogue?.code}</td>
-                      <td className="px-3 py-2">{l.indicator_catalogue?.name}</td>
-                      <td className="px-3 py-2">{l.indicator_catalogue?.topic}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => handleDelete(l.id)}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
-                          title="Remove link"
-                        >
-                          <XCircle className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  links.map((lnk: any) => {
+                    const i = lnk.indicator_catalogue?.[0];
+                    if (!i) return null;
+                    return (
+                      <tr key={lnk.id} className="border-t">
+                        <td className="px-2 py-1">{i.code}</td>
+                        <td className="px-2 py-1">{i.name}</td>
+                        <td className="px-2 py-1">{i.topic}</td>
+                        <td className="px-2 py-1 text-right">
+                          <button
+                            onClick={() => deleteLink(lnk.id)}
+                            className="text-[var(--gsc-red)] hover:underline text-xs"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
