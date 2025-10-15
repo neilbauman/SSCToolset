@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
 
-type TaxonomyCategory = {
+type Cat = { id: string; name: string };
+type Term = { id: string; name: string; category: string; category_order?: number; sort_order?: number };
+
+type Group = {
   id: string;
   name: string;
-  taxonomy_terms: { id: string; name: string }[];
+  terms: { id: string; name: string }[];
 };
 
 type Props = {
@@ -24,16 +27,15 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
   const [unit, setUnit] = useState("");
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
-  const [taxonomy, setTaxonomy] = useState<TaxonomyCategory[]>([]);
+
+  const [groups, setGroups] = useState<Group[]>([]);
   const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      loadTaxonomy();
-      resetForm();
-      console.log("✅ AddIndicatorModalNEW loaded");
-    }
+    if (!open) return;
+    resetForm();
+    loadTaxonomy();
   }, [open]);
 
   function resetForm() {
@@ -47,31 +49,50 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
   }
 
   async function loadTaxonomy() {
-    const { data, error } = await supabase
+    // Load categories
+    const { data: cats, error: cErr } = await supabase
       .from("taxonomy_categories")
-      .select("id, name, taxonomy_terms ( id, name )")
-      .order("name");
+      .select("id, name")
+      .order("name", { ascending: true });
 
-    if (error) {
-      console.error("Error loading taxonomy:", error.message);
+    if (cErr) {
+      console.error("Failed to load taxonomy categories:", cErr.message);
+      setGroups([]);
       return;
     }
 
-    const categories =
-      data?.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        taxonomy_terms: c.taxonomy_terms || [],
-      })) || [];
+    // Load terms (authoritative ordering)
+    const { data: terms, error: tErr } = await supabase
+      .from("taxonomy_terms")
+      .select("id, name, category, category_order, sort_order")
+      .order("category_order", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
 
-    setTaxonomy(categories);
+    if (tErr) {
+      console.error("Failed to load taxonomy terms:", tErr.message);
+      setGroups([]);
+      return;
+    }
+
+    const catList: Cat[] = (cats || []) as Cat[];
+    const termList: Term[] = (terms || []) as Term[];
+
+    // Group terms by matching taxonomy_terms.category === taxonomy_categories.name
+    const grouped: Group[] = catList.map((c) => ({
+      id: c.id,
+      name: c.name,
+      terms: termList
+        .filter((t) => t.category === c.name)
+        .map((t) => ({ id: t.id, name: t.name })),
+    }));
+
+    setGroups(grouped);
   }
 
   function toggleTerm(termId: string) {
     setSelectedTerms((prev) =>
-      prev.includes(termId)
-        ? prev.filter((id) => id !== termId)
-        : [...prev, termId]
+      prev.includes(termId) ? prev.filter((id) => id !== termId) : [...prev, termId]
     );
   }
 
@@ -83,7 +104,7 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
 
     setSaving(true);
 
-    const newIndicator = {
+    const payload = {
       code: code.trim(),
       name: name.trim(),
       description: description || null,
@@ -99,27 +120,22 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
 
     const { data, error } = await supabase
       .from("indicator_catalogue")
-      .insert([newIndicator])
-      .select("id");
+      .insert([payload])
+      .select("id")
+      .single();
 
     if (error) {
-      console.error("Insert error:", error);
+      console.error("Insert indicator failed:", error);
       alert("Failed to save indicator: " + error.message);
       setSaving(false);
       return;
     }
 
-    const indicatorId = data?.[0]?.id;
+    const indicatorId = data?.id as string | undefined;
+
     if (indicatorId && selectedTerms.length > 0) {
-      const linkRows = selectedTerms.map((termId) => ({
-        indicator_id: indicatorId,
-        taxonomy_id: termId,
-      }));
-
-      const { error: linkErr } = await supabase
-        .from("indicator_taxonomy_links")
-        .insert(linkRows);
-
+      const rows = selectedTerms.map((taxonomy_id) => ({ indicator_id: indicatorId, taxonomy_id }));
+      const { error: linkErr } = await supabase.from("indicator_taxonomy_links").insert(rows);
       if (linkErr) console.error("Failed to link taxonomy terms:", linkErr);
     }
 
@@ -131,7 +147,6 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
   return (
     <Modal open={open} onClose={onClose} title="Add Indicator (NEW)">
       <div className="space-y-3">
-        {/* Basic Info */}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-600">
@@ -139,9 +154,9 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
             </label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g., SSC_P3_T2_S5"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g., SSC_P3_T2_S5"
             />
           </div>
           <div>
@@ -150,54 +165,45 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
             </label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="Indicator name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Indicator name"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Type
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Type</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g., gradient"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              placeholder="e.g., gradient"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Unit
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Unit</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g., % households"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="e.g., % households"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">
-              Topic
-            </label>
+            <label className="block text-xs font-medium text-gray-600">Topic</label>
             <input
               className="w-full border rounded px-2 py-1 text-sm"
+              placeholder="e.g., SSC Framework"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., SSC Framework"
             />
           </div>
         </div>
 
-        {/* Description */}
         <div>
-          <label className="block text-xs font-medium text-gray-600">
-            Description
-          </label>
+          <label className="block text-xs font-medium text-gray-600">Description</label>
           <textarea
             className="w-full border rounded px-2 py-1 text-sm"
             rows={2}
@@ -206,38 +212,34 @@ export default function AddIndicatorModalNEW({ open, onClose, onSaved }: Props) 
           />
         </div>
 
-        {/* Taxonomy Terms */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Taxonomy Terms
-          </label>
-          <div className="space-y-2 max-h-64 overflow-y-auto border rounded p-2">
-            {taxonomy.map((cat) => (
-              <div key={cat.id}>
-                <div className="font-medium text-xs text-[var(--gsc-blue)] mb-1">
-                  {cat.name}
+          <label className="block text-xs font-medium text-gray-600 mb-1">Taxonomy Terms</label>
+          <div className="space-y-3 max-h-64 overflow-y-auto border rounded p-2">
+            {groups.length === 0 ? (
+              <div className="text-xs text-gray-500 italic">No taxonomy available.</div>
+            ) : (
+              groups.map((g) => (
+                <div key={g.id}>
+                  <div className="font-medium text-xs text-[var(--gsc-blue)] mb-1">{g.name}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {g.terms.map((t) => (
+                      <label key={t.id} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={selectedTerms.includes(t.id)}
+                          onChange={() => toggleTerm(t.id)}
+                          className="accent-[var(--gsc-blue)]"
+                        />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {cat.taxonomy_terms.map((term) => (
-                    <label
-                      key={term.id}
-                      className="flex items-center gap-1 text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTerms.includes(term.id)}
-                        onChange={() => toggleTerm(term.id)}
-                      />
-                      {term.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
