@@ -5,21 +5,10 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import Modal from "@/components/ui/Modal";
 import { Loader2, XCircle } from "lucide-react";
 
-type Indicator = {
-  id: string;
-  code: string;
-  name: string;
-  topic: string;
-};
-
+type Indicator = { id: string; code: string; name: string; topic: string };
 type TaxonomyCategory = { category: string };
 type TaxonomyTerm = { id: string; name: string; category: string };
-
-type LinkRow = {
-  id: string;
-  indicator_id: string;
-  indicator_catalogue: Indicator;
-};
+type LinkRow = { id: string; indicator_id: string; indicator_catalogue: Indicator };
 
 type Props = {
   open: boolean;
@@ -45,27 +34,41 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
 
   async function loadAll() {
     setLoading(true);
+
+    // existing links
     const { data: l, error: linkErr } = await supabase
       .from("framework_indicator_links")
       .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
       .eq(`${entity.type}_id`, entity.id);
-
     if (linkErr) console.error(linkErr);
 
-    // flatten nested select
     const flatLinks =
-      (l || []).map((row: any) => ({
-        id: row.id,
-        indicator_id: row.indicator_id,
-        indicator_catalogue: row.indicator_catalogue?.[0] || row.indicator_catalogue,
+      (l || []).map((r: any) => ({
+        id: r.id,
+        indicator_id: r.indicator_id,
+        indicator_catalogue: Array.isArray(r.indicator_catalogue)
+          ? r.indicator_catalogue[0]
+          : r.indicator_catalogue,
       })) as LinkRow[];
-
     setLinks(flatLinks);
 
-    // taxonomy categories that have linked indicators
-    const { data: cats } = await supabase.rpc("distinct_taxonomy_categories_with_links");
-    if (cats) setCategories(cats.map((c: any) => ({ category: c.category })));
+    // load taxonomy categories that have linked indicators
+    const { data: linkTerms, error: ltErr } = await supabase
+      .from("indicator_taxonomy_links")
+      .select("taxonomy_id");
+    if (ltErr) console.error(ltErr);
 
+    const termIds = (linkTerms || []).map((l) => l.taxonomy_id);
+    if (termIds.length > 0) {
+      const { data: termCats, error: tcErr } = await supabase
+        .from("taxonomy_terms")
+        .select("category")
+        .in("id", termIds);
+      if (!tcErr && termCats) {
+        const cats = Array.from(new Set(termCats.map((t) => t.category))).sort();
+        setCategories(cats.map((c) => ({ category: c })));
+      }
+    }
     setLoading(false);
   }
 
@@ -84,17 +87,19 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     setLoading(true);
     let query = supabase.from("indicator_catalogue").select("id, code, name, topic").order("code");
     if (searchQuery) query = query.ilike("name", `%${searchQuery}%`);
+
     if (termId) {
-      const { data: links } = await supabase
+      const { data: linked } = await supabase
         .from("indicator_taxonomy_links")
         .select("indicator_id")
         .eq("taxonomy_id", termId);
-      const ids = links?.map((r) => r.indicator_id) || [];
+      const ids = linked?.map((l) => l.indicator_id) || [];
       if (ids.length > 0) query = query.in("id", ids);
       else query = query.limit(0);
     }
-    const { data } = await query;
-    setAllIndicators(data || []);
+
+    const { data, error } = await query;
+    if (!error && data) setAllIndicators(data);
     setLoading(false);
   }
 
@@ -136,7 +141,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Filter Bar */}
+          {/* Filters */}
           <div className="flex flex-wrap gap-2 items-end">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
@@ -190,7 +195,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             </div>
           </div>
 
-          {/* Add Indicator */}
+          {/* Add */}
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-600 mb-1">Select Indicator</label>
@@ -216,7 +221,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             </button>
           </div>
 
-          {/* Linked Indicators */}
+          {/* Linked list */}
           <div className="border rounded-md">
             <table className="w-full text-sm">
               <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
