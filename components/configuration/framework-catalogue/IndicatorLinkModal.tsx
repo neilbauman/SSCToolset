@@ -33,14 +33,28 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   // ─────────────────────────────────────────────
   useEffect(() => {
     async function loadCategories() {
+      const { data: links, error: linkErr } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("taxonomy_id")
+        .not("taxonomy_id", "is", null);
+
+      if (linkErr) {
+        console.error("Error loading linked taxonomies:", linkErr);
+        return;
+      }
+
+      const uniqueIds = Array.from(new Set((links || []).map((x) => x.taxonomy_id)));
+      if (uniqueIds.length === 0) {
+        setCategories([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("taxonomy")
         .select("id, name")
-        .in("id",
-          supabase
-            .from("indicator_taxonomy_links")
-            .select("taxonomy_id")
-        );
+        .in("id", uniqueIds)
+        .order("name");
+
       if (!error && data) setCategories(data);
     }
     loadCategories();
@@ -55,12 +69,14 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       setSelectedTerm("all");
       return;
     }
+
     async function loadTerms() {
       const { data, error } = await supabase
         .from("taxonomy_terms")
         .select("id, name, taxonomy_id")
         .eq("taxonomy_id", selectedCategory)
         .order("name");
+
       if (!error && data) setTerms(data);
     }
     loadTerms();
@@ -71,36 +87,48 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   // ─────────────────────────────────────────────
   useEffect(() => {
     async function loadIndicators() {
-      let query = supabase.from("indicator_catalogue").select("id, code, name, topic");
+      let indicatorIds: string[] = [];
 
       if (selectedTerm !== "all") {
-        query = query.in(
-          "id",
-          supabase.from("indicator_taxonomy_links").select("indicator_id").eq("taxonomy_id", selectedTerm)
-        );
+        const { data: links, error } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("indicator_id")
+          .eq("taxonomy_id", selectedTerm);
+        if (error) {
+          console.error("Error fetching indicators for term:", error);
+          return;
+        }
+        indicatorIds = (links || []).map((x) => x.indicator_id);
       } else if (selectedCategory !== "all") {
         const { data: termList } = await supabase
           .from("taxonomy_terms")
           .select("id")
           .eq("taxonomy_id", selectedCategory);
+
         const termIds = (termList || []).map((t) => t.id);
-        query = query.in(
-          "id",
-          supabase
-            .from("indicator_taxonomy_links")
-            .select("indicator_id")
-            .in("taxonomy_id", termIds)
-        );
+        const { data: links, error } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("indicator_id")
+          .in("taxonomy_id", termIds);
+
+        if (error) {
+          console.error("Error fetching indicators for category:", error);
+          return;
+        }
+        indicatorIds = (links || []).map((x) => x.indicator_id);
       }
 
-      const { data, error } = await query.order("code");
+      let query = supabase.from("indicator_catalogue").select("id, code, name, topic").order("code");
+      if (indicatorIds.length > 0) query = query.in("id", indicatorIds);
+
+      const { data, error } = await query;
       if (!error && data) setIndicators(data);
     }
     loadIndicators();
   }, [selectedCategory, selectedTerm]);
 
   // ─────────────────────────────────────────────
-  // Load already-linked indicators
+  // Load already-linked indicators for this entity
   // ─────────────────────────────────────────────
   useEffect(() => {
     async function loadLinks() {
@@ -114,7 +142,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   }, [entity.id]);
 
   // ─────────────────────────────────────────────
-  // Filter indicators client-side by search term
+  // Client-side filter by search
   // ─────────────────────────────────────────────
   const filteredIndicators = useMemo(() => {
     if (!search) return indicators;
@@ -126,7 +154,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   }, [indicators, search]);
 
   // ─────────────────────────────────────────────
-  // Add indicator link
+  // Add / delete link handlers
   // ─────────────────────────────────────────────
   async function handleAdd() {
     if (!selectedIndicator) return;
@@ -145,15 +173,15 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Delete indicator link
-  // ─────────────────────────────────────────────
   async function handleDelete(id: string) {
     const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
     if (error) alert("Delete failed.");
     else await onSaved();
   }
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       {/* Filters */}
