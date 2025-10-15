@@ -1,162 +1,295 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Modal from "@/components/ui/Modal";
+import { useEffect, useState, useMemo } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, Trash2, Plus } from "lucide-react";
+import Modal from "@/components/ui/Modal";
+import { Loader2, XCircle } from "lucide-react";
 
-type Indicator = { id: string; code: string; name: string; topic?: string };
-type LinkRow = { id: string; indicator_id: string; indicator_catalogue?: Indicator };
-type EntityRef = { id: string; type: "pillar" | "theme" | "subtheme"; name: string };
+type Indicator = {
+  id: string;
+  code: string;
+  name: string;
+  topic: string;
+};
+
+type TaxonomyCategory = {
+  category: string;
+};
+
+type TaxonomyTerm = {
+  id: string;
+  name: string;
+  category: string;
+};
+
+type LinkRow = {
+  id: string;
+  indicator_id: string;
+  indicator_catalogue: Indicator;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
-  entity: EntityRef;
+  entity: { type: "pillar" | "theme" | "subtheme"; id: string; name: string };
+  onSaved: () => Promise<void>;
 };
 
-export default function IndicatorLinkModal({ open, onClose, onSaved, entity }: Props) {
+export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [allIndicators, setAllIndicators] = useState<Indicator[]>([]);
-  const [selected, setSelected] = useState("");
-  const [saving, setSaving] = useState(false);
+
+  // taxonomy filters
+  const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
+  const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedTerm, setSelectedTerm] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  const [selectedIndicator, setSelectedIndicator] = useState<string>("");
 
   useEffect(() => {
-    if (open && entity?.id) loadAll();
-  }, [open, entity?.id]);
+    if (open) loadAll();
+  }, [open]);
 
   async function loadAll() {
     setLoading(true);
-    const filterCol =
-      entity.type === "pillar" ? "pillar_id" : entity.type === "theme" ? "theme_id" : "subtheme_id";
 
-    const { data: lData, error: lErr } = await supabase
+    // Existing links for this entity
+    const { data: l, error: linkErr } = await supabase
       .from("framework_indicator_links")
       .select("id, indicator_id, indicator_catalogue(id, code, name, topic)")
-      .eq(filterCol, entity.id);
+      .eq(`${entity.type}_id`, entity.id);
 
-    const { data: iData, error: iErr } = await supabase
+    if (linkErr) console.error("Error loading links:", linkErr);
+    setLinks(l || []);
+
+    // Load taxonomy categories that have linked indicators
+    const { data: cats, error: catErr } = await supabase
+      .from("taxonomy_terms")
+      .select("category")
+      .in(
+        "id",
+        supabase
+          .from("indicator_taxonomy_links")
+          .select("taxonomy_id") as any
+      );
+
+    if (!catErr && cats) {
+      const uniqueCats = Array.from(new Set(cats.map((c) => c.category))).sort();
+      setCategories(uniqueCats.map((c) => ({ category: c })));
+    }
+
+    setLoading(false);
+  }
+
+  async function loadTermsForCategory(cat: string) {
+    setSelectedCategory(cat);
+    setSelectedTerm("");
+    setAllIndicators([]);
+
+    const { data, error } = await supabase
+      .from("taxonomy_terms")
+      .select("id, name, category")
+      .eq("category", cat)
+      .in(
+        "id",
+        supabase.from("indicator_taxonomy_links").select("taxonomy_id") as any
+      )
+      .order("name");
+
+    if (!error && data) setTerms(data);
+  }
+
+  async function loadIndicatorsForTerm(termId?: string, searchQuery?: string) {
+    setLoading(true);
+    let query = supabase
       .from("indicator_catalogue")
       .select("id, code, name, topic")
       .order("code");
 
-    if (lErr || iErr) console.error(lErr || iErr);
+    if (searchQuery) query = query.ilike("name", `%${searchQuery}%`);
 
-    const safeLinks: LinkRow[] = (lData || []).map((l: any) => ({
-      id: l.id,
-      indicator_id: l.indicator_id,
-      indicator_catalogue: Array.isArray(l.indicator_catalogue)
-        ? l.indicator_catalogue[0]
-        : l.indicator_catalogue,
-    }));
+    if (termId) {
+      const { data: linkedIds } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("indicator_id")
+        .eq("taxonomy_id", termId);
+      const ids = linkedIds?.map((i) => i.indicator_id) || [];
+      if (ids.length > 0) query = query.in("id", ids);
+      else query = query.limit(0);
+    }
 
-    setLinks(safeLinks);
-    setAllIndicators((iData || []) as Indicator[]);
-    setSelected("");
+    const { data, error } = await query;
+    if (!error && data) setAllIndicators(data);
     setLoading(false);
   }
 
   async function handleAdd() {
-    if (!selected) return alert("Select an indicator first.");
-    setSaving(true);
-    const payload: any = {
-      indicator_id: selected,
-      pillar_id: entity.type === "pillar" ? entity.id : null,
-      theme_id: entity.type === "theme" ? entity.id : null,
-      subtheme_id: entity.type === "subtheme" ? entity.id : null,
-    };
-    const { error } = await supabase.from("framework_indicator_links").insert(payload);
-    setSaving(false);
+    if (!selectedIndicator) return alert("Select an indicator first.");
+    const { error } = await supabase.from("framework_indicator_links").insert({
+      indicator_id: selectedIndicator,
+      [`${entity.type}_id`]: entity.id,
+    });
     if (error) {
-      console.error(error);
+      console.error("Add failed:", error);
       alert("Failed to link indicator.");
     } else {
       await loadAll();
-      onSaved();
+      await onSaved();
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Remove this indicator link?")) return;
-    const { error } = await supabase.from("framework_indicator_links").delete().eq("id", id);
+    if (!confirm("Remove this linked indicator?")) return;
+    const { error } = await supabase
+      .from("framework_indicator_links")
+      .delete()
+      .eq("id", id);
     if (error) {
-      console.error(error);
-      alert("Failed to delete link.");
+      console.error("Delete failed:", error);
+      alert("Delete failed.");
     } else {
       await loadAll();
-      onSaved();
+      await onSaved();
     }
   }
 
+  const filteredIndicators = useMemo(() => {
+    if (!search && !selectedTerm) return allIndicators;
+    return allIndicators.filter((i) =>
+      i.name.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [allIndicators, search, selectedTerm]);
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={`Linked Indicators • ${entity.name}`}
-      width="max-w-2xl"
-    >
+    <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`} width="max-w-3xl">
       {loading ? (
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading...
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex gap-2 items-center">
-            <select
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-              className="flex-1 border rounded px-3 py-2 text-sm"
-            >
-              <option value="">Select indicator…</option>
-              {allIndicators.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.code} — {i.name}
-                </option>
-              ))}
-            </select>
+          {/* Filter Bar */}
+          <div className="flex flex-wrap gap-2 items-end">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => loadTermsForCategory(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All</option>
+                {categories.map((c) => (
+                  <option key={c.category} value={c.category}>
+                    {c.category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Term</label>
+              <select
+                value={selectedTerm}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedTerm(id);
+                  loadIndicatorsForTerm(id, search);
+                }}
+                disabled={!selectedCategory}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">All</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  if (selectedTerm) loadIndicatorsForTerm(selectedTerm, e.target.value);
+                }}
+                placeholder="Search name or code..."
+                className="border rounded px-2 py-1 text-sm w-full"
+              />
+            </div>
+          </div>
+
+          {/* Add new link */}
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Select Indicator</label>
+              <select
+                value={selectedIndicator}
+                onChange={(e) => setSelectedIndicator(e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm"
+              >
+                <option value="">Select an indicator</option>
+                {filteredIndicators.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.code} — {i.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={handleAdd}
-              disabled={!selected || saving}
-              className="flex items-center gap-1 px-3 py-2 text-sm rounded-md"
-              style={{
-                background: "var(--gsc-blue)",
-                color: "white",
-                opacity: saving ? 0.7 : 1,
-              }}
+              className="px-3 py-2 text-sm rounded-md"
+              style={{ background: "var(--gsc-blue)", color: "white" }}
             >
-              <Plus className="w-4 h-4" /> Add
+              Add
             </button>
           </div>
 
-          {links.length === 0 ? (
-            <p className="text-sm text-gray-500 italic">No linked indicators yet.</p>
-          ) : (
-            <ul className="divide-y border rounded-md bg-white">
-              {links.map((l) => (
-                <li key={l.id} className="flex justify-between items-center px-3 py-2 text-sm">
-                  <div>
-                    <div className="font-medium text-gray-800">
-                      {l.indicator_catalogue?.code} — {l.indicator_catalogue?.name}
-                    </div>
-                    {l.indicator_catalogue?.topic && (
-                      <div className="text-xs text-gray-500">
-                        {l.indicator_catalogue.topic}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleDelete(l.id)}
-                    className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100"
-                    title="Delete link"
-                  >
-                    <Trash2 className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* Existing Links */}
+          <div className="border rounded-md">
+            <table className="w-full text-sm">
+              <thead style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}>
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Code</th>
+                  <th className="text-left px-3 py-2 font-medium">Name</th>
+                  <th className="text-left px-3 py-2 font-medium">Topic</th>
+                  <th className="text-right px-3 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {links.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-2 text-gray-400 italic text-center">
+                      No indicators linked.
+                    </td>
+                  </tr>
+                ) : (
+                  links.map((l) => (
+                    <tr key={l.id} className="border-t hover:bg-gray-50">
+                      <td className="px-3 py-2">{l.indicator_catalogue?.code}</td>
+                      <td className="px-3 py-2">{l.indicator_catalogue?.name}</td>
+                      <td className="px-3 py-2">{l.indicator_catalogue?.topic}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => handleDelete(l.id)}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100"
+                          title="Remove link"
+                        >
+                          <XCircle className="w-4 h-4" style={{ color: "var(--gsc-red)" }} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </Modal>
