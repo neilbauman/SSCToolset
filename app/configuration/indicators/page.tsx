@@ -392,12 +392,12 @@ export default function IndicatorsPage() {
 
       {/* Modals */}
       {openAdd && (
-        <AddIndicatorModal
-          open={openAdd}
-          onClose={() => setOpenAdd(false)}
-          onSaved={loadAll}
-        />
-      )}
+  <AddIndicatorModalNEW
+    open={openAdd}
+    onClose={() => setOpenAdd(false)}
+    onSaved={loadAll}
+  />
+)}
       {editingId && (
         <EditIndicatorModal
           open={!!editingId}
