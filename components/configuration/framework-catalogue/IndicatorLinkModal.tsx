@@ -9,7 +9,12 @@ type Entity = { id: string; name: string; type: EntityType };
 type Indicator = { id: string; code: string; name: string; topic: string | null };
 type TaxonomyTerm = { id: string; name: string; category: string };
 
-type Props = { open: boolean; onClose: () => void; entity: Entity; onSaved: () => Promise<void> };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  entity: Entity;
+  onSaved: () => Promise<void>;
+};
 
 export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: Props) {
   const [categories, setCategories] = useState<string[]>([]);
@@ -23,17 +28,22 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   const [loading, setLoading] = useState(false);
 
   // ─────────────────────────────────────────────
+  // Load taxonomy categories that have linked indicators
   useEffect(() => {
     (async () => {
       const { data: linkRows } = await supabase.from("indicator_taxonomy_links").select("taxonomy_id");
       const linkedIds = (linkRows || []).map((r) => r.taxonomy_id);
       if (!linkedIds.length) return;
-      const { data: termsData } = await supabase.from("taxonomy_terms").select("id, category, name").in("id", linkedIds);
+      const { data: termsData } = await supabase
+        .from("taxonomy_terms")
+        .select("id, category, name")
+        .in("id", linkedIds);
       const uniqueCats = Array.from(new Set((termsData || []).map((t) => t.category))).sort();
       setCategories(uniqueCats);
     })();
   }, []);
 
+  // Load terms for selected category
   useEffect(() => {
     if (selectedCategory === "all") return setTerms([]);
     (async () => {
@@ -46,35 +56,50 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     })();
   }, [selectedCategory]);
 
+  // Load indicators for selected taxonomy term
   useEffect(() => {
     (async () => {
       setLoading(true);
       let ids: string[] = [];
       if (selectedTerm !== "all") {
-        const { data } = await supabase.from("indicator_taxonomy_links").select("indicator_id").eq("taxonomy_id", selectedTerm);
+        const { data } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("indicator_id")
+          .eq("taxonomy_id", selectedTerm);
         ids = (data || []).map((x) => x.indicator_id);
       } else if (selectedCategory !== "all") {
-        const { data: termIds } = await supabase.from("taxonomy_terms").select("id").eq("category", selectedCategory);
-        const { data } = await supabase.from("indicator_taxonomy_links").select("indicator_id").in("taxonomy_id", (termIds || []).map((t) => t.id));
+        const { data: termIds } = await supabase
+          .from("taxonomy_terms")
+          .select("id")
+          .eq("category", selectedCategory);
+        const { data } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("indicator_id")
+          .in("taxonomy_id", (termIds || []).map((t) => t.id));
         ids = (data || []).map((x) => x.indicator_id);
       }
-      const { data } = await supabase.from("indicator_catalogue").select("id, code, name, topic").in("id", ids).order("code");
+      const { data } = await supabase
+        .from("indicator_catalogue")
+        .select("id, code, name, topic")
+        .in("id", ids)
+        .order("code");
       setIndicators(data || []);
       setLoading(false);
     })();
   }, [selectedCategory, selectedTerm]);
 
+  // Load existing links for this entity
   useEffect(() => {
     (async () => {
       const { data } = await supabase
         .from("catalogue_indicator_links")
         .select("id, indicator_catalogue(id, code, name, topic)")
-        .eq("catalogue_id", entity.id)
-        .eq("catalogue_type", entity.type);
+        .eq(`${entity.type}_id`, entity.id);
       setLinks(data || []);
     })();
   }, [entity]);
 
+  // ─────────────────────────────────────────────
   const filteredIndicators = useMemo(
     () =>
       search
@@ -87,16 +112,20 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     [indicators, search]
   );
 
+  // ─────────────────────────────────────────────
   async function handleAdd() {
     if (!selectedIndicator) return;
     setLoading(true);
-    const { error } = await supabase.from("catalogue_indicator_links").insert([
-      {
-        catalogue_id: entity.id,
-        catalogue_type: entity.type,
-        indicator_id: selectedIndicator,
-      },
-    ]);
+
+    const insertObj: any = {
+      indicator_id: selectedIndicator,
+      catalogue_type: entity.type,
+    };
+    if (entity.type === "pillar") insertObj.pillar_id = entity.id;
+    if (entity.type === "theme") insertObj.theme_id = entity.id;
+    if (entity.type === "subtheme") insertObj.subtheme_id = entity.id;
+
+    const { error } = await supabase.from("catalogue_indicator_links").insert([insertObj]);
     setLoading(false);
     if (error) {
       console.error("Insert failed:", error);
@@ -112,14 +141,21 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     if (error) alert("Delete failed."); else await onSaved();
   }
 
+  // ─────────────────────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div>
           <label className="text-sm text-gray-600">Category</label>
-          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full border rounded-md p-1 text-sm">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full border rounded-md p-1 text-sm"
+          >
             <option value="all">All</option>
-            {categories.map((cat) => <option key={cat}>{cat}</option>)}
+            {categories.map((cat) => (
+              <option key={cat}>{cat}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -131,12 +167,21 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             disabled={selectedCategory === "all"}
           >
             <option value="all">All</option>
-            {terms.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {terms.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
           </select>
         </div>
         <div>
           <label className="text-sm text-gray-600">Search</label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="w-full border rounded-md p-1 text-sm" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search..."
+            className="w-full border rounded-md p-1 text-sm"
+          />
         </div>
       </div>
 
@@ -146,7 +191,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           <select
             value={selectedIndicator}
             onChange={(e) => setSelectedIndicator(e.target.value)}
-            className="border rounded-md p-1 text-sm flex-1"
+            className="border rounded-md p-1 text-sm flex-1 max-w-[80%]"
           >
             <option value="">Select an indicator</option>
             {filteredIndicators.map((ind) => (
@@ -158,8 +203,10 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           <button
             onClick={handleAdd}
             disabled={!selectedIndicator || loading}
-            className={`text-sm px-3 py-1 rounded-md min-w-[3.5rem] ${
-              loading ? "bg-gray-400 cursor-not-allowed text-white" : "bg-[var(--gsc-blue)] text-white hover:bg-blue-700"
+            className={`text-sm px-3 py-1 rounded-md min-w-[3.5rem] transition-colors ${
+              loading
+                ? "bg-gray-400 cursor-not-allowed text-white"
+                : "bg-[var(--gsc-blue)] text-white hover:bg-blue-700"
             }`}
           >
             {loading ? "..." : "Add"}
@@ -179,7 +226,9 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
         <tbody>
           {links.length === 0 ? (
             <tr>
-              <td colSpan={4} className="text-center text-gray-400 py-2 italic">No indicators linked.</td>
+              <td colSpan={4} className="text-center text-gray-400 py-2 italic">
+                No indicators linked.
+              </td>
             </tr>
           ) : (
             links.map((l) => (
@@ -188,7 +237,12 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
                 <td className="px-2 py-1">{l.indicator_catalogue?.name}</td>
                 <td className="px-2 py-1">{l.indicator_catalogue?.topic}</td>
                 <td className="px-2 py-1 text-right">
-                  <button onClick={() => handleDelete(l.id)} className="text-red-600 hover:underline text-xs">Delete</button>
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    className="text-red-600 hover:underline text-xs"
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))
