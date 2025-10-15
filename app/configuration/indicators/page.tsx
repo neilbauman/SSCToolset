@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import AddIndicatorModal from "@/components/configuration/indicators/AddIndicatorModal";
+import AddIndicatorModalNEW from "@/components/configuration/indicators/AddIndicatorModalNEW";
 import EditIndicatorModal from "@/components/configuration/indicators/EditIndicatorModal";
 import {
   Plus,
