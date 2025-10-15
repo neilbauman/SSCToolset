@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import SidebarLayout from "@/components/layout/SidebarLayout";
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { ChevronRight, ChevronDown, RefreshCcw } from "lucide-react";
 import IndicatorLinkModal from "./IndicatorLinkModal";
 
@@ -26,22 +24,6 @@ export default function CataloguePage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openLinkModal, setOpenLinkModal] = useState(false);
   const [linkTarget, setLinkTarget] = useState<Entity | null>(null);
-
-  const headerProps = {
-    title: "Framework Catalogue",
-    group: "ssc-config" as const,
-    description:
-      "Manage the master list of Pillars, Themes, and Subthemes used to build framework versions.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Configuration", href: "/configuration" },
-          { label: "Framework Catalogue" },
-        ]}
-      />
-    ),
-  };
 
   useEffect(() => {
     loadCatalogue();
@@ -156,7 +138,7 @@ export default function CataloguePage() {
   };
 
   return (
-    <SidebarLayout headerProps={headerProps}>
+    <div className="space-y-4">
       <div className="flex justify-between items-center mb-3">
         <h2 className="text-lg font-semibold" style={{ color: "var(--gsc-blue)" }}>
           Framework Catalogue
@@ -169,47 +151,45 @@ export default function CataloguePage() {
         </button>
       </div>
 
-      <div className="space-y-4">
-        {pillars.map((pillar) => {
-          const isOpen = expanded.has(pillar.id);
-          return (
-            <div key={pillar.id} className="border rounded-md">
-              <div
-                className="flex justify-between items-center px-3 py-2 bg-[var(--gsc-beige)] border-b cursor-pointer"
-                onClick={() => toggleExpand(pillar.id)}
-              >
-                <div className="flex items-center gap-2">
-                  {isOpen ? (
-                    <ChevronDown size={16} className="text-gray-700" />
-                  ) : (
-                    <ChevronRight size={16} className="text-gray-700" />
+      {pillars.map((pillar) => {
+        const isOpen = expanded.has(pillar.id);
+        return (
+          <div key={pillar.id} className="border rounded-md">
+            <div
+              className="flex justify-between items-center px-3 py-2 bg-[var(--gsc-beige)] border-b cursor-pointer"
+              onClick={() => toggleExpand(pillar.id)}
+            >
+              <div className="flex items-center gap-2">
+                {isOpen ? (
+                  <ChevronDown size={16} className="text-gray-700" />
+                ) : (
+                  <ChevronRight size={16} className="text-gray-700" />
+                )}
+                <div>
+                  <div className="font-semibold text-gray-800">{pillar.name}</div>
+                  {pillar.description && (
+                    <div className="text-xs text-gray-500">{pillar.description}</div>
                   )}
-                  <div>
-                    <div className="font-semibold text-gray-800">{pillar.name}</div>
-                    {pillar.description && (
-                      <div className="text-xs text-gray-500">{pillar.description}</div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <IndicatorBadge entityId={pillar.id} map={indicatorMap} />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLinkTarget({ id: pillar.id, name: pillar.name, type: "pillar" });
-                      setOpenLinkModal(true);
-                    }}
-                    className="text-[var(--gsc-blue)] hover:underline text-xs"
-                  >
-                    Manage Indicators
-                  </button>
                 </div>
               </div>
-              {isOpen && renderThemes(pillar.id)}
+              <div className="flex items-center gap-4">
+                <IndicatorBadge entityId={pillar.id} map={indicatorMap} />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLinkTarget({ id: pillar.id, name: pillar.name, type: "pillar" });
+                    setOpenLinkModal(true);
+                  }}
+                  className="text-[var(--gsc-blue)] hover:underline text-xs"
+                >
+                  Manage Indicators
+                </button>
+              </div>
             </div>
-          );
-        })}
-      </div>
+            {isOpen && renderThemes(pillar.id)}
+          </div>
+        );
+      })}
 
       {openLinkModal && linkTarget && (
         <IndicatorLinkModal
@@ -219,7 +199,7 @@ export default function CataloguePage() {
           onSaved={loadCatalogue}
         />
       )}
-    </SidebarLayout>
+    </div>
   );
 }
 
