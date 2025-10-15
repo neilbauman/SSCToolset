@@ -14,7 +14,7 @@ type IndicatorLink = {
   pillar_id: string | null;
   theme_id: string | null;
   subtheme_id: string | null;
-  indicator_catalogue: { code: string; name: string } | null;
+  indicator_catalogue?: { code: string; name: string } | null;
 };
 
 export default function CataloguePage() {
@@ -52,13 +52,10 @@ export default function CataloguePage() {
     const [p, t, s, links] = await Promise.all([
       supabase.from("pillar_catalogue").select("id, name, description").order("name"),
       supabase.from("theme_catalogue").select("id, name, description, pillar_id").order("name"),
-      supabase
-        .from("subtheme_catalogue")
-        .select("id, name, description, theme_id")
-        .order("name"),
+      supabase.from("subtheme_catalogue").select("id, name, description, theme_id").order("name"),
       supabase
         .from("catalogue_indicator_links")
-        .select("pillar_id, theme_id, subtheme_id, indicator_catalogue(code, name)"),
+        .select("pillar_id, theme_id, subtheme_id, indicator_catalogue ( code, name )"),
     ]);
 
     setPillars(p.data || []);
@@ -66,9 +63,12 @@ export default function CataloguePage() {
     setSubs(s.data || []);
 
     const map = new Map<string, IndicatorLink>();
-    (links.data || []).forEach((l: IndicatorLink) => {
-      const key = l.pillar_id || l.theme_id || l.subtheme_id;
-      if (key) map.set(key, l);
+    (links.data || []).forEach((row: any) => {
+      const key = row.pillar_id || row.theme_id || row.subtheme_id;
+      const indicator = Array.isArray(row.indicator_catalogue)
+        ? row.indicator_catalogue[0]
+        : row.indicator_catalogue;
+      map.set(key, { ...row, indicator_catalogue: indicator });
     });
     setIndicatorMap(map);
   }
@@ -91,9 +91,7 @@ export default function CataloguePage() {
           <div key={sub.id} className="flex justify-between py-1 border-b text-sm">
             <div>
               <div className="font-medium text-gray-800">{sub.name}</div>
-              {sub.description && (
-                <div className="text-gray-500 text-xs">{sub.description}</div>
-              )}
+              {sub.description && <div className="text-gray-500 text-xs">{sub.description}</div>}
             </div>
             <div className="flex items-center gap-4">
               <IndicatorBadge entityId={sub.id} map={indicatorMap} />
@@ -179,7 +177,7 @@ export default function CataloguePage() {
           return (
             <div key={pillar.id} className="border rounded-md">
               <div
-                className="flex justify-between items-center px-3 py-2 bg-[var(--gsc-beige)] border-b"
+                className="flex justify-between items-center px-3 py-2 bg-[var(--gsc-beige)] border-b cursor-pointer"
                 onClick={() => toggleExpand(pillar.id)}
               >
                 <div className="flex items-center gap-2">
@@ -209,7 +207,6 @@ export default function CataloguePage() {
                   </button>
                 </div>
               </div>
-
               {isOpen && renderThemes(pillar.id)}
             </div>
           );
@@ -242,13 +239,12 @@ function IndicatorBadge({
         ⚠ Missing
       </span>
     );
-
   return (
     <span
       className="text-xs font-medium text-[var(--gsc-blue)]"
-      title={link.indicator_catalogue.name}
+      title={link.indicator_catalogue?.name || ""}
     >
-      {link.indicator_catalogue.code}
+      {link.indicator_catalogue?.code}
     </span>
   );
 }
