@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { ChevronRight, ChevronDown, RefreshCcw } from "lucide-react";
+import { ChevronRight, ChevronDown, RefreshCcw, Edit2, Trash2 } from "lucide-react";
 import IndicatorLinkModal from "./IndicatorLinkModal";
+import Modal from "@/components/ui/Modal";
 
 type EntityType = "pillar" | "theme" | "subtheme";
-type Entity = { id: string; name: string; type: EntityType };
+type Entity = { id: string; name: string; description?: string; type: EntityType };
 type Pillar = { id: string; name: string; description: string };
 type Theme = { id: string; name: string; description: string; pillar_id: string };
 type Subtheme = { id: string; name: string; description: string; theme_id: string };
@@ -24,6 +25,7 @@ export default function CataloguePage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openLinkModal, setOpenLinkModal] = useState(false);
   const [linkTarget, setLinkTarget] = useState<Entity | null>(null);
+  const [editEntity, setEditEntity] = useState<Entity | null>(null);
 
   useEffect(() => {
     loadCatalogue();
@@ -62,6 +64,14 @@ export default function CataloguePage() {
     });
   }
 
+  async function handleDelete(entity: Entity) {
+    if (!confirm(`Delete ${entity.type} "${entity.name}"?`)) return;
+    const table = `${entity.type}_catalogue`;
+    const { error } = await supabase.from(table).delete().eq("id", entity.id);
+    if (error) alert("Failed to delete: " + error.message);
+    else loadCatalogue();
+  }
+
   const renderSubthemes = (themeId: string) => {
     const list = subs.filter((s) => s.theme_id === themeId);
     if (!list.length) return null;
@@ -73,7 +83,7 @@ export default function CataloguePage() {
               <div className="font-medium text-gray-800">{sub.name}</div>
               {sub.description && <div className="text-gray-500 text-xs">{sub.description}</div>}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <IndicatorBadge entityId={sub.id} map={indicatorMap} />
               <button
                 onClick={() => {
@@ -84,6 +94,25 @@ export default function CataloguePage() {
               >
                 Manage Indicators
               </button>
+              <Edit2
+                size={14}
+                className="text-gray-500 hover:text-[var(--gsc-blue)] cursor-pointer"
+                onClick={() =>
+                  setEditEntity({
+                    id: sub.id,
+                    name: sub.name,
+                    description: sub.description,
+                    type: "subtheme",
+                  })
+                }
+              />
+              <Trash2
+                size={14}
+                className="text-gray-500 hover:text-[var(--gsc-red)] cursor-pointer"
+                onClick={() =>
+                  handleDelete({ id: sub.id, name: sub.name, type: "subtheme" })
+                }
+              />
             </div>
           </div>
         ))}
@@ -116,7 +145,7 @@ export default function CataloguePage() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   <IndicatorBadge entityId={theme.id} map={indicatorMap} />
                   <button
                     onClick={() => {
@@ -127,6 +156,25 @@ export default function CataloguePage() {
                   >
                     Manage Indicators
                   </button>
+                  <Edit2
+                    size={14}
+                    className="text-gray-500 hover:text-[var(--gsc-blue)] cursor-pointer"
+                    onClick={() =>
+                      setEditEntity({
+                        id: theme.id,
+                        name: theme.name,
+                        description: theme.description,
+                        type: "theme",
+                      })
+                    }
+                  />
+                  <Trash2
+                    size={14}
+                    className="text-gray-500 hover:text-[var(--gsc-red)] cursor-pointer"
+                    onClick={() =>
+                      handleDelete({ id: theme.id, name: theme.name, type: "theme" })
+                    }
+                  />
                 </div>
               </div>
               {isOpen && renderSubthemes(theme.id)}
@@ -172,7 +220,7 @@ export default function CataloguePage() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <IndicatorBadge entityId={pillar.id} map={indicatorMap} />
                 <button
                   onClick={(e) => {
@@ -184,6 +232,27 @@ export default function CataloguePage() {
                 >
                   Manage Indicators
                 </button>
+                <Edit2
+                  size={14}
+                  className="text-gray-500 hover:text-[var(--gsc-blue)] cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditEntity({
+                      id: pillar.id,
+                      name: pillar.name,
+                      description: pillar.description,
+                      type: "pillar",
+                    });
+                  }}
+                />
+                <Trash2
+                  size={14}
+                  className="text-gray-500 hover:text-[var(--gsc-red)] cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete({ id: pillar.id, name: pillar.name, type: "pillar" });
+                  }}
+                />
               </div>
             </div>
             {isOpen && renderThemes(pillar.id)}
@@ -199,17 +268,19 @@ export default function CataloguePage() {
           onSaved={loadCatalogue}
         />
       )}
+
+      {editEntity && (
+        <EditEntityModal
+          entity={editEntity}
+          onClose={() => setEditEntity(null)}
+          onSaved={loadCatalogue}
+        />
+      )}
     </div>
   );
 }
 
-function IndicatorBadge({
-  entityId,
-  map,
-}: {
-  entityId: string;
-  map: Map<string, IndicatorLink>;
-}) {
+function IndicatorBadge({ entityId, map }: { entityId: string; map: Map<string, IndicatorLink> }) {
   const link = map.get(entityId);
   if (!link || !link.indicator_catalogue)
     return (
@@ -224,5 +295,75 @@ function IndicatorBadge({
     >
       {link.indicator_catalogue?.code}
     </span>
+  );
+}
+
+// Simple inline edit modal
+function EditEntityModal({
+  entity,
+  onClose,
+  onSaved,
+}: {
+  entity: Entity;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(entity.name);
+  const [description, setDescription] = useState(entity.description || "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    const table = `${entity.type}_catalogue`;
+    const { error } = await supabaseBrowser
+      .from(table)
+      .update({ name, description })
+      .eq("id", entity.id);
+    setSaving(false);
+    if (error) alert("Failed to update: " + error.message);
+    else {
+      onClose();
+      onSaved();
+    }
+  }
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Edit ${entity.type}`}>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Name</label>
+          <input
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Description</label>
+          <textarea
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-3 py-1.5 text-sm bg-[var(--gsc-blue)] text-white rounded"
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
