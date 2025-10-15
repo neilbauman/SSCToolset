@@ -66,3 +66,4 @@ function EditEntityModal({
     </Modal>
   );
 }
+export default CataloguePage;
