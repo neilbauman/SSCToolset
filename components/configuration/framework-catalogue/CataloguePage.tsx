@@ -1,3 +1,23 @@
+"use client";
+import { useEffect, useState } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { ChevronRight, ChevronDown, RefreshCcw, Edit2, Trash2 } from "lucide-react";
+import IndicatorLinkModal from "./IndicatorLinkModal";
+import Modal from "@/components/ui/Modal";
+
+// ✅ Moved here so it’s available everywhere in this file
+type EntityType = "pillar" | "theme" | "subtheme";
+export type Entity = { id: string; name: string; description?: string; type: EntityType };
+
+type Pillar = { id: string; name: string; description: string };
+type Theme = { id: string; name: string; description: string; pillar_id: string };
+type Subtheme = { id: string; name: string; description: string; theme_id: string };
+type IndicatorLink = {
+  pillar_id: string | null;
+  theme_id: string | null;
+  subtheme_id: string | null;
+  indicator_catalogue?: { code: string; name: string } | null;
+};
 function EditEntityModal({
   entity,
   onClose,
