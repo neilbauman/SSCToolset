@@ -6,20 +6,14 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type EntityType = "pillar" | "theme" | "subtheme";
 type Entity = { id: string; name: string; type: EntityType };
-
 type Indicator = { id: string; code: string; name: string; topic: string | null };
-type TaxonomyCategory = { id: string; name: string };
-type TaxonomyTerm = { id: string; taxonomy_id: string; name: string };
+type TaxonomyCategory = { category: string };
+type TaxonomyTerm = { id: string; name: string; category: string };
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  entity: Entity;
-  onSaved: () => Promise<void>;
-};
+type Props = { open: boolean; onClose: () => void; entity: Entity; onSaved: () => Promise<void> };
 
 export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: Props) {
-  const [categories, setCategories] = useState<TaxonomyCategory[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [terms, setTerms] = useState<TaxonomyTerm[]>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [links, setLinks] = useState<any[]>([]);
@@ -28,108 +22,96 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   const [selectedIndicator, setSelectedIndicator] = useState<string>("");
   const [search, setSearch] = useState("");
 
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
   // Load taxonomy categories that have linked indicators
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
   useEffect(() => {
     async function loadCategories() {
-      const { data: links, error: linkErr } = await supabase
+      const { data: linkRows, error: linkErr } = await supabase
         .from("indicator_taxonomy_links")
-        .select("taxonomy_id")
-        .not("taxonomy_id", "is", null);
-
+        .select("taxonomy_id");
       if (linkErr) {
-        console.error("Error loading linked taxonomies:", linkErr);
+        console.error("Failed to load linked taxonomies:", linkErr);
         return;
       }
 
-      const uniqueIds = Array.from(new Set((links || []).map((x) => x.taxonomy_id)));
-      if (uniqueIds.length === 0) {
-        setCategories([]);
+      const linkedTermIds = (linkRows || []).map((r) => r.taxonomy_id);
+      if (linkedTermIds.length === 0) return;
+
+      const { data: termsData, error } = await supabase
+        .from("taxonomy_terms")
+        .select("id, category, name")
+        .in("id", linkedTermIds);
+
+      if (error) {
+        console.error("Error loading taxonomy_terms:", error);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("taxonomy")
-        .select("id, name")
-        .in("id", uniqueIds)
-        .order("name");
-
-      if (!error && data) setCategories(data);
+      const uniqueCategories = Array.from(new Set((termsData || []).map((t) => t.category))).sort();
+      setCategories(uniqueCategories);
     }
     loadCategories();
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Load terms when category changes
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
+  // Load terms for selected category
+  // ─────────────────────────────
   useEffect(() => {
     if (selectedCategory === "all") {
       setTerms([]);
       setSelectedTerm("all");
       return;
     }
-
     async function loadTerms() {
       const { data, error } = await supabase
         .from("taxonomy_terms")
-        .select("id, name, taxonomy_id")
-        .eq("taxonomy_id", selectedCategory)
+        .select("id, name, category")
+        .eq("category", selectedCategory)
         .order("name");
-
       if (!error && data) setTerms(data);
     }
     loadTerms();
   }, [selectedCategory]);
 
-  // ─────────────────────────────────────────────
-  // Load indicators based on term or category
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
+  // Load indicators based on filters
+  // ─────────────────────────────
   useEffect(() => {
     async function loadIndicators() {
       let indicatorIds: string[] = [];
-
       if (selectedTerm !== "all") {
-        const { data: links, error } = await supabase
+        const { data } = await supabase
           .from("indicator_taxonomy_links")
           .select("indicator_id")
           .eq("taxonomy_id", selectedTerm);
-        if (error) {
-          console.error("Error fetching indicators for term:", error);
-          return;
-        }
-        indicatorIds = (links || []).map((x) => x.indicator_id);
+        indicatorIds = (data || []).map((x) => x.indicator_id);
       } else if (selectedCategory !== "all") {
-        const { data: termList } = await supabase
+        const { data: termIds } = await supabase
           .from("taxonomy_terms")
           .select("id")
-          .eq("taxonomy_id", selectedCategory);
-
-        const termIds = (termList || []).map((t) => t.id);
-        const { data: links, error } = await supabase
+          .eq("category", selectedCategory);
+        const ids = (termIds || []).map((t) => t.id);
+        const { data } = await supabase
           .from("indicator_taxonomy_links")
           .select("indicator_id")
-          .in("taxonomy_id", termIds);
-
-        if (error) {
-          console.error("Error fetching indicators for category:", error);
-          return;
-        }
-        indicatorIds = (links || []).map((x) => x.indicator_id);
+          .in("taxonomy_id", ids);
+        indicatorIds = (data || []).map((x) => x.indicator_id);
       }
 
-      let query = supabase.from("indicator_catalogue").select("id, code, name, topic").order("code");
-      if (indicatorIds.length > 0) query = query.in("id", indicatorIds);
-
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .from("indicator_catalogue")
+        .select("id, code, name, topic")
+        .in("id", indicatorIds)
+        .order("code");
       if (!error && data) setIndicators(data);
     }
     loadIndicators();
   }, [selectedCategory, selectedTerm]);
 
-  // ─────────────────────────────────────────────
-  // Load already-linked indicators for this entity
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
+  // Load already-linked indicators
+  // ─────────────────────────────
   useEffect(() => {
     async function loadLinks() {
       const { data, error } = await supabase
@@ -141,9 +123,9 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     loadLinks();
   }, [entity.id]);
 
-  // ─────────────────────────────────────────────
-  // Client-side filter by search
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
+  // Client-side search
+  // ─────────────────────────────
   const filteredIndicators = useMemo(() => {
     if (!search) return indicators;
     return indicators.filter(
@@ -153,21 +135,16 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     );
   }, [indicators, search]);
 
-  // ─────────────────────────────────────────────
-  // Add / delete link handlers
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
+  // Link / delete actions
+  // ─────────────────────────────
   async function handleAdd() {
     if (!selectedIndicator) return;
     const { error } = await supabase
       .from("framework_indicator_links")
-      .insert({
-        framework_item_id: entity.id,
-        indicator_id: selectedIndicator,
-      });
-    if (error) {
-      alert("Failed to link indicator.");
-      console.error(error);
-    } else {
+      .insert({ framework_item_id: entity.id, indicator_id: selectedIndicator });
+    if (error) alert("Failed to link indicator.");
+    else {
       await onSaved();
       setSelectedIndicator("");
     }
@@ -179,9 +156,9 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     else await onSaved();
   }
 
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
   // Render
-  // ─────────────────────────────────────────────
+  // ─────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       {/* Filters */}
@@ -195,8 +172,8 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           >
             <option value="all">All</option>
             {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
+              <option key={cat} value={cat}>
+                {cat}
               </option>
             ))}
           </select>
@@ -256,7 +233,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
         </div>
       </div>
 
-      {/* Linked indicators table */}
+      {/* Linked indicators */}
       <div className="border-t pt-2 mt-2">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
