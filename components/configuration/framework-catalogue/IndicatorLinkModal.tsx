@@ -26,41 +26,25 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
   const [selectedIndicator, setSelectedIndicator] = useState<string>("");
   const [search, setSearch] = useState("");
 
-  // ─────────────────────────────
   // Load taxonomy categories that have linked indicators
-  // ─────────────────────────────
   useEffect(() => {
     async function loadCategories() {
-      const { data: linkRows, error: linkErr } = await supabase
+      const { data: linkRows } = await supabase
         .from("indicator_taxonomy_links")
         .select("taxonomy_id");
-      if (linkErr) {
-        console.error("Failed to load linked taxonomies:", linkErr);
-        return;
-      }
-
       const linkedTermIds = (linkRows || []).map((r) => r.taxonomy_id);
-      if (linkedTermIds.length === 0) return;
-
-      const { data: termsData, error } = await supabase
+      if (!linkedTermIds.length) return;
+      const { data: termsData } = await supabase
         .from("taxonomy_terms")
         .select("id, category, name")
         .in("id", linkedTermIds);
-
-      if (error) {
-        console.error("Error loading taxonomy_terms:", error);
-        return;
-      }
-
-      const uniqueCategories = Array.from(new Set((termsData || []).map((t) => t.category))).sort();
-      setCategories(uniqueCategories);
+      const uniqueCats = Array.from(new Set((termsData || []).map((t) => t.category))).sort();
+      setCategories(uniqueCats);
     }
     loadCategories();
   }, []);
 
-  // ─────────────────────────────
   // Load terms for selected category
-  // ─────────────────────────────
   useEffect(() => {
     if (selectedCategory === "all") {
       setTerms([]);
@@ -68,23 +52,20 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       return;
     }
     async function loadTerms() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("taxonomy_terms")
         .select("id, name, category")
         .eq("category", selectedCategory)
         .order("name");
-      if (!error && data) setTerms(data);
+      setTerms(data || []);
     }
     loadTerms();
   }, [selectedCategory]);
 
-  // ─────────────────────────────
-  // Load indicators based on filters
-  // ─────────────────────────────
+  // Load indicators
   useEffect(() => {
     async function loadIndicators() {
       let indicatorIds: string[] = [];
-
       if (selectedTerm !== "all") {
         const { data } = await supabase
           .from("indicator_taxonomy_links")
@@ -103,34 +84,29 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           .in("taxonomy_id", ids);
         indicatorIds = (data || []).map((x) => x.indicator_id);
       }
-
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("indicator_catalogue")
         .select("id, code, name, topic")
         .in("id", indicatorIds)
         .order("code");
-      if (!error && data) setIndicators(data);
+      setIndicators(data || []);
     }
     loadIndicators();
   }, [selectedCategory, selectedTerm]);
 
-  // ─────────────────────────────
-  // Load already-linked indicators
-  // ─────────────────────────────
+  // Load existing links
   useEffect(() => {
     async function loadLinks() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("framework_indicator_links")
         .select("id, indicator_catalogue(id, code, name, topic)")
         .eq("framework_item_id", entity.id);
-      if (!error && data) setLinks(data);
+      setLinks(data || []);
     }
     loadLinks();
   }, [entity.id]);
 
-  // ─────────────────────────────
-  // Client-side search
-  // ─────────────────────────────
+  // Search filter
   const filteredIndicators = useMemo(() => {
     if (!search) return indicators;
     return indicators.filter(
@@ -140,9 +116,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     );
   }, [indicators, search]);
 
-  // ─────────────────────────────
-  // Add / Delete links
-  // ─────────────────────────────
+  // Add / delete links
   async function handleAdd() {
     if (!selectedIndicator) return;
     const { error } = await supabase.from("framework_indicator_links").insert({
@@ -150,9 +124,8 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       indicator_id: selectedIndicator,
       relationship: "default",
     });
-
     if (error) {
-      console.error("Failed to link indicator:", error);
+      console.error(error);
       alert("Failed to link indicator.");
     } else {
       await onSaved();
@@ -166,9 +139,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
     else await onSaved();
   }
 
-  // ─────────────────────────────
   // Render
-  // ─────────────────────────────
   return (
     <Modal open={open} onClose={onClose} title={`Indicators for ${entity.name}`}>
       {/* Filters */}
@@ -188,7 +159,6 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             ))}
           </select>
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-600">Term</label>
           <select
@@ -205,7 +175,6 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
             ))}
           </select>
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-600">Search</label>
           <input
@@ -221,11 +190,11 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
       {/* Indicator selector */}
       <div className="mb-3">
         <label className="block text-sm font-medium text-gray-600 mb-1">Select Indicator</label>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <select
             value={selectedIndicator}
             onChange={(e) => setSelectedIndicator(e.target.value)}
-            className="flex-1 border rounded-md p-1 text-sm"
+            className="border rounded-md p-1 text-sm flex-1 max-w-[calc(100%-5rem)]"
           >
             <option value="">Select an indicator</option>
             {filteredIndicators.map((ind) => (
@@ -236,7 +205,7 @@ export default function IndicatorLinkModal({ open, onClose, entity, onSaved }: P
           </select>
           <button
             onClick={handleAdd}
-            className="bg-[var(--gsc-blue)] text-white text-sm px-3 py-1 rounded-md"
+            className="bg-[var(--gsc-blue)] text-white text-sm px-3 py-1 rounded-md shrink-0"
           >
             Add
           </button>
