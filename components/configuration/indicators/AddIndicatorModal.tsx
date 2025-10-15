@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react";
 type TaxonomyCategory = {
   id: string;
   name: string;
-  taxonomy_terms: { id: string; name: string }[];
+  terms: { id: string; name: string }[];
 };
 
 type Props = {
@@ -17,7 +17,7 @@ type Props = {
   onSaved: () => void;
 };
 
-export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props) {
+export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState("");
@@ -25,47 +25,62 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [taxonomy, setTaxonomy] = useState<TaxonomyCategory[]>([]);
-  const [selectedTaxonomyIds, setSelectedTaxonomyIds] = useState<string[]>([]);
+  const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
 
+  // ─────────────────────────────
+  // Load taxonomy from taxonomy_terms
+  // ─────────────────────────────
   useEffect(() => {
-    if (open) {
-      resetForm();
-      loadTaxonomy();
-    }
+    if (open) loadTaxonomy();
   }, [open]);
 
-  function resetForm() {
-    setCode("");
-    setName("");
-    setType("");
-    setUnit("");
-    setTopic("");
-    setDescription("");
-    setSelectedTaxonomyIds([]);
-  }
-
   async function loadTaxonomy() {
+    setLoading(true);
     const { data, error } = await supabase
-      .from("taxonomy_categories")
-      .select("id, name, taxonomy_terms ( id, name )")
-      .order("name");
+      .from("taxonomy_terms")
+      .select("id, name, category")
+      .order("category", { ascending: true })
+      .order("name", { ascending: true });
 
     if (error) {
-      console.error("Error loading taxonomy:", error.message);
+      console.error("Failed to load taxonomy:", error.message);
+      setTaxonomy([]);
+      setLoading(false);
       return;
     }
-    setTaxonomy(data || []);
+
+    const grouped =
+      data?.reduce((acc: TaxonomyCategory[], term: any) => {
+        const catName = term.category || "Uncategorized";
+        let cat = acc.find((c) => c.name === catName);
+        if (!cat) {
+          cat = { id: catName, name: catName, terms: [] };
+          acc.push(cat);
+        }
+        cat.terms.push({ id: term.id, name: term.name });
+        return acc;
+      }, []) || [];
+
+    setTaxonomy(grouped);
+    setLoading(false);
   }
 
+  // ─────────────────────────────
+  // Selection toggles
+  // ─────────────────────────────
   function toggleTerm(termId: string) {
-    setSelectedTaxonomyIds((prev) =>
+    setSelectedTerms((prev) =>
       prev.includes(termId)
         ? prev.filter((id) => id !== termId)
         : [...prev, termId]
     );
   }
 
+  // ─────────────────────────────
+  // Save new indicator
+  // ─────────────────────────────
   async function handleSave() {
     if (!code.trim() || !name.trim()) {
       alert("Code and Name are required.");
@@ -91,8 +106,7 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
     const { data, error } = await supabase
       .from("indicator_catalogue")
       .insert([newIndicator])
-      .select("id")
-      .single();
+      .select("id");
 
     if (error) {
       console.error("Insert error:", error);
@@ -101,9 +115,9 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
       return;
     }
 
-    const indicatorId = data?.id;
-    if (indicatorId && selectedTaxonomyIds.length > 0) {
-      const linkRows = selectedTaxonomyIds.map((termId) => ({
+    const indicatorId = data?.[0]?.id;
+    if (indicatorId && selectedTerms.length > 0) {
+      const linkRows = selectedTerms.map((termId) => ({
         indicator_id: indicatorId,
         taxonomy_id: termId,
       }));
@@ -118,37 +132,43 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
     onClose();
   }
 
+  // ─────────────────────────────
+  // Render modal
+  // ─────────────────────────────
   return (
-    <Modal open={open} onClose={onClose} title="Add Indicator">
-      <div className="space-y-4">
-        {/* Fields */}
-        <div>
-          <label className="block text-xs font-medium text-gray-600">Code</label>
-          <input
-            type="text"
-            className="w-full border rounded px-2 py-1 text-sm"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="e.g., SSC_P3_T2_S5"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-600">Name</label>
-          <input
-            type="text"
-            className="w-full border rounded px-2 py-1 text-sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Indicator name"
-          />
+    <Modal open={open} onClose={onClose} title="Add Indicator (NEW)">
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-600">
+              Code<span className="text-red-500">*</span>
+            </label>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g., SSC_P3_T2_S5"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600">
+              Name<span className="text-red-500">*</span>
+            </label>
+            <input
+              className="w-full border rounded px-2 py-1 text-sm"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Indicator name"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="block text-xs font-medium text-gray-600">Type</label>
+            <label className="block text-xs font-medium text-gray-600">
+              Type
+            </label>
             <input
-              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -156,9 +176,10 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">Unit</label>
+            <label className="block text-xs font-medium text-gray-600">
+              Unit
+            </label>
             <input
-              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
@@ -166,9 +187,10 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">Topic</label>
+            <label className="block text-xs font-medium text-gray-600">
+              Topic
+            </label>
             <input
-              type="text"
               className="w-full border rounded px-2 py-1 text-sm"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
@@ -177,38 +199,59 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
           </div>
         </div>
 
-        {/* Taxonomy terms */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600">
+            Description
+          </label>
+          <textarea
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+          />
+        </div>
+
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Taxonomy Terms
           </label>
-          <div className="space-y-2 max-h-72 overflow-y-auto border rounded p-2">
-            {taxonomy.map((cat) => (
-              <div key={cat.id}>
-                <div className="font-medium text-xs text-[var(--gsc-blue)] mb-1">
-                  {cat.name}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {cat.taxonomy_terms?.map((term) => (
-                    <label
-                      key={term.id}
-                      className="flex items-center gap-1 text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTaxonomyIds.includes(term.id)}
-                        onChange={() => toggleTerm(term.id)}
-                      />
-                      {term.name}
-                    </label>
-                  ))}
-                </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto border rounded p-2 text-xs">
+            {loading ? (
+              <div className="text-gray-500 italic flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" /> Loading taxonomy...
               </div>
-            ))}
+            ) : taxonomy.length === 0 ? (
+              <div className="text-gray-400 italic text-sm">
+                No taxonomy available.
+              </div>
+            ) : (
+              taxonomy.map((cat) => (
+                <div key={cat.id} className="mb-1">
+                  <div className="font-semibold text-[var(--gsc-blue)] mb-1">
+                    {cat.name}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {cat.terms.map((term) => (
+                      <label
+                        key={term.id}
+                        className="flex items-center gap-1 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTerms.includes(term.id)}
+                          onChange={() => toggleTerm(term.id)}
+                          className="accent-[var(--gsc-blue)]"
+                        />
+                        {term.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
@@ -219,8 +262,8 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
             className="px-3 py-1.5 text-sm bg-[var(--gsc-blue)] text-white rounded flex items-center gap-2"
+            disabled={saving}
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? "Saving..." : "Save"}
@@ -230,4 +273,3 @@ export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props)
     </Modal>
   );
 }
-export { AddIndicatorModal_New as AddIndicatorModal };
