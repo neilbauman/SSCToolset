@@ -17,7 +17,7 @@ type Props = {
   onSaved: () => void;
 };
 
-export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
+export default function AddIndicatorModal_New({ open, onClose, onSaved }: Props) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState("");
@@ -230,3 +230,4 @@ export default function AddIndicatorModal({ open, onClose, onSaved }: Props) {
     </Modal>
   );
 }
+export { AddIndicatorModal_New as AddIndicatorModal };
