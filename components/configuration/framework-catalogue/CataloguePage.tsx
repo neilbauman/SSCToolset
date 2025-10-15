@@ -5,6 +5,14 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { RefreshCcw } from "lucide-react";
 import IndicatorLinkModal from "./IndicatorLinkModal";
 
+type EntityType = "pillar" | "theme" | "subtheme";
+
+type Entity = {
+  id: string;
+  name: string;
+  type: EntityType;
+};
+
 type Pillar = {
   id: string;
   name: string;
@@ -29,7 +37,7 @@ export default function CataloguePage() {
   const [pillars, setPillars] = useState<Pillar[]>([]);
   const [loading, setLoading] = useState(true);
   const [openLinkModal, setOpenLinkModal] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<{ type: string; id: string; name: string } | null>(null);
+  const [linkTarget, setLinkTarget] = useState<Entity | null>(null);
 
   useEffect(() => {
     loadCatalogue();
@@ -37,41 +45,21 @@ export default function CataloguePage() {
 
   async function loadCatalogue() {
     setLoading(true);
-
-    // Step 1. Load all pillars
-    const { data: pData, error: pErr } = await supabase
+    const { data: pData } = await supabase
       .from("pillar_catalogue")
       .select("id, name, description")
       .order("name", { ascending: true });
-    if (pErr) {
-      console.error("Failed to load pillars", pErr);
-      setLoading(false);
-      return;
-    }
 
-    // Step 2. Load themes
-    const { data: tData, error: tErr } = await supabase
+    const { data: tData } = await supabase
       .from("theme_catalogue")
       .select("id, name, description, pillar_id")
       .order("name", { ascending: true });
-    if (tErr) {
-      console.error("Failed to load themes", tErr);
-      setLoading(false);
-      return;
-    }
 
-    // Step 3. Load subthemes
-    const { data: sData, error: sErr } = await supabase
+    const { data: sData } = await supabase
       .from("subtheme_catalogue")
       .select("id, name, description, theme_id")
       .order("name", { ascending: true });
-    if (sErr) {
-      console.error("Failed to load subthemes", sErr);
-      setLoading(false);
-      return;
-    }
 
-    // Step 4. Build hierarchy
     const themesWithSubs = (tData || []).map((t) => ({
       ...t,
       subthemes: (sData || []).filter((s) => s.theme_id === t.id),
@@ -110,6 +98,7 @@ export default function CataloguePage() {
               >
                 {pillar.name}
               </div>
+
               <div className="divide-y">
                 {pillar.themes?.length ? (
                   pillar.themes.map((theme) => (
@@ -124,13 +113,18 @@ export default function CataloguePage() {
                         <button
                           className="text-sm text-[var(--gsc-blue)] hover:underline"
                           onClick={() => {
-                            setLinkTarget({ type: "theme", id: theme.id, name: theme.name });
+                            setLinkTarget({
+                              type: "theme",
+                              id: theme.id,
+                              name: theme.name,
+                            });
                             setOpenLinkModal(true);
                           }}
                         >
                           Manage Indicators
                         </button>
                       </div>
+
                       {theme.subthemes?.length ? (
                         <div className="pl-4 mt-2 border-l">
                           {theme.subthemes.map((sub) => (
@@ -144,7 +138,11 @@ export default function CataloguePage() {
                               <button
                                 className="text-xs text-[var(--gsc-blue)] hover:underline"
                                 onClick={() => {
-                                  setLinkTarget({ type: "subtheme", id: sub.id, name: sub.name });
+                                  setLinkTarget({
+                                    type: "subtheme",
+                                    id: sub.id,
+                                    name: sub.name,
+                                  });
                                   setOpenLinkModal(true);
                                 }}
                               >
