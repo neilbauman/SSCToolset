@@ -1,117 +1,135 @@
 "use client";
+
+import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { WizardMeta, Parsed } from "@/components/country/AddDatasetModal";
+import Papa from "papaparse";
+import { Upload, FileText, Loader2 } from "lucide-react";
+
+// Temporary stub types (legacy WizardMeta / Parsed)
+type WizardMeta = any;
+type Parsed = any;
+
+type Step1Props = {
+  countryIso: string;
+  file: File | null;
+  setFile: (f: File | null) => void;
+  parseCsv: (f: File) => Promise<any>;
+  parsed: Parsed | null;
+  setParsed: (p: Parsed | null) => void;
+  meta: WizardMeta;
+  setMeta: (m: WizardMeta) => void;
+  next: () => void;
+};
 
 export default function Step1UploadOrDefine({
-  countryIso, file, setFile, parseCsv, parsed, setParsed,
-  meta, setMeta, datasetId, setDatasetId,
-  adm0Value, setAdm0Value, onNext
-}:{
-  countryIso:string;
-  file:File|null; setFile:(f:File|null)=>void;
-  parseCsv:(f:File)=>Promise<Parsed>; parsed:Parsed; setParsed:(p:Parsed)=>void;
-  meta:WizardMeta; setMeta:(m:WizardMeta)=>void;
-  datasetId:string; setDatasetId:(id:string)=>void;
-  adm0Value:string; setAdm0Value:(v:string)=>void;
-  onNext:()=>void;
-}){
-  async function onFile(e:React.ChangeEvent<HTMLInputElement>){
-    const f=e.target.files?.[0]||null; setFile(f);
-    if(!f) return; const p=await parseCsv(f); setParsed(p);
-    if(!meta.title) setMeta({...meta,title:f.name.replace(/\.(csv|xlsx)$/i,"")});
-    if(meta.admin_level==="ADM0") setMeta({...meta, admin_level: "ADM0"}); // keep ADM0 default
-    // infer type if >1 row
-    if(p.rows.length>1) setMeta(m=>({...m, dataset_type: m.dataset_type||"gradient"} as any));
-  }
+  countryIso,
+  file,
+  setFile,
+  parseCsv,
+  parsed,
+  setParsed,
+  meta,
+  setMeta,
+  next,
+}: Step1Props) {
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  async function ensureDatasetId(){
-    if(datasetId) return datasetId;
-    const payload={
-      country_iso:countryIso, title:meta.title.trim()||"Untitled dataset",
-      dataset_type: meta.dataset_type || (file ? "gradient" : "adm0"),
-      data_format: meta.data_format, admin_level: meta.admin_level,
-      join_field: meta.join_field||"admin_pcode",
-      indicator_id: meta.indicator_id||null,
-      year: meta.year?Number(meta.year):null, unit: meta.unit||null,
-      source_name: meta.source_name||null, source_url: meta.source_url||null,
-      created_at: new Date().toISOString()
-    };
-    const { data, error } = await supabase.from("dataset_metadata").insert(payload).select("id").single();
-    if(error) throw error; setDatasetId(data.id); return data.id;
-  }
-
-  async function next(){
-    // ADM0 path (no file)
-    if(!file && meta.admin_level==="ADM0"){
-      if(adm0Value==="") { alert("Enter a national value"); return; }
-      if(!meta.title.trim()) { alert("Title is required"); return; }
-    } else {
-      if(!file){ alert("Upload a CSV or set Admin Level = ADM0 to define a single value."); return; }
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setMessage(null);
+    setUploading(true);
+    try {
+      const parsedData = await parseCsv(f);
+      setParsed(parsedData);
+      setMessage(`Parsed ${parsedData?.rows?.length || 0} rows successfully.`);
+    } catch (err: any) {
+      console.error(err);
+      setMessage("Failed to parse file.");
+    } finally {
+      setUploading(false);
     }
-    await ensureDatasetId();
-    onNext();
   }
+
+  useEffect(() => {
+    if (!file) setParsed(null);
+  }, [file]);
 
   return (
-    <div className="space-y-4">
-      <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-sm">Upload CSV
-          <input type="file" accept=".csv" onChange={onFile} className="block mt-1"/>
-        </label>
-        <label className="text-sm">Title
-          <input className="border rounded p-2 w-full" value={meta.title} onChange={e=>setMeta({...meta,title:e.target.value})}/>
-        </label>
+    <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
+      <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
+          Step 1 – Upload or Define Dataset
+        </h2>
+        <p className="text-sm mb-3">
+          Upload a CSV or XLSX file containing dataset values for{" "}
+          <strong>{countryIso}</strong>. Alternatively, for ADM0-level data,
+          you can manually define a single value in the next step.
+        </p>
 
-        <label className="text-sm">Admin Level
-          <select className="border rounded p-2 w-full" value={meta.admin_level} onChange={e=>setMeta({...meta,admin_level:e.target.value as any})}>
-            {["ADM0","ADM1","ADM2","ADM3","ADM4","ADM5"].map(a=><option key={a}>{a}</option>)}
-          </select>
-        </label>
-        <label className="text-sm">Data Format
-          <select className="border rounded p-2 w-full" value={meta.data_format} onChange={e=>setMeta({...meta,data_format:e.target.value as any})}>
-            {["numeric","percentage","text"].map(a=><option key={a}>{a}</option>)}
-          </select>
-        </label>
+        <div className="flex items-center justify-center border-2 border-dashed border-[var(--gsc-light-gray)] rounded-lg p-6 bg-white">
+          {!file ? (
+            <label className="flex flex-col items-center cursor-pointer">
+              <Upload className="h-8 w-8 text-[var(--gsc-blue)] mb-2" />
+              <span className="text-[var(--gsc-blue)]">Click to upload file</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </label>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <FileText className="h-8 w-8 text-[var(--gsc-green)]" />
+              <div className="font-medium">{file.name}</div>
+              {uploading ? (
+                <div className="flex items-center gap-2 text-gray-500 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Parsing…
+                </div>
+              ) : (
+                <button
+                  onClick={() => setFile(null)}
+                  className="text-[var(--gsc-red)] text-xs underline"
+                >
+                  Remove file
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
-        {/* ADM0 single value path */}
-        {(!file && meta.admin_level==="ADM0") && (
-          <label className="text-sm col-span-2">National (ADM0) Value
-            <input className="border rounded p-2 w-full" value={adm0Value} onChange={e=>setAdm0Value(e.target.value)} placeholder="e.g., 5.1"/>
-          </label>
+        {message && (
+          <div
+            className="mt-3 text-sm"
+            style={{
+              color: message.includes("Failed")
+                ? "var(--gsc-red)"
+                : "var(--gsc-green)",
+            }}
+          >
+            {message}
+          </div>
         )}
-
-        {/* Dataset type only relevant when a file is present or ADM>0 */}
-        {(file || meta.admin_level!=="ADM0") && (
-          <label className="text-sm">Dataset Type
-            <select className="border rounded p-2 w-full" value={meta.dataset_type||""} onChange={e=>setMeta({...meta,dataset_type:e.target.value as any})}>
-              <option value="">Select…</option>
-              <option value="gradient">gradient</option>
-              <option value="categorical">categorical</option>
-              <option value="adm0">adm0</option>
-            </select>
-          </label>
-        )}
-
-        <label className="text-sm">Source Name
-          <input className="border rounded p-2 w-full" value={meta.source_name||""} onChange={e=>setMeta({...meta,source_name:e.target.value})}/>
-        </label>
-        <label className="text-sm">Source URL
-          <input className="border rounded p-2 w-full" value={meta.source_url||""} onChange={e=>setMeta({...meta,source_url:e.target.value})}/>
-        </label>
-        <label className="text-sm">Year
-          <input className="border rounded p-2 w-full" value={meta.year||""} onChange={e=>setMeta({...meta,year:e.target.value})}/>
-        </label>
-        <label className="text-sm">Unit
-          <input className="border rounded p-2 w-full" value={meta.unit||""} onChange={e=>setMeta({...meta,unit:e.target.value})}/>
-        </label>
       </div>
 
-      {file && parsed.headers.length>0 && (
-        <div className="text-xs text-gray-600">Parsed {parsed.rows.length} rows, {parsed.headers.length} columns.</div>
-      )}
-
       <div className="flex justify-end">
-        <button onClick={next} className="px-4 py-2 rounded text-white" style={{background:"var(--gsc-blue)"}}>Continue</button>
+        <button
+          onClick={next}
+          disabled={uploading || (!parsed && !file)}
+          className="px-4 py-2 rounded text-white"
+          style={{
+            background:
+              uploading || (!parsed && !file)
+                ? "var(--gsc-light-gray)"
+                : "var(--gsc-blue)",
+          }}
+        >
+          Next
+        </button>
       </div>
     </div>
   );
