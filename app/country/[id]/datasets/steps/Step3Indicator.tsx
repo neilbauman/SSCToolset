@@ -3,123 +3,95 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type WizardMeta = any;
-
 export default function Step3Indicator({
   meta,
   setMeta,
   back,
   next,
 }: {
-  meta: WizardMeta;
-  setMeta: (m: WizardMeta) => void;
+  meta: any;
+  setMeta: (m: any) => void;
   back: () => void;
   next: () => void;
 }) {
   const [categories, setCategories] = useState<string[]>([]);
   const [terms, setTerms] = useState<{ id: string; name: string; category: string }[]>([]);
   const [indicators, setIndicators] = useState<{ id: string; name: string }[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedTerm, setSelectedTerm] = useState<string>("");
-  const [selectedIndicator, setSelectedIndicator] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>(meta.taxonomy_category || "");
+  const [selectedTerm, setSelectedTerm] = useState<string>(meta.taxonomy_term_id || "");
+  const [selectedIndicator, setSelectedIndicator] = useState<string>(meta.indicator_id || "");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  // Load taxonomy categories & terms
   useEffect(() => {
     (async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("taxonomy_terms")
-        .select("id, category, name")
-        .order("category", { ascending: true });
+      const { data, error } = await supabase.from("taxonomy_terms").select("id, category, name").order("category", { ascending: true });
       if (error) {
-        setError(error.message);
-        setLoading(false);
+        setErr(error.message);
         return;
       }
-      const cats = Array.from(new Set(data.map((t) => t.category).filter(Boolean)));
-      setCategories(cats as string[]);
-      setTerms(data as any);
-      setLoading(false);
+      setTerms(data || []);
+      setCategories(Array.from(new Set((data || []).map((t) => t.category).filter(Boolean))) as string[]);
     })();
   }, []);
 
-  // Fetch indicators linked to the selected taxonomy term (manual two-step join)
   useEffect(() => {
-    if (!selectedTerm) return;
+    if (!selectedTerm) {
+      setIndicators([]);
+      return;
+    }
     (async () => {
-      setLoading(true);
-      setError(null);
       try {
+        setLoading(true);
+        setErr(null);
         const { data: links, error: linkErr } = await supabase
           .from("indicator_taxonomy_links")
           .select("indicator_id")
           .eq("taxonomy_id", selectedTerm);
         if (linkErr) throw linkErr;
-
         const ids = (links || []).map((l) => l.indicator_id).filter(Boolean);
         if (ids.length === 0) {
           setIndicators([]);
-          setLoading(false);
           return;
         }
-
-        const { data: ind, error: indErr } = await supabase
-          .from("indicators")
-          .select("id, name")
-          .in("id", ids);
+        const { data: ind, error: indErr } = await supabase.from("indicators").select("id, name").in("id", ids);
         if (indErr) throw indErr;
-
         setIndicators(ind || []);
       } catch (e: any) {
-        setError(e.message);
+        setErr(e.message);
       } finally {
         setLoading(false);
       }
     })();
   }, [selectedTerm]);
 
-  function handleContinue() {
+  function continueNext() {
     if (!selectedIndicator) {
-      setError("Please select an indicator before continuing.");
+      setErr("Please select an indicator before continuing.");
       return;
     }
-    setMeta({
-      ...meta,
-      taxonomy_category: selectedCategory,
-      taxonomy_term_id: selectedTerm,
-      indicator_id: selectedIndicator,
-    });
+    setMeta({ ...meta, taxonomy_category: selectedCategory, taxonomy_term_id: selectedTerm, indicator_id: selectedIndicator });
     next();
   }
 
   return (
     <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
       <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
-          Step 3 – Assign Indicator and Taxonomy
-        </h2>
-        <p className="mb-3">
-          Choose a taxonomy <strong>category</strong>, <strong>term</strong>, and{" "}
-          <strong>indicator</strong> to associate this dataset with the SSC catalogue.
-        </p>
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">Step 3 – Assign Indicator & Taxonomy</h2>
 
-        {error && (
-          <div className="mb-3 text-[var(--gsc-red)] text-sm">{error}</div>
-        )}
+        {err && <div className="mb-3 text-[var(--gsc-red)]">{err}</div>}
 
-        <div className="grid md:grid-cols-2 gap-3 items-start">
-          <label className="flex flex-col text-sm">
-            Category
+        <div className="grid md:grid-cols-2 gap-3">
+          <label className="text-sm">Category
             <select
-              className="border rounded p-2 mt-1 bg-white"
+              className="border rounded p-2 w-full mt-1 bg-white"
               value={selectedCategory}
               onChange={(e) => {
-                const cat = e.target.value;
-                setSelectedCategory(cat);
+                const c = e.target.value;
+                setSelectedCategory(c);
                 setSelectedTerm("");
                 setIndicators([]);
+                setSelectedIndicator("");
               }}
             >
               <option value="">Select category…</option>
@@ -129,10 +101,9 @@ export default function Step3Indicator({
             </select>
           </label>
 
-          <label className="flex flex-col text-sm">
-            Term
+          <label className="text-sm">Term
             <select
-              className="border rounded p-2 mt-1 bg-white"
+              className="border rounded p-2 w-full mt-1 bg-white"
               value={selectedTerm}
               onChange={(e) => {
                 setSelectedTerm(e.target.value);
@@ -151,10 +122,9 @@ export default function Step3Indicator({
             </select>
           </label>
 
-          <label className="flex flex-col text-sm md:col-span-2">
-            Indicator
+          <label className="text-sm md:col-span-2">Indicator
             <select
-              className="border rounded p-2 mt-1 bg-white"
+              className="border rounded p-2 w-full mt-1 bg-white"
               value={selectedIndicator}
               onChange={(e) => setSelectedIndicator(e.target.value)}
               disabled={!selectedTerm || loading}
@@ -167,12 +137,7 @@ export default function Step3Indicator({
               ))}
             </select>
           </label>
-
-          {loading && (
-            <div className="text-xs text-gray-500 md:col-span-2">
-              Loading options…
-            </div>
-          )}
+          {loading && <div className="text-xs text-gray-500 md:col-span-2">Loading indicators…</div>}
         </div>
       </div>
 
@@ -181,14 +146,10 @@ export default function Step3Indicator({
           Back
         </button>
         <button
-          onClick={handleContinue}
-          disabled={!selectedIndicator || loading}
+          onClick={continueNext}
+          disabled={!selectedIndicator}
           className="px-4 py-2 rounded text-white"
-          style={{
-            background: !selectedIndicator
-              ? "var(--gsc-light-gray)"
-              : "var(--gsc-blue)",
-          }}
+          style={{ background: !selectedIndicator ? "var(--gsc-light-gray)" : "var(--gsc-blue)" }}
         >
           Continue →
         </button>
