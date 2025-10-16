@@ -17,7 +17,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const [sortKey, setSortKey] = useState("title");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Load datasets
   async function loadDatasets() {
     const { data, error } = await supabase
       .from("view_country_datasets")
@@ -26,7 +25,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     if (!error && data) setDatasets(data);
   }
 
-  // Load data preview
   async function loadPreview(id: string) {
     setLoading(true);
     setPreview([]);
@@ -78,19 +76,20 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         ]}
       />
     ),
-    trailing: (
-      <button
-        onClick={() => setWizardOpen(true)}
-        className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
-      >
-        <Plus className="w-4 h-4" /> Add Dataset
-      </button>
-    ),
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-4">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Add Dataset
+          </button>
+        </div>
+
         <div className="border rounded-md overflow-hidden">
           <table className="min-w-full text-sm">
             <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
