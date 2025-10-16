@@ -29,26 +29,50 @@ async function handleFile(e:any){const f=e.target.files?.[0];if(!f)return;setFil
  if(headers.find(h=>h.toLowerCase().includes("code")))setJoinColumn(headers.find(h=>h.toLowerCase().includes("code"))!);
  if(headers.find(h=>h.toLowerCase().includes("name")||h.toLowerCase().includes("muni")))setNameColumn(headers.find(h=>h.toLowerCase().includes("name")||h.toLowerCase().includes("muni"))!);}
 
-function detectCategories(){if(!categoryCols.length)return;const cats=categoryCols.map(c=>({code:c,label:c}));setCategoryMap(cats);}
+function detectCategories(){if(!categoryCols.length)return;setCategoryMap(categoryCols.map(c=>({code:c,label:c})));}
+
 async function searchIndicators(){const{data}=await supabase.from("indicator_catalogue").select("id,name,data_type,description").order("name");
 setIndicatorList((data??[]).filter(i=>i.name.toLowerCase().includes(indicatorQuery.toLowerCase())));}
 useEffect(()=>{if(step===4)searchIndicators()},[step]);
 
 async function saveAll(){setBusy(true);setError(null);
-try{const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert({
- title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),admin_level:adminLevel,
- data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();
- if(mErr)throw mErr;const id=meta.id;if(indicatorId)await supabase.from("catalogue_indicator_links").insert({dataset_id:id,indicator_id:indicatorId});
- if(adminLevel==="ADM0"&&nationalValue.trim()){await supabase.from("dataset_values").insert([{dataset_id:id,admin_pcode:"ADM0",admin_level:"ADM0",
-  value:dataFormat==="text"?null:Number(nationalValue.replace("%","")),text_value:dataFormat==="text"?nationalValue:null}]);setStep(5);onSaved();return;}
- if(datasetType==="gradient"){const d: any[]=[];rows.forEach(r=>{categoryCols.length?categoryCols.forEach(c=>{
-  d.push({dataset_id:id,admin_pcode:String(r[joinColumn]).trim(),admin_level:adminLevel,category_label:c,value:Number(r[c])});})
-  :d.push({dataset_id:id,admin_pcode:String(r[joinColumn]).trim(),admin_level:adminLevel,value:Number(r[headers.find(h=>h!==joinColumn)])});});
-  if(d.length)await supabase.from("dataset_values").insert(d);}else{detectCategories();const maps=categoryMap.map(m=>({dataset_id:id,code:m.code,label:m.label,score:null}));
-  if(maps.length)await supabase.from("dataset_category_maps").insert(maps);}
- setStep(5);onSaved();}catch(e:any){setError(e.message||"Save failed.")}finally{setBusy(false);}}
+try{
+ const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert({
+  title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),admin_level:adminLevel,
+  data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();
+ if(mErr)throw mErr;const id=meta.id;
+ if(indicatorId)await supabase.from("catalogue_indicator_links").insert({dataset_id:id,indicator_id:indicatorId});
+
+ // ADM0 shortcut
+ if(adminLevel==="ADM0"&&nationalValue.trim()){
+   await supabase.from("dataset_values").insert([{dataset_id:id,admin_pcode:"ADM0",admin_level:"ADM0",
+     value:dataFormat==="text"?null:Number(nationalValue.replace("%","")),text_value:dataFormat==="text"?nationalValue:null}]);
+   setStep(5);onSaved();return;}
+
+ // ADM1+ data
+ if(datasetType==="gradient"){
+   const d:any[]=[];
+   rows.forEach(r=>{
+     if(categoryCols.length){
+       categoryCols.forEach(c=>{
+         d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,category_label:c,value:Number(r[c]??0)});
+       });
+     }else{
+       const fallbackCol=headers.find(h=>h!==joinColumn&&h!==nameColumn);
+       if(fallbackCol) d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,value:Number(r[fallbackCol]??0)});
+     }
+   });
+   if(d.length)await supabase.from("dataset_values").insert(d);
+ }else{
+   detectCategories();
+   const maps=categoryMap.map(m=>({dataset_id:id,code:m.code,label:m.label,score:null}));
+   if(maps.length)await supabase.from("dataset_category_maps").insert(maps);
+ }
+ setStep(5);onSaved();
+}catch(e:any){setError(e.message||"Save failed.")}finally{setBusy(false)}}
 
 const canNext=!!title&&!!datasetType&&!!dataFormat&&!!adminLevel,canSave=rows.length>0||(adminLevel==="ADM0"&&!!nationalValue.trim());
+
 return(<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
 <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
 <div className="flex items-center justify-between border-b px-5 py-3"><h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add Dataset</h3>
@@ -89,8 +113,7 @@ return(<div className="fixed inset-0 z-[9999] flex items-center justify-center b
  <select multiple className={`${F} h-40`} value={categoryCols} onChange={e=>setCategoryCols([...e.target.selectedOptions].map(o=>o.value))}>
  {headers.filter(h=>h!==joinColumn&&h!==nameColumn).map(h=><option key={h}>{h}</option>)}</select>
  <button className={S} onClick={detectCategories}>Confirm Selection</button>
- {categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>
-  {categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}
+ {categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>{categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}
 </section>)}
 
 {/* Step4 */}
