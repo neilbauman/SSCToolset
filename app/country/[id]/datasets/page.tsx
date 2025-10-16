@@ -7,8 +7,9 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Plus, ArrowUpDown, Loader2 } from "lucide-react";
 import DatasetWizard from "./DatasetWizard";
 import type { CountryParams } from "@/app/country/types";
-import type { GroupKey } from "@/components/layout/types"; // ✅ added
 
+// ✅ Inline GroupKey until proper export exists
+type GroupKey = "country-config" | "gis" | "population" | "admins";
 type DatasetMeta = {
   id: string;
   title: string;
