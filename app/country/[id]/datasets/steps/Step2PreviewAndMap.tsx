@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { Table, TableHead, TableHeader, TableRow, TableCell, TableBody } from "@/components/ui/table";
 
 export default function Step2PreviewAndMap({
   parsed,
@@ -15,7 +14,9 @@ export default function Step2PreviewAndMap({
 
   const [joinField, setJoinField] = useState(meta.join_field || "");
   const [valueField, setValueField] = useState(meta.value_field || "");
-  const [categoryFields, setCategoryFields] = useState<string[]>(meta.category_fields || []);
+  const [categoryFields, setCategoryFields] = useState<string[]>(
+    meta.category_fields || []
+  );
 
   function toggleCategoryField(col: string) {
     setCategoryFields((prev) =>
@@ -100,24 +101,28 @@ export default function Step2PreviewAndMap({
 
         {/* Table preview */}
         <div className="overflow-auto mt-4 border rounded bg-white">
-          <Table className="min-w-full text-xs">
-            <TableHeader>
-              <TableRow>
+          <table className="min-w-full text-xs">
+            <thead className="bg-[var(--gsc-light-gray)]/50">
+              <tr>
                 {headers.map((h) => (
-                  <TableHead key={h}>{h}</TableHead>
+                  <th key={h} className="px-2 py-1 border-b text-left font-medium">
+                    {h}
+                  </th>
                 ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+              </tr>
+            </thead>
+            <tbody>
               {sampleRows.map((r: any, i: number) => (
-                <TableRow key={i}>
+                <tr key={i}>
                   {headers.map((h) => (
-                    <TableCell key={h}>{r[h]}</TableCell>
+                    <td key={h} className="px-2 py-1 border-b">
+                      {r[h]}
+                    </td>
                   ))}
-                </TableRow>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
       </div>
 
