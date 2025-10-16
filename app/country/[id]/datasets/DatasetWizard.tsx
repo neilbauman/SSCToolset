@@ -27,13 +27,10 @@ const BTN =
 const BTN_PRIMARY = `${BTN} bg-[color:var(--gsc-red)] text-white hover:opacity-90 disabled:opacity-50`;
 const BTN_SECONDARY = `${BTN} border hover:bg-gray-50`;
 
-type Props = {
-  countryIso: string;
-  onClose: () => void;
-  onSaved: () => void;
-};
+type Props = { countryIso: string; onClose: () => void; onSaved: () => void };
 
 export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
+  // Wizard state
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,30 +38,26 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
   // ─── Metadata ────────────────────────────────────────────
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [source, setSource] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [year, setYear] = useState<number | "">("");
-  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">(
-    "gradient"
-  );
-  const [dataFormat, setDataFormat] = useState<"numeric" | "percentage" | "text">(
-    "numeric"
-  );
+  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">("gradient");
+  const [dataFormat, setDataFormat] = useState<"numeric" | "percentage" | "text">("numeric");
   const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [nationalValue, setNationalValue] = useState<string>("");
+  const [nationalValue, setNationalValue] = useState("");
 
-  // ─── File & data parsing ─────────────────────────────────
+  // ─── Data handling ───────────────────────────────────────
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [joinColumn, setJoinColumn] = useState("pcode");
   const [valueColumn, setValueColumn] = useState("value");
 
-  // ─── Category definitions (for categorical datasets) ─────
+  // ─── Categorical mapping ─────────────────────────────────
   const [categoryColumn, setCategoryColumn] = useState("value");
-  const [categoryMap, setCategoryMap] = useState<{ code: string; label: string }[]>(
-    []
-  );
+  const [categoryMap, setCategoryMap] = useState<{ code: string; label: string }[]>([]);
 
-  // ─── Indicator & taxonomy ─────────────────────────────────
+  // ─── Indicator + taxonomy ────────────────────────────────
   const [taxonomyIds, setTaxonomyIds] = useState<string[]>([]);
   const [indicatorQuery, setIndicatorQuery] = useState("");
   const [indicatorList, setIndicatorList] = useState<any[]>([]);
@@ -104,11 +97,7 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
   function detectCategories() {
     if (!rows.length) return setCategoryMap([]);
     const uniq = Array.from(
-      new Set(
-        rows
-          .map((r) => String(r[categoryColumn] ?? "").trim())
-          .filter(Boolean)
-      )
+      new Set(rows.map((r) => String(r[categoryColumn] ?? "").trim()).filter(Boolean))
     ).sort();
     setCategoryMap(uniq.map((code) => ({ code, label: code })));
   }
@@ -127,10 +116,7 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
         : data ?? [];
     setIndicatorList(filtered);
   }
-
-  useEffect(() => {
-    if (step === 4) searchIndicators();
-  }, [step]);
+  useEffect(() => { if (step === 4) searchIndicators(); }, [step]);
 
   // ─── Save logic ───────────────────────────────────────────
   async function saveAll() {
@@ -142,6 +128,8 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
         .insert({
           title,
           description: desc,
+          source,
+          source_url: sourceUrl,
           year: year === "" ? null : Number(year),
           admin_level: adminLevel,
           data_type: datasetType,
@@ -154,13 +142,13 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
       if (metaErr) throw metaErr;
       const datasetId = meta.id as string;
 
-      // link dataset↔indicator
+      // link indicator
       if (indicatorId)
         await supabase
           .from("catalogue_indicator_links")
           .insert({ dataset_id: datasetId, indicator_id: indicatorId });
 
-      // ── ADM0 national value path
+      // ADM0 single value
       if (adminLevel === "ADM0" && nationalValue.trim() !== "") {
         await supabase.from("dataset_values").insert([
           {
@@ -179,7 +167,7 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
         return;
       }
 
-      // ── CSV path
+      // CSV path
       if (datasetType === "gradient") {
         const rowsToInsert = rows
           .filter((r) => r[joinColumn] && r[valueColumn] != null)
@@ -230,23 +218,23 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
     }
   }
 
-  // ─── Step logic helpers ───────────────────────────────────
-  const canNextFrom1 = !!title && !!datasetType && !!dataFormat && !!adminLevel;
-  const canSave = adminLevel === "ADM0" ? !!nationalValue : true;
+  // ─── Step control ─────────────────────────────────────────
+  const canNextFrom1 =
+    !!title && !!datasetType && !!dataFormat && !!adminLevel;
+  const canSave =
+    adminLevel === "ADM0" ? !!nationalValue.trim() : true;
 
   // ─── UI ───────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
-          <h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
-            Add Dataset
-          </h3>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-800">
-            ✕
-          </button>
+          <h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add Dataset</h3>
+          <button onClick={onClose} className="text-gray-600 hover:text-gray-800">✕</button>
         </div>
 
+        {/* Body */}
         <div className="p-5 space-y-4 overflow-y-auto">
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
@@ -257,7 +245,7 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
 
           {/* ─ Step 1 ─ */}
           {step === 1 && (
-            <section className="space-y-3">
+            <section className="space-y-4">
               <div>
                 <label className={LABEL}>Title *</label>
                 <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -267,6 +255,19 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
                 <textarea className={FIELD} rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} />
               </div>
 
+              {/* Provenance */}
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className={LABEL}>Source / Provider</label>
+                  <input className={FIELD} placeholder="e.g. NSO, UN-Habitat" value={source} onChange={(e) => setSource(e.target.value)} />
+                </div>
+                <div>
+                  <label className={LABEL}>Source URL</label>
+                  <input className={FIELD} placeholder="https://example.org/dataset" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
+                </div>
+              </div>
+
+              {/* Structure */}
               <div className="grid md:grid-cols-3 gap-3">
                 <div>
                   <label className={LABEL}>Dataset Type</label>
@@ -296,33 +297,21 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
               {adminLevel === "ADM0" && (
                 <div>
                   <label className={LABEL}>National Value ({dataFormat})</label>
-                  <input
-                    className={FIELD}
-                    placeholder="Enter single national value"
-                    value={nationalValue}
-                    onChange={(e) => setNationalValue(e.target.value)}
-                  />
+                  <input className={FIELD} placeholder="Enter national value" value={nationalValue} onChange={(e) => setNationalValue(e.target.value)} />
                   <p className="text-xs text-gray-500 mt-1">
-                    For national-level datasets you may enter a single value and skip file upload.
+                    For national datasets you may provide a single value and skip file upload.
                   </p>
                 </div>
               )}
 
               <div>
                 <label className={LABEL}>Year</label>
-                <input
-                  type="number"
-                  className={FIELD}
-                  value={year}
-                  onChange={(e) =>
-                    setYear(e.target.value ? Number(e.target.value) : "")
-                  }
-                />
+                <input type="number" className={FIELD} value={year} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")} />
               </div>
             </section>
           )}
 
-          {/* Steps 2-5 remain unchanged; you can keep upload, category, and indicator logic here. */}
+          {/* Steps 2-5 remain unchanged */}
           {step === 5 && (
             <section className="text-center text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 flex items-center gap-2 justify-center">
               <CheckCircle2 className="w-4 h-4" /> Dataset saved successfully.
@@ -330,11 +319,11 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
           )}
         </div>
 
+        {/* Footer */}
         <div className="flex items-center justify-between border-t px-5 py-3 bg-gray-50">
           <button className={BTN_SECONDARY} onClick={step === 1 ? onClose : prev}>
             <ChevronLeft className="w-4 h-4" /> {step === 1 ? "Cancel" : "Back"}
           </button>
-
           {step < 4 && (
             <button className={BTN_PRIMARY} onClick={next} disabled={!canNextFrom1}>
               Next <ChevronRight className="w-4 h-4" />
@@ -342,8 +331,7 @@ export default function DatasetWizard({ countryIso, onClose, onSaved }: Props) {
           )}
           {step === 4 && (
             <button className={BTN_PRIMARY} onClick={saveAll} disabled={busy || !canSave}>
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Save
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Save
             </button>
           )}
         </div>
