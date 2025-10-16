@@ -2,7 +2,7 @@
 import { useState,useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers,Plus,Edit3,Trash2 } from "lucide-react";
+import { Plus,Edit3,Trash2 } from "lucide-react";
 import DatasetWizard from "./DatasetWizard";
 import type { CountryParams } from "@/app/country/types";
 
@@ -21,9 +21,9 @@ async function loadDatasets(){
   .from("dataset_metadata")
   .select(`
     id,title,year,admin_level,data_type,data_format,indicator_id,
-    indicator_catalogue(name,status),
-    indicator_catalogue(
-      indicator_taxonomy_links(
+    indicator_catalogue (
+      name,status,
+      indicator_taxonomy_links (
         taxonomy_terms(category,name)
       )
     )
@@ -32,13 +32,15 @@ async function loadDatasets(){
   .order("title");
  if(error)console.error(error);
  const formatted=(data||[]).map(d=>{
-   const link=d.indicator_catalogue?.indicator_taxonomy_links?.[0];
+   const indicator=(Array.isArray(d.indicator_catalogue)?d.indicator_catalogue[0]:d.indicator_catalogue)||{};
+   const links=indicator.indicator_taxonomy_links||[];
+   const link=Array.isArray(links)?links[0]:links;
    const term=link?.taxonomy_terms?.name||null;
    const cat=link?.taxonomy_terms?.category||null;
    return{
      id:d.id,title:d.title,year:d.year,admin_level:d.admin_level,
      data_type:d.data_type,data_format:d.data_format,
-     indicator_name:d.indicator_catalogue?.name||null,
+     indicator_name:indicator.name||"-",
      taxonomy_category:cat,taxonomy_term:term
    };
  });
@@ -77,7 +79,7 @@ return(<SidebarLayout headerProps={headerProps}>
 {datasets.map(d=><tr key={d.id} onClick={()=>{setSelectedId(d.id);loadPreview(d.id);}}
 className={`cursor-pointer ${selectedId===d.id?"bg-[color:var(--gsc-beige)] font-semibold":""}`}>
 <td className="px-3 py-2">{d.title}</td><td>{d.year||"-"}</td><td>{d.admin_level}</td><td>{d.data_type}</td><td>{d.data_format}</td>
-<td>{d.indicator_name||"-"}</td><td>{d.taxonomy_category||"-"}</td><td>{d.taxonomy_term||"-"}</td>
+<td>{d.indicator_name}</td><td>{d.taxonomy_category||"-"}</td><td>{d.taxonomy_term||"-"}</td>
 <td className="flex gap-2 justify-center">
 <button className="p-1 border rounded hover:bg-gray-50"><Edit3 className="w-4 h-4 text-gray-600"/></button>
 <button className="p-1 border rounded hover:bg-gray-50"><Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]"/></button></td></tr>)}
