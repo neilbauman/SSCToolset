@@ -19,7 +19,9 @@ const[file,setFile]=useState<File|null>(null),[headers,setHeaders]=useState<stri
 [joinColumn,setJoinColumn]=useState(""),[nameColumn,setNameColumn]=useState(""),[categoryCols,setCategoryCols]=useState<string[]>([]),
 [categoryMap,setCategoryMap]=useState<{code:string;label:string}[]>([]);
 const[taxonomyIds,setTaxonomyIds]=useState<string[]>([]),[indicatorQuery,setIndicatorQuery]=useState(""),[indicatorList,setIndicatorList]=useState<any[]>([]),
-[indicatorId,setIndicatorId]=useState<string|null>(null),[createIndicatorOpen,setCreateIndicatorOpen]=useState(false);
+[indicatorId,setIndicatorId]=useState<string|null>(null),[createIndicatorOpen,setCreateIndicatorOpen]=useState(false),
+[selectedGroup,setSelectedGroup]=useState(""),[selectedTerm,setSelectedTerm]=useState(""),
+[groups,setGroups]=useState<any[]>([]),[terms,setTerms]=useState<any[]>([]);
 const next=()=>setStep(s=>Math.min(s+1,5)),prev=()=>setStep(s=>Math.max(s-1,1));
 
 async function parseCSV(f:File){return new Promise<{headers:string[];rows:any[]}>((res,rej)=>Papa.parse(f,{header:true,dynamicTyping:true,skipEmptyLines:true,
@@ -31,43 +33,38 @@ async function handleFile(e:any){const f=e.target.files?.[0];if(!f)return;setFil
 
 function detectCategories(){if(!categoryCols.length)return;setCategoryMap(categoryCols.map(c=>({code:c,label:c})));}
 
-async function searchIndicators(){const{data}=await supabase.from("indicator_catalogue").select("id,name,data_type,description").order("name");
-setIndicatorList((data??[]).filter(i=>i.name.toLowerCase().includes(indicatorQuery.toLowerCase())));}
-useEffect(()=>{if(step===4)searchIndicators()},[step]);
+async function loadTaxonomy(){const[g,t]=await Promise.all([
+ supabase.from("theme_catalogue").select("id,name"),
+ supabase.from("taxonomy_terms").select("id,name,theme_id")]);setGroups(g.data??[]);setTerms(t.data??[]);}
+useEffect(()=>{loadTaxonomy();},[]);
+
+async function searchIndicators(){
+ let query=supabase.from("indicator_catalogue").select("id,name,data_type,description,status").order("name");
+ if(selectedTerm){
+   const linkIds=await supabase.from("indicator_taxonomy_links").select("indicator_id").eq("taxonomy_id",selectedTerm);
+   const ids=(linkIds.data??[]).map(i=>i.indicator_id);
+   if(ids.length)query=query.in("id",ids);
+ }
+ const {data}=await query;
+ const filtered=indicatorQuery.trim()?(data??[]).filter(i=>i.name.toLowerCase().includes(indicatorQuery.toLowerCase())):(data??[]);
+ setIndicatorList(filtered);}
+useEffect(()=>{if(step===4)searchIndicators();},[step,selectedTerm]);
 
 async function saveAll(){setBusy(true);setError(null);
 try{
  const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert({
-  title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),admin_level:adminLevel,
-  data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();
- if(mErr)throw mErr;const id=meta.id;
- if(indicatorId)await supabase.from("catalogue_indicator_links").insert({dataset_id:id,indicator_id:indicatorId});
-
- // ADM0 shortcut
- if(adminLevel==="ADM0"&&nationalValue.trim()){
-   await supabase.from("dataset_values").insert([{dataset_id:id,admin_pcode:"ADM0",admin_level:"ADM0",
-     value:dataFormat==="text"?null:Number(nationalValue.replace("%","")),text_value:dataFormat==="text"?nationalValue:null}]);
-   setStep(5);onSaved();return;}
-
- // ADM1+ data
+  title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),
+  admin_level:adminLevel,data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();
+ if(mErr)throw mErr;const id=meta.id;if(indicatorId)await supabase.from("catalogue_indicator_links").insert({dataset_id:id,indicator_id:indicatorId});
+ if(adminLevel==="ADM0"&&nationalValue.trim()){await supabase.from("dataset_values").insert([{dataset_id:id,admin_pcode:"ADM0",admin_level:"ADM0",
+  value:dataFormat==="text"?null:Number(nationalValue.replace("%","")),text_value:dataFormat==="text"?nationalValue:null}]);setStep(5);onSaved();return;}
  if(datasetType==="gradient"){
-   const d:any[]=[];
-   rows.forEach(r=>{
-     if(categoryCols.length){
-       categoryCols.forEach(c=>{
-         d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,category_label:c,value:Number(r[c]??0)});
-       });
-     }else{
-       const fallbackCol=headers.find(h=>h!==joinColumn&&h!==nameColumn);
-       if(fallbackCol) d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,value:Number(r[fallbackCol]??0)});
-     }
-   });
-   if(d.length)await supabase.from("dataset_values").insert(d);
- }else{
-   detectCategories();
-   const maps=categoryMap.map(m=>({dataset_id:id,code:m.code,label:m.label,score:null}));
-   if(maps.length)await supabase.from("dataset_category_maps").insert(maps);
- }
+   const d:any[]=[];rows.forEach(r=>{
+     if(categoryCols.length){categoryCols.forEach(c=>{d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,category_label:c,value:Number(r[c]??0)});});}
+     else{const fallback=headers.find(h=>h!==joinColumn&&h!==nameColumn);if(fallback)d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,value:Number(r[fallback]??0)});}
+   });if(d.length)await supabase.from("dataset_values").insert(d);
+ }else{detectCategories();const maps=categoryMap.map(m=>({dataset_id:id,code:m.code,label:m.label,score:null}));
+  if(maps.length)await supabase.from("dataset_category_maps").insert(maps);}
  setStep(5);onSaved();
 }catch(e:any){setError(e.message||"Save failed.")}finally{setBusy(false)}}
 
@@ -81,55 +78,57 @@ return(<div className="fixed inset-0 z-[9999] flex items-center justify-center b
 <div className="text-xs text-gray-500">Step {step}/5</div>
 
 {/* Step1 */}
-{step===1&&(<section className="space-y-3">
- <div><label className={L}>Title *</label><input className={F} value={title} onChange={e=>setTitle(e.target.value)}/></div>
- <div><label className={L}>Description</label><textarea className={F} rows={3} value={desc} onChange={e=>setDesc(e.target.value)}/></div>
- <div className="grid md:grid-cols-2 gap-3"><div><label className={L}>Source</label><input className={F} value={source} onChange={e=>setSource(e.target.value)}/></div>
- <div><label className={L}>Source URL</label><input className={F} value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)}/></div></div>
- <div className="grid md:grid-cols-3 gap-3"><div><label className={L}>Type</label><select className={F} value={datasetType} onChange={e=>setDatasetType(e.target.value as any)}>
- <option value="gradient">Gradient</option><option value="categorical">Categorical</option></select></div>
- <div><label className={L}>Format</label><select className={F} value={dataFormat} onChange={e=>setDataFormat(e.target.value as any)}>
- <option value="numeric">Numeric</option><option value="percentage">Percentage</option><option value="text">Text</option></select></div>
- <div><label className={L}>Admin Level</label><select className={F} value={adminLevel} onChange={e=>setAdminLevel(e.target.value)}>{["ADM0","ADM1","ADM2","ADM3","ADM4","ADM5"].map(a=><option key={a}>{a}</option>)}</select></div></div>
- {adminLevel==="ADM0"&&<div><label className={L}>National Value</label><input className={F} value={nationalValue} onChange={e=>setNationalValue(e.target.value)}/></div>}
- <div><label className={L}>Year</label><input type="number" className={F} value={year} onChange={e=>setYear(e.target.value?Number(e.target.value):"")}/></div>
-</section>)}
+{step===1&&(<section className="space-y-3"><div><label className={L}>Title *</label><input className={F} value={title} onChange={e=>setTitle(e.target.value)}/></div>
+<div><label className={L}>Description</label><textarea className={F} rows={3} value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+<div className="grid md:grid-cols-2 gap-3"><div><label className={L}>Source</label><input className={F} value={source} onChange={e=>setSource(e.target.value)}/></div>
+<div><label className={L}>Source URL</label><input className={F} value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)}/></div></div>
+<div className="grid md:grid-cols-3 gap-3"><div><label className={L}>Type</label><select className={F} value={datasetType} onChange={e=>setDatasetType(e.target.value as any)}>
+<option value="gradient">Gradient</option><option value="categorical">Categorical</option></select></div>
+<div><label className={L}>Format</label><select className={F} value={dataFormat} onChange={e=>setDataFormat(e.target.value as any)}>
+<option value="numeric">Numeric</option><option value="percentage">Percentage</option><option value="text">Text</option></select></div>
+<div><label className={L}>Admin Level</label><select className={F} value={adminLevel} onChange={e=>setAdminLevel(e.target.value)}>{["ADM0","ADM1","ADM2","ADM3","ADM4","ADM5"].map(a=><option key={a}>{a}</option>)}</select></div></div>
+{adminLevel==="ADM0"&&<div><label className={L}>National Value</label><input className={F} value={nationalValue} onChange={e=>setNationalValue(e.target.value)}/></div>}
+<div><label className={L}>Year</label><input type="number" className={F} value={year} onChange={e=>setYear(e.target.value?Number(e.target.value):"")}/></div></section>)}
 
 {/* Step2 */}
-{step===2&&adminLevel!=="ADM0"&&(<section className="space-y-3">
- <div><label className={L}>Upload CSV</label><input type="file" accept=".csv" className="text-sm" onChange={handleFile}/></div>
- {headers.length>0&&(<div className="grid md:grid-cols-2 gap-3">
-  <div><label className={L}>Admin PCode Column</label><select className={F} value={joinColumn} onChange={e=>setJoinColumn(e.target.value)}>{headers.map(h=><option key={h}>{h}</option>)}</select></div>
-  <div><label className={L}>Admin Name Column (optional)</label><select className={F} value={nameColumn} onChange={e=>setNameColumn(e.target.value)}><option value="">None</option>{headers.map(h=><option key={h}>{h}</option>)}</select></div>
- </div>)}
- {rows.length>0&&(<div className="border rounded p-2 max-h-60 overflow-auto text-xs"><table className="min-w-full">
-  <thead><tr>{headers.map(h=><th key={h} className="text-left px-2 py-1 border-b">{h}</th>)}</tr></thead>
-  <tbody>{rows.slice(0,10).map((r,i)=><tr key={i} className="odd:bg-gray-50">{headers.map(h=><td key={h} className="px-2 py-1 border-b">{String(r[h]??"")}</td>)}</tr>)}</tbody></table></div>)}
-</section>)}
+{step===2&&adminLevel!=="ADM0"&&(<section className="space-y-3"><div><label className={L}>Upload CSV</label><input type="file" accept=".csv" className="text-sm" onChange={handleFile}/></div>
+{headers.length>0&&(<div className="grid md:grid-cols-2 gap-3">
+<div><label className={L}>Admin PCode Column</label><select className={F} value={joinColumn} onChange={e=>setJoinColumn(e.target.value)}>{headers.map(h=><option key={h}>{h}</option>)}</select></div>
+<div><label className={L}>Admin Name Column (optional)</label><select className={F} value={nameColumn} onChange={e=>setNameColumn(e.target.value)}><option value="">None</option>{headers.map(h=><option key={h}>{h}</option>)}</select></div></div>)}
+{rows.length>0&&(<div className="border rounded p-2 max-h-60 overflow-auto text-xs"><table className="min-w-full">
+<thead><tr>{headers.map(h=><th key={h} className="text-left px-2 py-1 border-b">{h}</th>)}</tr></thead>
+<tbody>{rows.slice(0,10).map((r,i)=><tr key={i} className="odd:bg-gray-50">{headers.map(h=><td key={h} className="px-2 py-1 border-b">{String(r[h]??"")}</td>)}</tr>)}</tbody></table></div>)}</section>)}
 
 {/* Step3 */}
-{step===3&&(<section className="space-y-3">
- <label className={L}>Select Category/Data Columns</label>
- <select multiple className={`${F} h-40`} value={categoryCols} onChange={e=>setCategoryCols([...e.target.selectedOptions].map(o=>o.value))}>
- {headers.filter(h=>h!==joinColumn&&h!==nameColumn).map(h=><option key={h}>{h}</option>)}</select>
- <button className={S} onClick={detectCategories}>Confirm Selection</button>
- {categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>{categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}
-</section>)}
+{step===3&&(<section className="space-y-3"><label className={L}>Select Category/Data Columns</label>
+<select multiple className={`${F} h-40`} value={categoryCols} onChange={e=>setCategoryCols([...e.target.selectedOptions].map(o=>o.value))}>
+{headers.filter(h=>h!==joinColumn&&h!==nameColumn).map(h=><option key={h}>{h}</option>)}</select>
+<button className={S} onClick={detectCategories}>Confirm Selection</button>
+{categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>{categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}</section>)}
 
 {/* Step4 */}
 {step===4&&(<section className="space-y-4">
- <div><label className={L}>Taxonomy</label><TaxonomyPicker selectedIds={taxonomyIds} onChange={setTaxonomyIds}/></div>
- <div className="grid md:grid-cols-3 gap-3"><div className="md:col-span-2"><label className={L}>Indicator</label>
-  <div className="flex items-center gap-2"><input className={F} placeholder="Search..." value={indicatorQuery} onChange={e=>setIndicatorQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchIndicators()}/>
-   <button className={S} onClick={searchIndicators}><Search className="w-4 h-4"/></button></div>
-  <div className="mt-2 max-h-48 overflow-auto border rounded">{indicatorList.map(it=>
-   <div key={it.id} onClick={()=>setIndicatorId(it.id)} className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 ${indicatorId===it.id?"bg-gray-100":""}`}>
-    <div className="flex justify-between"><div>{it.name}</div><span className="text-[11px] bg-gray-100 px-2 rounded">{it.data_type}</span></div>
-    {it.description&&<div className="text-xs text-gray-500">{it.description}</div>}</div>)}</div></div>
-  <div className="flex items-end"><button className={S} onClick={()=>setCreateIndicatorOpen(true)}><Plus className="w-4 h-4"/>New</button></div></div>
- <p className="text-[11px] text-gray-500 flex items-center gap-1"><Tag className="w-4 h-4"/>Link or create an indicator.</p>
- <CreateIndicatorInlineModal open={createIndicatorOpen} onClose={()=>setCreateIndicatorOpen(false)} taxonomyDefault={taxonomyIds} onCreated={id=>{setIndicatorId(id);setCreateIndicatorOpen(false);}}/>
-</section>)}
+<div className="flex flex-wrap gap-3">
+<div><label className={L}>Filter by Group</label>
+<select className={F} value={selectedGroup} onChange={e=>{setSelectedGroup(e.target.value);setSelectedTerm("");}}>
+<option value="">All</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+<div><label className={L}>Filter by Term</label>
+<select className={F} value={selectedTerm} onChange={e=>setSelectedTerm(e.target.value)}>
+<option value="">All</option>{terms.filter(t=>!selectedGroup||t.theme_id===selectedGroup).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div></div>
+<div><label className={L}>Taxonomy</label><TaxonomyPicker selectedIds={taxonomyIds} onChange={setTaxonomyIds}/></div>
+<div className="grid md:grid-cols-3 gap-3"><div className="md:col-span-2"><label className={L}>Indicator</label>
+<div className="flex items-center gap-2"><input className={F} placeholder="Search..." value={indicatorQuery} onChange={e=>setIndicatorQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchIndicators()}/>
+<button className={S} onClick={searchIndicators}><Search className="w-4 h-4"/></button></div>
+<div className="mt-2 max-h-48 overflow-auto border rounded">{indicatorList.map(it=>
+<div key={it.id} onClick={()=>setIndicatorId(it.id)} className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 ${indicatorId===it.id?"bg-gray-100":""}`}>
+<div className="flex justify-between"><div>{it.name}</div><span className={`text-[11px] px-2 rounded ${it.status==="proposed"?"bg-yellow-100 text-yellow-800":"bg-gray-100"}`}>{it.status}</span></div>
+{it.description&&<div className="text-xs text-gray-500">{it.description}</div>}</div>)}</div></div>
+<div className="flex items-end"><button className={S} onClick={()=>setCreateIndicatorOpen(true)}><Plus className="w-4 h-4"/>New</button></div></div>
+<p className="text-[11px] text-gray-500 flex items-center gap-1"><Tag className="w-4 h-4"/>Link or create an indicator (new ones are proposed for admin review).</p>
+<CreateIndicatorInlineModal open={createIndicatorOpen} onClose={()=>setCreateIndicatorOpen(false)} taxonomyDefault={taxonomyIds}
+ onCreated={async id=>{await supabase.from("indicator_catalogue").update({status:"proposed"}).eq("id",id);
+ await Promise.all(taxonomyIds.map(t=>supabase.from("indicator_taxonomy_links").insert({indicator_id:id,taxonomy_id:t})));
+ setIndicatorId(id);setCreateIndicatorOpen(false);}}/></section>)}
 
 {step===5&&<div className="text-center text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 flex items-center gap-2 justify-center"><CheckCircle2 className="w-4 h-4"/>Dataset saved.</div>}
 </div>
