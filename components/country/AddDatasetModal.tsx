@@ -7,10 +7,7 @@ import Step2PreviewAndMap from "@/app/country/[id]/datasets/steps/Step2PreviewAn
 import Step3Indicator from "@/app/country/[id]/datasets/steps/Step3Indicator";
 import Step4Save from "@/app/country/[id]/datasets/steps/Step4Save";
 
-type Parsed = {
-  headers: string[];
-  rows: Record<string, string>[];
-};
+type Parsed = { headers: string[]; rows: Record<string, string>[] };
 
 export default function AddDatasetModal({
   open,
@@ -24,7 +21,26 @@ export default function AddDatasetModal({
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<Parsed | null>(null);
-  const [meta, setMeta] = useState<any>({ country_iso: countryIso });
+  const [meta, setMeta] = useState<any>({
+    country_iso: countryIso,
+    // these will be filled gradually across steps:
+    title: "",
+    admin_level: "ADM0",
+    data_format: "numeric",
+    dataset_type: "", // "adm0" | "gradient" | "categorical"
+    join_field: "admin_pcode",
+    year: "",
+    unit: "",
+    source_name: "",
+    source_url: "",
+    // step2 mappings:
+    value_field: "",
+    category_fields: [] as string[],
+    // step3:
+    taxonomy_category: "",
+    taxonomy_term_id: "",
+    indicator_id: "",
+  });
 
   function next() {
     setStep((s) => Math.min(s + 1, 3));
@@ -38,25 +54,41 @@ export default function AddDatasetModal({
     setStep(0);
     setFile(null);
     setParsed(null);
-    setMeta({ country_iso: countryIso });
+    setMeta({
+      country_iso: countryIso,
+      title: "",
+      admin_level: "ADM0",
+      data_format: "numeric",
+      dataset_type: "",
+      join_field: "admin_pcode",
+      year: "",
+      unit: "",
+      source_name: "",
+      source_url: "",
+      value_field: "",
+      category_fields: [],
+      taxonomy_category: "",
+      taxonomy_term_id: "",
+      indicator_id: "",
+    });
   }
 
-  // Simple CSV parser
   async function parseCsv(f: File): Promise<Parsed> {
     const text = await f.text();
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+    if (lines.length === 0) return { headers: [], rows: [] };
     const headers = lines[0].split(",").map((h) => h.trim());
     const rows = lines.slice(1).map((line) => {
       const cells = line.split(",");
       const obj: Record<string, string> = {};
-      headers.forEach((h, i) => (obj[h] = cells[i]?.trim() || ""));
+      headers.forEach((h, i) => (obj[h] = (cells[i] ?? "").trim()));
       return obj;
     });
     return { headers, rows };
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={closeModal}>
+    <Dialog.Root open={open} onOpenChange={(v) => (v ? onOpenChange(v) : closeModal())}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
         <Dialog.Content
@@ -64,20 +96,15 @@ export default function AddDatasetModal({
           style={{ borderColor: "var(--gsc-light-gray)" }}
         >
           <Dialog.Title className="text-lg font-semibold mb-2">
-            <span
-              className="px-2 py-1 rounded text-white"
-              style={{ background: "var(--gsc-red)" }}
-            >
+            <span className="px-2 py-1 rounded text-white" style={{ background: "var(--gsc-red)" }}>
               Add Dataset
             </span>
           </Dialog.Title>
 
           <div className="text-sm mb-4 text-[var(--gsc-gray)]">
-            Step {step + 1}/4 •{" "}
-            {["Upload", "Preview", "Select Indicator", "Save"][step]}
+            Step {step + 1}/4 • {["Upload / Define", "Preview & Map", "Indicator", "Save"][step]}
           </div>
 
-          {/* Steps */}
           {step === 0 && (
             <Step1UploadOrDefine
               countryIso={countryIso}
@@ -93,34 +120,12 @@ export default function AddDatasetModal({
           )}
 
           {step === 1 && (
-            <Step2PreviewAndMap
-              meta={meta}
-              setMeta={setMeta}
-              parsed={parsed}
-              back={back}
-              next={next}
-            />
+            <Step2PreviewAndMap meta={meta} setMeta={setMeta} parsed={parsed} back={back} next={next} />
           )}
 
-          {step === 2 && (
-            <Step3Indicator meta={meta} setMeta={setMeta} back={back} next={next} />
-          )}
+          {step === 2 && <Step3Indicator meta={meta} setMeta={setMeta} back={back} next={next} />}
 
-          {step === 3 && (
-            <Step4Save
-              meta={meta}
-              parsed={parsed}
-              back={back}
-              closeModal={closeModal}
-            />
-          )}
-
-          {/* Cancel */}
-          <div className="flex justify-end mt-4">
-            <Dialog.Close asChild>
-              <button className="px-3 py-2 rounded border">Cancel</button>
-            </Dialog.Close>
-          </div>
+          {step === 3 && <Step4Save meta={meta} parsed={parsed} back={back} onClose={closeModal} />}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
