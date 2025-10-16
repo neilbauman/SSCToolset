@@ -62,7 +62,7 @@ export default function DatasetWizard({ params }: { params: { id: string } }) {
 
   return (
     <SidebarLayout headerProps={{
-      title:`${iso} – Add Dataset`, group:"datasets",
+      title:`${iso} – Add Dataset`, group:"country-config",
       description:"Upload or create datasets (ADM0, Gradient, Categorical).",
       tool:"Dataset Wizard",
       breadcrumbs:<Breadcrumbs items={[{label:"Countries",href:"/country"},{label:iso,href:`/country/${iso}`},{label:"Datasets",href:`/country/${iso}/datasets`},{label:"Add"}]} />
