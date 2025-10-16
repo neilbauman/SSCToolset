@@ -12,8 +12,14 @@ const parseFile=async(f:File)=>f.name.endsWith(".csv")?parseCsv(await f.text()):
 
 function Step({title,back,next,disable,children}:{title:string;back?:()=>void;next?:()=>void;disable?:boolean;children:any}){return(<div className="space-y-4"><h2 className="text-lg font-semibold">{title}</h2><div className="rounded-xl border p-4">{children}</div><div className="flex justify-between"><button onClick={back} disabled={!back} className="border px-3 py-1 rounded-xl"><ArrowLeft className="h-4 w-4"/>Back</button><button onClick={next} disabled={disable} className="bg-black text-white px-3 py-1 rounded-xl"><ArrowRight className="h-4 w-4"/>Next</button></div></div>)}
 
-export default function DatasetWizard({ params }:{params:{id:string}}){
-  const iso=params.id.toUpperCase();
+export default function DatasetWizard({ params }:{params:{id?:string}}){
+  const iso = (() => {
+    const v = (params as any)?.id;
+    if (typeof v === "string") return v.toUpperCase();
+    if (Array.isArray(v) && v[0]) return String(v[0]).toUpperCase();
+    return "";
+  })();
+
   const [type,setType]=useState<DatasetType>("gradient"),[title,setTitle]=useState(""),[admLevel,setAdm]=useState("ADM3"),[year,setYear]=useState(""),[unit,setUnit]=useState("");
   const [file,setFile]=useState<File|null>(null),[parsed,setParsed]=useState<Parsed>({headers:[],rows:[]});
   const [join,setJoin]=useState(""),[valCol,setVal]=useState(""),[cats,setCats]=useState<string[]>([]),[map,setMap]=useState<CategoryMapItem[]>([]);
@@ -21,6 +27,22 @@ export default function DatasetWizard({ params }:{params:{id:string}}){
   const steps=useMemo(()=>type==="adm0"?["Meta","ADM0","Save"]:type==="categorical"?["Meta","Upload","Scores","Save"]:["Meta","Upload","Save"],[type]);
   useEffect(()=>{if(type!=="categorical")return;setMap(cats.map(c=>({code:c,label:c,score:null})))},[cats,type]);
   const onFile=async(f:File)=>setParsed(await parseFile(f));
+
+  if (!iso) {
+    return (
+      <SidebarLayout
+        headerProps={{
+          title: "Loading country…",
+          group: "country-config",
+          description: "Waiting for route params.",
+          tool: "Dataset Wizard",
+          breadcrumbs: <Breadcrumbs items={[{ label: "Countries", href: "/country" }, { label: "Datasets" }]} />,
+        }}
+      >
+        <div className="rounded-xl border p-3 text-sm text-gray-600">Country ID missing in route.</div>
+      </SidebarLayout>
+    );
+  }
 
   const next=async()=>{try{
     if(steps[step]==="Save"){
@@ -63,7 +85,9 @@ export default function DatasetWizard({ params }:{params:{id:string}}){
         </Step>}
 
         {steps[step]==="Upload"&&<Step title="Upload file & map" back={()=>setStep(s=>s-1)} next={next}>
-          <input type="file" accept=".csv" onChange={e=>e.target.files&&onFile(e.target.files[0])}/>
+          <input type="file" accept=".csv" onChange={e=>e.target.files&&setFile(e.target.files[0]) || undefined}/>
+          {file && <div className="text-xs text-gray-500 mt-1">Selected: {file.name}</div>}
+          {file && <button className="mt-2 border px-3 py-1 rounded" onClick={async()=>setParsed(await parseFile(file))}><Upload className="h-4 w-4 inline mr-1"/>Parse file</button>}
           {parsed.headers.length>0&&<>
             <select className="border p-2 rounded w-full mt-2" value={join} onChange={e=>setJoin(e.target.value)}>
               <option value="">Join (admin_pcode)</option>{parsed.headers.map(h=><option key={h}>{h}</option>)}
