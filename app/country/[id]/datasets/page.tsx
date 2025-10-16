@@ -17,19 +17,16 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const [sortKey, setSortKey] = useState("title");
   const [sortAsc, setSortAsc] = useState(true);
 
+  // Load datasets list
   async function loadDatasets() {
     const { data, error } = await supabase
       .from("view_country_datasets")
       .select("*")
       .eq("country_iso", params.id);
-    if (!error && data) {
-      const sorted = [...data].sort((a, b) =>
-        String(a.title).localeCompare(String(b.title))
-      );
-      setDatasets(sorted);
-    }
+    if (!error && data) setDatasets(data);
   }
 
+  // Load preview data
   async function loadPreview(id: string) {
     setLoading(true);
     setPreview([]);
@@ -48,9 +45,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
           .order("admin_pcode");
         setPreview(cat || []);
       } else setPreview(data);
-    } catch (e) {
-      console.error(e);
-      setPreview([]);
     } finally {
       setLoading(false);
     }
@@ -64,16 +58,16 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     const asc = key === sortKey ? !sortAsc : true;
     setSortKey(key);
     setSortAsc(asc);
-    const sorted = [...datasets].sort((a, b) => {
+    setDatasets([...datasets].sort((a, b) => {
       const A = a[key] ?? "";
       const B = b[key] ?? "";
       return asc
         ? String(A).localeCompare(String(B))
         : String(B).localeCompare(String(A));
-    });
-    setDatasets(sorted);
+    }));
   }
 
+  // 👇 Header props used by SidebarLayout — same structure as other country-config pages
   const headerProps = {
     title: "Datasets",
     group: "country-config" as any,
@@ -91,8 +85,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
         onClick={() => setWizardOpen(true)}
         className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
       >
-        <Plus className="w-4 h-4" />
-        Add Dataset
+        <Plus className="w-4 h-4" /> Add Dataset
       </button>
     ),
   };
@@ -105,32 +98,34 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
             <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
               <tr>
                 {[
-                  "title",
-                  "year",
-                  "admin_level",
-                  "data_type",
-                  "data_format",
-                  "indicator_name",
-                  "taxonomy_category",
-                  "taxonomy_term",
-                ].map((key, i) => (
+                  "Title",
+                  "Year",
+                  "Admin",
+                  "Type",
+                  "Format",
+                  "Indicator",
+                  "Taxonomy Category",
+                  "Taxonomy Term",
+                ].map((col, i) => (
                   <th
                     key={i}
-                    onClick={() => sortBy(key)}
                     className="px-3 py-2 text-left cursor-pointer select-none"
-                  >
-                    {
-                      [
-                        "Title",
-                        "Year",
-                        "Admin",
-                        "Type",
-                        "Format",
-                        "Indicator",
-                        "Taxonomy Category",
-                        "Taxonomy Term",
-                      ][i]
+                    onClick={() =>
+                      sortBy(
+                        [
+                          "title",
+                          "year",
+                          "admin_level",
+                          "data_type",
+                          "data_format",
+                          "indicator_name",
+                          "taxonomy_category",
+                          "taxonomy_term",
+                        ][i]
+                      )
                     }
+                  >
+                    {col}
                     <ArrowUpDown className="inline w-3 h-3 ml-1 text-gray-400" />
                   </th>
                 ))}
@@ -197,9 +192,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                     {preview.map((r, i) => (
                       <tr key={i}>
                         <td className="px-2 py-1 border-b">{r.admin_pcode}</td>
-                        <td className="px-2 py-1 border-b">
-                          {r.admin_level || "-"}
-                        </td>
+                        <td className="px-2 py-1 border-b">{r.admin_level}</td>
                         <td className="px-2 py-1 border-b">
                           {r.category_label || "-"}
                         </td>
