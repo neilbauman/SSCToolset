@@ -96,8 +96,10 @@ export default function CountryDatasetsPage({params}:{params:CountryParams}) {
     <div className="text-sm font-semibold text-gray-700 mb-2">Data Preview — {selectedId}</div>
     <div className="border rounded-md overflow-x-auto">
      <table className="min-w-full text-xs">
-      <thead className="bg-gray-50 text-gray-700"><tr>{Object.keys(previewData[0]).map(h=>(<th key={h} className="px-2 py-1 text-left">{h}</th>))}</tr></thead>
-      <tbody>{previewData.slice(0,15).map((r,i)=>(<tr key={i} className="border-t">{Object.values(r).map((v,j)=>(<td key={j} className="px-2 py-1">{v??"-"}</td>))}</tr>))}</tbody>
+      <thead className="bg-gray-50 text-gray-700">
+       <tr>{Object.keys(previewData[0]).map(h=>(<th key={h} className="px-2 py-1 text-left">{h}</th>))}</tr>
+      </thead>
+      <tbody>{previewData.slice(0,15).map((r,i)=>(<tr key={i} className="border-t">{Object.values(r).map((v,j)=>(<td key={j} className="px-2 py-1">{v ?? "-"}</td>))}</tr>))}</tbody>
      </table>
     </div>
    </div>)}
