@@ -66,7 +66,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setSortAsc(asc);
     const sorted = [...datasets].sort((a, b) => {
       const A = a[key] ?? "",
-      B = b[key] ?? "";
+        B = b[key] ?? "";
       return asc
         ? String(A).localeCompare(String(B))
         : String(B).localeCompare(String(A));
@@ -74,7 +74,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setDatasets(sorted);
   }
 
-  const pageHeader = {
+  const headerProps = {
     title: "Datasets",
     group: "country-config" as any,
     description: "Reusable country datasets and linked indicators.",
@@ -90,7 +90,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   };
 
   return (
-    <SidebarLayout pageHeader={pageHeader}>
+    <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-4">
         <div className="border rounded-md overflow-hidden">
           <table className="min-w-full text-sm">
