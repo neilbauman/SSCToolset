@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import SidebarLayout from "@/components/layouts/SidebarLayout";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Loader2, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 
 type DatasetRow={id:string;title:string;year:number|null;admin_level:string|null;data_type:"gradient"|"categorical";data_format:"numeric"|"percentage"|"text";indicator_id:string|null;indicator_name:string|null;created_at?:string};
@@ -14,205 +14,136 @@ const BTN="inline-flex items-center gap-2 rounded px-2 py-1 text-sm border hover
 const CARD="rounded border bg-white shadow-sm";
 
 export default function CountryDatasetsPage(){
-  const params = useParams<{id:string}>(); const countryIso=params?.id??"";
-  const [loading,setLoading]=useState(true); const [err,setErr]=useState<string|null>(null);
-  const [datasets,setDatasets]=useState<DatasetRow[]>([]); const [selectedId,setSelectedId]=useState<string|null>(null);
-  const [taxonomyByIndicator,setTaxonomyByIndicator]=useState<Record<string,Term[]>>({});
-  const [dataLoading,setDataLoading]=useState(false); const [dataPreview,setDataPreview]=useState<any[]>([]);
-  const [sortKey,setSortKey]=useState<keyof DatasetRow>("created_at" as any); const [sortAsc,setSortAsc]=useState(false);
+  const params=useParams<{id:string}>(); const countryIso=params?.id??"";
+  const[loading,setLoading]=useState(true); const[err,setErr]=useState<string|null>(null);
+  const[datasets,setDatasets]=useState<DatasetRow[]>([]); const[selectedId,setSelectedId]=useState<string|null>(null);
+  const[taxonomyByIndicator,setTaxonomyByIndicator]=useState<Record<string,Term[]>>({});
+  const[dataLoading,setDataLoading]=useState(false); const[dataPreview,setDataPreview]=useState<any[]>([]);
+  const[sortKey,setSortKey]=useState<keyof DatasetRow>("created_at" as any); const[sortAsc,setSortAsc]=useState(false);
 
-  const headerProps={ title:"Datasets", group:"country" as any, description:"Reusable, country-level datasets and their indicator links." };
+  const headerProps={title:"Datasets",group:"country-config" as const,description:"Reusable country datasets and linked indicators."};
 
-  // Load datasets + indicator names
   async function loadDatasets(){
     setLoading(true); setErr(null);
     try{
-      const {data,error}=await supabase.from("dataset_metadata")
+      const{data,error}=await supabase.from("dataset_metadata")
         .select("id,title,year,admin_level,data_type,data_format,indicator_id,created_at,indicator_catalogue(name)")
         .eq("country_iso",countryIso).order("created_at",{ascending:false});
-      if(error) throw error;
-      const rows:DatasetRow[]=(data??[]).map((r:any)=>({
-        id:r.id,title:r.title,year:r.year??null,admin_level:r.admin_level??null,
+      if(error)throw error;
+      const rows:DatasetRow[]=(data??[]).map((r:any)=>({id:r.id,title:r.title,year:r.year??null,admin_level:r.admin_level??null,
         data_type:r.data_type,data_format:r.data_format,indicator_id:r.indicator_id??null,
-        indicator_name:r.indicator_catalogue?.name??null,created_at:r.created_at
-      }));
+        indicator_name:r.indicator_catalogue?.name??null,created_at:r.created_at}));
       setDatasets(rows);
-      // load taxonomy (category + names) for each indicator
       const indIds=Array.from(new Set(rows.map(r=>r.indicator_id).filter(Boolean))) as string[];
       if(indIds.length){
-        const {data:links,error:linkErr}=await supabase.from("indicator_taxonomy_links").select("indicator_id,taxonomy_id").in("indicator_id",indIds);
-        if(linkErr) throw linkErr;
+        const{data:links}=await supabase.from("indicator_taxonomy_links").select("indicator_id,taxonomy_id").in("indicator_id",indIds);
         const termIds=Array.from(new Set((links??[]).map((l:any)=>l.taxonomy_id)));
         let termMap:Record<string,Term>={};
         if(termIds.length){
-          const {data:terms,error:termErr}=await supabase.from("taxonomy_terms")
-            .select("id,name,category,sort_order").in("id",termIds).order("sort_order",{ascending:true});
-          if(termErr) throw termErr; for(const t of terms??[]) termMap[t.id]=t as Term;
+          const{data:terms}=await supabase.from("taxonomy_terms").select("id,name,category,sort_order").in("id",termIds).order("sort_order",{ascending:true});
+          for(const t of terms??[])termMap[t.id]=t as Term;
         }
         const grouped:Record<string,Term[]>={};
-        (links??[]).forEach((l:any)=>{const t=termMap[l.taxonomy_id]; if(!t) return; (grouped[l.indicator_id]??=[]).push(t);});
-        Object.keys(grouped).forEach(k=> grouped[k]=grouped[k].sort((a,b)=> (a.sort_order??0)-(b.sort_order??0) || (a.name??"").localeCompare(b.name??"")));
+        (links??[]).forEach((l:any)=>{const t=termMap[l.taxonomy_id];if(!t)return;(grouped[l.indicator_id]??=[]).push(t);});
+        Object.keys(grouped).forEach(k=>grouped[k].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)||(a.name??"").localeCompare(b.name??"")));
         setTaxonomyByIndicator(grouped);
       }else setTaxonomyByIndicator({});
-      if(!selectedId && rows.length) setSelectedId(rows[0].id);
-    }catch(e:any){ setErr(e.message??"Failed to load datasets."); }
-    finally{ setLoading(false); }
+      if(!selectedId&&rows.length)setSelectedId(rows[0].id);
+    }catch(e:any){setErr(e.message??"Failed to load datasets.");}finally{setLoading(false);}
   }
 
-  // Load preview for selected
   async function loadPreview(ds:DatasetRow){
-    setDataLoading(true); setDataPreview([]); setErr(null);
+    setDataLoading(true);setDataPreview([]);setErr(null);
     try{
       if(ds.data_type==="gradient"){
-        const {data,error}=await supabase.from("view_dataset_values_with_names")
-          .select("admin_pcode,admin_name,admin_level,value,text_value,category_label").eq("dataset_id",ds.id).limit(50);
-        if(!error && (data?.length??0)>0){ setDataPreview(data!); }
+        const{data,error}=await supabase.from("view_dataset_values_with_names")
+          .select("admin_pcode,admin_name,admin_level,value,text_value,category_label")
+          .eq("dataset_id",ds.id).limit(50);
+        if(!error&&data?.length)setDataPreview(data!);
         else{
-          const {data:fb,error:e2}=await supabase.from("dataset_values")
+          const{data:fb}=await supabase.from("dataset_values")
             .select("admin_pcode,admin_level,value,text_value").eq("dataset_id",ds.id).limit(50);
-          if(e2) throw e2; setDataPreview(fb??[]);
+          setDataPreview(fb??[]);
         }
       }else{
-        const {data,error}=await supabase.from("dataset_values_cat")
+        const{data}=await supabase.from("dataset_values_cat")
           .select("admin_pcode,admin_level,category_code,category_label").eq("dataset_id",ds.id).limit(100);
-        if(error) throw error; setDataPreview(data??[]);
+        setDataPreview(data??[]);
       }
-    }catch(e:any){ setErr(e.message??"Failed to load dataset preview."); }
-    finally{ setDataLoading(false); }
+    }catch(e:any){setErr(e.message??"Failed to load dataset preview.");}
+    finally{setDataLoading(false);}
   }
 
-  useEffect(()=>{ if(countryIso) loadDatasets(); /* eslint-disable-next-line */ },[countryIso]);
-  useEffect(()=>{ const ds=datasets.find(d=>d.id===selectedId); if(ds) loadPreview(ds); },[selectedId,datasets]);
+  useEffect(()=>{if(countryIso)loadDatasets();},[countryIso]);
+  useEffect(()=>{const ds=datasets.find(d=>d.id===selectedId);if(ds)loadPreview(ds);},[selectedId,datasets]);
 
-  // Sorting
-  function setSort(k:keyof DatasetRow){
-    if(sortKey===k) setSortAsc(!sortAsc); else{ setSortKey(k); setSortAsc(true); }
-  }
-  const sortedDatasets=useMemo(()=> {
-    const arr=[...datasets];
-    arr.sort((a:any,b:any)=>{
-      const va=a[sortKey], vb=b[sortKey];
-      if(va==null && vb==null) return 0; if(va==null) return 1; if(vb==null) return -1;
-      if(typeof va==="number" && typeof vb==="number") return sortAsc?va-vb:vb-va;
-      const sa=String(va).toLowerCase(), sb=String(vb).toLowerCase();
-      return sortAsc? sa.localeCompare(sb) : sb.localeCompare(sa);
-    });
-    return arr;
-  },[datasets,sortKey,sortAsc]);
+  function setSort(k:keyof DatasetRow){if(sortKey===k)setSortAsc(!sortAsc);else{setSortKey(k);setSortAsc(true);}}
+  const sortedDatasets=useMemo(()=>{const arr=[...datasets];
+    arr.sort((a:any,b:any)=>{const va=a[sortKey],vb=b[sortKey];
+      if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return-1;
+      if(typeof va==="number"&&typeof vb==="number")return sortAsc?va-vb:vb-va;
+      const sa=String(va).toLowerCase(),sb=String(vb).toLowerCase();return sortAsc?sa.localeCompare(sb):sb.localeCompare(sa);});
+    return arr;},[datasets,sortKey,sortAsc]);
 
   async function onDelete(id:string){
-    const ds=datasets.find(d=>d.id===id); if(!ds) return;
-    if(!confirm(`Delete dataset "${ds.title}"? This will remove its rows.`)) return;
-    try{ setLoading(true);
-      const {error}=await supabase.from("dataset_metadata").delete().eq("id",id);
-      if(error) throw error;
-      setDatasets(prev=>prev.filter(p=>p.id!==id)); if(selectedId===id) setSelectedId(null);
-    }catch(e:any){ alert(e.message??"Delete failed."); } finally{ setLoading(false); }
+    const ds=datasets.find(d=>d.id===id);if(!ds)return;
+    if(!confirm(`Delete dataset "${ds.title}"?`))return;
+    try{setLoading(true);
+      const{error}=await supabase.from("dataset_metadata").delete().eq("id",id);
+      if(error)throw error;setDatasets(p=>p.filter(x=>x.id!==id));if(selectedId===id)setSelectedId(null);
+    }catch(e:any){alert(e.message??"Delete failed.");}finally{setLoading(false);}
   }
-  function onEdit(id:string){ alert("Edit dataset (open wizard in edit mode)"); }
+  const onEdit=(id:string)=>alert("Edit dataset (open wizard in edit mode)");
 
-  // UI
-  return (
+  return(
     <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-6">
-        {err && <div className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">{err}</div>}
+        {err&&<div className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">{err}</div>}
 
-        {/* List Card */}
         <div className={CARD}>
           <div className="px-3 py-2 border-b flex items-center justify-between">
             <div className="text-sm font-medium">Datasets</div>
-            {loading && <div className="text-xs text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
+            {loading&&<div className="text-xs text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Loading…</div>}
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
-                <tr>
-                  {[
-                    ["title","Title"],
-                    ["year","Year"],
-                    ["admin_level","Admin"],
-                    ["data_type","Type"],
-                    ["data_format","Format"],
-                    ["indicator_name","Indicator"],
-                    ["__cat","Taxonomy Category"],
-                    ["__terms","Taxonomy Term(s)"],
-                  ].map(([k,label])=>{
-                    const active = (k==="__cat"||k==="__terms")? false : (sortKey===k);
-                    return (
-                      <th key={k} className={TH} onClick={()=> (k==="__cat"||k==="__terms")?null:setSort(k as keyof DatasetRow)}>
-                        <div className="flex items-center gap-1">
-                          <span>{label}</span>
-                          {(k!=="__cat"&&k!=="__terms") && (active ? (sortAsc?<ChevronUp className="w-3 h-3"/>:<ChevronDown className="w-3 h-3"/>) : null)}
-                        </div>
-                      </th>
-                    );
-                  })}
-                  <th className={TH}>Actions</th>
-                </tr>
+                <tr>{[["title","Title"],["year","Year"],["admin_level","Admin"],["data_type","Type"],["data_format","Format"],["indicator_name","Indicator"],["__cat","Taxonomy Category"],["__terms","Taxonomy Term(s)"]]
+                .map(([k,l])=><th key={k} className={TH} onClick={()=>!k.startsWith("__")&&setSort(k as keyof DatasetRow)}>
+                  <div className="flex items-center gap-1"><span>{l}</span>{!k.startsWith("__")&&(sortKey===k?(sortAsc?<ChevronUp className="w-3 h-3"/>:<ChevronDown className="w-3 h-3"/>):null)}</div></th>)}
+                <th className={TH}>Actions</th></tr>
               </thead>
               <tbody>
                 {sortedDatasets.map(d=>{
-                  const terms = d.indicator_id ? (taxonomyByIndicator[d.indicator_id] ?? []) : [];
-                  const cat = terms[0]?.category ?? "";
-                  const names = terms.map(t=>t.name).join(", ");
-                  const isSel = d.id===selectedId;
-                  return (
-                    <tr key={d.id} className={`hover:bg-gray-50 cursor-pointer ${isSel?"bg-gray-50":""}`} onClick={()=>setSelectedId(d.id)}>
-                      <td className={`${TD} ${isSel?"font-semibold":""}`}>{d.title}</td>
-                      <td className={TD}>{d.year ?? "-"}</td>
-                      <td className={TD}>{d.admin_level ?? "-"}</td>
-                      <td className={TD}>{d.data_type}</td>
-                      <td className={TD}>{d.data_format}</td>
-                      <td className={TD}>{d.indicator_name ?? "—"}</td>
-                      <td className={TD}>{cat || "—"}</td>
-                      <td className={TD}>{names || "—"}</td>
-                      <td className={TD}>
-                        <div className="flex items-center gap-2">
-                          <button className={BTN} onClick={(e)=>{e.stopPropagation(); onEdit(d.id);}}><Pencil className="w-4 h-4"/>Edit</button>
-                          <button className={`${BTN} text-[color:var(--gsc-red)]`} onClick={(e)=>{e.stopPropagation(); onDelete(d.id);}}><Trash2 className="w-4 h-4"/>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                  const terms=d.indicator_id?(taxonomyByIndicator[d.indicator_id]??[]):[];
+                  const cat=terms[0]?.category??"";const names=terms.map(t=>t.name).join(", ");const isSel=d.id===selectedId;
+                  return(<tr key={d.id} className={`hover:bg-gray-50 cursor-pointer ${isSel?"bg-gray-50":""}`} onClick={()=>setSelectedId(d.id)}>
+                    <td className={`${TD} ${isSel?"font-semibold":""}`}>{d.title}</td><td className={TD}>{d.year??"-"}</td>
+                    <td className={TD}>{d.admin_level??"-"}</td><td className={TD}>{d.data_type}</td><td className={TD}>{d.data_format}</td>
+                    <td className={TD}>{d.indicator_name??"—"}</td><td className={TD}>{cat||"—"}</td><td className={TD}>{names||"—"}</td>
+                    <td className={TD}><div className="flex items-center gap-2">
+                      <button className={BTN} onClick={e=>{e.stopPropagation();onEdit(d.id);}}><Pencil className="w-4 h-4"/>Edit</button>
+                      <button className={`${BTN} text-[color:var(--gsc-red)]`} onClick={e=>{e.stopPropagation();onDelete(d.id);}}><Trash2 className="w-4 h-4"/>Delete</button></div></td></tr>);
                 })}
-                {!loading && sortedDatasets.length===0 && (
-                  <tr><td className="px-3 py-6 text-sm text-gray-500" colSpan={10}>No datasets yet.</td></tr>
-                )}
+                {!loading&&sortedDatasets.length===0&&<tr><td className="px-3 py-6 text-sm text-gray-500" colSpan={10}>No datasets yet.</td></tr>}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Preview Card */}
         <div className={CARD}>
           <div className="px-3 py-2 border-b flex items-center justify-between">
-            <div className="text-sm font-medium">
-              Data Preview{selectedId ? ` — ${(datasets.find(d=>d.id===selectedId)?.title)}` : ""}
-            </div>
-            {dataLoading && <div className="text-xs text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
+            <div className="text-sm font-medium">Data Preview{selectedId?` — ${datasets.find(d=>d.id===selectedId)?.title}`:""}</div>
+            {dataLoading&&<div className="text-xs text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Loading…</div>}
           </div>
-          {!selectedId ? (
-            <div className="p-4 text-sm text-gray-500">Select a dataset above to preview its rows.</div>
-          ) : (
-            <div className="p-3 overflow-x-auto">
-              {dataPreview.length===0 ? (
-                <div className="text-sm text-gray-500">No rows to display.</div>
-              ) : (
-                <table className="min-w-full">
-                  <thead>
-                    <tr>{Object.keys(dataPreview[0]).map(k=><th key={k} className={TH}>{k}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {dataPreview.map((r,i)=>(
-                      <tr key={i} className="odd:bg-gray-50">
-                        {Object.keys(dataPreview[0]).map(k=><td key={k} className={TD}>{String(r[k]??"")}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
+          {!selectedId?
+            <div className="p-4 text-sm text-gray-500">Select a dataset above to preview its rows.</div>:
+            <div className="p-3 overflow-x-auto">{dataPreview.length===0?
+              <div className="text-sm text-gray-500">No rows to display.</div>:
+              <table className="min-w-full">
+                <thead><tr>{Object.keys(dataPreview[0]).map(k=><th key={k} className={TH}>{k}</th>)}</tr></thead>
+                <tbody>{dataPreview.map((r,i)=><tr key={i} className="odd:bg-gray-50">{Object.keys(dataPreview[0]).map(k=><td key={k} className={TD}>{String(r[k]??"")}</td>)}</tr>)}</tbody>
+              </table>}</div>}
         </div>
       </div>
     </SidebarLayout>
