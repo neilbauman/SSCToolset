@@ -1,48 +1,138 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { WizardMeta } from "@/components/country/AddDatasetModal";
+import { Loader2, Filter, ArrowRight } from "lucide-react";
+
+// Temporary stub for legacy type
+type WizardMeta = any;
+
+type Step3Props = {
+  meta: WizardMeta;
+  setMeta: (m: WizardMeta) => void;
+  onBack: () => void;
+  onNext: () => void;
+};
 
 export default function Step3Indicator({
-  meta, setMeta, onBack, onNext
-}:{ meta:WizardMeta; setMeta:(m:WizardMeta)=>void; onBack:()=>void; onNext:()=>void }){
-  const [indicators,setIndicators]=useState<{id:string;name:string}[]>([]);
-  const [q,setQ]=useState(""); const [tax,setTax]=useState<{category:string|null;term:string|null}>({category:null,term:null});
+  meta,
+  setMeta,
+  onBack,
+  onNext,
+}: Step3Props) {
+  const [categories, setCategories] = useState<{ id: string; category: string }[]>([]);
+  const [terms, setTerms] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(()=>{(async()=>{
-    const { data } = await supabase.from("indicator_catalogue").select("id,name").order("name");
-    setIndicators(data||[]);
-  })()},[]);
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("taxonomy_terms")
+        .select("id,category,name");
+      if (error) {
+        console.error(error);
+        setLoading(false);
+        return;
+      }
+      const cats = Array.from(new Set(data.map((d: any) => d.category))).map(
+        (c) => ({ id: c, category: c })
+      );
+      setCategories(cats);
+      setTerms(data);
+      setLoading(false);
+    })();
+  }, []);
 
-  useEffect(()=>{(async()=>{
-    if(!meta.indicator_id){ setTax({category:null,term:null}); return; }
-    const { data: link } = await supabase.from("indicator_taxonomy_links").select("taxonomy_id").eq("indicator_id", meta.indicator_id).limit(1);
-    const tid=link?.[0]?.taxonomy_id; if(!tid){ setTax({category:null,term:null}); return; }
-    const { data: t } = await supabase.from("taxonomy_terms").select("category,name").eq("id", tid).maybeSingle();
-    setTax({category:(t as any)?.category??null, term:(t as any)?.name??null});
-  })()},[meta.indicator_id]);
+  const filteredTerms = terms.filter(
+    (t) => !selectedCategory || t.category === selectedCategory
+  );
 
   return (
-    <div className="space-y-4">
-      <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-sm md:col-span-2">Search Indicators
-          <input className="border rounded p-2 w-full" value={q} onChange={e=>setQ(e.target.value)} placeholder="Type to filter…"/>
-        </label>
-        <label className="text-sm md:col-span-2">Indicator
-          <select className="border rounded p-2 w-full" value={meta.indicator_id||""} onChange={e=>setMeta({...meta,indicator_id:e.target.value})}>
-            <option value="">(none)</option>
-            {indicators.filter(i=>i.name.toLowerCase().includes(q.toLowerCase())).slice(0,300).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
-        </label>
-      </div>
+    <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
+      <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
+          Step 3 – Assign Indicator and Taxonomy
+        </h2>
+        <p className="mb-3">
+          Choose a taxonomy category and term to associate this dataset with an
+          indicator in the SSC catalogue.
+        </p>
 
-      <div className="text-xs text-gray-600">
-        Taxonomy: <span className="font-medium">{tax.category??"—"}</span>{tax.term?<> • {tax.term}</>:null}
+        {loading ? (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading taxonomy terms…
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-3 mb-3">
+              <div>
+                <label className="text-xs text-gray-500">Category</label>
+                <select
+                  value={selectedCategory ?? ""}
+                  onChange={(e) => setSelectedCategory(e.target.value || null)}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">Select category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.category}>
+                      {c.category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500">Term</label>
+                <select
+                  value={selectedTerm ?? ""}
+                  onChange={(e) => setSelectedTerm(e.target.value || null)}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">Select term</option>
+                  {filteredTerms.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-600">
+              <Filter className="h-3 w-3 inline mr-1" />
+              Filtered {filteredTerms.length} taxonomy terms
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex justify-between">
-        <button onClick={onBack} className="px-3 py-2 rounded border">Back</button>
-        <button onClick={onNext} className="px-4 py-2 rounded text-white" style={{background:"var(--gsc-blue)"}}>Continue</button>
+        <button
+          onClick={onBack}
+          className="px-3 py-2 rounded border text-sm"
+          style={{ borderColor: "var(--gsc-light-gray)" }}
+        >
+          Back
+        </button>
+        <button
+          onClick={() =>
+            onNext()
+          }
+          disabled={!selectedCategory || !selectedTerm}
+          className="px-4 py-2 rounded text-white flex items-center gap-1"
+          style={{
+            background:
+              selectedCategory && selectedTerm
+                ? "var(--gsc-blue)"
+                : "var(--gsc-light-gray)",
+          }}
+        >
+          Continue
+          <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
