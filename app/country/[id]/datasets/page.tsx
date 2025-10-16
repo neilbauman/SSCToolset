@@ -61,18 +61,20 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   };
 
   const headerProps = {
-    title: `${countryIso} – Datasets`,
-    trailing: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country", href: `/country` },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "Datasets" },
-        ]}
-      />
-    ),
-  };
+  title: `${countryIso} – Datasets`,
+  group: "country-config" as const, // ✅ required prop for SidebarLayout
+  description: "Manage datasets uploaded for this country.",
+  trailing: (
+    <Breadcrumbs
+      items={[
+        { label: "Dashboard", href: "/dashboard" },
+        { label: "Country", href: `/country` },
+        { label: countryIso, href: `/country/${countryIso}` },
+        { label: "Datasets" },
+      ]}
+    />
+  ),
+};
 
   return (
     <SidebarLayout headerProps={headerProps}>
