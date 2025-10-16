@@ -1,107 +1,153 @@
 "use client";
-
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  saveDataset,
-  GradientRow,
-  CategoricalRow,
-  CategoryMapItem,
-  DatasetType,
-} from "@/lib/datasets/saveDataset";
-import { CheckCircle2, Loader2 } from "lucide-react";
-
-// Temporary stubs for removed types
-type WizardMeta = any;
-type Parsed = any;
-
-type Step4Props = {
-  meta: WizardMeta;
-  parsed: Parsed;
-  rows?: GradientRow[] | CategoricalRow[];
-  categoryMap?: CategoryMapItem[];
-  onBack: () => void;
-  onFinish: () => void;
-};
+import { Loader2, CheckCircle2 } from "lucide-react";
 
 export default function Step4Save({
   meta,
   parsed,
-  rows = [],
-  categoryMap = [],
   onBack,
   onFinish,
-}: Step4Props) {
+}: {
+  meta: any;
+  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
+  onBack: () => void;
+  onFinish: () => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     setMessage(null);
+
     try {
-      const datasetType: DatasetType = meta?.dataset_type || "gradient";
-      await saveDataset(meta, rows, categoryMap);
+      if (!meta?.id && !meta?.dataset_id)
+        throw new Error("Missing dataset metadata ID.");
+      if (!parsed?.rows?.length)
+        throw new Error("No parsed rows to insert.");
+
+      const datasetId = meta.id || meta.dataset_id;
+      const datasetType = meta.dataset_type || "gradient";
+      const joinField = meta.join_field || "admin_pcode";
+      const adminLevel = meta.admin_level || "ADM3";
+
+      // Gradient / numeric / ADM0 datasets
+      if (datasetType === "gradient" || datasetType === "adm0") {
+        const records = parsed.rows.map((r) => ({
+          dataset_id: datasetId,
+          admin_pcode: r[joinField],
+          admin_level: adminLevel,
+          value: isNaN(Number(r.value)) ? null : Number(r.value),
+          unit: meta.unit || null,
+          created_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase.from("dataset_values").insert(records);
+        if (error) throw error;
+      }
+
+      // Categorical datasets
+      else if (datasetType === "categorical") {
+        const records = parsed.rows.flatMap((r) =>
+          Object.entries(r).map(([label, val]) => {
+            // Skip the join field column
+            if (label === joinField) return null;
+            return {
+              dataset_id: datasetId,
+              admin_pcode: r[joinField],
+              admin_level: adminLevel,
+              category_label: label,
+              category_score: isNaN(Number(val)) ? null : Number(val),
+              created_at: new Date().toISOString(),
+            };
+          }).filter(Boolean)
+        );
+
+        if (!records.length) throw new Error("No valid categorical rows found.");
+        const { error } = await supabase.from("dataset_values_cat").insert(records);
+        if (error) throw error;
+      }
+
+      // Update record count in metadata
+      const { count } = await supabase
+        .from(
+          datasetType === "categorical" ? "dataset_values_cat" : "dataset_values"
+        )
+        .select("id", { count: "exact", head: true })
+        .eq("dataset_id", datasetId);
+
+      await supabase
+        .from("dataset_metadata")
+        .update({ record_count: count || 0, updated_at: new Date().toISOString() })
+        .eq("id", datasetId);
+
       setDone(true);
-      setMessage(`Dataset saved successfully as ${datasetType}.`);
+      setMessage("Dataset saved successfully.");
     } catch (err: any) {
       console.error(err);
-      setMessage("Failed to save dataset.");
+      setMessage(err.message || "Failed to save dataset.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
-      <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
-          Step 4 – Save Dataset
-        </h2>
-        <p className="mb-3">
-          Review your dataset and click <strong>Save</strong> to upload it to
-          Supabase. Once saved, it will appear in the dataset catalogue for{" "}
-          {meta?.country_iso ?? "this country"}.
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-[var(--gsc-blue)]">
+        Step 4 – Save Dataset
+      </h3>
+
+      <div
+        className="rounded-lg p-4 border bg-white"
+        style={{ borderColor: "var(--gsc-light-gray)" }}
+      >
+        <p className="text-sm text-[var(--gsc-gray)] mb-2">
+          Review your dataset and click{" "}
+          <strong className="text-[var(--gsc-blue)]">Save</strong> to upload it
+          to Supabase. Once saved, it will appear in the dataset catalogue for
+          this country.
         </p>
 
-        {saving ? (
-          <div className="flex items-center gap-2 text-gray-500 text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Saving dataset…
-          </div>
-        ) : done ? (
-          <div className="flex items-center gap-2 text-[var(--gsc-green)] text-sm">
-            <CheckCircle2 className="h-5 w-5" />
-            {message ?? "Dataset saved successfully."}
-          </div>
-        ) : (
+        {!done ? (
           <button
             onClick={handleSave}
-            className="px-4 py-2 rounded text-white"
-            style={{ background: "var(--gsc-blue)" }}
-          >
-            Save Dataset
-          </button>
-        )}
-
-        {message && !done && (
-          <div
-            className="mt-3 text-sm"
+            disabled={saving}
+            className="px-4 py-2 rounded text-white mt-2 inline-flex items-center gap-2"
             style={{
-              color: message.includes("Failed")
-                ? "var(--gsc-red)"
-                : "var(--gsc-green)",
+              background: saving
+                ? "var(--gsc-light-gray)"
+                : "var(--gsc-blue)",
             }}
           >
-            {message}
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {saving ? "Saving..." : "Save Dataset"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 text-[var(--gsc-green)] font-medium">
+            <CheckCircle2 className="h-5 w-5" />
+            Dataset saved successfully.
           </div>
+        )}
+
+        {message && (
+          <p
+            className={`text-sm mt-3 ${
+              message.includes("Failed") || message.includes("error")
+                ? "text-[var(--gsc-red)]"
+                : "text-[var(--gsc-green)]"
+            }`}
+          >
+            {message}
+          </p>
         )}
       </div>
 
-      <div className="flex justify-between">
+      <div className="flex justify-between pt-5">
         <button
           onClick={onBack}
-          className="px-3 py-2 rounded border text-sm"
+          className="px-3 py-2 rounded border"
           style={{ borderColor: "var(--gsc-light-gray)" }}
         >
           Back
