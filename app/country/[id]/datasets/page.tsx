@@ -29,42 +29,38 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setLoading(true);
     setPreview([]);
     try {
+      const selectedDataset = datasets.find((d) => d.id === id);
       let previewData: any[] = [];
 
-if (selectedDataset?.data_type === "categorical") {
-  const { data, error } = await supabase
-    .from("dataset_values_cat")
-    .select("admin_pcode,admin_level,category_label,category_score as value")
-    .eq("dataset_id", id)
-    .order("admin_pcode");
-  if (!error && data) previewData = data;
-} else {
-  const { data, error } = await supabase
-    .from("dataset_values")
-    .select("admin_pcode,admin_level,category_label,value")
-    .eq("dataset_id", id)
-    .order("admin_pcode");
-  if (!error && data) previewData = data;
-}
+      if (selectedDataset?.data_type === "categorical") {
+        const { data, error } = await supabase
+          .from("dataset_values_cat")
+          .select("admin_pcode,admin_level,category_label,category_score as value")
+          .eq("dataset_id", id)
+          .order("admin_pcode");
+        if (!error && data) previewData = data;
+      } else {
+        const { data, error } = await supabase
+          .from("dataset_values")
+          .select("admin_pcode,admin_level,category_label,value")
+          .eq("dataset_id", id)
+          .order("admin_pcode");
+        if (!error && data) previewData = data;
+      }
+      setPreview(previewData);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadDatasets();
-  }, [params.id]);
+  useEffect(() => { loadDatasets(); }, [params.id]);
 
   function sortBy(key: string) {
     const asc = key === sortKey ? !sortAsc : true;
-    setSortKey(key);
-    setSortAsc(asc);
+    setSortKey(key); setSortAsc(asc);
     setDatasets([...datasets].sort((a, b) => {
-      const A = a[key] ?? "";
-      const B = b[key] ?? "";
-      return asc
-        ? String(A).localeCompare(String(B))
-        : String(B).localeCompare(String(A));
+      const A = a[key] ?? ""; const B = b[key] ?? "";
+      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
     }));
   }
 
@@ -85,7 +81,9 @@ if (selectedDataset?.data_type === "categorical") {
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-4">
-        <div className="flex justify-end">
+        {/* Page Title + Button */}
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Other Datasets</h2>
           <button
             onClick={() => setWizardOpen(true)}
             className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
@@ -94,19 +92,14 @@ if (selectedDataset?.data_type === "categorical") {
           </button>
         </div>
 
+        {/* Table */}
         <div className="border rounded-md overflow-hidden">
           <table className="min-w-full text-sm">
             <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
               <tr>
                 {[
-                  "Title",
-                  "Year",
-                  "Admin",
-                  "Type",
-                  "Format",
-                  "Indicator",
-                  "Taxonomy Category",
-                  "Taxonomy Term",
+                  "Title","Year","Admin","Type","Format","Indicator",
+                  "Taxonomy Category","Taxonomy Term",
                 ].map((col, i) => (
                   <th
                     key={i}
@@ -114,14 +107,8 @@ if (selectedDataset?.data_type === "categorical") {
                     onClick={() =>
                       sortBy(
                         [
-                          "title",
-                          "year",
-                          "admin_level",
-                          "data_type",
-                          "data_format",
-                          "indicator_name",
-                          "taxonomy_category",
-                          "taxonomy_term",
+                          "title","year","admin_level","data_type","data_format",
+                          "indicator_name","taxonomy_category","taxonomy_term",
                         ][i]
                       )
                     }
@@ -137,14 +124,9 @@ if (selectedDataset?.data_type === "categorical") {
               {datasets.map((d) => (
                 <tr
                   key={d.id}
-                  onClick={() => {
-                    setSelectedId(d.id);
-                    loadPreview(d.id);
-                  }}
+                  onClick={() => { setSelectedId(d.id); loadPreview(d.id); }}
                   className={`cursor-pointer ${
-                    selectedId === d.id
-                      ? "bg-[color:var(--gsc-beige)] font-semibold"
-                      : ""
+                    selectedId === d.id ? "bg-[color:var(--gsc-beige)] font-semibold" : ""
                   }`}
                 >
                   <td className="px-3 py-2">{d.title}</td>
@@ -169,6 +151,7 @@ if (selectedDataset?.data_type === "categorical") {
           </table>
         </div>
 
+        {/* Data Preview */}
         {selectedId && (
           <div className="border rounded-md mt-4">
             <div className="px-3 py-2 font-medium bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
@@ -194,9 +177,7 @@ if (selectedDataset?.data_type === "categorical") {
                       <tr key={i}>
                         <td className="px-2 py-1 border-b">{r.admin_pcode}</td>
                         <td className="px-2 py-1 border-b">{r.admin_level}</td>
-                        <td className="px-2 py-1 border-b">
-                          {r.category_label || "-"}
-                        </td>
+                        <td className="px-2 py-1 border-b">{r.category_label || "-"}</td>
                         <td className="px-2 py-1 border-b">{r.value ?? "-"}</td>
                       </tr>
                     ))}
@@ -211,10 +192,7 @@ if (selectedDataset?.data_type === "categorical") {
           <DatasetWizard
             countryIso={params.id}
             onClose={() => setWizardOpen(false)}
-            onSaved={() => {
-              setWizardOpen(false);
-              loadDatasets();
-            }}
+            onSaved={() => { setWizardOpen(false); loadDatasets(); }}
           />
         )}
       </div>
