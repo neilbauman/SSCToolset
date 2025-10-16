@@ -66,7 +66,7 @@ async function loadPreview(id:string){
 }
 
 useEffect(()=>{loadCountry();loadDatasets();},[params.id]);
-const headerProps={title:"Datasets",group:"country-config",
+const headerProps={title:"Datasets",group:"country-config" as any,
  description:"Reusable country datasets and linked indicators.",
  trailing:(<button onClick={()=>setWizardOpen(true)} className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"><Plus className="w-4 h-4"/>Add Dataset</button>)};
 
