@@ -29,19 +29,23 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setLoading(true);
     setPreview([]);
     try {
-      let { data } = await supabase
-        .from("dataset_values")
-        .select("admin_pcode,admin_level,category_label,value")
-        .eq("dataset_id", id)
-        .order("admin_pcode");
-      if (!data?.length) {
-        const { data: cat } = await supabase
-          .from("dataset_values_cat")
-          .select("admin_pcode,admin_level,category_label,category_score as value")
-          .eq("dataset_id", id)
-          .order("admin_pcode");
-        setPreview(cat || []);
-      } else setPreview(data);
+      let previewData: any[] = [];
+
+if (selectedDataset?.data_type === "categorical") {
+  const { data, error } = await supabase
+    .from("dataset_values_cat")
+    .select("admin_pcode,admin_level,category_label,category_score as value")
+    .eq("dataset_id", id)
+    .order("admin_pcode");
+  if (!error && data) previewData = data;
+} else {
+  const { data, error } = await supabase
+    .from("dataset_values")
+    .select("admin_pcode,admin_level,category_label,value")
+    .eq("dataset_id", id)
+    .order("admin_pcode");
+  if (!error && data) previewData = data;
+}
     } finally {
       setLoading(false);
     }
