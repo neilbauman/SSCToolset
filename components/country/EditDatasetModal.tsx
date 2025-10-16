@@ -1,257 +1,181 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { X, Info, Search } from "lucide-react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { X, Loader2, Search } from "lucide-react";
 
-type Props = {
-  open: boolean;
-  dataset: any | null;
-  onClose: () => void;
-  onSave: () => void;
+type DatasetMeta = {
+  id: string;
+  title: string;
+  admin_level: string | null;
+  dataset_type: string | null;
+  data_format: string | null;
+  data_type: string | null;
+  year: number | null;
+  unit: string | null;
+  join_field: string | null;
+  source_name: string | null;
+  source_url: string | null;
+  indicator_id: string | null;
 };
 
-export default function EditDatasetModal({ open, dataset, onClose, onSave }: Props) {
-  const [loading, setLoading] = useState(false);
+type Indicator = { id: string; name: string };
+
+export default function EditDatasetModal({
+  dataset,
+  onClose,
+  onSaved,
+}: {
+  dataset: DatasetMeta;
+  onClose: () => void;
+  onSaved: (updated: DatasetMeta) => void;
+}) {
+  const [form, setForm] = useState<DatasetMeta>(dataset);
   const [saving, setSaving] = useState(false);
 
-  const [title, setTitle] = useState("");
-  const [year, setYear] = useState<number | "">("");
-  const [adminLevel, setAdminLevel] = useState("ADM0");
-  const [datasetType, setDatasetType] = useState<"gradient" | "categorical">("gradient");
-  const [dataType, setDataType] = useState<"numeric" | "percentage" | "categories">("numeric");
-  const [unit, setUnit] = useState("");
-  const [sourceName, setSourceName] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [description, setDescription] = useState("");
-  const [theme, setTheme] = useState("All");
-  const [themes, setThemes] = useState<{ name: string }[]>([]);
-  const [search, setSearch] = useState("");
-  const [selectedIndicator, setSelectedIndicator] = useState<string | null>(null);
-  const [indicators, setIndicators] = useState<any[]>([]);
+  const [q, setQ] = useState("");
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [loadingInd, setLoadingInd] = useState(false);
+  const [taxonomy, setTaxonomy] = useState<{ category: string | null; term: string | null }>({ category: null, term: null });
 
   useEffect(() => {
-    if (!open || !dataset) return;
     (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("view_dataset_full")
-        .select(
-          "id,title,year,admin_level,dataset_type,data_type,unit,source_name,source_url,description,indicator_id,theme"
-        )
-        .eq("id", dataset.id)
-        .single();
-      if (data) {
-        setTitle(data.title || "");
-        setYear(data.year || "");
-        setAdminLevel(data.admin_level || "ADM0");
-        setDatasetType(data.dataset_type || "gradient");
-        setDataType(data.data_type || "numeric");
-        setUnit(data.unit || "");
-        setSourceName(data.source_name || "");
-        setSourceUrl(data.source_url || "");
-        setDescription(data.description || "");
-        setSelectedIndicator(data.indicator_id || null);
-        setTheme(data.theme || "All");
-      }
-
-      const { data: inds } = await supabase
-        .from("indicator_catalogue")
-        .select("id,name,theme,code,data_type")
-        .order("theme,name");
-      setIndicators(inds || []);
-      const uniqueThemes = Array.from(new Set((inds || []).map((i) => i.theme).filter(Boolean))).map((t) => ({
-        name: t!,
-      }));
-      setThemes(uniqueThemes);
-      setLoading(false);
+      // preload some indicators
+      setLoadingInd(true);
+      const { data } = await supabase.from("indicator_catalogue").select("id,name").order("name").limit(1000);
+      setIndicators(((data || []) as Indicator[]));
+      setLoadingInd(false);
     })();
-  }, [open, dataset]);
+  }, []);
 
-  const filteredIndicators = useMemo(() => {
-    return indicators.filter(
-      (i) =>
-        (theme === "All" || i.theme === theme) &&
-        (i.name?.toLowerCase().includes(search.toLowerCase()) ||
-          i.code?.toLowerCase().includes(search.toLowerCase()))
-    );
-  }, [indicators, theme, search]);
+  useEffect(() => {
+    (async () => {
+      if (!form.indicator_id) {
+        setTaxonomy({ category: null, term: null });
+        return;
+      }
+      const { data: links } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("taxonomy_id")
+        .eq("indicator_id", form.indicator_id)
+        .limit(1);
+      const tid = links?.[0]?.taxonomy_id;
+      if (!tid) {
+        setTaxonomy({ category: null, term: null });
+        return;
+      }
+      const { data: term } = await supabase.from("taxonomy_terms").select("category,name").eq("id", tid).maybeSingle();
+      setTaxonomy({ category: (term as any)?.category ?? null, term: (term as any)?.name ?? null });
+    })();
+  }, [form.indicator_id]);
 
-  const handleSave = async () => {
-    if (!dataset) return;
+  async function save() {
     setSaving(true);
-    try {
-      const payload = {
-        title,
-        year: year || null,
-        admin_level: adminLevel,
-        dataset_type: datasetType,
-        data_type: dataType,
-        unit: unit || null,
-        source_name: sourceName || null,
-        source_url: sourceUrl || null,
-        description: description || null,
-        indicator_id: selectedIndicator,
-        updated_at: new Date().toISOString(),
-      };
-      const { error } = await supabase.from("dataset_metadata").update(payload).eq("id", dataset.id);
-      if (error) throw error;
-      setSaving(false);
-      onSave();
-      onClose();
-    } catch (e: any) {
-      alert(`Error saving dataset: ${e.message}`);
-      setSaving(false);
+    const payload = {
+      title: form.title,
+      admin_level: form.admin_level,
+      year: form.year,
+      unit: form.unit,
+      join_field: form.join_field,
+      source_name: form.source_name,
+      source_url: form.source_url,
+      indicator_id: form.indicator_id,
+    };
+    const { data, error } = await supabase.from("dataset_metadata").update(payload).eq("id", form.id).select("*").maybeSingle();
+    setSaving(false);
+    if (error) {
+      alert(error.message);
+      return;
     }
-  };
-
-  if (!open) return null;
-
-  const LABEL = "block text-sm font-medium text-gray-600 mb-1";
-  const FIELD = "w-full border rounded-md px-2 py-1 text-sm";
-  const CARD = "border rounded-md cursor-pointer transition-all";
+    onSaved(data as DatasetMeta);
+  }
 
   return (
-    <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}>
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-lg">
-        <div className="flex justify-between items-center border-b px-5 py-3">
-          <h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Edit Dataset</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-lg" style={{ border: "1px solid var(--gsc-light-gray)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold" style={{ color: "var(--gsc-gray)" }}>
+            Edit Dataset
+          </h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {loading ? (
-          <div className="p-6 text-gray-500 text-sm">Loading dataset...</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
-            <div className="space-y-3">
-              <div>
-                <label className={LABEL}>Title *</label>
-                <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL}>Year</label>
-                  <input
-                    type="number"
-                    className={FIELD}
-                    value={year}
-                    onChange={(e) => setYear(Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <label className={LABEL}>Admin Level</label>
-                  <select className={FIELD} value={adminLevel} onChange={(e) => setAdminLevel(e.target.value)}>
-                    {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((a) => (
-                      <option key={a}>{a}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-sm">
+            <div className="mb-1 text-gray-600">Title</div>
+            <input className="w-full rounded border p-2" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL}>Dataset Type</label>
-                  <select className={FIELD} value={datasetType} onChange={(e) => setDatasetType(e.target.value as any)}>
-                    <option value="gradient">Gradient</option>
-                    <option value="categorical">Categorical</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={LABEL}>
-                    Data Type <Info className="inline w-3 h-3 text-gray-400 ml-1" />
-                  </label>
-                  <select className={FIELD} value={dataType} onChange={(e) => setDataType(e.target.value as any)}>
-                    <option value="numeric">Numeric</option>
-                    <option value="percentage">Percentage</option>
-                    <option value="categories">Categories</option>
-                  </select>
-                </div>
-              </div>
+          <label className="text-sm">
+            <div className="mb-1 text-gray-600">Year</div>
+            <input className="w-full rounded border p-2" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.year ?? ""} onChange={(e) => setForm({ ...form, year: e.target.value ? Number(e.target.value) : null })} />
+          </label>
 
-              <div>
-                <label className={LABEL}>Unit</label>
-                <input className={FIELD} value={unit} onChange={(e) => setUnit(e.target.value)} />
-              </div>
+          <label className="text-sm">
+            <div className="mb-1 text-gray-600">Unit</div>
+            <input className="w-full rounded border p-2" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.unit ?? ""} onChange={(e) => setForm({ ...form, unit: e.target.value || null })} />
+          </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL}>Source Name</label>
-                  <input className={FIELD} value={sourceName} onChange={(e) => setSourceName(e.target.value)} />
-                </div>
-                <div>
-                  <label className={LABEL}>Source URL</label>
-                  <input className={FIELD} value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
-                </div>
-              </div>
+          <label className="text-sm">
+            <div className="mb-1 text-gray-600">Join Field</div>
+            <input className="w-full rounded border p-2" placeholder="admin_pcode" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.join_field ?? ""} onChange={(e) => setForm({ ...form, join_field: e.target.value || null })} />
+          </label>
 
-              <div>
-                <label className={LABEL}>Description</label>
-                <textarea className={FIELD} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <label className="text-sm md:col-span-2">
+            <div className="mb-1 text-gray-600">Source Name</div>
+            <input className="w-full rounded border p-2" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.source_name ?? ""} onChange={(e) => setForm({ ...form, source_name: e.target.value || null })} />
+          </label>
+
+          <label className="text-sm md:col-span-2">
+            <div className="mb-1 text-gray-600">Source URL</div>
+            <input className="w-full rounded border p-2" style={{ borderColor: "var(--gsc-light-gray)" }} value={form.source_url ?? ""} onChange={(e) => setForm({ ...form, source_url: e.target.value || null })} />
+          </label>
+
+          <div className="md:col-span-2">
+            <div className="mb-1 text-gray-600 text-sm">Indicator (links taxonomy)</div>
+            <div className="flex gap-2 items-center">
+              <div className="relative grow">
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search indicators…" className="w-full rounded border px-8 py-2 text-sm" style={{ borderColor: "var(--gsc-light-gray)" }} />
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
               </div>
+              <select
+                className="rounded border p-2 text-sm"
+                style={{ borderColor: "var(--gsc-light-gray)" }}
+                value={form.indicator_id ?? ""}
+                onChange={(e) => setForm({ ...form, indicator_id: e.target.value || null })}
+              >
+                <option value="">(none)</option>
+                {(indicators || [])
+                  .filter((i) => i.name.toLowerCase().includes(q.toLowerCase()))
+                  .slice(0, 300)
+                  .map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
+              </select>
             </div>
-
-            <div className="space-y-3">
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 relative">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
-                  <input
-                    className={`${FIELD} pl-8`}
-                    placeholder="Search indicators..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                <div className="w-36">
-                  <select className={FIELD} value={theme} onChange={(e) => setTheme(e.target.value)}>
-                    <option>All</option>
-                    {themes.map((t) => (
-                      <option key={t.name}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="max-h-[400px] overflow-auto border rounded-md p-2">
-                {filteredIndicators.map((i) => {
-                  const active = selectedIndicator === i.id;
-                  return (
-                    <div
-                      key={i.id}
-                      className={`${CARD} p-3 mb-2 ${
-                        active ? "border-[color:var(--gsc-blue)] bg-blue-50/30" : "bg-white"
-                      }`}
-                      onClick={() => setSelectedIndicator(active ? null : i.id)}
-                    >
-                      <div className="font-medium">{i.name}</div>
-                      <div className="text-xs text-gray-600 mt-0.5">
-                        {i.theme ? `${i.theme} • ` : ""}
-                        {i.code} • {i.data_type || "—"}
-                      </div>
-                    </div>
-                  );
-                })}
-                {!filteredIndicators.length && (
-                  <div className="text-sm text-gray-500 py-6 text-center">No indicators found.</div>
-                )}
-              </div>
-              <p className="text-xs text-gray-500">Linking an indicator is optional. You can add or change it later.</p>
+            <div className="mt-2 text-xs text-gray-600">
+              Taxonomy:&nbsp;
+              <span className="font-medium">{taxonomy.category ?? "—"}</span>
+              {taxonomy.term ? <> • <span>{taxonomy.term}</span></> : null}
             </div>
           </div>
-        )}
+        </div>
 
-        <div className="flex justify-end border-t px-5 py-3 bg-gray-50">
-          <button onClick={onClose} className="px-4 py-2 rounded-md border text-sm text-gray-600 hover:bg-gray-100">
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded px-3 py-1.5 border" style={{ borderColor: "var(--gsc-light-gray)" }}>
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={save}
             disabled={saving}
-            className="ml-2 px-4 py-2 rounded-md bg-[color:var(--gsc-red)] text-white hover:opacity-90"
+            className="rounded px-3 py-1.5 text-white"
+            style={{ background: "var(--gsc-blue)" }}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Saving…</> : "Save"}
           </button>
         </div>
       </div>
