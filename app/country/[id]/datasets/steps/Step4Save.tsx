@@ -1,32 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
-type Parsed = { headers: string[]; rows: Record<string, string>[] };
-
-function toNumber(raw: unknown): number | null {
-  if (raw == null) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  // Remove thousands separators, handle percentages like "12.3%"
-  const cleaned = s.replace(/,/g, "").replace(/\s+/g, "").replace(/%$/, "");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
-async function chunkedInsert<T>(
-  table: string,
-  rows: T[],
-  chunkSize = 1000
-): Promise<void> {
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    const { error } = await supabase.from(table).insert(chunk);
-    if (error) throw error;
-  }
-}
+type Parsed = { headers?: string[]; rows?: Record<string, string>[] } | null;
 
 export default function Step4Save({
   meta,
@@ -35,169 +13,144 @@ export default function Step4Save({
   onClose,
 }: {
   meta: any;
-  parsed: Parsed | null;
+  parsed: Parsed;
   back: () => void;
   onClose: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [okId, setOkId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const datasetType: "adm0" | "gradient" | "categorical" = (meta.dataset_type ||
-    "gradient") as any;
-  const adminLevel: string = meta.admin_level || "ADM0";
-  const joinField: string = meta.join_field || "admin_pcode";
-  const unit: string | null = meta.unit || null;
-  const dataFormat: string = meta.data_format || "numeric";
-  const indicatorId: string | null = meta.indicator_id || null;
-  const title: string = meta.title || "";
-  const year: number | null =
-    meta.year != null && String(meta.year).trim() !== ""
-      ? Number(meta.year)
-      : null;
-  const sourceName: string | null =
-    meta.source_name && String(meta.source_name).trim()
-      ? meta.source_name
-      : null;
-  const sourceUrl: string | null =
-    meta.source_url && String(meta.source_url).trim()
-      ? meta.source_url
-      : null;
+  async function ensureDatasetId(): Promise<string> {
+    if (meta.dataset_id) return meta.dataset_id;
+    const payload: any = {
+      country_iso: meta.country_iso,
+      title: (meta.title || "").trim(),
+      dataset_type: meta.admin_level === "ADM0" && !parsed?.rows?.length ? "adm0" : meta.dataset_type || "gradient",
+      data_format: meta.data_format || "numeric",
+      admin_level: meta.admin_level,
+      join_field: meta.join_field || null,
+      year: meta.year ? Number(meta.year) : null,
+      unit: meta.unit || null,
+      source_name: meta.source_name || null,
+      source_url: meta.source_url || null,
+      indicator_id: meta.indicator_id || null,
+      created_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from("dataset_metadata").insert(payload).select("id").single();
+    if (error) throw error;
+    return data.id as string;
+  }
 
-  const previewSummary = useMemo(() => {
-    if (datasetType === "adm0") {
-      const v =
-        meta.adm0_value != null ? toNumber(meta.adm0_value) : (null as number | null);
-      return `ADM0 value: ${v ?? "—"} ${unit ?? ""}`.trim();
-    }
-    if (!parsed) return "No parsed data.";
-    const total = parsed.rows?.length ?? 0;
-    if (datasetType === "gradient") {
-      return `Gradient rows to parse: ${total} (join: ${joinField}, value: ${meta.value_field || "—"})`;
-    }
-    const cats = (meta.category_fields as string[]) || [];
-    return `Categorical rows to parse: ${total} (join: ${joinField}, categories: ${cats.join(
-      ", "
-    ) || "—"})`;
-  }, [datasetType, meta, parsed, unit, joinField]);
+  function toNumber(val: string): number | null {
+    const x = String(val ?? "").replace(/,/g, "").trim();
+    if (x === "") return null;
+    const n = Number(x);
+    return isNaN(n) ? null : n;
+  }
 
   async function doSave() {
-    setErr(null);
     setSaving(true);
+    setErr(null);
+    setOkId(null);
     try {
-      if (!meta.dataset_id) throw new Error("Missing dataset_id in wizard state.");
+      const datasetId = await ensureDatasetId();
+      const adminLevel = meta.admin_level || "ADM0";
 
-      // 1) Update dataset metadata (finalize all fields)
-      {
-        const payload: any = {
-          title,
-          admin_level: adminLevel,
-          dataset_type: datasetType,
-          data_format: dataFormat,
-          join_field: datasetType === "adm0" ? "admin_pcode" : joinField || null,
-          indicator_id: indicatorId || null,
-          unit,
-          year,
-          source_name: sourceName,
-          source_url: sourceUrl,
-          updated_at: new Date().toISOString(),
-        };
-        const { error: updErr } = await supabase
-          .from("dataset_metadata")
-          .update(payload)
-          .eq("id", meta.dataset_id);
-        if (updErr) throw updErr;
-      }
-
-      let insertedCount = 0;
-
-      // 2) Insert values by dataset type
-      if (datasetType === "adm0") {
-        // Single national value
-        const val = toNumber(meta.adm0_value);
-        if (val == null)
-          throw new Error("ADM0 value is required and must be numeric.");
+      // ADM0 single value
+      if (adminLevel === "ADM0" && !parsed?.rows?.length) {
+        const v = toNumber(meta.adm0_value);
         const row = {
-          dataset_id: meta.dataset_id,
+          dataset_id: datasetId,
           admin_pcode: "ADM0",
-          value: val,
-          unit,
           admin_level: "ADM0",
+          value: v,
+          unit: meta.unit || null,
         };
         const { error } = await supabase.from("dataset_values").insert(row);
         if (error) throw error;
-        insertedCount = 1;
-      } else if (datasetType === "gradient") {
-        if (!parsed) throw new Error("No parsed CSV loaded.");
-        const valueField: string = meta.value_field;
-        if (!valueField)
-          throw new Error("Value column not selected in Step 2.");
-        const rows = (parsed.rows || []).map((r) => {
-          const pcode = r[joinField];
-          const v = toNumber(r[valueField]);
-          return {
-            dataset_id: meta.dataset_id,
-            admin_pcode: pcode,
-            admin_level: adminLevel,
-            value: v,
-            unit,
-          };
-        });
+        await supabase.from("dataset_metadata").update({ record_count: 1 }).eq("id", datasetId);
+        setOkId(datasetId);
+        return;
+      }
 
-        // Filter: require pcode and numeric value (dataset_values.value is NOT NULL)
-        const clean = rows.filter(
-          (r) =>
-            r.admin_pcode &&
-            r.admin_pcode !== "" &&
-            r.value != null &&
-            Number.isFinite(r.value as number)
-        );
-        if (!clean.length) throw new Error("No valid numeric rows found to save.");
-        await chunkedInsert("dataset_values", clean, 1000);
-        insertedCount = clean.length;
-      } else if (datasetType === "categorical") {
-        if (!parsed) throw new Error("No parsed CSV loaded.");
-        const cats: string[] = (meta.category_fields as string[]) || [];
-        if (!cats.length)
-          throw new Error("No category columns selected in Step 2.");
+      // file-backed datasets
+      const headers = parsed?.headers ?? [];
+      const rows = parsed?.rows ?? [];
 
-        // Build rows: one record per (row x category column)
-        const out: any[] = [];
-        for (const r of parsed.rows || []) {
-          const pcode = r[joinField];
+      if (meta.dataset_type === "gradient") {
+        const join = meta.join_field;
+        const valueCol = meta.value_field;
+        if (!join || !valueCol) throw new Error("Missing join field or value field.");
+
+        const payload = rows
+          .map((r) => {
+            const pcode = r[join];
+            const value = toNumber(r[valueCol]);
+            if (!pcode || value == null) return null;
+            return {
+              dataset_id: datasetId,
+              admin_pcode: pcode,
+              admin_level: adminLevel,
+              value,
+              unit: meta.unit || null,
+            };
+          })
+          .filter(Boolean) as any[];
+
+        if (payload.length === 0) throw new Error("No valid gradient rows to save.");
+
+        const { error } = await supabase.from("dataset_values").insert(payload);
+        if (error) throw error;
+
+        await supabase.from("dataset_metadata").update({ record_count: payload.length }).eq("id", datasetId);
+        setOkId(datasetId);
+        return;
+      }
+
+      if (meta.dataset_type === "categorical") {
+        const join = meta.join_field;
+        const catCols: string[] = meta.category_fields || [];
+        if (!join || !catCols.length) throw new Error("Missing join field or category columns.");
+
+        // 1) Ensure category map (code/label) exists for the dataset
+        const mapRows = catCols.map((c) => ({ dataset_id: datasetId, code: c, label: c, score: null as number | null }));
+        // Upsert category map by (dataset_id, code) unique index
+        const { error: mapErr } = await supabase.from("dataset_category_maps").upsert(mapRows, { onConflict: "dataset_id,code" });
+        if (mapErr) throw mapErr;
+
+        // 2) Expand tall rows for dataset_values_cat
+        const tall: any[] = [];
+        for (const r of rows) {
+          const pcode = r[join];
           if (!pcode) continue;
-          for (const c of cats) {
-            const rawVal = r[c];
-            const score = toNumber(rawVal); // may be null (nullable column)
-            out.push({
-              dataset_id: meta.dataset_id,
+          for (const c of catCols) {
+            const raw = r[c];
+            const score = toNumber(raw);
+            tall.push({
+              dataset_id: datasetId,
               admin_pcode: pcode,
               admin_level: adminLevel,
               category_code: c,
               category_label: c,
-              category_score: score,
+              category_score: score, // numeric → number; text → NULL
             });
           }
         }
-        // Require at least pcode + labels; score may be null
-        const clean = out.filter((x) => !!x.admin_pcode && !!x.category_label);
-        if (!clean.length) throw new Error("No valid categorical rows found.");
-        await chunkedInsert("dataset_values_cat", clean, 1000);
-        insertedCount = clean.length;
+
+        if (tall.length === 0) throw new Error("No valid categorical rows to save.");
+
+        const { error } = await supabase.from("dataset_values_cat").insert(tall);
+        if (error) throw error;
+
+        await supabase.from("dataset_metadata").update({ record_count: tall.length }).eq("id", datasetId);
+        setOkId(datasetId);
+        return;
       }
 
-      // 3) Update record_count for dataset_metadata
-      {
-        const { error: updErr2 } = await supabase
-          .from("dataset_metadata")
-          .update({ record_count: insertedCount })
-          .eq("id", meta.dataset_id);
-        if (updErr2) throw updErr2;
-      }
-
-      // 4) Auto-close on success
-      onClose();
+      throw new Error("Unknown dataset_type.");
     } catch (e: any) {
-      setErr(e.message || "Save failed.");
+      setErr(e.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -206,53 +159,48 @@ export default function Step4Save({
   return (
     <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
       <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
-          Step 4 – Save Dataset
-        </h2>
-        <p className="mb-2">
-          Your dataset will be written to Supabase using the selections from the
-          previous steps. This may take a moment for large files.
-        </p>
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">Step 4 – Save</h2>
 
-        <div className="rounded-md border bg-white p-3 text-xs">
-          <div><strong>Type:</strong> {datasetType}</div>
-          <div><strong>Admin Level:</strong> {adminLevel}</div>
-          <div><strong>Join Field:</strong> {datasetType === "adm0" ? "N/A" : joinField || "—"}</div>
-          <div><strong>Indicator:</strong> {indicatorId || "—"}</div>
-          <div><strong>Unit:</strong> {unit || "—"}</div>
-          <div><strong>Format:</strong> {dataFormat}</div>
-          <div className="mt-1 text-[var(--gsc-gray)]">{previewSummary}</div>
-        </div>
+        {!okId ? (
+          <>
+            <div className="mb-3">
+              <div><b>Title:</b> {meta.title || "—"}</div>
+              <div><b>Admin level:</b> {meta.admin_level}</div>
+              <div><b>Type:</b> {meta.admin_level === "ADM0" && !parsed?.rows?.length ? "adm0" : meta.dataset_type}</div>
+              <div><b>Data format:</b> {meta.data_format}</div>
+              <div><b>Unit:</b> {meta.unit || "—"}</div>
+              {meta.dataset_type === "gradient" && (
+                <div><b>Join:</b> {meta.join_field} &nbsp; <b>Value:</b> {meta.value_field}</div>
+              )}
+              {meta.dataset_type === "categorical" && (
+                <div><b>Join:</b> {meta.join_field} &nbsp; <b>Categories:</b> {(meta.category_fields || []).join(", ") || "—"}</div>
+              )}
+              <div><b>Indicator:</b> {meta.indicator_id ? meta.indicator_id : "—"}</div>
+              <div><b>Source:</b> {meta.source_name || "—"} {meta.source_url ? `(${meta.source_url})` : ""}</div>
+            </div>
 
-        {err && (
-          <div className="mt-3 text-sm text-[var(--gsc-red)]">
-            {err}
+            {err && <div className="text-[var(--gsc-red)]">{err}</div>}
+
+            <div className="flex justify-between">
+              <button onClick={back} disabled={saving} className="px-3 py-2 rounded border">
+                Back
+              </button>
+              <button onClick={doSave} disabled={saving} className="px-4 py-2 rounded text-white" style={{ background: "var(--gsc-blue)" }}>
+                {saving ? "Saving…" : "Save Dataset"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 text-[var(--gsc-green)]">
+            <CheckCircle2 className="h-5 w-5" />
+            Saved! Dataset ID: <code>{okId}</code>
+            <div className="ml-auto">
+              <button onClick={onClose} className="px-3 py-2 rounded border">
+                Close
+              </button>
+            </div>
           </div>
         )}
-      </div>
-
-      <div className="flex justify-between">
-        <button onClick={back} className="px-3 py-2 rounded border">
-          Back
-        </button>
-        <button
-          onClick={doSave}
-          disabled={saving}
-          className="px-4 py-2 rounded text-white inline-flex items-center gap-2"
-          style={{ background: "var(--gsc-blue)" }}
-        >
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Saving…
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="h-4 w-4" />
-              Save Dataset
-            </>
-          )}
-        </button>
       </div>
     </div>
   );
