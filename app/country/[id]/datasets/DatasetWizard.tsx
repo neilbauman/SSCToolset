@@ -1,5 +1,7 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
@@ -12,13 +14,9 @@ const parseFile=async(f:File)=>f.name.endsWith(".csv")?parseCsv(await f.text()):
 
 function Step({title,back,next,disable,children}:{title:string;back?:()=>void;next?:()=>void;disable?:boolean;children:any}){return(<div className="space-y-4"><h2 className="text-lg font-semibold">{title}</h2><div className="rounded-xl border p-4">{children}</div><div className="flex justify-between"><button onClick={back} disabled={!back} className="border px-3 py-1 rounded-xl"><ArrowLeft className="h-4 w-4"/>Back</button><button onClick={next} disabled={disable} className="bg-black text-white px-3 py-1 rounded-xl"><ArrowRight className="h-4 w-4"/>Next</button></div></div>)}
 
-export default function DatasetWizard({ params }:{params:{id?:string}}){
-  const iso = (() => {
-    const v = (params as any)?.id;
-    if (typeof v === "string") return v.toUpperCase();
-    if (Array.isArray(v) && v[0]) return String(v[0]).toUpperCase();
-    return "";
-  })();
+export default function DatasetWizard(){
+  const p = useParams(); const raw = (p?.id ?? "") as string | string[];
+  const iso = (Array.isArray(raw) ? raw[0] : raw)?.toUpperCase() || "";
 
   const [type,setType]=useState<DatasetType>("gradient"),[title,setTitle]=useState(""),[admLevel,setAdm]=useState("ADM3"),[year,setYear]=useState(""),[unit,setUnit]=useState("");
   const [file,setFile]=useState<File|null>(null),[parsed,setParsed]=useState<Parsed>({headers:[],rows:[]});
@@ -30,15 +28,10 @@ export default function DatasetWizard({ params }:{params:{id?:string}}){
 
   if (!iso) {
     return (
-      <SidebarLayout
-        headerProps={{
-          title: "Loading country…",
-          group: "country-config",
-          description: "Waiting for route params.",
-          tool: "Dataset Wizard",
-          breadcrumbs: <Breadcrumbs items={[{ label: "Countries", href: "/country" }, { label: "Datasets" }]} />,
-        }}
-      >
+      <SidebarLayout headerProps={{
+        title:"Loading country…", group:"country-config", description:"Waiting for route params.", tool:"Dataset Wizard",
+        breadcrumbs:<Breadcrumbs items={[{label:"Countries",href:"/country"},{label:"Datasets"}]} />
+      }}>
         <div className="rounded-xl border p-3 text-sm text-gray-600">Country ID missing in route.</div>
       </SidebarLayout>
     );
@@ -58,10 +51,8 @@ export default function DatasetWizard({ params }:{params:{id?:string}}){
 
   return(
     <SidebarLayout headerProps={{
-      title:`${iso} – Add Dataset`,
-      group:"country-config",
-      description:"Upload or create datasets (ADM0, Gradient, Categorical).",
-      tool:"Dataset Wizard",
+      title:`${iso} – Add Dataset`, group:"country-config",
+      description:"Upload or create datasets (ADM0, Gradient, Categorical).", tool:"Dataset Wizard",
       breadcrumbs:<Breadcrumbs items={[{label:"Countries",href:"/country"},{label:iso,href:`/country/${iso}`},{label:"Datasets",href:`/country/${iso}/datasets`},{label:"Add"}]} />
     }}>
       <div className="space-y-4">
