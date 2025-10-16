@@ -8,12 +8,12 @@ export default function Step2PreviewAndMap({
   next,
   back,
 }: any) {
-  const headers = parsed?.headers || [];
-  const sampleRows = parsed?.rows?.slice(0, 5) || [];
+  const headers: string[] = parsed?.headers || [];
+  const sampleRows: Record<string, string>[] = parsed?.rows?.slice(0, 5) || [];
   const isCategorical = meta.dataset_type === "categorical";
 
-  const [joinField, setJoinField] = useState(meta.join_field || "");
-  const [valueField, setValueField] = useState(meta.value_field || "");
+  const [joinField, setJoinField] = useState<string>(meta.join_field || "");
+  const [valueField, setValueField] = useState<string>(meta.value_field || "");
   const [categoryFields, setCategoryFields] = useState<string[]>(
     meta.category_fields || []
   );
@@ -104,17 +104,20 @@ export default function Step2PreviewAndMap({
           <table className="min-w-full text-xs">
             <thead className="bg-[var(--gsc-light-gray)]/50">
               <tr>
-                {headers.map((h) => (
-                  <th key={h} className="px-2 py-1 border-b text-left font-medium">
+                {headers.map((h: string) => (
+                  <th
+                    key={h}
+                    className="px-2 py-1 border-b text-left font-medium"
+                  >
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {sampleRows.map((r: any, i: number) => (
+              {sampleRows.map((r: Record<string, string>, i: number) => (
                 <tr key={i}>
-                  {headers.map((h) => (
+                  {headers.map((h: string) => (
                     <td key={h} className="px-2 py-1 border-b">
                       {r[h]}
                     </td>
