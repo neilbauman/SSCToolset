@@ -7,6 +7,12 @@ import { Loader2, Filter, ArrowRight } from "lucide-react";
 // Temporary stub for legacy type
 type WizardMeta = any;
 
+type Term = {
+  id: string;
+  category: string | null;
+  name: string | null;
+};
+
 type Step3Props = {
   meta: WizardMeta;
   setMeta: (m: WizardMeta) => void;
@@ -20,8 +26,8 @@ export default function Step3Indicator({
   onBack,
   onNext,
 }: Step3Props) {
-  const [categories, setCategories] = useState<{ id: string; category: string }[]>([]);
-  const [terms, setTerms] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [terms, setTerms] = useState<Term[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,11 +42,13 @@ export default function Step3Indicator({
         setLoading(false);
         return;
       }
-      const cats = Array.from(new Set(data.map((d: any) => d.category))).map(
-        (c) => ({ id: c, category: c })
-      );
-      setCategories(cats);
-      setTerms(data);
+
+      const uniqueCats = Array.from(
+        new Set((data || []).map((d) => d.category).filter(Boolean))
+      ) as string[];
+
+      setCategories(uniqueCats);
+      setTerms((data as Term[]) || []);
       setLoading(false);
     })();
   }, []);
@@ -77,8 +85,8 @@ export default function Step3Indicator({
                 >
                   <option value="">Select category</option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.category}>
-                      {c.category}
+                    <option key={c} value={c}>
+                      {c}
                     </option>
                   ))}
                 </select>
@@ -93,7 +101,7 @@ export default function Step3Indicator({
                 >
                   <option value="">Select term</option>
                   {filteredTerms.map((t) => (
-                    <option key={t.id} value={t.name}>
+                    <option key={t.id} value={t.name ?? ""}>
                       {t.name}
                     </option>
                   ))}
@@ -118,9 +126,14 @@ export default function Step3Indicator({
           Back
         </button>
         <button
-          onClick={() =>
-            onNext()
-          }
+          onClick={() => {
+            setMeta({
+              ...meta,
+              taxonomy_category: selectedCategory,
+              taxonomy_term: selectedTerm,
+            });
+            onNext();
+          }}
           disabled={!selectedCategory || !selectedTerm}
           className="px-4 py-2 rounded text-white flex items-center gap-1"
           style={{
