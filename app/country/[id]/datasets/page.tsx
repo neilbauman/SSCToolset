@@ -1,6 +1,8 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Plus, Edit3, Trash2, ArrowUpDown } from "lucide-react";
 import DatasetWizard from "./DatasetWizard";
@@ -41,9 +43,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
       if (!data?.length) {
         const { data: cat } = await supabase
           .from("dataset_values_cat")
-          .select(
-            "admin_pcode,admin_level,category_label,category_score as value"
-          )
+          .select("admin_pcode,admin_level,category_label,category_score as value")
           .eq("dataset_id", id)
           .order("admin_pcode");
         setPreview(cat || []);
@@ -65,8 +65,8 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     setSortKey(key);
     setSortAsc(asc);
     const sorted = [...datasets].sort((a, b) => {
-      const A = a[key] ?? "",
-        B = b[key] ?? "";
+      const A = a[key] ?? "";
+      const B = b[key] ?? "";
       return asc
         ? String(A).localeCompare(String(B))
         : String(B).localeCompare(String(A));
@@ -78,6 +78,14 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     title: "Datasets",
     group: "country-config" as any,
     description: "Reusable country datasets and linked indicators.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Country Configuration", href: `/country/${params.id}` },
+          { label: "Datasets", href: `/country/${params.id}/datasets` },
+        ]}
+      />
+    ),
     trailing: (
       <button
         onClick={() => setWizardOpen(true)}
@@ -189,8 +197,12 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
                     {preview.map((r, i) => (
                       <tr key={i}>
                         <td className="px-2 py-1 border-b">{r.admin_pcode}</td>
-                        <td className="px-2 py-1 border-b">{r.admin_level || "-"}</td>
-                        <td className="px-2 py-1 border-b">{r.category_label || "-"}</td>
+                        <td className="px-2 py-1 border-b">
+                          {r.admin_level || "-"}
+                        </td>
+                        <td className="px-2 py-1 border-b">
+                          {r.category_label || "-"}
+                        </td>
                         <td className="px-2 py-1 border-b">{r.value ?? "-"}</td>
                       </tr>
                     ))}
