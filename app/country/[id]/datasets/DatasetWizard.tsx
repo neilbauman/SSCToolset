@@ -3,10 +3,7 @@
 import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  ChevronLeft, ChevronRight, Upload, Loader2,
-  AlertTriangle, CheckCircle2, Search, Plus, Tag
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Upload, Loader2, AlertTriangle, CheckCircle2, Search, Plus, Tag } from "lucide-react";
 import TaxonomyPicker from "@/app/configuration/taxonomy/TaxonomyPicker";
 import CreateIndicatorInlineModal from "@/components/country/CreateIndicatorInlineModal";
 
@@ -40,9 +37,12 @@ function detectCategories(){if(!categoryCols.length)return;setCategoryMap(catego
 
 async function checkPcodes(){if(!joinColumn||!rows.length)return;
  try{const{data:known}=await supabase.from("admin_units").select("pcode").eq("level",adminLevel);
- const knownSet=new Set((known??[]).map((u:any)=>String(u.pcode).trim()));const codes=rows.map(r=>String(r[joinColumn]??"").trim()).filter(Boolean);
- const found=codes.filter(c=>knownSet.has(c));const rate=codes.length?Math.round((found.length/codes.length)*100):0;
- const missing=codes.filter(c=>!knownSet.has(c)).slice(0,10);setMatchInfo({rate,missing});}catch(e){console.error(e);} }
+ const knownSet=new Set((known??[]).map((u:any)=>String(u.pcode).trim()));
+ const codes=rows.map(r=>String(r[joinColumn]??"").trim()).filter(Boolean);
+ const found=codes.filter(c=>knownSet.has(c));
+ const rate=codes.length?Math.round((found.length/codes.length)*100):0;
+ const missing=codes.filter(c=>!knownSet.has(c)).slice(0,10);
+ setMatchInfo({rate,missing});}catch(e){console.error(e);} }
 
 async function loadTaxonomy(){const{data}=await supabase.from("taxonomy_terms").select("id,name,category,sort_order").order("sort_order",{ascending:true});
  const cats=Array.from(new Set((data??[]).map(t=>t.category).filter(Boolean))).sort();setGroups(cats);setTerms(data??[]);}
@@ -54,6 +54,7 @@ async function searchIndicators(){let q=supabase.from("indicator_catalogue").sel
  const{data}=await q;setIndicatorList((data??[]).filter(i=>i.name.toLowerCase().includes(indicatorQuery.toLowerCase())));}
 useEffect(()=>{if(step===4)searchIndicators();},[step,selectedTerm]);
 
+// --- Render
 return(<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
 <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
 <div className="flex items-center justify-between border-b px-5 py-3"><h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add Dataset</h3><button onClick={onClose} className="text-gray-600 hover:text-gray-800">✕</button></div>
@@ -80,15 +81,13 @@ return(<div className="fixed inset-0 z-[9999] flex items-center justify-center b
 {rows.length>0&&(<div className="border rounded p-2 max-h-60 overflow-auto text-xs"><table className="min-w-full"><thead><tr>{headers.map(h=><th key={h} className="text-left px-2 py-1 border-b">{h}</th>)}</tr></thead><tbody>{rows.slice(0,10).map((r,i)=><tr key={i} className="odd:bg-gray-50">{headers.map(h=><td key={h} className="px-2 py-1 border-b">{String(r[h]??"")}</td>)}</tr>)}</tbody></table></div>)}</section>)}
 
 {/* Step 3 */}
-{step===3&&(<section className="space-y-3"><label className={L}>Select Category/Data Columns</label>
-<select multiple className={`${F} h-40`} value={categoryCols} onChange={e=>setCategoryCols([...e.target.selectedOptions].map(o=>o.value))}>{headers.filter(h=>h!==joinColumn&&h!==nameColumn).map(h=><option key={h}>{h}</option>)}</select>
-<button className={S} onClick={detectCategories}>Confirm Selection</button>
-{categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>{categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}</section>)}
+{step===3&&(<section className="space-y-3"><label className={L}>Select Category/Data Columns</label><select multiple className={`${F} h-40`} value={categoryCols} onChange={e=>setCategoryCols([...e.target.selectedOptions].map(o=>o.value))}>{headers.filter(h=>h!==joinColumn&&h!==nameColumn).map(h=><option key={h}>{h}</option>)}</select><button className={S} onClick={detectCategories}>Confirm Selection</button>{categoryMap.length>0&&<div className="border rounded p-2 text-xs"><p className="font-medium mb-1">Categories:</p>{categoryMap.map(c=><div key={c.code}>{c.label}</div>)}</div>}</section>)}
 // ==== END PART 1 ====
 
 // ==== START PART 2 ====
 {/* Step 4 */}
-{step===4&&(<section className="space-y-4"><div className="flex flex-wrap gap-3"><div><label className={L}>Filter by Group</label><select className={F} value={selectedGroup} onChange={e=>{setSelectedGroup(e.target.value);setSelectedTerm("");}}><option value="">All</option>{groups.map(g=><option key={g}>{g}</option>)}</select></div>
+{step===4&&(<section className="space-y-4">
+<div className="flex flex-wrap gap-3"><div><label className={L}>Filter by Group</label><select className={F} value={selectedGroup} onChange={e=>{setSelectedGroup(e.target.value);setSelectedTerm("");}}><option value="">All</option>{groups.map(g=><option key={g}>{g}</option>)}</select></div>
 <div><label className={L}>Filter by Term</label><select className={F} value={selectedTerm} onChange={e=>setSelectedTerm(e.target.value)}><option value="">All</option>{terms.filter(t=>!selectedGroup||t.category===selectedGroup).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div></div>
 <div><label className={L}>Taxonomy Picker</label><TaxonomyPicker selectedIds={taxonomyIds} onChange={setTaxonomyIds}/></div>
 <div className="grid md:grid-cols-3 gap-3"><div className="md:col-span-2"><label className={L}>Indicator</label><div className="flex items-center gap-2"><input className={F} placeholder="Search..." value={indicatorQuery} onChange={e=>setIndicatorQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchIndicators()}/><button className={S} onClick={searchIndicators}><Search className="w-4 h-4"/></button></div>
@@ -103,6 +102,4 @@ return(<div className="fixed inset-0 z-[9999] flex items-center justify-center b
 <div className="flex items-center justify-between border-t px-5 py-3 bg-gray-50">
 <button className={S} onClick={step===1?onClose:prev}><ChevronLeft className="w-4 h-4"/>{step===1?"Cancel":"Back"}</button>
 {step<4&&<button className={P} onClick={next} disabled={!canNext}>Next<ChevronRight className="w-4 h-4"/></button>}
-{step===4&&<button className={P} onClick={async()=>{setBusy(true);setError(null);try{const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert({title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),admin_level:adminLevel,data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();if(mErr)throw mErr;const id=meta.id;if(indicatorId)await supabase.from("catalogue_indicator_links").insert({dataset_id:id,indicator_id:indicatorId});
-if(adminLevel==="ADM0"&&nationalValue.trim()){await supabase.from("dataset_values").insert([{dataset_id:id,admin_pcode:"ADM0",admin_level:"ADM0",value:dataFormat==="text"?null:Number(nationalValue.replace("%","")),text_value:dataFormat==="text"?nationalValue:null}]);setStep(5);onSaved();return;}
-const d:any[]=[];rows.forEach(r=>{if(categoryCols.length)categoryCols.forEach(c=>d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??"").trim(),admin_level:adminLevel,category_label:c,value:Number(r[c]??0)}));else{const f=headers.find(h=>h!==joinColumn&&h!==nameColumn);if(f)d.push({dataset_id:id,admin_pcode:String(r[joinColumn]??
+{step===4&&<button className={P} onClick={async()=>{setBusy(true);setError(null);try{const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert({title,description:desc,source,source_url:sourceUrl,year:year===""?null:Number(year),admin_level:adminLevel,data_type:datasetType,data_format:dataFormat,country_iso:countryIso,indicator_id:indicatorId??null}).select().single();if(mErr)throw mErr
