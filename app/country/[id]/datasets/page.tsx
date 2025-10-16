@@ -1,141 +1,285 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, Database, PlusCircle, Eye } from "lucide-react";
+import { Loader2, PlusCircle, ArrowUpDown, Search } from "lucide-react";
 import Link from "next/link";
+import DatasetPreview from "@/components/country/DatasetPreview";
 
 type DatasetMeta = {
-  id: string; title: string; admin_level: string | null;
-  data_type: string | null; data_format: string | null; dataset_type: string | null;
-  year: number | null; unit: string | null; country_iso: string; created_at: string;
+  id: string;
+  title: string;
+  dataset_type: "adm0" | "gradient" | "categorical" | string | null;
+  data_format: "numeric" | "text" | string | null;
+  data_type: string | null;
+  admin_level: string | null;
+  year: number | null;
+  source_name: string | null;
+  unit: string | null;
+  record_count: number | null;
+  created_at: string;
+  country_iso: string;
+  // optional taxonomy/theme if present in your table
+  theme?: string | null;
 };
-type Row = Record<string, unknown>;
+
+type SortKey =
+  | "title"
+  | "dataset_type"
+  | "data_format"
+  | "data_type"
+  | "admin_level"
+  | "year"
+  | "source_name"
+  | "record_count"
+  | "created_at";
 
 export default function CountryDatasetsPage() {
-  const p = useParams(); const raw = (p?.id ?? "") as string | string[];
+  const p = useParams();
+  const raw = (p?.id ?? "") as string | string[];
   const iso = (Array.isArray(raw) ? raw[0] : raw)?.toUpperCase() || "";
 
   const [loading, setLoading] = useState(true);
-  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<DatasetMeta[]>([]);
   const [selected, setSelected] = useState<DatasetMeta | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
+  const [q, setQ] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("created_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     if (!iso) return;
     (async () => {
+      // prefer view_dataset_summary if present in DB; otherwise fall back to dataset_metadata
       const { data, error } = await supabase
         .from("dataset_metadata")
         .select("*")
         .eq("country_iso", iso)
         .order("created_at", { ascending: false });
-      if (error) setError(error.message); else setDatasets(data || []);
+      if (error) setError(error.message);
+      else setRows((data as DatasetMeta[]) || []);
       setLoading(false);
     })();
   }, [iso]);
 
-  async function loadPreview(meta: DatasetMeta) {
-    setSelected(meta); setRows([]);
-    const isCat = meta.dataset_type === "categorical" || meta.data_type === "categorical";
-    const table = isCat ? "dataset_values_cat" : "dataset_values";
-    const fields = isCat
-      ? "admin_pcode, admin_level, category_label, category_score"
-      : "admin_pcode, admin_level, value, unit";
-    const { data, error } = await supabase.from(table).select(fields).eq("dataset_id", meta.id).limit(1000);
-    if (error) setError(error.message); else setRows((data as Row[]) || []);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    let r = rows;
+    if (needle) {
+      r = r.filter((d) =>
+        [
+          d.title,
+          d.dataset_type ?? "",
+          d.data_format ?? "",
+          d.data_type ?? "",
+          d.admin_level ?? "",
+          d.year ?? "",
+          d.source_name ?? "",
+          d.theme ?? "",
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      );
+    }
+    return [...r].sort((a, b) => {
+      const A = (a as any)[sortBy];
+      const B = (b as any)[sortBy];
+      if (A === B) return 0;
+      if (A === null || A === undefined) return 1;
+      if (B === null || B === undefined) return -1;
+      if (typeof A === "number" && typeof B === "number")
+        return sortDir === "asc" ? A - B : B - A;
+      const as = String(A).toLowerCase();
+      const bs = String(B).toLowerCase();
+      return sortDir === "asc" ? (as > bs ? 1 : -1) : (as < bs ? 1 : -1);
+    });
+  }, [rows, q, sortBy, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
   }
 
   if (!iso) {
     return (
-      <SidebarLayout headerProps={{
-        title: "Loading country…", group: "country-config",
-        description: "Waiting for route params.", tool: "Dataset Manager",
-        breadcrumbs: <Breadcrumbs items={[{ label: "Countries", href: "/country" }, { label: "Datasets" }]} />
-      }}>
-        <div className="rounded-xl border p-3 text-sm text-gray-600">Country ID missing in route.</div>
+      <SidebarLayout
+        headerProps={{
+          title: "Loading country…",
+          group: "country-config",
+          description: "Waiting for route params.",
+          tool: "Dataset Manager",
+          breadcrumbs: (
+            <Breadcrumbs
+              items={[
+                { label: "Countries", href: "/country" },
+                { label: "Datasets" },
+              ]}
+            />
+          ),
+        }}
+      >
+        <div className="rounded-xl border p-3 text-sm text-gray-600">
+          Country ID missing in route.
+        </div>
       </SidebarLayout>
     );
   }
 
   return (
-    <SidebarLayout headerProps={{
-      title: `${iso} – Datasets`, group: "country-config",
-      description: "Upload, view, and manage datasets for SSC.", tool: "Dataset Manager",
-      breadcrumbs: <Breadcrumbs items={[{ label: "Countries", href: "/country" }, { label: iso, href: `/country/${iso}` }, { label: "Datasets" }]} />
-    }}>
-      <div className="space-y-6">
-        {loading && <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Loading datasets...</div>}
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+    <SidebarLayout
+      headerProps={{
+        title: `${iso} – Datasets`,
+        group: "country-config",
+        description:
+          "Upload, view, and manage datasets used in SSC. Select a dataset to preview below.",
+        tool: "Dataset Manager",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Countries", href: "/country" },
+              { label: iso, href: `/country/${iso}` },
+              { label: "Datasets" },
+            ]}
+          />
+        ),
+      }}
+    >
+      {/* Toolbar */}
+      <div
+        className="rounded-xl p-3 flex items-center justify-between"
+        style={{ background: "var(--gsc-beige)", border: "1px solid var(--gsc-light-gray)" }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-[var(--gsc-gray)]">
+            <span className="font-semibold">{filtered.length}</span> datasets
+          </div>
+          <div className="relative ml-4">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search title, type, format, source…"
+              className="rounded-lg border px-8 py-1 text-sm"
+              style={{ borderColor: "var(--gsc-light-gray)" }}
+            />
+            <Search className="absolute left-2 top-1.5 h-4 w-4 text-gray-400" />
+          </div>
+        </div>
 
-        {!loading && !error && (
-          <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{datasets.length} datasets</h2>
-              <Link href={`/country/${iso}/datasets/add`} className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-white hover:bg-gray-800">
-                <PlusCircle className="h-4 w-4" />Add Dataset
-              </Link>
-            </div>
-
-            {datasets.length === 0 ? (
-              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">
-                No datasets yet. Click <b>Add Dataset</b> to begin.
-              </div>
-            ) : (
-              <div className="overflow-auto rounded-xl border">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                    <tr><th className="px-2 py-2">Title</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">Admin</th><th className="px-2 py-2">Year</th><th className="px-2 py-2 text-right">Preview</th></tr>
-                  </thead>
-                  <tbody>
-                    {datasets.map((d) => (
-                      <tr key={d.id} className="border-t hover:bg-gray-50">
-                        <td className="px-2 py-2 font-medium">{d.title}</td>
-                        <td className="px-2 py-2">{d.dataset_type ?? d.data_type}</td>
-                        <td className="px-2 py-2">{d.admin_level}</td>
-                        <td className="px-2 py-2">{d.year ?? "—"}</td>
-                        <td className="px-2 py-2 text-right">
-                          <button onClick={() => loadPreview(d)} className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs hover:bg-gray-100">
-                            <Eye className="h-3 w-3" />View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {selected && (
-              <div className="rounded-2xl border p-4">
-                <h3 className="mb-3 text-lg font-semibold flex items-center gap-2"><Database className="h-4 w-4" />{selected.title}</h3>
-                {rows.length === 0 ? (
-                  <div className="text-sm text-gray-500">No rows found.</div>
-                ) : (
-                  <div className="overflow-auto">
-                    <table className="min-w-full text-xs">
-                      <thead><tr>{Object.keys(rows[0]).map((k) => <th key={k} className="border-b px-2 py-1 text-left">{k}</th>)}</tr></thead>
-                      <tbody>
-                        {rows.slice(0, 50).map((row, i) => (
-                          <tr key={i}>
-                            {Object.values(row).map((v, j) => {
-                              let out = "-"; if (v !== null && v !== undefined) out = typeof v === "object" ? JSON.stringify(v) : String(v);
-                              return <td key={j} className="border-b px-2 py-1">{out}</td>;
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
+        <Link
+          href={`/country/${iso}/datasets/add`}
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-white"
+          style={{ background: "var(--gsc-blue)" }}
+        >
+          <PlusCircle className="h-4 w-4" />
+          Add Dataset
+        </Link>
       </div>
+
+      {/* Versions/metadata table */}
+      <div className="overflow-auto rounded-xl" style={{ border: "1px solid var(--gsc-light-gray)" }}>
+        <table className="min-w-full text-sm">
+          <thead
+            className="text-xs uppercase"
+            style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
+          >
+            <tr>
+              {[
+                ["title", "Title"],
+                ["dataset_type", "Type"],
+                ["data_format", "Format"],
+                ["data_type", "Data Type"],
+                ["admin_level", "Admin"],
+                ["year", "Year"],
+                ["source_name", "Source"],
+                ["record_count", "Records"],
+                ["created_at", "Created"],
+              ].map(([key, label]) => (
+                <th key={key} className="px-2 py-2">
+                  <button
+                    className="inline-flex items-center gap-1"
+                    onClick={() => toggleSort(key as SortKey)}
+                    title={`Sort by ${label}`}
+                  >
+                    {label}
+                    <ArrowUpDown className="h-3 w-3 opacity-60" />
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td className="px-2 py-3 text-gray-500" colSpan={9}>
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading datasets…
+                  </div>
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td className="px-2 py-3 text-red-700" colSpan={9}>
+                  {error}
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td className="px-2 py-3 text-gray-500" colSpan={9}>
+                  No datasets match your filters.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((d) => {
+                const isSel = selected?.id === d.id;
+                return (
+                  <tr
+                    key={d.id}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(isSel ? null : d)}
+                    style={{
+                      background: isSel ? "rgba(0,75,135,0.06)" : "white",
+                      borderTop: "1px solid var(--gsc-light-gray)",
+                    }}
+                  >
+                    <td className="px-2 py-2 font-medium">{d.title}</td>
+                    <td className="px-2 py-2">{d.dataset_type ?? d.data_type}</td>
+                    <td className="px-2 py-2">{d.data_format}</td>
+                    <td className="px-2 py-2">{d.data_type}</td>
+                    <td className="px-2 py-2">{d.admin_level}</td>
+                    <td className="px-2 py-2">{d.year ?? "—"}</td>
+                    <td className="px-2 py-2">{d.source_name ?? "—"}</td>
+                    <td className="px-2 py-2 text-right">{d.record_count ?? "—"}</td>
+                    <td className="px-2 py-2">
+                      {new Date(d.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Inline preview panel (same page, like population/admins) */}
+      {selected && (
+        <div
+          className="rounded-xl p-4"
+          style={{
+            background: "var(--gsc-beige)",
+            border: "1px solid var(--gsc-light-gray)",
+          }}
+        >
+          <DatasetPreview dataset={selected} countryIso={iso} />
+        </div>
+      )}
     </SidebarLayout>
   );
 }
