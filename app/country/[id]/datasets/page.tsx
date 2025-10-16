@@ -1,231 +1,256 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus, Edit3, Trash2, ArrowUpDown } from "lucide-react";
+import {
+  Plus,
+  ArrowUpDown,
+  Loader2,
+} from "lucide-react";
 import DatasetWizard from "./DatasetWizard";
 import type { CountryParams } from "@/app/country/types";
 
+type DatasetMeta = {
+  id: string;
+  title: string;
+  year: number | null;
+  admin_level: string | null;
+  data_type: string | null;
+  data_format: string | null;
+  indicator_id: string | null;
+  indicator_catalogue?: any;
+};
+
 export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
-  const [datasets, setDatasets] = useState<any[]>([]);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [sortKey, setSortKey] = useState("title");
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState<keyof DatasetMeta>("title");
   const [sortAsc, setSortAsc] = useState(true);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   async function loadDatasets() {
+    setLoading(true);
     const { data, error } = await supabase
-      .from("view_country_datasets")
-      .select("*")
-      .eq("country_iso", params.id);
-    if (!error && data) setDatasets(data);
+      .from("dataset_metadata")
+      .select(
+        `
+        id,
+        title,
+        year,
+        admin_level,
+        data_type,
+        data_format,
+        indicator_id,
+        indicator_catalogue (
+          name,
+          indicator_taxonomy_links (
+            taxonomy_terms (
+              category,
+              name
+            )
+          )
+        )
+      `
+      )
+      .eq("country_iso", params.id)
+      .order("title", { ascending: true });
+
+    if (!error && data) setDatasets(data as DatasetMeta[]);
+    setLoading(false);
   }
 
-  async function loadPreview(id: string) {
-    setLoading(true);
-    setPreview([]);
-    try {
-      const selectedDataset = datasets.find((d) => d.id === id);
-      let previewData: any[] = [];
+  async function loadPreview(id: string, dataType: string | null) {
+    setSelectedId(id);
+    let preview: any[] = [];
 
-      if (selectedDataset?.data_type === "categorical") {
-        const { data, error } = await supabase
-          .from("dataset_values_cat")
-          .select(`
-            admin_pcode,
-            admin_level,
-            category_label,
-            category_score as value
-          `)
-          .eq("dataset_id", id)
-          .order("admin_pcode", { ascending: true });
-        if (!error && data) previewData = data;
-      } else {
-        const { data, error } = await supabase
-          .from("dataset_values")
-          .select(`
-            admin_pcode,
-            admin_level,
-            category_label,
-            value
-          `)
-          .eq("dataset_id", id)
-          .order("admin_pcode", { ascending: true });
-        if (!error && data) previewData = data;
-      }
-      setPreview(previewData);
-    } finally {
-      setLoading(false);
+    if (dataType === "categorical") {
+      const { data, error } = await supabase
+        .from("dataset_values_cat")
+        .select(`
+          admin_pcode,
+          admin_level,
+          category_label,
+          category_score as value
+        `)
+        .eq("dataset_id", id)
+        .order("admin_pcode", { ascending: true });
+      if (!error && data) preview = data;
+    } else {
+      const { data, error } = await supabase
+        .from("dataset_values")
+        .select("admin_pcode,admin_level,value")
+        .eq("dataset_id", id)
+        .order("admin_pcode", { ascending: true });
+      if (!error && data) preview = data;
+    }
+
+    setPreviewData(preview);
+  }
+
+  useEffect(() => {
+    loadDatasets();
+  }, []);
+
+  const sortedDatasets = useMemo(() => {
+    const sorted = [...datasets].sort((a, b) => {
+      const va = a[sortField] || "";
+      const vb = b[sortField] || "";
+      return sortAsc
+        ? String(va).localeCompare(String(vb))
+        : String(vb).localeCompare(String(va));
+    });
+    return sorted;
+  }, [datasets, sortField, sortAsc]);
+
+  function toggleSort(field: keyof DatasetMeta) {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else {
+      setSortField(field);
+      setSortAsc(true);
     }
   }
 
-  useEffect(() => { loadDatasets(); }, [params.id]);
-
-  function sortBy(key: string) {
-    const asc = key === sortKey ? !sortAsc : true;
-    setSortKey(key);
-    setSortAsc(asc);
-    setDatasets([...datasets].sort((a, b) => {
-      const A = a[key] ?? "";
-      const B = b[key] ?? "";
-      return asc
-        ? String(A).localeCompare(String(B))
-        : String(B).localeCompare(String(A));
-    }));
-  }
-
   const headerProps = {
-    title: "Datasets",
-    group: "country-config" as any,
-    description: "Reusable country datasets and linked indicators.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Country Configuration", href: `/country/${params.id}` },
-          { label: "Datasets", href: `/country/${params.id}/datasets` },
-        ]}
-      />
+    title: "Other Datasets",
+    group: "country-config",
+    description: "Additional datasets linked to this country configuration.",
+    trailing: (
+      <button
+        onClick={() => setWizardOpen(true)}
+        className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
+      >
+        <Plus className="w-4 h-4" /> Add Dataset
+      </button>
     ),
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-4">
-        {/* Page title and button */}
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-[color:var(--gsc-gray)]">
-            Other Datasets
-          </h2>
-          <button
-            onClick={() => setWizardOpen(true)}
-            className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" /> Add Dataset
-          </button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { label: "Countries", href: "/country" },
+            { label: params.id.toUpperCase(), href: `/country/${params.id}` },
+            { label: "Other Datasets" },
+          ]}
+        />
 
-        {/* Table */}
-        <div className="border rounded-md overflow-hidden">
-          <table className="min-w-full text-sm">
-            <thead className="bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
-              <tr>
-                {[
-                  "Title",
-                  "Year",
-                  "Admin",
-                  "Type",
-                  "Format",
-                  "Indicator",
-                  "Taxonomy Category",
-                  "Taxonomy Term",
-                ].map((col, i) => (
-                  <th
-                    key={i}
-                    className="px-3 py-2 text-left cursor-pointer select-none"
-                    onClick={() =>
-                      sortBy(
-                        [
-                          "title",
-                          "year",
-                          "admin_level",
-                          "data_type",
-                          "data_format",
-                          "indicator_name",
-                          "taxonomy_category",
-                          "taxonomy_term",
-                        ][i]
-                      )
-                    }
-                  >
-                    {col}
-                    <ArrowUpDown className="inline w-3 h-3 ml-1 text-gray-400" />
-                  </th>
-                ))}
-                <th className="px-3 py-2 w-28">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {datasets.map((d) => (
-                <tr
-                  key={d.id}
-                  onClick={() => { setSelectedId(d.id); loadPreview(d.id); }}
-                  className={`cursor-pointer ${
-                    selectedId === d.id
-                      ? "bg-[color:var(--gsc-beige)] font-semibold"
-                      : ""
-                  }`}
-                >
-                  <td className="px-3 py-2">{d.title}</td>
-                  <td>{d.year || "-"}</td>
-                  <td>{d.admin_level}</td>
-                  <td>{d.data_type}</td>
-                  <td>{d.data_format}</td>
-                  <td>{d.indicator_name || "-"}</td>
-                  <td>{d.taxonomy_category || "-"}</td>
-                  <td>{d.taxonomy_term || "-"}</td>
-                  <td className="flex gap-2 justify-center">
-                    <button className="p-1 border rounded hover:bg-gray-50">
-                      <Edit3 className="w-4 h-4 text-gray-600" />
-                    </button>
-                    <button className="p-1 border rounded hover:bg-gray-50">
-                      <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Data preview */}
-        {selectedId && (
-          <div className="border rounded-md mt-4">
-            <div className="px-3 py-2 font-medium bg-[color:var(--gsc-beige)] text-[color:var(--gsc-gray)]">
-              Data Preview — {datasets.find((x) => x.id === selectedId)?.title}
-            </div>
-            <div className="p-3 text-xs overflow-auto">
-              {loading ? (
-                <div>Loading...</div>
-              ) : preview.length === 0 ? (
-                <div>No rows to display.</div>
-              ) : (
-                <table className="min-w-full">
-                  <thead>
+        {loading ? (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading datasets...
+          </div>
+        ) : (
+          <>
+            <div className="text-base font-semibold text-gray-800">Other Datasets</div>
+            <div className="border rounded-md overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th
+                      className="px-3 py-2 cursor-pointer"
+                      onClick={() => toggleSort("title")}
+                    >
+                      Title <ArrowUpDown className="inline w-3 h-3 ml-1" />
+                    </th>
+                    <th
+                      className="px-3 py-2 cursor-pointer"
+                      onClick={() => toggleSort("year")}
+                    >
+                      Year <ArrowUpDown className="inline w-3 h-3 ml-1" />
+                    </th>
+                    <th className="px-3 py-2">Admin Level</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Format</th>
+                    <th className="px-3 py-2 text-right">Preview</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedDatasets.length === 0 ? (
                     <tr>
-                      <th className="text-left px-2 py-1 border-b">Admin PCode</th>
-                      <th className="text-left px-2 py-1 border-b">Admin Level</th>
-                      <th className="text-left px-2 py-1 border-b">Category</th>
-                      <th className="text-left px-2 py-1 border-b">Value</th>
+                      <td
+                        colSpan={6}
+                        className="text-center text-gray-500 py-4 italic"
+                      >
+                        No datasets available
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {preview.map((r, i) => (
-                      <tr key={i}>
-                        <td className="px-2 py-1 border-b">{r.admin_pcode}</td>
-                        <td className="px-2 py-1 border-b">{r.admin_level}</td>
-                        <td className="px-2 py-1 border-b">{r.category_label || "-"}</td>
-                        <td className="px-2 py-1 border-b">{r.value ?? "-"}</td>
+                  ) : (
+                    sortedDatasets.map((d) => (
+                      <tr
+                        key={d.id}
+                        className={`border-t hover:bg-gray-50 ${
+                          selectedId === d.id ? "bg-red-50" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-2">{d.title}</td>
+                        <td className="px-3 py-2">{d.year ?? "-"}</td>
+                        <td className="px-3 py-2">{d.admin_level ?? "-"}</td>
+                        <td className="px-3 py-2">{d.data_type ?? "-"}</td>
+                        <td className="px-3 py-2">{d.data_format ?? "-"}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => loadPreview(d.id, d.data_type)}
+                            className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                          >
+                            View
+                          </button>
+                        </td>
                       </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {selectedId && previewData.length > 0 && (
+          <div className="mt-6">
+            <div className="text-sm font-semibold text-gray-700 mb-2">
+              Data Preview — {selectedId}
+            </div>
+            <div className="border rounded-md overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    {Object.keys(previewData[0]).map((h) => (
+                      <th key={h} className="px-2 py-1 text-left">
+                        {h}
+                      </th>
                     ))}
-                  </tbody>
-                </table>
-              )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.slice(0, 15).map((row, i) => (
+                    <tr key={i} className="border-t">
+                      {Object.values(row).map((v, j) => (
+                        <td key={j} className="px-2 py-1">
+                          {v ?? "-"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
-
-        {wizardOpen && (
-          <DatasetWizard
-            countryIso={params.id}
-            onClose={() => setWizardOpen(false)}
-            onSaved={() => { setWizardOpen(false); loadDatasets(); }}
-          />
-        )}
       </div>
+
+      {wizardOpen && (
+        <DatasetWizard
+          countryIso={params.id}
+          onClose={() => setWizardOpen(false)}
+          onSaved={() => {
+            setWizardOpen(false);
+            loadDatasets();
+          }}
+        />
+      )}
     </SidebarLayout>
   );
 }
