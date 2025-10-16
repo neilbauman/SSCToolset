@@ -52,28 +52,54 @@ export default function CountryDatasetsPage(){
     }catch(e:any){setErr(e.message??"Failed to load datasets.");}finally{setLoading(false);}
   }
 
-  async function loadPreview(ds:DatasetRow){
-    setDataLoading(true);setDataPreview([]);setErr(null);
-    try{
-      if(ds.data_type==="gradient"){
-        const{data,error}=await supabase.from("view_dataset_values_with_names")
-          .select("admin_pcode,admin_name,admin_level,value,text_value,category_label")
-          .eq("dataset_id",ds.id).limit(50);
-        if(!error&&data?.length)setDataPreview(data!);
-        else{
-          const{data:fb}=await supabase.from("dataset_values")
-            .select("admin_pcode,admin_level,value,text_value").eq("dataset_id",ds.id).limit(50);
-          setDataPreview(fb??[]);
-        }
-      }else{
-        const{data}=await supabase.from("dataset_values_cat")
-          .select("admin_pcode,admin_level,category_code,category_label").eq("dataset_id",ds.id).limit(100);
-        setDataPreview(data??[]);
-      }
-    }catch(e:any){setErr(e.message??"Failed to load dataset preview.");}
-    finally{setDataLoading(false);}
-  }
+  async function loadPreview(ds: DatasetRow) {
+  setDataLoading(true);
+  setDataPreview([]);
+  setErr(null);
+  try {
+    let rows: any[] = [];
+    // Try view first
+    try {
+      const { data, error } = await supabase
+        .from("view_dataset_values_with_names")
+        .select("*")
+        .eq("dataset_id", ds.id)
+        .limit(100);
+      if (error) throw error;
+      if (data?.length) rows = data;
+    } catch (err: any) {
+      // silently ignore if view missing
+      if (err?.code && !String(err.code).startsWith("PGRST")) console.warn("Preview view missing:", err.message);
+    }
 
+    // fallback to dataset_values / dataset_values_cat
+    if (!rows.length) {
+      if (ds.data_type === "categorical") {
+        const { data, error } = await supabase
+          .from("dataset_values_cat")
+          .select("admin_pcode,admin_level,category_code,category_label,value,text_value")
+          .eq("dataset_id", ds.id)
+          .limit(100);
+        if (error) throw error;
+        rows = data ?? [];
+      } else {
+        const { data, error } = await supabase
+          .from("dataset_values")
+          .select("admin_pcode,admin_level,value,text_value,category_label")
+          .eq("dataset_id", ds.id)
+          .limit(100);
+        if (error) throw error;
+        rows = data ?? [];
+      }
+    }
+
+    setDataPreview(rows);
+  } catch (e: any) {
+    setErr(e.message ?? "Failed to load dataset preview.");
+  } finally {
+    setDataLoading(false);
+  }
+}
   useEffect(()=>{if(countryIso)loadDatasets();},[countryIso]);
   useEffect(()=>{const ds=datasets.find(d=>d.id===selectedId);if(ds)loadPreview(ds);},[selectedId,datasets]);
 
