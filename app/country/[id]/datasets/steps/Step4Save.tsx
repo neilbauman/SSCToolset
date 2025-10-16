@@ -4,41 +4,28 @@ import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, CheckCircle2 } from "lucide-react";
 
-type Parsed = { headers: string[]; rows: Record<string, string>[] } | null;
-
-export default function Step4Save({
-  meta,
-  parsed,
-  onBack,
-  onFinish,
-}: {
-  meta: any;
-  parsed: Parsed;
-  onBack: () => void;
-  onFinish: () => void;
-}) {
+export default function Step4Save({ meta, parsed, onBack, onFinish }: any) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   async function ensureMetadataId() {
     if (meta?.id) return meta.id;
-    const payload = {
-      country_iso: meta.country_iso,
-      title: meta.title || "Untitled dataset",
-      dataset_type: meta.dataset_type || "gradient",
-      data_format: meta.data_format || "numeric",
-      admin_level: meta.admin_level || "ADM3",
-      join_field: meta.join_field || "admin_pcode",
-      year: meta.year ? Number(meta.year) : null,
-      unit: meta.unit || null,
-      source_name: meta.source_name || null,
-      source_url: meta.source_url || null,
-      created_at: new Date().toISOString(),
-    };
     const { data, error } = await supabase
       .from("dataset_metadata")
-      .insert(payload)
+      .insert({
+        country_iso: meta.country_iso,
+        title: meta.title || "Untitled",
+        dataset_type: meta.dataset_type,
+        data_format: meta.data_format,
+        admin_level: meta.admin_level,
+        join_field: meta.join_field,
+        year: meta.year ? Number(meta.year) : null,
+        unit: meta.unit || null,
+        source_name: meta.source_name || null,
+        source_url: meta.source_url || null,
+        created_at: new Date().toISOString(),
+      })
       .select("id")
       .single();
     if (error) throw error;
@@ -55,70 +42,55 @@ export default function Step4Save({
       const datasetId = await ensureMetadataId();
       if (!datasetId) throw new Error("Missing dataset metadata ID.");
 
-      // ADM0 single row
-      if (meta.admin_level === "ADM0" && !parsed?.rows?.length) {
-        const valNum = Number(String(meta.adm0_value || "").replace(/,/g, ""));
-        const v = isNaN(valNum) ? null : valNum;
-        if (v === null) throw new Error("ADM0 value is missing or invalid.");
+      const isCategorical = meta.dataset_type === "categorical";
+      const table = isCategorical ? "dataset_values_cat" : "dataset_values";
+      const rows: any[] = [];
 
-        const row = {
-          dataset_id: datasetId,
-          admin_pcode: "ADM0",
-          admin_level: "ADM0",
-          value: v,
-          unit: meta.unit || null,
-        };
-        const { error } = await supabase.from("dataset_values").insert(row);
-        if (error) throw error;
+      if (isCategorical) {
+        parsed?.rows?.forEach((r: any) => {
+          meta.category_fields?.forEach((col: string) => {
+            const raw = r[col];
+            if (raw === undefined || raw === "") return;
+            rows.push({
+              dataset_id: datasetId,
+              admin_pcode: r[meta.join_field],
+              admin_level: meta.admin_level,
+              category_label: col,
+              category_score:
+                !isNaN(Number(raw)) ? Number(raw) : null,
+            });
+          });
+        });
+      } else {
+        parsed?.rows?.forEach((r: any) => {
+          const raw = r[meta.value_field];
+          if (raw === undefined || raw === "") return;
+          const val = Number(String(raw).replace(/,/g, ""));
+          if (isNaN(val)) return;
+          rows.push({
+            dataset_id: datasetId,
+            admin_pcode: r[meta.join_field],
+            admin_level: meta.admin_level,
+            value: val,
+            unit: meta.unit || null,
+          });
+        });
       }
 
-      // File-based datasets
-      if (parsed?.rows?.length) {
-        const isCategorical = meta.dataset_type === "categorical";
-        const table = isCategorical ? "dataset_values_cat" : "dataset_values";
+      if (!rows.length)
+        throw new Error("No valid data rows to insert.");
 
-        const rows = isCategorical
-          ? parsed.rows.flatMap((r: any) =>
-              Object.keys(r)
-                .filter((k) => k !== meta.join_field)
-                .map((col) => ({
-                  dataset_id: datasetId,
-                  admin_pcode: r[meta.join_field],
-                  admin_level: meta.admin_level,
-                  category_label: col,
-                  category_score: r[col] || null,
-                }))
-            )
-          : parsed.rows
-              .map((r: any) => {
-                const raw = r[meta.value_field || "value"] || r.value;
-                const num = Number(String(raw || "").replace(/,/g, ""));
-                if (isNaN(num)) return null;
-                return {
-                  dataset_id: datasetId,
-                  admin_pcode: r[meta.join_field],
-                  admin_level: meta.admin_level,
-                  value: num,
-                  unit: meta.unit || null,
-                };
-              })
-              .filter(Boolean);
+      const { error } = await supabase.from(table).insert(rows);
+      if (error) throw error;
 
-        if (rows.length === 0)
-          throw new Error("No valid data rows found in the uploaded file.");
-
-        const { error } = await supabase.from(table).insert(rows);
-        if (error) throw error;
-
-        await supabase
-          .from("dataset_metadata")
-          .update({ record_count: rows.length })
-          .eq("id", datasetId);
-      }
+      await supabase
+        .from("dataset_metadata")
+        .update({ record_count: rows.length })
+        .eq("id", datasetId);
 
       setSuccess(true);
-      setMessage("Dataset saved successfully.");
-      setTimeout(onFinish, 1200);
+      setMessage(`Saved ${rows.length} rows successfully.`);
+      setTimeout(onFinish, 1500);
     } catch (err: any) {
       console.error(err);
       setMessage(err.message || "Failed to save dataset.");
@@ -134,9 +106,7 @@ export default function Step4Save({
           Step 4 – Save Dataset
         </h2>
         <p className="text-sm mb-3">
-          Review your dataset and click <strong>Save</strong> to upload it to
-          Supabase. Once saved, it will appear in the dataset catalogue for this
-          country.
+          Review your dataset and click <strong>Save</strong> to upload it to Supabase.
         </p>
 
         <button
@@ -180,10 +150,7 @@ export default function Step4Save({
         <button onClick={onBack} className="px-3 py-2 rounded border">
           Back
         </button>
-        <button
-          onClick={onFinish}
-          className="px-4 py-2 rounded border text-[var(--gsc-blue)]"
-        >
+        <button onClick={onFinish} className="px-4 py-2 rounded border text-[var(--gsc-blue)]">
           Cancel
         </button>
       </div>
