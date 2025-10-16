@@ -22,8 +22,15 @@ type DatasetMeta = {
 
 type Row = Record<string, unknown>;
 
-export default function CountryDatasetsPage({ params }: { params: { id: string } }) {
-  const iso = params.id.toUpperCase();
+export default function CountryDatasetsPage({ params }: { params: { id?: string } }) {
+  // robust ISO extraction (handles undefined/array)
+  const iso = (() => {
+    const v = (params as any)?.id;
+    if (typeof v === "string") return v.toUpperCase();
+    if (Array.isArray(v) && v[0]) return String(v[0]).toUpperCase();
+    return "";
+  })();
+
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +38,7 @@ export default function CountryDatasetsPage({ params }: { params: { id: string }
   const [rows, setRows] = useState<Row[]>([]);
 
   useEffect(() => {
+    if (!iso) return; // wait until param exists
     (async () => {
       const { data, error } = await supabase
         .from("dataset_metadata")
@@ -54,6 +62,24 @@ export default function CountryDatasetsPage({ params }: { params: { id: string }
     const { data, error } = await supabase.from(table).select(fields).eq("dataset_id", meta.id).limit(1000);
     if (error) setError(error.message);
     else setRows((data as Row[]) || []);
+  }
+
+  if (!iso) {
+    return (
+      <SidebarLayout
+        headerProps={{
+          title: "Loading country…",
+          group: "country-config",
+          description: "Waiting for route params.",
+          tool: "Dataset Manager",
+          breadcrumbs: <Breadcrumbs items={[{ label: "Countries", href: "/country" }, { label: "Datasets" }]} />,
+        }}
+      >
+        <div className="rounded-xl border p-3 text-sm text-gray-600">
+          Country ID missing in route. Navigate from the country page and try again.
+        </div>
+      </SidebarLayout>
+    );
   }
 
   return (
@@ -150,7 +176,7 @@ export default function CountryDatasetsPage({ params }: { params: { id: string }
                     <table className="min-w-full text-xs">
                       <thead>
                         <tr>
-                          {Object.keys(rows[0] as Row).map((k) => (
+                          {Object.keys(rows[0]).map((k) => (
                             <th key={k} className="border-b px-2 py-1 text-left">
                               {k}
                             </th>
