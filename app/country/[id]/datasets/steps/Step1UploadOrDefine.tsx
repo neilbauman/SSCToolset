@@ -2,20 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import Papa from "papaparse";
 import { Upload, FileText, Loader2 } from "lucide-react";
 
-// Temporary stub types (legacy WizardMeta / Parsed)
 type WizardMeta = any;
-type Parsed = any;
+type Parsed = { headers: string[]; rows: Record<string, string>[] } | null;
 
 type Step1Props = {
   countryIso: string;
   file: File | null;
   setFile: (f: File | null) => void;
   parseCsv: (f: File) => Promise<any>;
-  parsed: Parsed | null;
-  setParsed: (p: Parsed | null) => void;
+  parsed: Parsed;
+  setParsed: (p: Parsed) => void;
   meta: WizardMeta;
   setMeta: (m: WizardMeta) => void;
   next: () => void;
@@ -34,7 +32,14 @@ export default function Step1UploadOrDefine({
 }: Step1Props) {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [adm0Value, setAdm0Value] = useState("");
+  const [dataFormat, setDataFormat] = useState<"numeric" | "percentage" | "text">(
+    meta?.data_format || "numeric"
+  );
+  const [unit, setUnit] = useState(meta?.unit || "");
+  const [year, setYear] = useState(meta?.year || "");
 
+  // --- File upload handler
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -45,6 +50,12 @@ export default function Step1UploadOrDefine({
       const parsedData = await parseCsv(f);
       setParsed(parsedData);
       setMessage(`Parsed ${parsedData?.rows?.length || 0} rows successfully.`);
+      setMeta({
+        ...meta,
+        dataset_type: "gradient",
+        data_format: dataFormat,
+        admin_level: meta?.admin_level || "ADM3",
+      });
     } catch (err: any) {
       console.error(err);
       setMessage("Failed to parse file.");
@@ -53,9 +64,18 @@ export default function Step1UploadOrDefine({
     }
   }
 
+  // --- Reset parsed data when file removed
   useEffect(() => {
     if (!file) setParsed(null);
   }, [file]);
+
+  // --- ADM0 manual dataset path
+  const isAdm0 = !file && (meta?.admin_level === "ADM0" || !meta?.admin_level);
+
+  // --- Can proceed if either file parsed or ADM0 value entered
+  const canContinue =
+    (!!parsed && parsed.rows.length > 0) ||
+    (isAdm0 && adm0Value.trim() !== "");
 
   return (
     <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
@@ -64,12 +84,13 @@ export default function Step1UploadOrDefine({
           Step 1 – Upload or Define Dataset
         </h2>
         <p className="text-sm mb-3">
-          Upload a CSV or XLSX file containing dataset values for{" "}
-          <strong>{countryIso}</strong>. Alternatively, for ADM0-level data,
-          you can manually define a single value in the next step.
+          Upload a CSV/XLSX file containing dataset values for{" "}
+          <strong>{countryIso}</strong>, or manually define an{" "}
+          <strong>ADM0 national metric</strong> below.
         </p>
 
-        <div className="flex items-center justify-center border-2 border-dashed border-[var(--gsc-light-gray)] rounded-lg p-6 bg-white">
+        {/* File Upload */}
+        <div className="flex items-center justify-center border-2 border-dashed border-[var(--gsc-light-gray)] rounded-lg p-6 bg-white mb-4">
           {!file ? (
             <label className="flex flex-col items-center cursor-pointer">
               <Upload className="h-8 w-8 text-[var(--gsc-blue)] mb-2" />
@@ -92,7 +113,10 @@ export default function Step1UploadOrDefine({
                 </div>
               ) : (
                 <button
-                  onClick={() => setFile(null)}
+                  onClick={() => {
+                    setFile(null);
+                    setParsed(null);
+                  }}
                   className="text-[var(--gsc-red)] text-xs underline"
                 >
                   Remove file
@@ -102,6 +126,55 @@ export default function Step1UploadOrDefine({
           )}
         </div>
 
+        {/* ADM0 Value Input */}
+        {isAdm0 && (
+          <div className="grid md:grid-cols-2 gap-3 bg-white p-3 rounded-lg border border-[var(--gsc-light-gray)]">
+            <label className="text-sm">
+              ADM0 (National) Value
+              <input
+                type="text"
+                className="border rounded p-2 w-full"
+                value={adm0Value}
+                onChange={(e) => setAdm0Value(e.target.value)}
+                placeholder="e.g. 5.1"
+              />
+            </label>
+            <label className="text-sm">
+              Data Format
+              <select
+                className="border rounded p-2 w-full"
+                value={dataFormat}
+                onChange={(e) => setDataFormat(e.target.value as any)}
+              >
+                <option value="numeric">Numeric</option>
+                <option value="percentage">Percentage</option>
+                <option value="text">Text</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              Unit
+              <input
+                type="text"
+                className="border rounded p-2 w-full"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder="e.g. people/HH"
+              />
+            </label>
+            <label className="text-sm">
+              Year
+              <input
+                type="text"
+                className="border rounded p-2 w-full"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                placeholder="e.g. 2020"
+              />
+            </label>
+          </div>
+        )}
+
+        {/* Message */}
         {message && (
           <div
             className="mt-3 text-sm"
@@ -116,14 +189,30 @@ export default function Step1UploadOrDefine({
         )}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-between pt-2">
+        <div className="text-xs italic text-[var(--gsc-gray)]">
+          {isAdm0
+            ? "Define a single ADM0 metric, then click Next."
+            : "After upload, click Next to preview your data."}
+        </div>
         <button
-          onClick={next}
-          disabled={uploading || (!parsed && !file)}
+          onClick={() => {
+            setMeta({
+              ...meta,
+              dataset_type: file ? "gradient" : "adm0",
+              data_format: dataFormat,
+              unit,
+              year,
+              admin_level: isAdm0 ? "ADM0" : meta?.admin_level || "ADM3",
+              adm0_value: isAdm0 ? adm0Value : null,
+            });
+            next();
+          }}
+          disabled={!canContinue || uploading}
           className="px-4 py-2 rounded text-white"
           style={{
             background:
-              uploading || (!parsed && !file)
+              !canContinue || uploading
                 ? "var(--gsc-light-gray)"
                 : "var(--gsc-blue)",
           }}
