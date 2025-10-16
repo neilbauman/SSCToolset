@@ -31,12 +31,14 @@ async function loadDatasets(){
   .eq("country_iso",params.id)
   .order("title");
  if(error)console.error(error);
+
  const formatted=(data||[]).map(d=>{
-   const indicator=(Array.isArray(d.indicator_catalogue)?d.indicator_catalogue[0]:d.indicator_catalogue)||{};
+   const indicator=Array.isArray(d.indicator_catalogue)?d.indicator_catalogue[0]:d.indicator_catalogue||{};
    const links=indicator.indicator_taxonomy_links||[];
    const link=Array.isArray(links)?links[0]:links;
-   const term=link?.taxonomy_terms?.name||null;
-   const cat=link?.taxonomy_terms?.category||null;
+   const tax=link?.taxonomy_terms;
+   const term=Array.isArray(tax)?tax[0]?.name:null;
+   const cat=Array.isArray(tax)?tax[0]?.category:null;
    return{
      id:d.id,title:d.title,year:d.year,admin_level:d.admin_level,
      data_type:d.data_type,data_format:d.data_format,
