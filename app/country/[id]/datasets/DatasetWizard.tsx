@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { ArrowLeft, ArrowRight, Upload, CheckCircle2, FileSpreadsheet, Search, Loader2 } from "lucide-react";
-import { saveDataset, GradientRow, CategoricalRow, CategoryMapItem, MetaInput, DatasetType } from "@/lib/datasets/saveDataset";
+import { saveDataset, GradientRow, CategoricalRow, CategoryMapItem, DatasetType } from "@/lib/datasets/saveDataset";
 
 const parseCsv=(t:string)=>{const l=t.replace(/\r/g,"").split("\n").filter(Boolean);const h=l[0].split(",").map(s=>s.trim());return{headers:h,rows:l.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,(r.split(",")[i]||"").trim()])))}}; 
 const parseFile=async(f:File)=>parseCsv(await f.text());
@@ -16,10 +16,10 @@ export default function DatasetWizard(){
  const [datasetId,setDatasetId]=useState<string|null>(null); const [type,setType]=useState<DatasetType>("gradient");
  const [step,setStep]=useState(0); const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
 
- /* step1 meta */
  const [meta,setMeta]=useState({title:"",dataset_type:"gradient",data_format:"numeric",admin_level:"ADM3",join_field:"admin_pcode",year:"",unit:"",source_name:"",source_url:"",indicator_id:""});
  const [indicators,setIndicators]=useState<{id:string;name:string}[]>([]); const [q,setQ]=useState("");
  const [taxonomy,setTaxonomy]=useState<{category:string|null;term:string|null}>({category:null,term:null});
+
  useEffect(()=>{(async()=>{const{data}=await supabase.from("indicator_catalogue").select("id,name").order("name");setIndicators(data||[])})()},[]);
  useEffect(()=>{(async()=>{if(!meta.indicator_id)return setTaxonomy({category:null,term:null});const{data:l}=await supabase.from("indicator_taxonomy_links").select("taxonomy_id").eq("indicator_id",meta.indicator_id).limit(1);const tid=l?.[0]?.taxonomy_id;if(!tid)return setTaxonomy({category:null,term:null});const{data:t}=await supabase.from("taxonomy_terms").select("category,name").eq("id",tid).maybeSingle();setTaxonomy({category:(t as any)?.category??null,term:(t as any)?.name??null})})()},[meta.indicator_id]);
 
@@ -27,15 +27,15 @@ export default function DatasetWizard(){
  const payload={country_iso:iso,title:meta.title.trim(),dataset_type:meta.dataset_type,data_format:meta.data_format,admin_level:meta.admin_level,join_field:meta.join_field.trim(),indicator_id:meta.indicator_id||null,year:meta.year?Number(meta.year):null,unit:meta.unit||null,source_name:meta.source_name||null,source_url:meta.source_url||null,created_at:new Date().toISOString()};
  const{data,error}=await supabase.from("dataset_metadata").insert(payload).select("id").single(); if(error)throw error; setDatasetId(data.id);setType(meta.dataset_type as DatasetType);setStep(1);}catch(e:any){setErr(e.message)}finally{setLoading(false)}}
 
- /* step2–4 */
- const [file,setFile]=useState<File|null>(null);const[parsed,setParsed]=useState<{headers:string[];rows:Record<string,string>[]}>({headers:[],rows:[]});
+ const[file,setFile]=useState<File|null>(null);const[parsed,setParsed]=useState<{headers:string[];rows:Record<string,string>[]}>({headers:[],rows:[]});
  const[join,setJoin]=useState("admin_pcode");const[valCol,setVal]=useState("");const[cats,setCats]=useState<string[]>([]);const[map,setMap]=useState<CategoryMapItem[]>([]);const[adm0,setAdm0]=useState("");
  useEffect(()=>{if(type==="categorical")setMap(cats.map(c=>({code:c,label:c,score:null})))},[cats,type]);
  const onFile=async(f:File)=>setParsed(await parseFile(f));
  const steps=useMemo(()=>type==="adm0"?["Meta","ADM0","Save"]:type==="categorical"?["Meta","Upload","Scores","Save"]:["Meta","Upload","Save"],[type]);
 
  const next=async()=>{try{if(steps[step]==="Save"){if(!datasetId)throw new Error("Dataset ID missing");setLoading(true);
- const metaInput:MetaInput={id:datasetId,title:meta.title,country_iso:iso,admin_level:meta.admin_level,dataset_type:meta.dataset_type as DatasetType,data_format:meta.data_format,year:meta.year?+meta.year:null,unit:meta.unit,join_field:meta.join_field,indicator_id:meta.indicator_id||null,source_name:meta.source_name||null,source_url:meta.source_url||null};
+ const metaInput:any={...meta,country_iso:iso,dataset_type:meta.dataset_type as DatasetType,join_field:meta.join_field,indicator_id:meta.indicator_id||null,source_name:meta.source_name||null,source_url:meta.source_url||null,unit:meta.unit||null,year:meta.year?+meta.year:null};
+ metaInput.id=datasetId; // safe add
  if(type==="adm0"){await saveDataset(metaInput,[{admin_pcode:"ADM0",admin_level:"ADM0",value:+adm0,unit:meta.unit}]);}
  else if(type==="gradient"){const rows:GradientRow[]=parsed.rows.map(r=>({admin_pcode:r[join],admin_level:meta.admin_level,value:+((r[valCol]??"").replace(/,/g,"")),unit:meta.unit})).filter(r=>r.admin_pcode&&!isNaN(r.value));await saveDataset(metaInput,rows);}
  else if(type==="categorical"){const rows:CategoricalRow[]=[];cats.forEach(c=>parsed.rows.forEach(r=>rows.push({admin_pcode:r[join],admin_level:meta.admin_level,category_code:c,category_label:c,category_score:map.find(m=>m.label===c)?.score??null})));await saveDataset(metaInput,rows,map);}
@@ -43,8 +43,7 @@ export default function DatasetWizard(){
 
  return(<SidebarLayout headerProps={{title:`${iso} – Add Dataset`,group:"country-config",description:"Upload or create datasets and link them to indicators.",tool:"Dataset Wizard",breadcrumbs:<Breadcrumbs items={[{label:"Countries",href:"/country"},{label:iso,href:`/country/${iso}`},{label:"Datasets",href:`/country/${iso}/datasets`},{label:"Add"}]}/>}}>
   <div className="space-y-4">{err&&<div className="bg-red-50 text-red-700 border p-2 rounded">{err}</div>}
-   <div className="border p-2 rounded-xl text-sm flex items-center gap-2" style={{borderColor:"var(--gsc-light-gray)"}}>
-    <FileSpreadsheet className="h-4 w-4"/>Step {step+1}/{steps.length}: {steps[step]}</div>
+   <div className="border p-2 rounded-xl text-sm flex items-center gap-2" style={{borderColor:"var(--gsc-light-gray)"}}><FileSpreadsheet className="h-4 w-4"/>Step {step+1}/{steps.length}: {steps[step]}</div>
 
    {steps[step]==="Meta"&&(<Step title="Dataset details" next={saveMeta}>
     <div className="grid md:grid-cols-2 gap-3">
@@ -81,15 +80,11 @@ export default function DatasetWizard(){
      <div className="mt-3 text-sm text-gray-600">Join column</div>
      <select className="border p-2 rounded w-full" value={join} onChange={e=>setJoin(e.target.value)}>{parsed.headers.map(h=><option key={h}>{h}</option>)}</select>
      {type==="gradient"&&(<><div className="mt-3 text-sm text-gray-600">Value column</div><select className="border p-2 rounded w-full" value={valCol} onChange={e=>setVal(e.target.value)}>{parsed.headers.map(h=><option key={h}>{h}</option>)}</select></>)}
-     {type==="categorical"&&(<div className="mt-3 border rounded p-2 grid gap-1" style={{borderColor:"var(--gsc-light-gray)"}}>
-      <div className="text-sm text-gray-600">Category columns</div>
-      {parsed.headers.map(h=><label key={h} className="flex items-center gap-2"><input type="checkbox" checked={cats.includes(h)} onChange={e=>setCats(p=>e.target.checked?[...p,h]:p.filter(x=>x!==h))}/>{h}</label>)}</div>)}
+     {type==="categorical"&&(<div className="mt-3 border rounded p-2 grid gap-1" style={{borderColor:"var(--gsc-light-gray)"}}><div className="text-sm text-gray-600">Category columns</div>{parsed.headers.map(h=><label key={h} className="flex items-center gap-2"><input type="checkbox" checked={cats.includes(h)} onChange={e=>setCats(p=>e.target.checked?[...p,h]:p.filter(x=>x!==h))}/>{h}</label>)}</div>)}
     </>)}
    </Step>)}
 
-   {steps[step]==="Scores"&&(<Step title="Category scores (optional)" back={()=>setStep(s=>s-1)} next={next}>
-    {map.length===0?<div className="text-sm text-gray-600">No categories selected.</div>:map.map((m,i)=><div key={m.label} className="flex justify-between items-center gap-2 text-sm"><span>{m.label}</span><input className="border p-1 rounded w-24" value={m.score??""} onChange={e=>setMap(prev=>prev.map((x,j)=>j===i?{...x,score:e.target.value?+e.target.value:null}:x))}/></div>)}
-   </Step>)}
+   {steps[step]==="Scores"&&(<Step title="Category scores (optional)" back={()=>setStep(s=>s-1)} next={next}>{map.length===0?<div className="text-sm text-gray-600">No categories selected.</div>:map.map((m,i)=><div key={m.label} className="flex justify-between items-center gap-2 text-sm"><span>{m.label}</span><input className="border p-1 rounded w-24" value={m.score??""} onChange={e=>setMap(prev=>prev.map((x,j)=>j===i?{...x,score:e.target.value?+e.target.value:null}:x))}/></div>)}</Step>)}
 
    {steps[step]==="Save"&&(<div className="border p-4 rounded-xl space-y-2"><CheckCircle2 className="text-green-600 h-5 w-5 inline"/>Ready to save.<button onClick={next} disabled={loading} className="bg-black text-white px-4 py-2 rounded-xl">{loading?"Saving…":"Save"}</button></div>)}
   </div>
