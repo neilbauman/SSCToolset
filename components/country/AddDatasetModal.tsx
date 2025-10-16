@@ -1,46 +1,125 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { X, Search, Upload, Info, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
-import Papa from "papaparse";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import Step1 from "@/app/country/[id]/datasets/steps/Step1UploadOrDefine";
+import Step2 from "@/app/country/[id]/datasets/steps/Step2Preview";
+import Step3 from "@/app/country/[id]/datasets/steps/Step3Indicator";
+import Step4 from "@/app/country/[id]/datasets/steps/Step4Save";
+import { DatasetType } from "@/lib/datasets/saveDataset";
 
-const FIELD="w-full border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 ring-[color:var(--gsc-red)]";
-const LABEL="block text-xs font-medium text-[color:var(--gsc-gray)] mb-1";
-const BTN_PRIMARY="inline-flex items-center gap-2 bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 hover:opacity-90 disabled:opacity-50";
-const BTN_GHOST="inline-flex items-center gap-2 border rounded-md px-3 py-2 hover:bg-gray-50";
-const CARD="rounded-md border hover:border-[color:var(--gsc-blue)] transition-colors cursor-pointer";
+export type WizardMeta = {
+  title: string; dataset_type: DatasetType | ""; data_format: "numeric"|"percentage"|"text";
+  admin_level: "ADM0"|"ADM1"|"ADM2"|"ADM3"|"ADM4"|"ADM5";
+  join_field: string; year?: string; unit?: string; source_name?: string; source_url?: string;
+  indicator_id?: string;
+};
+export type Parsed = { headers: string[]; rows: Record<string,string>[] };
 
-export default function AddDatasetModal({open,onClose,countryIso,onCreated}:{open:boolean;onClose:()=>void;countryIso:string;onCreated?:()=>void;}){
-const [title,setTitle]=useState(""),[desc,setDesc]=useState(""),[year,setYear]=useState<number|"">(""),[unit,setUnit]=useState(""),[adminLevel,setAdmin]=useState("ADM0"),[dataType,setData]=useState<"numeric"|"percentage">("numeric"),[datasetType,setType]=useState<"gradient"|"categorical">("gradient"),[srcName,setSrc]=useState(""),[srcUrl,setUrl]=useState(""),[natVal,setNat]=useState(""),[csv,setCsv]=useState<File|null>(null),[chunk,setChunk]=useState(false),[busy,setBusy]=useState(false),[msg,setMsg]=useState<{type:"ok"|"err"|null;text?:string}>({type:null}),[themes,setThemes]=useState<any[]>([]),[theme,setTheme]=useState("All"),[search,setSearch]=useState(""),[inds,setInds]=useState<any[]>([]),[sel,setSel]=useState<any>(null);
-const levels=["ADM0","ADM1","ADM2","ADM3","ADM4","ADM5"];
-useEffect(()=>{if(!open)return;setTitle("");setDesc("");setYear("");setUnit("");setAdmin("ADM0");setData("numeric");setType("gradient");setSrc("");setUrl("");setNat("");setCsv(null);setSel(null);setMsg({type:null});},[open]);
-useEffect(()=>{if(!open)return;(async()=>{const[{data:t},{data:i}]=await Promise.all([supabase.from("theme_catalogue").select("name").order("name"),supabase.from("indicator_catalogue").select("id,code,name,theme,data_type").order("name")]);setThemes(t||[]);setInds(i||[]);})();},[open]);
-const fInds=useMemo(()=>{const q=search.toLowerCase().trim();return inds.filter(i=>(theme==="All"||i.theme===theme)&&(!q||i.name.toLowerCase().includes(q)||i.code.toLowerCase().includes(q)||(i.theme||"").toLowerCase().includes(q)));},[inds,search,theme]);
-const leftDis=busy||!title.trim()||!adminLevel||(adminLevel==="ADM0"?!natVal.trim()&&!csv:!csv);
-const num=(r:string)=>{if(!r)return null;const s=r.trim().replace(/%|,/g,"");const n=Number(s);return isFinite(n)?n:null;};
-const handleCreate=async()=>{try{setBusy(true);setMsg({type:null});
-const payload={country_iso:countryIso,indicator_id:sel?.id||null,title:title.trim(),description:desc||null,year:year?Number(year):null,unit:unit||null,admin_level:adminLevel,data_type:dataType,dataset_type:datasetType,source_name:srcName||null,source_url:srcUrl||null};
-const{data:meta,error:mErr}=await supabase.from("dataset_metadata").insert(payload).select("id").single();if(mErr)throw mErr;const metaId=meta.id;
-if(adminLevel==="ADM0"&&!csv){const v=num(natVal);if(v==null)throw new Error("Enter valid national value.");const{error}=await supabase.from("dataset_values").insert({dataset_id:metaId,admin_pcode:"ADM0",value:v,unit:unit||null});if(error)throw error;setBusy(false);setMsg({type:"ok",text:"Dataset saved."});onCreated?.();return;}
-if(!csv)throw new Error("Please select CSV.");const text=await csv.text();const parsed=Papa.parse(text,{header:true,skipEmptyLines:true});if(parsed.errors.length)throw new Error(parsed.errors[0].message);
-const rows=(parsed.data as any[]).map(r=>({pcode:r.pcode||r.PCode||r.PCODE||"",value:r.value||r.Value||r.VALUE||"",unit:r.unit||"",notes:r.notes||""}));
-let ok=0,skip=0,payloadRows:any[]=[];for(const r of rows){const p=(r.pcode||"").trim();if(!p){skip++;continue;}const v=num(String(r.value));if(v==null){skip++;continue;}ok++;payloadRows.push({dataset_id:metaId,admin_pcode:p,value:v,unit:r.unit||unit||null,notes:r.notes||null});}
-const CHUNK=chunk?800:400;for(let i=0;i<payloadRows.length;i+=CHUNK){const{error}=await supabase.from("dataset_values").insert(payloadRows.slice(i,i+CHUNK));if(error)throw error;}
-setBusy(false);setMsg({type:"ok",text:`Upload complete: ${ok} rows${skip?`; ${skip} skipped`:""}`});onCreated?.();}catch(e:any){setBusy(false);setMsg({type:"err",text:e.message});}};
-return(<div className={`fixed inset-0 z-50 ${open?"":"pointer-events-none"}`}><div className={`absolute inset-0 bg-black/40 ${open?"opacity-100":"opacity-0"}`}onClick={onClose}/><div className={`absolute left-1/2 top-1/2 w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-lg ${open?"opacity-100":"opacity-0"}`}>
-<div className="flex justify-between border-b px-5 py-3"><h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add New Dataset</h3><button onClick={onClose}><X className="w-5 h-5"/></button></div>
-<div className="p-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
-<div className="lg:col-span-2 space-y-3">
-<div className="grid md:grid-cols-2 gap-3"><div><label className={LABEL}>Title *</label><input className={FIELD}value={title}onChange={e=>setTitle(e.target.value)}/></div><div><label className={LABEL}>Year</label><input className={FIELD}type="number"value={year}onChange={e=>setYear(e.target.value?Number(e.target.value):"")}/></div></div>
-<div><label className={LABEL}>Description</label><textarea className={FIELD}rows={3}value={desc}onChange={e=>setDesc(e.target.value)}/></div>
-<div className="grid md:grid-cols-3 gap-3"><div><label className={LABEL}>Admin Level</label><select className={FIELD}value={adminLevel}onChange={e=>setAdmin(e.target.value)}>{levels.map(l=><option key={l}>{l}</option>)}</select></div><div><label className={LABEL}>Dataset Type</label><select className={FIELD}value={datasetType}onChange={e=>setType(e.target.value as any)}><option value="gradient">Gradient</option><option value="categorical"disabled>Categorical (soon)</option></select></div><div><label className={LABEL}>Data Type</label><select className={FIELD}value={dataType}onChange={e=>setData(e.target.value as any)}><option value="numeric">Numeric</option><option value="percentage">Percentage</option></select></div></div>
-<div className="grid md:grid-cols-3 gap-3"><div><label className={LABEL}>Unit</label><input className={FIELD}value={unit}onChange={e=>setUnit(e.target.value)}/></div><div><label className={LABEL}>Source Name</label><input className={FIELD}value={srcName}placeholder="e.g. NSO"onChange={e=>setSrc(e.target.value)}/></div><div><label className={LABEL}>Source URL</label><input className={FIELD}value={srcUrl}placeholder="https://…"onChange={e=>setUrl(e.target.value)}/></div></div>
-{adminLevel==="ADM0"&&<div className="grid md:grid-cols-2 gap-3"><div><label className={LABEL}>National Value</label><input className={FIELD}placeholder={dataType==="percentage"?"e.g. 12.5%":"e.g. 42"}value={natVal}onChange={e=>setNat(e.target.value)}/></div><div className="flex items-end"><p className="text-xs text-gray-500">For ADM0 provide a national value or upload CSV.</p></div></div>}
-<div className="grid md:grid-cols-2 gap-3"><div><label className={LABEL}>CSV File {adminLevel!=="ADM0"?"*":"(optional)"}</label><input type="file"accept=".csv"className="block w-full text-sm"onChange={e=>setCsv(e.target.files?.[0]||null)}/><p className="text-xs text-gray-500 mt-1">Expected: name(optional),pcode,value(optional:unit,notes).</p></div><div className="flex items-end justify-between"><label className="flex items-center gap-2 text-sm"><input type="checkbox"checked={chunk}onChange={e=>setChunk(e.target.checked)}/>Large CSVs<span title="If checked, data inserts in 800-row chunks. Enable for very large (>20k rows) files."><Info className="w-4 h-4 text-gray-400"/></span></label><div className="text-xs text-gray-500">{csv?<span>{csv.name}</span>:<span>No file</span>}</div></div></div>
-</div>
-<div className="space-y-3"><div className="flex items-end gap-2"><div className="flex-1"><label className={LABEL}>Indicators</label><div className="relative"><Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5"/><input className={`${FIELD} pl-8`}placeholder="Search…"value={search}onChange={e=>setSearch(e.target.value)}/></div></div><div className="w-36"><label className={LABEL}>Theme</label><select className={FIELD}value={theme}onChange={e=>setTheme(e.target.value)}><option>All</option>{themes.map(t=><option key={t.name}>{t.name}</option>)}</select></div></div>
-<div className="max-h-[420px] overflow-auto border rounded-md p-2">{fInds.map(i=>{const act=sel?.id===i.id;return(<div key={i.id}className={`${CARD} p-3 mb-2 ${act?"border-[color:var(--gsc-blue)] bg-blue-50/30":"bg-white"}`}onClick={()=>setSel(act?null:i)}><div className="font-medium">{i.name}</div><div className="text-xs text-gray-600 mt-0.5">{i.theme?`${i.theme} • `:""}{i.code} • {i.data_type||"—"}</div></div>);})}{!fInds.length&&<div className="text-sm text-gray-500 py-6 text-center">No indicators.</div>}</div><div className="text-xs text-gray-500 flex items-center gap-1"><AlertTriangle className="w-4 h-4"/>Linking indicator optional.</div></div></div>
-<div className="flex justify-between border-t px-5 py-3"><button className={BTN_GHOST}onClick={onClose}>Cancel</button><div className="flex items-center gap-3">{busy&&<span className="text-sm text-gray-600 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Uploading…</span>}<button className={BTN_PRIMARY}onClick={handleCreate}disabled={leftDis}><Upload className="w-4 h-4"/>Upload Dataset</button></div></div>
-{msg.type&&<div className={`flex items-center gap-2 text-sm px-5 py-2 border-t ${msg.type==="ok"?"text-green-700":"text-[color:var(--gsc-red)]"}`}>{msg.type==="ok"?<CheckCircle2 className="w-4 h-4"/>:<AlertTriangle className="w-4 h-4"/>}<span>{msg.text}</span></div>}
-</div></div>);
+const parseCsv = async (f: File): Promise<Parsed> => {
+  const t = (await f.text()).replace(/\r/g,""); const lines=t.split("\n").filter(Boolean);
+  const headers = lines[0].split(",").map(s=>s.trim());
+  const rows = lines.slice(1).map(r=>{ const c=r.split(","); return Object.fromEntries(headers.map((h,i)=>[h,(c[i]??"").trim()])); });
+  return { headers, rows };
+};
+
+export default function AddDatasetModal({
+  open, onOpenChange, countryIso
+}: { open:boolean; onOpenChange:(v:boolean)=>void; countryIso:string }) {
+
+  const [step,setStep]=useState(1);
+  const [file,setFile]=useState<File|null>(null);
+  const [parsed,setParsed]=useState<Parsed>({headers:[],rows:[]});
+  const [datasetId,setDatasetId]=useState<string>("");
+  const [meta,setMeta]=useState<WizardMeta>({
+    title:"", dataset_type:"" as any, data_format:"numeric", admin_level:"ADM0",
+    join_field:"admin_pcode", year:"", unit:"", source_name:"", source_url:"", indicator_id:""
+  });
+  const [joinCol,setJoinCol]=useState("admin_pcode");
+  const [valueCol,setValueCol]=useState("");       // gradient
+  const [catCols,setCatCols]=useState<string[]>([]); // categorical
+  const [adm0Value,setAdm0Value]=useState<string>("");
+
+  const canNext = useMemo(()=> {
+    if(step===1){
+      if(file){ return !!meta.title && !!meta.admin_level && !!meta.data_format; }
+      // ADM0 no file
+      return meta.admin_level==="ADM0" && !!meta.data_format && !!meta.title && adm0Value!==""; 
+    }
+    if(step===2){
+      if(meta.dataset_type==="gradient") return !!joinCol && !!valueCol;
+      if(meta.dataset_type==="categorical") return !!joinCol && catCols.length>0;
+      return meta.dataset_type==="adm0";
+    }
+    if(step===3){ return true; } // indicator optional
+    return true;
+  },[step,file,meta,joinCol,valueCol,catCols,adm0Value]);
+
+  function reset(){ setStep(1); setFile(null); setParsed({headers:[],rows:[]}); setDatasetId(""); setMeta(m=>({...m,title:"",indicator_id:""})); setJoinCol("admin_pcode"); setValueCol(""); setCatCols([]); setAdm0Value(""); }
+
+  return (
+    <Dialog open={open} onOpenChange={(v)=>{ onOpenChange(v); if(!v) reset(); }}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>
+            <span className="px-2 py-1 rounded text-white" style={{background:"var(--gsc-red)"}}>Dataset Wizard</span>
+          </DialogTitle>
+          <div className="mt-2 text-sm">
+            <span className="font-medium" style={{color:"var(--gsc-blue)"}}>Step {step}/4</span> • {["Upload or Define","Preview & Map","Indicator & Taxonomy","Save"][step-1]}
+          </div>
+        </DialogHeader>
+
+        <div className="bg-[var(--gsc-beige)] rounded-xl p-3">
+          {step===1 && (
+            <Step1
+              countryIso={countryIso}
+              file={file} setFile={setFile} parseCsv={parseCsv} parsed={parsed} setParsed={setParsed}
+              meta={meta} setMeta={setMeta}
+              datasetId={datasetId} setDatasetId={setDatasetId}
+              adm0Value={adm0Value} setAdm0Value={setAdm0Value}
+              onNext={()=>setStep(2)}
+            />
+          )}
+
+          {step===2 && (
+            <Step2
+              parsed={parsed}
+              meta={meta} setMeta={setMeta}
+              joinCol={joinCol} setJoinCol={setJoinCol}
+              valueCol={valueCol} setValueCol={setValueCol}
+              catCols={catCols} setCatCols={setCatCols}
+              onBack={()=>setStep(1)} onNext={()=>setStep(3)}
+            />
+          )}
+
+          {step===3 && (
+            <Step3
+              meta={meta} setMeta={setMeta}
+              onBack={()=>setStep(2)} onNext={()=>setStep(4)}
+            />
+          )}
+
+          {step===4 && (
+            <Step4
+              countryIso={countryIso}
+              datasetId={datasetId}
+              meta={meta}
+              adm0Value={adm0Value}
+              parsed={parsed}
+              joinCol={joinCol}
+              valueCol={valueCol}
+              catCols={catCols}
+              onBack={()=>setStep(3)}
+              onDone={()=>onOpenChange(false)}
+            />
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          {step>1 && <button onClick={()=>setStep(step-1)} className="px-3 py-2 rounded border">Back</button>}
+          <button disabled={!canNext || step>=4} onClick={()=>setStep(step+1)} className="px-4 py-2 rounded text-white"
+            style={{background: canNext && step<4 ? "var(--gsc-blue)" : "var(--gsc-light-gray)"}}>Next</button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
