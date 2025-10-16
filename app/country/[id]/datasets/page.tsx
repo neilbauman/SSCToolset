@@ -1,237 +1,239 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus, ArrowUpDown, Loader2 } from "lucide-react";
-import DatasetWizard from "./DatasetWizard";
-import type { CountryParams } from "@/app/country/types";
-import type { GroupKey } from "@/lib/theme";
+import { Loader2, Database, PlusCircle, Eye } from "lucide-react";
+import Link from "next/link";
 
 type DatasetMeta = {
   id: string;
   title: string;
-  year: number | null;
   admin_level: string | null;
   data_type: string | null;
   data_format: string | null;
-  indicator_id: string | null;
-  indicator_catalogue?: any;
+  dataset_type: string | null;
+  year: number | null;
+  unit: string | null;
+  country_iso: string;
+  created_at: string;
 };
 
-export default function CountryDatasetsPage({ params }: { params: CountryParams }) {
-  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortField, setSortField] = useState<keyof DatasetMeta>("title");
-  const [sortAsc, setSortAsc] = useState(true);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [previewData, setPreviewData] = useState<any[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  async function loadDatasets() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("dataset_metadata")
-      .select(
-        `id,title,year,admin_level,data_type,data_format,indicator_id,
-         indicator_catalogue(
-           name,
-           indicator_taxonomy_links(
-             taxonomy_terms(category,name)
-           )
-         )`
-      )
-      .eq("country_iso", params.id)
-      .order("title", { ascending: true });
-    if (!error && data) setDatasets(data as DatasetMeta[]);
-    setLoading(false);
-  }
-
-  async function loadPreview(id: string, dataType: string | null) {
-    setSelectedId(id);
-    let preview: any[] = [];
-    if (dataType === "categorical") {
-      const { data } = await supabase
-        .from("dataset_values_cat")
-        .select("admin_pcode,admin_level,category_label,category_score as value")
-        .eq("dataset_id", id)
-        .order("admin_pcode", { ascending: true });
-      if (data) preview = data;
-    } else {
-      const { data } = await supabase
-        .from("dataset_values")
-        .select("admin_pcode,admin_level,value")
-        .eq("dataset_id", id)
-        .order("admin_pcode", { ascending: true });
-      if (data) preview = data;
+type DatasetValue =
+  | {
+      admin_pcode: string;
+      admin_level: string | null;
+      value: number | null;
+      unit?: string | null;
     }
-    setPreviewData(preview);
-  }
+  | {
+      admin_pcode: string;
+      admin_level: string | null;
+      category_label: string;
+      category_score: number | null;
+    };
+
+export default function CountryDatasetsPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const countryIso = params.id.toUpperCase();
+  const [loading, setLoading] = useState(true);
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
+  const [selected, setSelected] = useState<DatasetMeta | null>(null);
+  const [values, setValues] = useState<DatasetValue[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDatasets();
-  }, []);
+    (async () => {
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (error) setError(error.message);
+      else setDatasets(data || []);
+      setLoading(false);
+    })();
+  }, [countryIso]);
 
-  const sortedDatasets = useMemo(() => {
-    const sorted = [...datasets].sort((a, b) => {
-      const va = a[sortField] || "";
-      const vb = b[sortField] || "";
-      return sortAsc
-        ? String(va).localeCompare(String(vb))
-        : String(vb).localeCompare(String(va));
-    });
-    return sorted;
-  }, [datasets, sortField, sortAsc]);
+  async function loadPreview(meta: DatasetMeta) {
+    setSelected(meta);
+    setValues([]);
+    if (!meta) return;
 
-  const toggleSort = (field: keyof DatasetMeta) => {
-    if (sortField === field) setSortAsc(!sortAsc);
-    else {
-      setSortField(field);
-      setSortAsc(true);
+    const isCategorical =
+      meta.dataset_type === "categorical" || meta.data_type === "categorical";
+
+    const table = isCategorical ? "dataset_values_cat" : "dataset_values";
+    const fields = isCategorical
+      ? "admin_pcode, admin_level, category_label, category_score"
+      : "admin_pcode, admin_level, value, unit";
+
+    const { data, error } = await supabase
+      .from(table)
+      .select(fields)
+      .eq("dataset_id", meta.id)
+      .limit(1000);
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setValues(data || []);
     }
-  };
-
-  const headerProps = {
-    title: "Other Datasets",
-    group: "country-config" as GroupKey,
-    description: "Additional datasets linked to this country configuration.",
-    trailing: (
-      <button
-        onClick={() => setWizardOpen(true)}
-        className="bg-[color:var(--gsc-red)] text-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:opacity-90"
-      >
-        <Plus className="w-4 h-4" /> Add Dataset
-      </button>
-    ),
-  };
+  }
 
   return (
-    <SidebarLayout headerProps={headerProps}>
-      <div className="p-4 md:p-6 space-y-4">
-        <Breadcrumbs
-          items={[
-            { label: "Countries", href: "/country" },
-            { label: params.id.toUpperCase(), href: `/country/${params.id}` },
-            { label: "Other Datasets" },
-          ]}
-        />
-
-        {loading ? (
-          <div className="flex items-center gap-2 text-gray-500 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" />
+    <SidebarLayout
+      headerProps={{
+        title: `${countryIso} – Datasets`,
+        group: "datasets",
+        description:
+          "Upload, view, and manage datasets used in SSC calculations.",
+        tool: "Dataset Manager",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Countries", href: "/country" },
+              { label: countryIso, href: `/country/${countryIso}` },
+              { label: "Datasets" },
+            ]}
+          />
+        ),
+      }}
+    >
+      <div className="space-y-6">
+        {loading && (
+          <div className="flex items-center gap-2 text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
             Loading datasets...
           </div>
-        ) : (
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && (
           <>
-            <div className="text-base font-semibold text-gray-800">Other Datasets</div>
-            <div className="border rounded-md overflow-hidden">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-700">
-                  <tr>
-                    <th
-                      className="px-3 py-2 cursor-pointer"
-                      onClick={() => toggleSort("title")}
-                    >
-                      Title <ArrowUpDown className="inline w-3 h-3 ml-1" />
-                    </th>
-                    <th
-                      className="px-3 py-2 cursor-pointer"
-                      onClick={() => toggleSort("year")}
-                    >
-                      Year <ArrowUpDown className="inline w-3 h-3 ml-1" />
-                    </th>
-                    <th className="px-3 py-2">Admin Level</th>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2">Format</th>
-                    <th className="px-3 py-2 text-right">Preview</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedDatasets.length === 0 ? (
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">
+                {datasets.length} datasets found
+              </h2>
+              <Link
+                href={`/country/${countryIso}/datasets/add`}
+                className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-white hover:bg-gray-800"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Add Dataset
+              </Link>
+            </div>
+
+            {datasets.length === 0 && (
+              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">
+                No datasets uploaded yet. Click <b>Add Dataset</b> to begin.
+              </div>
+            )}
+
+            {datasets.length > 0 && (
+              <div className="overflow-auto rounded-xl border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="text-center text-gray-500 py-4 italic"
-                      >
-                        No datasets available
-                      </td>
+                      <th className="px-2 py-2">Title</th>
+                      <th className="px-2 py-2">Type</th>
+                      <th className="px-2 py-2">Admin Level</th>
+                      <th className="px-2 py-2">Year</th>
+                      <th className="px-2 py-2">Records</th>
+                      <th className="px-2 py-2">Preview</th>
                     </tr>
-                  ) : (
-                    sortedDatasets.map((d) => (
+                  </thead>
+                  <tbody>
+                    {datasets.map((d) => (
                       <tr
                         key={d.id}
-                        className={`border-t hover:bg-gray-50 ${
-                          selectedId === d.id ? "bg-red-50" : ""
-                        }`}
+                        className="border-t hover:bg-gray-50 cursor-pointer"
                       >
-                        <td className="px-3 py-2">{d.title}</td>
-                        <td className="px-3 py-2">{d.year ?? "-"}</td>
-                        <td className="px-3 py-2">{d.admin_level ?? "-"}</td>
-                        <td className="px-3 py-2">{d.data_type ?? "-"}</td>
-                        <td className="px-3 py-2">{d.data_format ?? "-"}</td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-2 py-2 font-medium">{d.title}</td>
+                        <td className="px-2 py-2">
+                          {d.dataset_type ?? d.data_type}
+                        </td>
+                        <td className="px-2 py-2">{d.admin_level}</td>
+                        <td className="px-2 py-2">
+                          {d.year ?? <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-2 py-2 text-center">—</td>
+                        <td className="px-2 py-2 text-right">
                           <button
-                            onClick={() => loadPreview(d.id, d.data_type)}
-                            className="text-[color:var(--gsc-red)] hover:underline text-xs"
+                            onClick={() => loadPreview(d)}
+                            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs hover:bg-gray-100"
                           >
+                            <Eye className="h-3 w-3" />
                             View
                           </button>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {selected && (
+              <div className="rounded-2xl border p-4">
+                <h3 className="mb-3 text-lg font-semibold flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  {selected.title}
+                </h3>
+                {values.length === 0 && (
+                  <div className="text-sm text-gray-500">
+                    No rows found or dataset empty.
+                  </div>
+                )}
+                {values.length > 0 && (
+                  <div className="overflow-auto">
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr>
+                          {Object.keys(values[0]).map((k) => (
+                            <th key={k} className="border-b px-2 py-1 text-left">
+                              {k}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {values.slice(0, 50).map((row, i) => (
+                          <tr key={i}>
+                            {Object.values(row).map((v, j) => {
+                              let out: string = "-";
+                              if (v !== null && v !== undefined) {
+                                out =
+                                  typeof v === "object"
+                                    ? JSON.stringify(v)
+                                    : String(v);
+                              }
+                              return (
+                                <td key={j} className="border-b px-2 py-1">
+                                  {out}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
-
-        {selectedId && previewData.length > 0 && (
-          <div className="mt-6">
-            <div className="text-sm font-semibold text-gray-700 mb-2">
-              Data Preview — {selectedId}
-            </div>
-            <div className="border rounded-md overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead className="bg-gray-50 text-gray-700">
-                  <tr>
-                    {Object.keys(previewData[0]).map((h) => (
-                      <th key={h} className="px-2 py-1 text-left">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.slice(0, 15).map((r, i) => (
-                    <tr key={i} className="border-t">
-                      {Object.values(r).map((v, j) => {
-                        const val = v ?? "-";
-                        return (
-                          <td key={j} className="px-2 py-1">
-                            {val}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
-
-      {wizardOpen && (
-        <DatasetWizard
-          countryIso={params.id}
-          onClose={() => setWizardOpen(false)}
-          onSaved={() => {
-            setWizardOpen(false);
-            loadDatasets();
-          }}
-        />
-      )}
     </SidebarLayout>
   );
 }
