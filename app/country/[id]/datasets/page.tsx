@@ -17,7 +17,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
   const [sortKey, setSortKey] = useState("title");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Load datasets list
+  // Load datasets
   async function loadDatasets() {
     const { data, error } = await supabase
       .from("view_country_datasets")
@@ -26,17 +26,16 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     if (!error && data) setDatasets(data);
   }
 
-  // Load preview data
+  // Load data preview
   async function loadPreview(id: string) {
     setLoading(true);
     setPreview([]);
     try {
-      let { data, error } = await supabase
+      let { data } = await supabase
         .from("dataset_values")
         .select("admin_pcode,admin_level,category_label,value")
         .eq("dataset_id", id)
         .order("admin_pcode");
-      if (error) throw error;
       if (!data?.length) {
         const { data: cat } = await supabase
           .from("dataset_values_cat")
@@ -67,7 +66,6 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
     }));
   }
 
-  // 👇 Header props used by SidebarLayout — same structure as other country-config pages
   const headerProps = {
     title: "Datasets",
     group: "country-config" as any,
