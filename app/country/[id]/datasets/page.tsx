@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import { Loader2, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { Loader2, Pencil, Trash2, ChevronUp, ChevronDown, Plus } from "lucide-react";
+import DatasetWizard from "./DatasetWizard";
 
 type DatasetRow={id:string;title:string;year:number|null;admin_level:string|null;data_type:"gradient"|"categorical"|"text";data_format:"numeric"|"percentage"|"text";indicator_id:string|null;indicator_name:string|null;created_at?:string};
 type Term={id:string;name:string;category:string|null;sort_order?:number|null};
@@ -11,6 +12,7 @@ type Term={id:string;name:string;category:string|null;sort_order?:number|null};
 const TH="text-left text-xs font-medium text-gray-600 px-3 py-2 border-b select-none";
 const TD="px-3 py-2 border-b text-sm";
 const BTN="inline-flex items-center gap-2 rounded px-2 py-1 text-sm border hover:bg-gray-50";
+const PRIMARY="inline-flex items-center gap-2 rounded px-3 py-2 text-sm bg-[color:var(--gsc-red)] text-white hover:opacity-90";
 const CARD="rounded border bg-white shadow-sm";
 const ROW_SEL="bg-[color:var(--gsc-beige)] font-semibold";
 
@@ -21,9 +23,11 @@ export default function CountryDatasetsPage(){
   const[taxByIndicator,setTaxByIndicator]=useState<Record<string,Term[]>>({});
   const[dataLoading,setDataLoading]=useState(false); const[dataPreview,setDataPreview]=useState<any[]>([]);
   const[sortKey,setSortKey]=useState<string>("created_at"); const[sortAsc,setSortAsc]=useState(false);
+  const[openWizard,setOpenWizard]=useState(false);
+
   const headerProps={title:"Datasets",group:"country-config" as const,description:"Reusable country datasets and linked indicators."};
 
-  async function loadDatasets(){
+  async function loadDatasets(selectLatest=false){
     setLoading(true); setErr(null);
     try{
       const{data,error}=await supabase.from("dataset_metadata")
@@ -50,7 +54,8 @@ export default function CountryDatasetsPage(){
         setTaxByIndicator(grouped);
       } else setTaxByIndicator({});
 
-      if(!selectedId && rows.length) setSelectedId(rows[0].id);
+      if(selectLatest && rows.length){ setSelectedId(rows[0].id); }
+      else if(!selectedId && rows.length){ setSelectedId(rows[0].id); }
     }catch(e:any){ setErr(e.message??"Failed to load datasets."); }
     finally{ setLoading(false); }
   }
@@ -59,22 +64,18 @@ export default function CountryDatasetsPage(){
     setDataLoading(true); setDataPreview([]); setErr(null);
     try{
       let rows:any[]=[];
-      // Prefer view if present (and has rows)
       try{
-        const {data, error}=await supabase.from("view_dataset_values_with_names").select("*").eq("dataset_id",ds.id).limit(100);
+        const {data,error}=await supabase.from("view_dataset_values_with_names").select("*").eq("dataset_id",ds.id).limit(100);
         if(error) throw error; if(data?.length) rows=data;
-      }catch(_e){/* ignore if view missing */}
-      // Fallback to base tables
+      }catch(_e){}
       if(!rows.length){
         if(ds.data_type==="categorical"){
           const {data,error}=await supabase.from("dataset_values_cat")
-            .select("admin_pcode,admin_level,category_code,category_label") // <- only columns guaranteed
+            .select("admin_pcode,admin_level,category_code,category_label")
             .eq("dataset_id",ds.id).limit(100);
-          if(error) throw error;
-          rows=data??[];
-          // if still empty, look in dataset_values (wizard now writes categorical there too)
+          if(error) throw error; rows=data??[];
           if(!rows.length){
-            const {data:dv, error:err2}=await supabase.from("dataset_values")
+            const {data:dv,error:err2}=await supabase.from("dataset_values")
               .select("admin_pcode,admin_level,category_label,value")
               .eq("dataset_id",ds.id).limit(100);
             if(err2) throw err2; rows=dv??[];
@@ -112,8 +113,7 @@ export default function CountryDatasetsPage(){
     if(!confirm(`Delete dataset "${ds.title}"? This will remove its rows.`)) return;
     try{ setLoading(true);
       const {error}=await supabase.from("dataset_metadata").delete().eq("id",id);
-      if(error) throw error;
-      setDatasets(p=>p.filter(x=>x.id!==id)); if(selectedId===id) setSelectedId(null);
+      if(error) throw error; setDatasets(p=>p.filter(x=>x.id!==id)); if(selectedId===id) setSelectedId(null);
     }catch(e:any){ alert(e.message??"Delete failed."); } finally{ setLoading(false); }
   }
   const onEdit=(id:string)=>alert("Edit dataset (open wizard in edit mode)");
@@ -122,6 +122,11 @@ export default function CountryDatasetsPage(){
     <SidebarLayout headerProps={headerProps}>
       <div className="p-4 md:p-6 space-y-6">
         {err&&<div className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">{err}</div>}
+
+        {/* Top actions */}
+        <div className="flex items-center justify-end">
+          <button className={PRIMARY} onClick={()=>setOpenWizard(true)}><Plus className="w-4 h-4"/>Add Dataset</button>
+        </div>
 
         <div className={CARD}>
           <div className="px-3 py-2 border-b flex items-center justify-between">
@@ -186,6 +191,14 @@ export default function CountryDatasetsPage(){
           )}
         </div>
       </div>
+
+      {openWizard&&(
+        <DatasetWizard
+          countryIso={countryIso}
+          onClose={()=>setOpenWizard(false)}
+          onSaved={async()=>{ setOpenWizard(false); await loadDatasets(true); }}
+        />
+      )}
     </SidebarLayout>
   );
 }
