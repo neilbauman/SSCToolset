@@ -4,13 +4,10 @@ import { useEffect, useState, useMemo } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  Plus,
-  ArrowUpDown,
-  Loader2,
-} from "lucide-react";
+import { Plus, ArrowUpDown, Loader2 } from "lucide-react";
 import DatasetWizard from "./DatasetWizard";
 import type { CountryParams } from "@/app/country/types";
+import type { GroupKey } from "@/components/layout/types"; // ✅ added
 
 type DatasetMeta = {
   id: string;
@@ -116,7 +113,7 @@ export default function CountryDatasetsPage({ params }: { params: CountryParams 
 
   const headerProps = {
     title: "Other Datasets",
-    group: "country-config",
+    group: "country-config" as GroupKey, // ✅ proper GroupKey cast
     description: "Additional datasets linked to this country configuration.",
     trailing: (
       <button
