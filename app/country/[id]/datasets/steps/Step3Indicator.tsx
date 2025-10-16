@@ -6,7 +6,6 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
   const [categories, setCategories] = useState<string[]>([]);
   const [terms, setTerms] = useState<{ id: string; name: string; category: string }[]>([]);
   const [indicators, setIndicators] = useState<{ id: string; name: string }[]>([]);
-
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedTerm, setSelectedTerm] = useState("");
   const [selectedIndicator, setSelectedIndicator] = useState("");
@@ -20,15 +19,31 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
     });
   }, []);
 
-  // When a term is chosen, load indicators
+  // Load indicators for selected term via indicator_taxonomy_links
   useEffect(() => {
-    if (!selectedTerm) return;
-    supabase
-      .from("indicator_catalogue")
-      .select("id,name")
-      .eq("taxonomy_id", selectedTerm)
-      .then(({ data }) => setIndicators(data || []));
+    if (!selectedTerm) {
+      setIndicators([]);
+      return;
+    }
+    (async () => {
+      const { data: links, error } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("indicator_id")
+        .eq("taxonomy_id", selectedTerm);
+      if (error || !links?.length) {
+        setIndicators([]);
+        return;
+      }
+      const ids = links.map((l: any) => l.indicator_id);
+      const { data: inds } = await supabase
+        .from("indicator_catalogue")
+        .select("id,name")
+        .in("id", ids);
+      setIndicators(inds || []);
+    })();
   }, [selectedTerm]);
+
+  const canContinue = !!selectedIndicator && !!selectedTerm;
 
   return (
     <div className="space-y-4">
@@ -40,14 +55,15 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
       </p>
 
       <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-sm">Category
+        <label className="text-sm">
+          Category
           <select
             className="border rounded p-2 w-full"
             value={selectedCategory}
             onChange={(e) => {
               setSelectedCategory(e.target.value);
               setSelectedTerm("");
-              setIndicators([]);
+              setSelectedIndicator("");
             }}
           >
             <option value="">Select category…</option>
@@ -57,22 +73,29 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
           </select>
         </label>
 
-        <label className="text-sm">Term
+        <label className="text-sm">
+          Term
           <select
             className="border rounded p-2 w-full"
             value={selectedTerm}
-            onChange={(e) => setSelectedTerm(e.target.value)}
+            onChange={(e) => {
+              setSelectedTerm(e.target.value);
+              setSelectedIndicator("");
+            }}
           >
             <option value="">Select term…</option>
             {terms
               .filter((t) => t.category === selectedCategory)
               .map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
               ))}
           </select>
         </label>
 
-        <label className="text-sm">Indicator
+        <label className="text-sm md:col-span-2">
+          Indicator
           <select
             className="border rounded p-2 w-full"
             value={selectedIndicator}
@@ -80,16 +103,20 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
           >
             <option value="">Select indicator…</option>
             {indicators.map((i) => (
-              <option key={i.id} value={i.id}>{i.name}</option>
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
             ))}
           </select>
         </label>
       </div>
 
       <div className="flex justify-between pt-5">
-        <button onClick={onBack} className="px-3 py-2 rounded border">Back</button>
+        <button onClick={onBack} className="px-3 py-2 rounded border">
+          Back
+        </button>
         <button
-          disabled={!selectedIndicator}
+          disabled={!canContinue}
           onClick={() => {
             setMeta({
               ...meta,
@@ -100,7 +127,11 @@ export default function Step3Indicator({ meta, setMeta, onBack, onNext }: any) {
             onNext();
           }}
           className="px-4 py-2 rounded text-white"
-          style={{ background: selectedIndicator ? "var(--gsc-blue)" : "var(--gsc-light-gray)" }}
+          style={{
+            background: canContinue
+              ? "var(--gsc-blue)"
+              : "var(--gsc-light-gray)",
+          }}
         >
           Continue
         </button>
