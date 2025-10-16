@@ -25,9 +25,8 @@ export default function DatasetPreview({ dataset }: { dataset: { id: string } })
         .eq("dataset_id", dataset.id)
         .limit(50);
 
-      const data = (gradient && gradient.length > 0)
-        ? gradient
-        : (categorical || []);
+      const data =
+        gradient && gradient.length > 0 ? gradient : categorical || [];
 
       if (data.length > 0) {
         setHeaders(Object.keys(data[0]));
@@ -80,4 +79,10 @@ export default function DatasetPreview({ dataset }: { dataset: { id: string } })
         </tbody>
       </table>
       {rows.length >= 50 && (
-        <div className="p-
+        <div className="p-2 text-xs text-gray-500 border-t bg-[var(--gsc-light-gray)]/40">
+          Showing first 50 rows only
+        </div>
+      )}
+    </div>
+  );
+}
