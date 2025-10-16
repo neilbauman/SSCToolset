@@ -217,55 +217,136 @@ export default function DatasetWizard() {
         {err && <div className="bg-red-50 text-red-700 border p-2 rounded">{err}</div>}
 
         {/* META */}
-        {steps[step] === "Meta" && (
-          <Step title="Dataset details" next={next} disable={!title}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input className="border p-2 rounded" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <select className="border p-2 rounded" value={type} onChange={(e) => setType(e.target.value as DatasetType)}>
-                <option value="adm0">ADM0</option>
-                <option value="gradient">Gradient</option>
-                <option value="categorical">Categorical</option>
-              </select>
+        "use client";
+import { useState, useEffect } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Search, Loader2 } from "lucide-react";
 
-              <select className="border p-2 rounded" value={admLevel} onChange={(e) => setAdm(e.target.value)}>
-                {["ADM0", "ADM1", "ADM2", "ADM3"].map((x) => (
-                  <option key={x}>{x}</option>
-                ))}
-              </select>
+export default function DatasetWizardStep1({ iso, onSaved }: { iso: string; onSaved: (id: string) => void }) {
+  const [form, setForm] = useState({
+    title: "",
+    dataset_type: "gradient",
+    data_format: "numeric",
+    admin_level: "ADM3",
+    join_field: "admin_pcode",
+    indicator_id: "",
+    year: "",
+    unit: "",
+    source_name: "",
+    source_url: ""
+  });
+  const [indicators, setIndicators] = useState<{ id: string; name: string }[]>([]);
+  const [taxonomy, setTaxonomy] = useState<{ category: string | null; term: string | null }>({ category: null, term: null });
+  const [q, setQ] = useState(""); const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
 
-              <input className="border p-2 rounded" placeholder="Year" value={year} onChange={(e) => setYear(e.target.value)} />
-              <input className="border p-2 rounded" placeholder="Unit (optional)" value={unit} onChange={(e) => setUnit(e.target.value)} />
-              <input className="border p-2 rounded" placeholder="Join field (admin code column in the file)" value={joinField} onChange={(e) => setJoinField(e.target.value)} />
+  useEffect(() => { (async () => {
+    const { data } = await supabase.from("indicator_catalogue").select("id,name").order("name");
+    setIndicators(data || []);
+  })(); }, []);
 
-              {/* Indicator + taxonomy */}
-              <div className="md:col-span-2 border rounded p-3 space-y-2" style={{ borderColor: "var(--gsc-light-gray)" }}>
-                <div className="text-sm text-gray-600">Indicator (optional, enables taxonomy)</div>
-                <div className="flex gap-2 items-center">
-                  <div className="relative grow">
-                    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search indicators…" className="w-full rounded border px-8 py-2 text-sm" style={{ borderColor: "var(--gsc-light-gray)" }} />
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                  <select className="rounded border p-2 text-sm" style={{ borderColor: "var(--gsc-light-gray)" }} value={indicatorId ?? ""} onChange={(e) => setIndicatorId(e.target.value || null)}>
-                    <option value="">(none)</option>
-                    {indicators
-                      .filter((i) => i.name.toLowerCase().includes(q.toLowerCase()))
-                      .slice(0, 300)
-                      .map((i) => (
-                        <option key={i.id} value={i.id}>
-                          {i.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div className="text-xs text-gray-600">
-                  Taxonomy:&nbsp;
-                  <span className="font-medium">{tax.category ?? "—"}</span>
-                  {tax.term ? <> • <span>{tax.term}</span></> : null}
-                </div>
-              </div>
-            </div>
-          </Step>
-        )}
+  useEffect(() => { (async () => {
+    if (!form.indicator_id) return setTaxonomy({ category: null, term: null });
+    const { data: link } = await supabase.from("indicator_taxonomy_links").select("taxonomy_id").eq("indicator_id", form.indicator_id).limit(1);
+    const tid = link?.[0]?.taxonomy_id; if (!tid) return setTaxonomy({ category: null, term: null });
+    const { data: t } = await supabase.from("taxonomy_terms").select("category,name").eq("id", tid).maybeSingle();
+    setTaxonomy({ category: (t as any)?.category ?? null, term: (t as any)?.name ?? null });
+  })(); }, [form.indicator_id]);
+
+  async function save() {
+    try {
+      setSaving(true); setErr("");
+      if (!form.title || !form.dataset_type || !form.admin_level || !form.join_field) throw new Error("Missing required fields");
+      const payload = {
+        country_iso: iso,
+        title: form.title.trim(),
+        dataset_type: form.dataset_type,
+        data_format: form.data_format,
+        admin_level: form.admin_level,
+        join_field: form.join_field.trim(),
+        indicator_id: form.indicator_id || null,
+        year: form.year ? Number(form.year) : null,
+        unit: form.unit || null,
+        source_name: form.source_name || null,
+        source_url: form.source_url || null,
+        created_at: new Date().toISOString()
+      };
+      const { data, error } = await supabase.from("dataset_metadata").insert(payload).select("id").single();
+      if (error) throw error;
+      onSaved(data.id);
+    } catch (e: any) { setErr(e.message); } finally { setSaving(false); }
+  }
+
+  const input = (label: string, name: keyof typeof form, type="text", opts?: any) => (
+    <label className="text-sm flex flex-col">
+      <span className="mb-1 text-gray-600">{label}</span>
+      <input {...opts} type={type} value={form[name] as any} onChange={e=>setForm({...form,[name]:e.target.value})}
+        className="border rounded p-2 text-sm" style={{borderColor:"var(--gsc-light-gray)"}} />
+    </label>
+  );
+
+  return (
+    <div className="space-y-4">
+      {err && <div className="bg-red-50 text-red-700 border p-2 rounded">{err}</div>}
+      <div className="grid md:grid-cols-2 gap-3">
+        {input("Title","title")}
+        <label className="text-sm">
+          <span className="mb-1 text-gray-600">Dataset Type</span>
+          <select className="border rounded p-2 text-sm w-full" value={form.dataset_type}
+            onChange={e=>setForm({...form,dataset_type:e.target.value})}>
+            {["adm0","gradient","categorical"].map(x=><option key={x}>{x}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 text-gray-600">Data Format</span>
+          <select className="border rounded p-2 text-sm w-full" value={form.data_format}
+            onChange={e=>setForm({...form,data_format:e.target.value})}>
+            {["numeric","percentage","text"].map(x=><option key={x}>{x}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 text-gray-600">Admin Level</span>
+          <select className="border rounded p-2 text-sm w-full" value={form.admin_level}
+            onChange={e=>setForm({...form,admin_level:e.target.value})}>
+            {["ADM0","ADM1","ADM2","ADM3","ADM4","ADM5"].map(x=><option key={x}>{x}</option>)}
+          </select>
+        </label>
+        {input("Join Field (CSV column for PCodes)","join_field")}
+        {input("Year","year","number")}
+        {input("Unit","unit")}
+        {input("Source Name","source_name")}
+        {input("Source URL","source_url")}
+      </div>
+
+      <div className="border rounded p-3 space-y-2" style={{borderColor:"var(--gsc-light-gray)"}}>
+        <div className="text-sm text-gray-600">Indicator (optional)</div>
+        <div className="flex gap-2 items-center">
+          <div className="relative grow">
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search indicators…" className="w-full rounded border px-8 py-2 text-sm"
+              style={{borderColor:"var(--gsc-light-gray)"}}/>
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400"/>
+          </div>
+          <select className="border rounded p-2 text-sm" value={form.indicator_id}
+            onChange={e=>setForm({...form,indicator_id:e.target.value})} style={{borderColor:"var(--gsc-light-gray)"}}>
+            <option value="">(none)</option>
+            {indicators.filter(i=>i.name.toLowerCase().includes(q.toLowerCase())).slice(0,300)
+              .map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        </div>
+        <div className="text-xs text-gray-600">
+          Taxonomy:&nbsp;<span className="font-medium">{taxonomy.category??"—"}</span>
+          {taxonomy.term?<> • <span>{taxonomy.term}</span></>:null}
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button disabled={saving} onClick={save}
+          className="bg-[var(--gsc-blue)] text-white px-4 py-2 rounded-xl">
+          {saving?<><Loader2 className="h-4 w-4 animate-spin inline mr-2"/>Saving…</>:"Save & Continue"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
         {/* ADM0 */}
         {steps[step] === "ADM0" && (
