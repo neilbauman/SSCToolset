@@ -69,7 +69,6 @@ export default function CountryDatasetsPage() {
   const [deleting, setDeleting] = useState<DatasetMeta | null>(null);
   const [adding, setAdding] = useState(false);
 
-  // Load metadata + taxonomy info
   async function load() {
     if (!iso) return;
     setLoading(true);
@@ -86,7 +85,6 @@ export default function CountryDatasetsPage() {
     const list = (data || []) as DatasetMeta[];
     setRows(list);
 
-    // Build taxonomy lookup
     const indicatorIds = Array.from(
       new Set(list.map((d) => d.indicator_id).filter(Boolean))
     ) as string[];
@@ -128,7 +126,6 @@ export default function CountryDatasetsPage() {
     load();
   }, [iso]);
 
-  // Search + sorting
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     let r = rows;
@@ -232,7 +229,6 @@ export default function CountryDatasetsPage() {
         ),
       }}
     >
-      {/* Toolbar */}
       <div
         className="rounded-xl p-3 flex items-center justify-between"
         style={{
@@ -265,7 +261,6 @@ export default function CountryDatasetsPage() {
         </button>
       </div>
 
-      {/* Metadata table */}
       <div
         className="overflow-auto rounded-xl"
         style={{ border: "1px solid var(--gsc-light-gray)" }}
@@ -385,7 +380,6 @@ export default function CountryDatasetsPage() {
         </table>
       </div>
 
-      {/* Data preview */}
       {selected && (
         <div
           className="rounded-xl p-4"
@@ -398,7 +392,6 @@ export default function CountryDatasetsPage() {
         </div>
       )}
 
-      {/* Modals */}
       {adding && (
         <AddDatasetModal
           open={adding}
@@ -409,7 +402,6 @@ export default function CountryDatasetsPage() {
           countryIso={iso}
         />
       )}
-
       {editing && (
         <EditDatasetModal
           dataset={editing}
@@ -422,7 +414,6 @@ export default function CountryDatasetsPage() {
           }}
         />
       )}
-
       {deleting && (
         <ConfirmDeleteDatasetModal
           title={deleting.title}
