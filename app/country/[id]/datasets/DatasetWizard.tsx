@@ -37,12 +37,9 @@ function detectCategories(){if(!categoryCols.length)return;setCategoryMap(catego
 
 async function checkPcodes(){if(!joinColumn||!rows.length)return;
  try{const{data:known}=await supabase.from("admin_units").select("pcode").eq("level",adminLevel);
- const knownSet=new Set((known??[]).map((u:any)=>String(u.pcode).trim()));
- const codes=rows.map(r=>String(r[joinColumn]??"").trim()).filter(Boolean);
- const found=codes.filter(c=>knownSet.has(c));
- const rate=codes.length?Math.round((found.length/codes.length)*100):0;
- const missing=codes.filter(c=>!knownSet.has(c)).slice(0,10);
- setMatchInfo({rate,missing});}catch(e){console.error(e);} }
+ const knownSet=new Set((known??[]).map((u:any)=>String(u.pcode).trim()));const codes=rows.map(r=>String(r[joinColumn]??"").trim()).filter(Boolean);
+ const found=codes.filter(c=>knownSet.has(c));const rate=codes.length?Math.round((found.length/codes.length)*100):0;
+ const missing=codes.filter(c=>!knownSet.has(c)).slice(0,10);setMatchInfo({rate,missing});}catch(e){console.error(e);} }
 
 async function loadTaxonomy(){const{data}=await supabase.from("taxonomy_terms").select("id,name,category,sort_order").order("sort_order",{ascending:true});
  const cats=Array.from(new Set((data??[]).map(t=>t.category).filter(Boolean))).sort();setGroups(cats);setTerms(data??[]);}
@@ -54,15 +51,21 @@ async function searchIndicators(){let q=supabase.from("indicator_catalogue").sel
  const{data}=await q;setIndicatorList((data??[]).filter(i=>i.name.toLowerCase().includes(indicatorQuery.toLowerCase())));}
 useEffect(()=>{if(step===4)searchIndicators();},[step,selectedTerm]);
 
-// --- Render
-return(<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+// ==== FIXED: ensure all logic blocks closed before JSX ====
+/* -------------------- RENDER -------------------- */
+return (
+<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
 <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-<div className="flex items-center justify-between border-b px-5 py-3"><h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add Dataset</h3><button onClick={onClose} className="text-gray-600 hover:text-gray-800">✕</button></div>
+<div className="flex items-center justify-between border-b px-5 py-3">
+<h3 className="text-lg font-semibold text-[color:var(--gsc-gray)]">Add Dataset</h3>
+<button onClick={onClose} className="text-gray-600 hover:text-gray-800">✕</button>
+</div>
 <div className="p-5 space-y-4 overflow-y-auto">
 {error&&<div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2"><AlertTriangle className="w-4 h-4"/>{error}</div>}
 <div className="text-xs text-gray-500">Step {step}/5</div>
 
-{/* Step 1 */}
+{/* Step 1–3 */}
+{/* Step 1 */} 
 {step===1&&(<section className="space-y-3"><div><label className={L}>Title *</label><input className={F} value={title} onChange={e=>setTitle(e.target.value)}/></div>
 <div><label className={L}>Description</label><textarea className={F} rows={3} value={desc} onChange={e=>setDesc(e.target.value)}/></div>
 <div className="grid md:grid-cols-2 gap-3"><div><label className={L}>Source</label><input className={F} value={source} onChange={e=>setSource(e.target.value)}/></div><div><label className={L}>Source URL</label><input className={F} value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)}/></div></div>
@@ -77,7 +80,7 @@ return(<div className="fixed inset-0 z-[9999] flex items-center justify-center b
 {headers.length>0&&(<div className="grid md:grid-cols-2 gap-3"><div><label className={L}>Admin PCode Column</label><select className={F} value={joinColumn} onChange={e=>{setJoinColumn(e.target.value);setMatchInfo(null);}}>{headers.map(h=><option key={h}>{h}</option>)}</select></div>
 <div><label className={L}>Admin Name Column (optional)</label><select className={F} value={nameColumn} onChange={e=>setNameColumn(e.target.value)}><option value="">None</option>{headers.map(h=><option key={h}>{h}</option>)}</select></div></div>)}
 <button className={S} onClick={checkPcodes}>Check PCode Matches</button>
-{matchInfo&&(<div className={`p-3 rounded text-sm border ${matchInfo.rate>90?"border-green-200 bg-green-50 text-green-700":matchInfo.rate>40?"border-yellow-200 bg-yellow-50 text-yellow-700":"border-red-200 bg-red-50 text-red-700"}`}>{matchInfo.rate>90?"✅":matchInfo.rate>40?"⚠️":"❌"} {matchInfo.rate}% of admin codes matched existing {adminLevel} units.{matchInfo.missing.length>0&&<div className="text-xs mt-1">Missing examples: {matchInfo.missing.join(", ")}</div>}</div>)}
+{matchInfo&&(<div className={`p-3 rounded text-sm border ${matchInfo.rate>90?"border-green-200 bg-green-50 text-green-700":matchInfo.rate>40?"border-yellow-200 bg-yellow-50 text-yellow-700":"border-red-200 bg-red-50 text-red-700"}`}>{matchInfo.rate>90?"✅":matchInfo.rate>40?"⚠️":"❌"} {matchInfo.rate}% matched {adminLevel} units.{matchInfo.missing.length>0&&<div className="text-xs mt-1">Missing: {matchInfo.missing.join(", ")}</div>}</div>)}
 {rows.length>0&&(<div className="border rounded p-2 max-h-60 overflow-auto text-xs"><table className="min-w-full"><thead><tr>{headers.map(h=><th key={h} className="text-left px-2 py-1 border-b">{h}</th>)}</tr></thead><tbody>{rows.slice(0,10).map((r,i)=><tr key={i} className="odd:bg-gray-50">{headers.map(h=><td key={h} className="px-2 py-1 border-b">{String(r[h]??"")}</td>)}</tr>)}</tbody></table></div>)}</section>)}
 
 {/* Step 3 */}
