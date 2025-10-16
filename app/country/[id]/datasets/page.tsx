@@ -18,14 +18,36 @@ async function loadDatasets(){
 }
 
 async function loadPreview(id:string){
- setLoading(true);setPreview([]);
- try{
-  const{data,error}=await supabase.from("dataset_values")
-    .select("admin_pcode,admin_level,category_label,value")
-    .eq("dataset_id",id).order("admin_pcode");
-  if(error)throw error;
-  setPreview(data||[]);
- }catch(e){console.error(e);}finally{setLoading(false);}
+  setLoading(true);
+  setPreview([]);
+  try {
+    // try normal gradient / numeric datasets first
+    let { data, error } = await supabase
+      .from("dataset_values")
+      .select("admin_pcode, admin_level, category_label, value")
+      .eq("dataset_id", id)
+      .order("admin_pcode");
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      // categorical fallback
+      const { data: cat, error: catErr } = await supabase
+        .from("dataset_values_cat")
+        .select("admin_pcode, admin_level, category_label, value")
+        .eq("dataset_id", id)
+        .order("admin_pcode");
+      if (catErr) throw catErr;
+      setPreview(cat ?? []);
+    } else {
+      setPreview(data);
+    }
+  } catch (e) {
+    console.error(e);
+    setPreview([]);
+  } finally {
+    setLoading(false);
+  }
 }
 
 useEffect(()=>{loadDatasets();},[params.id]);
