@@ -62,6 +62,7 @@ export default function CountryDatasetsPage() {
   const [tax, setTax] = useState<Record<string, TaxInfo>>({});
   const [selected, setSelected] = useState<DatasetMeta | null>(null);
 
+  const [indicatorName, setIndicatorName] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -70,6 +71,9 @@ export default function CountryDatasetsPage() {
   const [deleting, setDeleting] = useState<DatasetMeta | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // ---------------------------------------
+  // Load dataset metadata
+  // ---------------------------------------
   async function load() {
     if (!iso) return;
     setLoading(true);
@@ -99,18 +103,14 @@ export default function CountryDatasetsPage() {
       const termIds = Array.from(
         new Set((links || []).map((l: any) => l.taxonomy_id).filter(Boolean))
       );
-      let termsById: Record<
-        string,
-        { category: string | null; name: string | null }
-      > = {};
+      let termsById: Record<string, { category: string | null; name: string | null }> = {};
       if (termIds.length) {
         const { data: terms } = await supabase
           .from("taxonomy_terms")
           .select("id,category,name")
           .in("id", termIds);
         (terms || []).forEach(
-          (t: any) =>
-            (termsById[t.id] = { category: t.category, name: t.name })
+          (t: any) => (termsById[t.id] = { category: t.category, name: t.name })
         );
       }
       const map: Record<string, TaxInfo> = {};
@@ -131,6 +131,28 @@ export default function CountryDatasetsPage() {
     load();
   }, [iso]);
 
+  // ---------------------------------------
+  // Fetch linked indicator name when selected
+  // ---------------------------------------
+  useEffect(() => {
+    async function fetchIndicatorName() {
+      if (!selected?.indicator_id) {
+        setIndicatorName(null);
+        return;
+      }
+      const { data } = await supabase
+        .from("indicators")
+        .select("name")
+        .eq("id", selected.indicator_id)
+        .maybeSingle();
+      setIndicatorName(data?.name || null);
+    }
+    fetchIndicatorName();
+  }, [selected?.indicator_id]);
+
+  // ---------------------------------------
+  // Filters & sorting
+  // ---------------------------------------
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     let r = rows;
@@ -184,6 +206,9 @@ export default function CountryDatasetsPage() {
     }
   }
 
+  // ---------------------------------------
+  // Delete cascade
+  // ---------------------------------------
   async function cascadeDelete(d: DatasetMeta) {
     await supabase.from("dataset_values").delete().eq("dataset_id", d.id);
     await supabase.from("dataset_values_cat").delete().eq("dataset_id", d.id);
@@ -193,26 +218,54 @@ export default function CountryDatasetsPage() {
     if (selected?.id === d.id) setSelected(null);
   }
 
-  const headerProps = {
-    title: `${iso} – Datasets`,
-    group: "country-config" as const,
-    description:
-      "Catalogue of raw datasets. Select a row to preview the raw uploaded data below.",
-    tool: "Dataset Manager",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: "/country" },
-          { label: iso, href: `/country/${iso}` },
-          { label: "Datasets" },
-        ]}
-      />
-    ),
-  };
+  // ---------------------------------------
+  // Layout
+  // ---------------------------------------
+  if (!iso) {
+    return (
+      <SidebarLayout
+        headerProps={{
+          title: "Loading country…",
+          group: "country-config",
+          description: "Waiting for route params.",
+          tool: "Dataset Manager",
+          breadcrumbs: (
+            <Breadcrumbs
+              items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Country Configuration", href: "/country" }, { label: "Datasets" }]}
+            />
+          ),
+        }}
+      >
+        <div className="rounded-xl border p-3 text-sm text-gray-600">
+          Country ID missing in route.
+        </div>
+      </SidebarLayout>
+    );
+  }
 
   return (
-    <SidebarLayout headerProps={headerProps}>
+    <SidebarLayout
+      headerProps={{
+        title: `${iso} – Datasets`,
+        group: "country-config",
+        description:
+          "Catalogue of uploaded raw datasets for this country. Each dataset can be previewed, edited, or joined with indicators.",
+        tool: "Dataset Manager",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Country Configuration", href: "/country" },
+              { label: iso, href: `/country/${iso}` },
+              { label: "Datasets" },
+            ]}
+          />
+        ),
+      }}
+    >
+      {/* ------------------------------------- */}
+      {/* Search + Add button header */}
+      {/* ------------------------------------- */}
       <div
         className="rounded-xl p-3 flex items-center justify-between"
         style={{
@@ -245,6 +298,9 @@ export default function CountryDatasetsPage() {
         </button>
       </div>
 
+      {/* ------------------------------------- */}
+      {/* Table */}
+      {/* ------------------------------------- */}
       <div
         className="overflow-auto rounded-xl"
         style={{ border: "1px solid var(--gsc-light-gray)" }}
@@ -364,62 +420,57 @@ export default function CountryDatasetsPage() {
         </table>
       </div>
 
-     {selected && (
-  <div
-    className="rounded-xl p-4 space-y-3"
-    style={{
-      background: "var(--gsc-beige)",
-      border: "1px solid var(--gsc-light-gray)",
-    }}
-  >
-    {/* --- Dataset header summary --- */}
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
-      <div>
-        <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
-          {selected.title}
-        </h3>
+      {/* ------------------------------------- */}
+      {/* Selected dataset panel with health */}
+      {/* ------------------------------------- */}
+      {selected && (
+        <div
+          className="rounded-xl p-4 space-y-3"
+          style={{
+            background: "var(--gsc-beige)",
+            border: "1px solid var(--gsc-light-gray)",
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
+            <div>
+              <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
+                {selected.title}
+              </h3>
 
-        {/* Indicator name directly under dataset title */}
-        {selected.indicator_id && (
-          <p className="text-sm text-gray-700 italic">
-            {tax[selected.indicator_id]?.term
-              ? `${tax[selected.indicator_id]?.term}`
-              : "Linked Indicator"}{" "}
-            ({tax[selected.indicator_id]?.category || "—"})
-          </p>
-        )}
+              {indicatorName && (
+                <p className="text-sm text-gray-700 italic">
+                  {indicatorName}
+                </p>
+              )}
 
-        {/* Metadata row: indicator link + admin level + record stats */}
-        <p className="text-sm text-gray-600 mt-1">
-          {selected.indicator_id
-            ? `Linked Indicator: ${tax[selected.indicator_id]?.category || "—"}`
-            : "No linked indicator"}
-          {" · "}Admin Level: {selected.admin_level ?? "—"}
-          {" · "}Records: {selected.record_count ?? "—"}
-        </p>
-      </div>
+              <p className="text-sm text-gray-600 mt-1">
+                Admin Level: {selected.admin_level ?? "—"}{" "}
+                · Records: {selected.record_count ?? "—"}
+              </p>
+            </div>
 
-      {/* Data Health panel */}
-      <div className="min-w-[180px]">
-        <h4 className="text-sm font-semibold mb-1 text-gray-700">
-          Data Health
-        </h4>
-        <div className="border rounded-lg bg-white p-2 shadow-sm">
-          <DatasetHealth datasetId={selected.id} />
+            <div className="min-w-[180px]">
+              <h4 className="text-sm font-semibold mb-1 text-gray-700">
+                Data Health
+              </h4>
+              <div className="border rounded-lg bg-white p-2 shadow-sm">
+                <DatasetHealth datasetId={selected.id} />
+              </div>
+            </div>
+          </div>
+
+          <DatasetPreview
+            datasetId={selected.id}
+            datasetType={
+              (selected.dataset_type as
+                | "adm0"
+                | "gradient"
+                | "categorical") || "gradient"
+            }
+          />
         </div>
-      </div>
-    </div>
+      )}
 
-    {/* --- Existing dataset preview --- */}
-    <DatasetPreview
-      datasetId={selected.id}
-      datasetType={
-        (selected.dataset_type as "adm0" | "gradient" | "categorical") ||
-        "gradient"
-      }
-    />
-  </div>
-)}
       {adding && (
         <AddDatasetModal
           open={adding}
