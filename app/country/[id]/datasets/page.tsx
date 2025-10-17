@@ -236,7 +236,10 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
 
       {selected && (
         <div className="mt-4">
-          <DatasetPreview datasetId={selected.id} datasetType={selected.dataset_type} />
+          <DatasetPreview
+  datasetId={selected.id}
+  datasetType={(selected.dataset_type as "adm0" | "gradient" | "categorical") || "gradient"}
+/>
         </div>
       )}
 
