@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type Indicator = { id: string; name: string; topic?: string };
+type Indicator = { id: string; name: string };
+type Term = { id: string; name: string; category_id: string };
+type Category = { id: string; name: string };
 
 export default function Step3Indicator({
   meta,
@@ -16,20 +18,16 @@ export default function Step3Indicator({
   back: () => void;
   next: () => void;
 }) {
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>(
-    []
-  );
-  const [terms, setTerms] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [terms, setTerms] = useState<Term[]>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // -----------------------------
   // 1️⃣ Fetch taxonomy categories
-  // -----------------------------
   useEffect(() => {
     async function loadCategories() {
       const { data, error } = await supabase
-        .from("taxonomy_categories")
+        .from("indicator_categories")
         .select("id,name")
         .order("name");
       if (!error && data) setCategories(data);
@@ -37,69 +35,80 @@ export default function Step3Indicator({
     loadCategories();
   }, []);
 
-  // -----------------------------
   // 2️⃣ Fetch terms for category
-  // -----------------------------
   useEffect(() => {
     async function loadTerms() {
       if (!meta.taxonomy_category) return;
       const { data, error } = await supabase
-        .from("taxonomy_terms")
-        .select("id,name")
+        .from("indicator_taxonomy_links")
+        .select("taxonomy_id:id, taxonomy_name:name, category_id")
         .eq("category_id", meta.taxonomy_category)
-        .order("name");
-      if (!error && data) setTerms(data);
+        .order("taxonomy_name");
+      if (!error && data)
+        setTerms(
+          data.map((d: any) => ({
+            id: d.taxonomy_id,
+            name: d.taxonomy_name,
+            category_id: d.category_id,
+          }))
+        );
     }
     loadTerms();
   }, [meta.taxonomy_category]);
 
-  // -----------------------------
   // 3️⃣ Fetch indicators filtered by taxonomy
-  // -----------------------------
   useEffect(() => {
     async function loadIndicators() {
       setLoading(true);
-      let query = supabase.from("indicator_catalogue").select("id,name,topic");
-
-      // if taxonomy term is selected, limit by it
+      let q = supabase.from("indicator_catalogue").select("id,name");
       if (meta.taxonomy_term_id) {
-        query = query
-          .eq("topic", meta.taxonomy_category)
-          .eq("id", meta.taxonomy_term_id);
+        q = q.eq("id", meta.taxonomy_term_id);
       } else if (meta.taxonomy_category) {
-        query = query.eq("topic", meta.taxonomy_category);
+        const { data: linkData, error: linkErr } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("indicator_id")
+          .eq("category_id", meta.taxonomy_category);
+        if (linkErr || !linkData) {
+          setLoading(false);
+          return;
+        }
+        const ids = linkData.map((r) => r.indicator_id);
+        q = q.in("id", ids);
       }
-
-      const { data, error } = await query.order("name");
+      const { data, error } = await q.order("name");
       if (!error && data) setIndicators(data);
       setLoading(false);
     }
     loadIndicators();
   }, [meta.taxonomy_category, meta.taxonomy_term_id]);
 
-  function handleCategoryChange(e: any) {
-    const id = e.target.value;
+  // 4️⃣ Handlers
+  const handleCategoryChange = (e: any) => {
+    const val = e.target.value;
     setMeta((m: any) => ({
       ...m,
-      taxonomy_category: id,
+      taxonomy_category: val,
       taxonomy_term_id: "",
       indicator_id: "",
     }));
-  }
+  };
 
-  function handleTermChange(e: any) {
-    const id = e.target.value;
+  const handleTermChange = (e: any) => {
+    const val = e.target.value;
     setMeta((m: any) => ({
       ...m,
-      taxonomy_term_id: id,
+      taxonomy_term_id: val,
       indicator_id: "",
     }));
-  }
+  };
 
-  function handleIndicatorChange(e: any) {
-    const id = e.target.value;
-    setMeta((m: any) => ({ ...m, indicator_id: id }));
-  }
+  const handleIndicatorChange = (e: any) => {
+    const val = e.target.value;
+    setMeta((m: any) => ({
+      ...m,
+      indicator_id: val,
+    }));
+  };
 
   return (
     <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
@@ -107,8 +116,7 @@ export default function Step3Indicator({
         Step 3 – Assign Indicator & Taxonomy
       </h2>
       <p className="text-sm mb-4">
-        Choose a taxonomy category, term, and indicator to associate this
-        dataset with.
+        Choose a taxonomy category, term, and indicator to associate this dataset with.
       </p>
 
       <div className="grid md:grid-cols-2 gap-4">
