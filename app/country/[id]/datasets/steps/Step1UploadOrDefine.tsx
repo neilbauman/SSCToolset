@@ -8,6 +8,7 @@ type Step1Props = {
   countryIso: string;
   file: File | null;
   setFile: (f: File | null) => void;
+  parseCsv: (f: File) => Promise<any>;   // ✅ ADD THIS LINE
   parsed: any;
   setParsed: (p: any) => void;
   meta: any;
