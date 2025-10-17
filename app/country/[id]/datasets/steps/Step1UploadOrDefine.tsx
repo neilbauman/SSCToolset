@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 export default function Step1UploadOrDefine({
   countryIso,
@@ -24,6 +25,8 @@ export default function Step1UploadOrDefine({
   next: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -33,6 +36,44 @@ export default function Step1UploadOrDefine({
     const result = await parseCsv(f);
     setParsed(result);
     setUploading(false);
+  }
+
+  async function handleContinue() {
+    try {
+      setCreating(true);
+      setMessage(null);
+
+      const payload = {
+        country_iso: countryIso,
+        title: meta.title || "Untitled dataset",
+        dataset_type: meta.dataset_type,
+        admin_level: meta.admin_level,
+        data_format: meta.data_format,
+        year: meta.year || null,
+        unit: meta.unit || null,
+        source_name: meta.source_name || null,
+        source_url: meta.source_url || null,
+        created_at: new Date().toISOString(),
+      };
+
+      // Insert or upsert dataset metadata
+      const { data, error } = await supabase
+        .from("datasets")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      if (!data?.id) throw new Error("Failed to create dataset metadata.");
+
+      setMeta({ ...meta, id: data.id });
+      next();
+    } catch (err: any) {
+      console.error(err);
+      setMessage(err.message || "Failed to create dataset metadata.");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -165,27 +206,29 @@ export default function Step1UploadOrDefine({
         </label>
 
         <label className="text-sm">
-          Join Field (from admin level)
+          Join Field
           <input
             className="border rounded p-2 w-full bg-gray-100"
-            value={meta.join_field || "admin_pcode"}
+            value="admin_pcode"
             disabled
           />
         </label>
       </div>
 
+      {message && <p className="text-red-700 mt-3 text-sm">{message}</p>}
+
       <div className="flex justify-end mt-4">
         <button
-          onClick={next}
-          disabled={!parsed?.rows?.length}
+          onClick={handleContinue}
+          disabled={creating}
           className="px-4 py-2 rounded text-white"
           style={{
-            background: parsed?.rows?.length
-              ? "var(--gsc-blue)"
-              : "var(--gsc-light-gray)",
+            background: creating
+              ? "var(--gsc-light-gray)"
+              : "var(--gsc-blue)",
           }}
         >
-          Continue →
+          {creating ? "Saving..." : "Continue →"}
         </button>
       </div>
     </div>
