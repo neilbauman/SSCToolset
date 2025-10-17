@@ -3,17 +3,7 @@
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function Step4Save({
-  meta,
-  parsed,
-  back,
-  onClose,
-}: {
-  meta: any;
-  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
-  back: () => void;
-  onClose: () => void;
-}) {
+export default function Step4Save({ meta, parsed, back, onClose }: any) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -24,13 +14,13 @@ export default function Step4Save({
 
       if (!meta?.id) throw new Error("Missing dataset metadata ID.");
 
-      // 🟦 Gradient Dataset
+      // 🟦 GRADIENT DATASET
       if (meta.dataset_type === "gradient") {
         const joinField = meta.join_field || "admin_pcode";
         const valueField =
           meta.value_field || parsed?.headers.find((h) => h !== joinField);
         const rows =
-          parsed?.rows.map((r) => ({
+          parsed?.rows.map((r: any) => ({
             dataset_id: meta.id,
             admin_pcode: r[joinField],
             admin_level: meta.admin_level,
@@ -48,7 +38,7 @@ export default function Step4Save({
         }
       }
 
-      // 🟨 Categorical Dataset
+      // 🟨 CATEGORICAL DATASET
       if (meta.dataset_type === "categorical") {
         const joinField = meta.join_field || "admin_pcode";
         const categoryCols: string[] = meta.category_fields || [];
@@ -56,7 +46,7 @@ export default function Step4Save({
           throw new Error("No category columns selected.");
 
         const rows: any[] = [];
-        parsed?.rows.forEach((r) => {
+        parsed?.rows.forEach((r: any) => {
           categoryCols.forEach((col) => {
             const num = Number(r[col]);
             rows.push({
@@ -70,9 +60,7 @@ export default function Step4Save({
           });
         });
 
-        const clean = rows.filter(
-          (r) => r.admin_pcode && r.category_code && r.category_label
-        );
+        const clean = rows.filter((r) => r.admin_pcode && r.category_label);
         if (clean.length) {
           const { error } = await supabase
             .from("dataset_values_cat")
@@ -81,7 +69,7 @@ export default function Step4Save({
         }
       }
 
-      // 🟥 ADM0 Dataset
+      // 🟥 ADM0 DATASET
       if (meta.dataset_type === "adm0") {
         const v = Number(meta.value_field ?? null);
         const row = {
@@ -95,19 +83,17 @@ export default function Step4Save({
         if (error) throw error;
       }
 
-      // 🧩 Link Dataset → Indicator
+      // 🧩 LINK TO INDICATOR
       if (meta.indicator_id) {
-        const link = {
-          indicator_id: meta.indicator_id,
-          dataset_id: meta.id,
-        };
         const { error } = await supabase
           .from("indicator_dataset_links")
-          .insert(link);
+          .insert({
+            indicator_id: meta.indicator_id,
+            dataset_id: meta.id,
+          });
         if (error) throw error;
       }
 
-      // ✅ Success
       setMessage("✅ Dataset successfully saved.");
     } catch (e: any) {
       console.error(e);
