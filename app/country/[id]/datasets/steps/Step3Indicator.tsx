@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type Indicator = { id: string; name: string; code: string; unit: string | null; data_type: string | null };
+type Indicator = {
+  id: string;
+  name: string;
+  code: string;
+  unit: string | null;
+  data_type: string | null;
+};
 
 export default function Step3Indicator({
   meta,
@@ -20,31 +26,36 @@ export default function Step3Indicator({
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [terms, setTerms] = useState<{ id: string; name: string; category: string | null }[]>([]);
+  const [links, setLinks] = useState<{ indicator_id: string; taxonomy_id: string }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedTermId, setSelectedTermId] = useState<string>("");
   const [q, setQ] = useState("");
 
-  // load terms and indicators; filtering is client-side
   useEffect(() => {
     (async () => {
       setLoading(true);
 
-      // taxonomy categories & terms
       const { data: termsData } = await supabase
         .from("taxonomy_terms")
         .select("id,name,category")
         .order("category", { ascending: true });
 
-      const cats = Array.from(new Set((termsData ?? []).map((t) => t.category || "").filter(Boolean))) as string[];
+      const cats = Array.from(
+        new Set((termsData ?? []).map((t) => t.category || "").filter(Boolean))
+      ) as string[];
       setCategories(cats);
       setTerms((termsData ?? []) as any[]);
 
-      // indicators (full list)
       const { data: ind } = await supabase
         .from("indicators")
         .select("id,name,code,unit,data_type")
         .order("name", { ascending: true });
       setIndicators((ind ?? []) as Indicator[]);
+
+      const { data: linkData } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("indicator_id,taxonomy_id");
+      setLinks(linkData ?? []);
 
       setLoading(false);
     })();
@@ -52,15 +63,34 @@ export default function Step3Indicator({
 
   const filteredIndicators = useMemo(() => {
     let list = indicators;
-    // apply category/term filters by intersecting with indicator_taxonomy_links
-    // (we’ll fetch a set of indicator_ids that match the selected term/category)
-    // If neither category nor term set, just filter by q.
 
-    // If a term is selected, we want only indicators linked to that term ID.
-    // If only a category is selected, find term IDs of that category and keep indicators linked to any of them.
-    // To avoid extra round-trips, we’ll do a lazy server filter only when filters are set.
-    return list.filter((it) => it.name.toLowerCase().includes(q.toLowerCase()));
-  }, [indicators, q]);
+    if (selectedTermId) {
+      const allowed = new Set(
+        links
+          .filter((l) => l.taxonomy_id === selectedTermId)
+          .map((l) => l.indicator_id)
+      );
+      list = list.filter((it) => allowed.has(it.id));
+    } else if (selectedCategory) {
+      const catTermIds = terms
+        .filter((t) => t.category === selectedCategory)
+        .map((t) => t.id);
+      const allowed = new Set(
+        links
+          .filter((l) => catTermIds.includes(l.taxonomy_id))
+          .map((l) => l.indicator_id)
+      );
+      list = list.filter((it) => allowed.has(it.id));
+    }
+
+    if (q.trim()) {
+      list = list.filter((it) =>
+        it.name.toLowerCase().includes(q.toLowerCase())
+      );
+    }
+
+    return list;
+  }, [indicators, links, terms, selectedCategory, selectedTermId, q]);
 
   const canContinue = !!meta.indicator_id;
 
@@ -68,7 +98,7 @@ export default function Step3Indicator({
     <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
       <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
         <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-3">
-          Step 3 – Choose Indicator (taxonomy filters optional)
+          Step 3 – Choose Indicator
         </h2>
 
         <div className="grid md:grid-cols-3 gap-3 mb-3">
@@ -84,7 +114,9 @@ export default function Step3Indicator({
             >
               <option value="">All</option>
               {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
             </select>
           </label>
@@ -100,7 +132,9 @@ export default function Step3Indicator({
               {terms
                 .filter((t) => !selectedCategory || t.category === selectedCategory)
                 .map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
                 ))}
             </select>
           </label>
@@ -121,7 +155,7 @@ export default function Step3Indicator({
             <div className="p-3 text-gray-500">Loading…</div>
           ) : (
             <table className="min-w-full text-sm">
-              <thead className="bg-[var(--gsc-light-gray)]/50">
+              <thead className="bg-[var(--gsc-light-gray)]/50 sticky top-0">
                 <tr>
                   <th className="px-2 py-1 text-left">Name</th>
                   <th className="px-2 py-1 text-left">Code</th>
@@ -138,7 +172,12 @@ export default function Step3Indicator({
                     <td className="px-2 py-1">
                       <button
                         className="px-2 py-1 rounded text-white"
-                        style={{ background: meta.indicator_id === it.id ? "var(--gsc-green)" : "var(--gsc-blue)" }}
+                        style={{
+                          background:
+                            meta.indicator_id === it.id
+                              ? "var(--gsc-green)"
+                              : "var(--gsc-blue)",
+                        }}
                         onClick={() => setMeta({ ...meta, indicator_id: it.id })}
                       >
                         {meta.indicator_id === it.id ? "Selected" : "Select"}
@@ -148,7 +187,12 @@ export default function Step3Indicator({
                 ))}
                 {filteredIndicators.length === 0 && (
                   <tr>
-                    <td className="px-2 py-2 text-gray-500" colSpan={4}>No indicators match your filters.</td>
+                    <td
+                      className="px-2 py-2 text-gray-500"
+                      colSpan={4}
+                    >
+                      No indicators match your filters.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -158,12 +202,18 @@ export default function Step3Indicator({
       </div>
 
       <div className="flex justify-between">
-        <button onClick={back} className="px-3 py-2 rounded border">Back</button>
+        <button onClick={back} className="px-3 py-2 rounded border">
+          Back
+        </button>
         <button
           onClick={next}
           disabled={!canContinue}
           className="px-4 py-2 rounded text-white"
-          style={{ background: canContinue ? "var(--gsc-blue)" : "var(--gsc-light-gray)" }}
+          style={{
+            background: canContinue
+              ? "var(--gsc-blue)"
+              : "var(--gsc-light-gray)",
+          }}
         >
           Continue
         </button>
