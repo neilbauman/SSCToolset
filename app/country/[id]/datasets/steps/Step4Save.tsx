@@ -115,7 +115,6 @@ export default function Step4Save({
               category_code: null,
               category_label: c,
               category_score: isNaN(num) ? null : num,
-              unit: meta.unit || null,
             });
           });
         });
@@ -169,8 +168,8 @@ export default function Step4Save({
           Step 4 – Save Dataset
         </h2>
         <p className="mb-3">
-          Click <strong>Save</strong> to upload parsed data rows to Supabase. Once
-          saved, this dataset will appear in the catalogue for{" "}
+          Click <strong>Save</strong> to upload parsed data rows to Supabase.
+          Once saved, this dataset will appear in the catalogue for{" "}
           <strong>{meta.country_iso}</strong>.
         </p>
         {msg && (
