@@ -26,9 +26,7 @@ export default function Step4Save({
       setSaving(true);
       setMessage(null);
 
-      // -----------------------------
-      // 1️⃣ Prepare and insert rows
-      // -----------------------------
+      // 🌐 Insert rows
       if (meta.dataset_type === "adm0") {
         const valueNum = Number(parsed?.rows?.[0]?.[meta.value_field] ?? NaN);
         const v = isNaN(valueNum) ? null : valueNum;
@@ -41,9 +39,12 @@ export default function Step4Save({
         };
         const { error } = await supabase.from("dataset_values").insert(row);
         if (error) throw error;
-      } else if (meta.dataset_type === "gradient") {
+      }
+
+      if (meta.dataset_type === "gradient") {
         const joinField = meta.join_field || "admin_pcode";
-        const valueField = meta.value_field || "value";
+        const valueField =
+          meta.value_field || parsed?.headers.find((h) => h !== joinField);
         const rows =
           parsed?.rows.map((r) => ({
             dataset_id: meta.id,
@@ -61,7 +62,9 @@ export default function Step4Save({
             .insert(clean);
           if (error) throw error;
         }
-      } else if (meta.dataset_type === "categorical") {
+      }
+
+      if (meta.dataset_type === "categorical") {
         const joinField = meta.join_field || "admin_pcode";
         const categoryCols: string[] = meta.category_fields || [];
         if (!categoryCols.length)
@@ -93,9 +96,7 @@ export default function Step4Save({
         }
       }
 
-      // -----------------------------
-      // 2️⃣ Link to indicator
-      // -----------------------------
+      // 🔗 Link to indicator
       if (meta.indicator_id) {
         const link = {
           indicator_id: meta.indicator_id,
@@ -105,18 +106,30 @@ export default function Step4Save({
           .from("indicator_dataset_links")
           .upsert(link, { onConflict: "indicator_id,dataset_id" });
         if (linkErr) console.warn("Failed to link indicator:", linkErr);
+
+        // 🌐 inherit taxonomy (category + term)
+        const { data: indicatorData } = await supabase
+          .from("indicator_taxonomy_links")
+          .select("taxonomy_id, category_id")
+          .eq("indicator_id", meta.indicator_id)
+          .single();
+
+        if (indicatorData) {
+          await supabase
+            .from("dataset_metadata")
+            .update({
+              taxonomy_term_id: indicatorData.taxonomy_id,
+              taxonomy_category: indicatorData.category_id,
+            })
+            .eq("id", meta.id);
+        }
       }
 
-      // -----------------------------
-      // 3️⃣ Done
-      // -----------------------------
       setMessage("✅ Dataset successfully saved.");
       setTimeout(() => onClose(), 1200);
     } catch (e: any) {
       console.error(e);
-      setMessage(
-        e.message || "Failed to save dataset. Check console for details."
-      );
+      setMessage(e.message || "Failed to save dataset.");
     } finally {
       setSaving(false);
     }
