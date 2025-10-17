@@ -3,7 +3,19 @@ import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, CheckCircle2 } from "lucide-react";
 
-export default function Step4Save({ meta, parsed, back, onClose }: any) {
+type ParsedRow = Record<string, string | number | null>;
+
+export default function Step4Save({
+  meta,
+  parsed,
+  back,
+  onClose,
+}: {
+  meta: any;
+  parsed: { headers: string[]; rows: ParsedRow[] } | null;
+  back: () => void;
+  onClose: () => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [msg, setMsg] = useState("");
@@ -39,10 +51,9 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
 
       const datasetId = await ensureMetaId();
       const joinField = meta.join_field_csv || meta.join_field || "admin_pcode";
-
       let insertedCount = 0;
 
-      // ADM0 (single value)
+      // ADM0 SINGLE VALUE
       if (!parsed && meta.admin_level === "ADM0") {
         const val = Number(meta.adm0_value);
         const { error } = await supabase.from("dataset_values").insert({
@@ -56,39 +67,50 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
         insertedCount = 1;
       }
 
-      // GRADIENT
+      // GRADIENT DATASETS
       if (parsed && meta.dataset_type === "gradient") {
-        const valCol = meta.category_columns?.[0] || meta.value_field;
-        const rows =
-          parsed.rows?.map((r: any) => ({
-            dataset_id: datasetId,
-            admin_pcode: r[joinField],
-            admin_level: meta.admin_level,
-            value: Number(String(r[valCol] ?? "").replace(/,/g, "")),
-            unit: meta.unit || null,
-          })) || [];
-        const clean = rows.filter((r) => r.admin_pcode && !isNaN(r.value));
+        const valCol =
+          meta.category_columns?.[0] ||
+          meta.value_field ||
+          parsed.headers.find((h) => h.toLowerCase().includes("value")) ||
+          parsed.headers[1];
+
+        const rows = (parsed.rows || []).map((r: ParsedRow) => ({
+          dataset_id: datasetId,
+          admin_pcode: String(r[joinField] ?? "").trim(),
+          admin_level: meta.admin_level,
+          value: Number(String(r[valCol] ?? "").replace(/,/g, "")),
+          unit: meta.unit || null,
+        }));
+
+        const clean = rows.filter(
+          (r: any) => r.admin_pcode && !isNaN(r.value)
+        );
+
         if (clean.length) {
-          const { error } = await supabase.from("dataset_values").insert(clean);
+          const { error } = await supabase
+            .from("dataset_values")
+            .insert(clean);
           if (error) throw error;
           insertedCount = clean.length;
         }
       }
 
-      // CATEGORICAL
+      // CATEGORICAL DATASETS
       if (parsed && meta.dataset_type === "categorical") {
         const join = joinField;
         const cats =
           meta.category_columns ||
           parsed.headers.filter((h: string) => h !== join);
+
         const rows: any[] = [];
-        parsed.rows.forEach((r: Record<string, string>) => {
+        parsed.rows.forEach((r: ParsedRow) => {
           cats.forEach((c: string) => {
             const raw = String(r[c] ?? "").trim();
             const num = Number(raw.replace(/,/g, ""));
             rows.push({
               dataset_id: datasetId,
-              admin_pcode: r[join],
+              admin_pcode: String(r[join] ?? "").trim(),
               admin_level: meta.admin_level,
               category_code: null,
               category_label: c,
@@ -97,6 +119,7 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
             });
           });
         });
+
         const valid = rows.filter((r) => r.admin_pcode);
         if (valid.length) {
           const { error } = await supabase
@@ -107,14 +130,14 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
         }
       }
 
-      // Update record count
+      // UPDATE RECORD COUNT
       await supabase
         .from("dataset_metadata")
         .update({ record_count: insertedCount })
         .eq("id", datasetId);
 
       setDone(true);
-      setMsg(`Saved ${insertedCount} records.`);
+      setMsg(`Saved ${insertedCount} records successfully.`);
     } catch (e: any) {
       console.error(e);
       setMsg(e.message || "Save failed.");
@@ -153,7 +176,7 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
         {msg && (
           <div
             className={`text-sm ${
-              msg.includes("failed") || msg.includes("error")
+              msg.includes("fail") || msg.includes("error")
                 ? "text-[var(--gsc-red)]"
                 : "text-[var(--gsc-green)]"
             }`}
