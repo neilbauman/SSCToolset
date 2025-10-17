@@ -378,13 +378,28 @@ export default function CountryDatasetsPage() {
         <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
           {selected.title}
         </h3>
-        <p className="text-sm text-gray-600">
+
+        {/* Indicator name directly under dataset title */}
+        {selected.indicator_id && (
+          <p className="text-sm text-gray-700 italic">
+            {tax[selected.indicator_id]?.term
+              ? `${tax[selected.indicator_id]?.term}`
+              : "Linked Indicator"}{" "}
+            ({tax[selected.indicator_id]?.category || "—"})
+          </p>
+        )}
+
+        {/* Metadata row: indicator link + admin level + record stats */}
+        <p className="text-sm text-gray-600 mt-1">
           {selected.indicator_id
-            ? `Linked Indicator: ${tax[selected.indicator_id]?.term || "—"}`
+            ? `Linked Indicator: ${tax[selected.indicator_id]?.category || "—"}`
             : "No linked indicator"}
           {" · "}Admin Level: {selected.admin_level ?? "—"}
+          {" · "}Records: {selected.record_count ?? "—"}
         </p>
       </div>
+
+      {/* Data Health panel */}
       <div className="min-w-[180px]">
         <h4 className="text-sm font-semibold mb-1 text-gray-700">
           Data Health
@@ -395,7 +410,7 @@ export default function CountryDatasetsPage() {
       </div>
     </div>
 
-    {/* --- Existing dataset preview panel --- */}
+    {/* --- Existing dataset preview --- */}
     <DatasetPreview
       datasetId={selected.id}
       datasetType={
@@ -405,7 +420,6 @@ export default function CountryDatasetsPage() {
     />
   </div>
 )}
-
       {adding && (
         <AddDatasetModal
           open={adding}
