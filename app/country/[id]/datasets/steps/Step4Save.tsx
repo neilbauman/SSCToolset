@@ -87,7 +87,7 @@ export default function Step4Save({ meta, parsed, back, onClose }: Step4SaveProp
               admin_level: meta.admin_level,
               category_code: col.toLowerCase().replace(/\s+/g, "_"),
               category_label: col,
-              category_score: isNaN(num) ? null : num,
+              category_score: isNaN(num) ? null : (num as number | null),
             });
           });
         });
