@@ -4,9 +4,19 @@ import { useState, useEffect, useMemo } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Layers, Upload, Edit3, Trash2, Search, Loader2 } from "lucide-react";
+import {
+  Layers,
+  Upload,
+  Edit3,
+  Trash2,
+  Search,
+  Loader2,
+} from "lucide-react";
 import AddDatasetModal from "@/components/country/AddDatasetModal";
+import DatasetPreview from "@/components/country/DatasetPreview";
 import type { CountryParams } from "@/app/country/types";
+
+type Country = { iso_code: string; name: string };
 
 type DatasetMeta = {
   id: string;
@@ -21,8 +31,6 @@ type DatasetMeta = {
   record_count: number | null;
   created_at: string;
 };
-
-type Country = { iso_code: string; name: string };
 
 export default function DatasetsPage({ params }: { params: CountryParams }) {
   const { id: countryIso } = params;
@@ -61,8 +69,8 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         source_name,
         taxonomy_category,
         taxonomy_term,
-        created_at,
-        record_count
+        record_count,
+        created_at
       `
       )
       .eq("country_iso", countryIso)
@@ -94,11 +102,18 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
     );
   }, [searchTerm, datasets]);
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this dataset?")) return;
+    await supabase.from("dataset_metadata").delete().eq("id", id);
+    await loadDatasets();
+    setSelected(null);
+  };
+
   const headerProps = {
     title: `${country?.name ?? countryIso} – Datasets`,
     group: "country-config" as const,
     description:
-      "Catalogue of uploaded raw datasets for this country. Each dataset can be previewed, edited, or joined with indicators.",
+      "Catalogue of raw datasets for this country. Select a row to preview the uploaded data below.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -109,12 +124,6 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
         ]}
       />
     ),
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this dataset?")) return;
-    await supabase.from("dataset_metadata").delete().eq("id", id);
-    await loadDatasets();
   };
 
   return (
@@ -172,7 +181,7 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
                 <tr
                   key={d.id}
                   onClick={() => setSelected(d)}
-                  className={`border-t hover:bg-gray-50 ${
+                  className={`border-t hover:bg-gray-50 cursor-pointer ${
                     selected?.id === d.id ? "bg-blue-50" : ""
                   }`}
                 >
@@ -224,6 +233,12 @@ export default function DatasetsPage({ params }: { params: CountryParams }) {
           </p>
         )}
       </div>
+
+      {selected && (
+        <div className="mt-4">
+          <DatasetPreview datasetId={selected.id} datasetType={selected.dataset_type} />
+        </div>
+      )}
 
       {openAdd && (
         <AddDatasetModal
