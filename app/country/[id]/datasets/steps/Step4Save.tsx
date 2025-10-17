@@ -5,6 +5,14 @@ import { Loader2, CheckCircle2 } from "lucide-react";
 
 type ParsedRow = Record<string, string | number | null>;
 
+// Helper to make category_code from label
+function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 export default function Step4Save({
   meta,
   parsed,
@@ -112,7 +120,7 @@ export default function Step4Save({
               dataset_id: datasetId,
               admin_pcode: String(r[join] ?? "").trim(),
               admin_level: meta.admin_level,
-              category_code: null,
+              category_code: slugify(c),
               category_label: c,
               category_score: isNaN(num) ? null : num,
             });
