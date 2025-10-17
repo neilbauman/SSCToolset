@@ -3,17 +3,14 @@
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type WizardMeta = any;
-type Parsed = { headers: string[]; rows: Record<string, string>[] };
-
 export default function Step4Save({
   meta,
   parsed,
   back,
   onClose,
 }: {
-  meta: WizardMeta;
-  parsed: Parsed | null;
+  meta: any;
+  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
   back: () => void;
   onClose: () => void;
 }) {
@@ -22,94 +19,71 @@ export default function Step4Save({
 
   async function handleSave() {
     try {
+      if (!meta?.id) {
+        setMessage("Missing dataset metadata ID.");
+        return;
+      }
       setSaving(true);
       setMessage(null);
 
-      if (!meta?.id) throw new Error("Missing dataset metadata ID.");
-      const id = meta.id as string;
-
-      // --- ADM0 datasets ----------------------------------------------------
+      // -----------------------------
+      // 1️⃣ Prepare and insert rows
+      // -----------------------------
       if (meta.dataset_type === "adm0") {
-        const valueNum = Number(String(meta.adm0Value ?? "").replace(/,/g, ""));
+        const valueNum = Number(parsed?.rows?.[0]?.[meta.value_field] ?? NaN);
         const v = isNaN(valueNum) ? null : valueNum;
         const row = {
-          dataset_id: id,
+          dataset_id: meta.id,
           admin_pcode: "ADM0",
+          admin_level: "ADM0",
           value: v,
           unit: meta.unit || null,
-          admin_level: "ADM0",
         };
         const { error } = await supabase.from("dataset_values").insert(row);
         if (error) throw error;
-        setMessage("Saved ADM0 dataset successfully.");
-        return;
-      }
-
-      // --- Gradient datasets -----------------------------------------------
-      if (meta.dataset_type === "gradient" && parsed) {
-        const joinKey = meta.join_field || parsed.headers[0];
-        const otherCols = parsed.headers.filter((h) => h !== joinKey);
-
-        // Find the first numeric-like column
-        const testRow = parsed.rows[0] || {};
-        const numericCol =
-          otherCols.find((h) => !isNaN(Number(testRow[h]))) || otherCols[0];
-
-        if (!numericCol)
-          throw new Error("No numeric column found for gradient dataset.");
-
-        const rows = parsed.rows.map((r) => {
-          const val = Number(r[numericCol]);
-          return {
-            dataset_id: id,
-            admin_pcode: r[joinKey],
+      } else if (meta.dataset_type === "gradient") {
+        const joinField = meta.join_field || "admin_pcode";
+        const valueField = meta.value_field || "value";
+        const rows =
+          parsed?.rows.map((r) => ({
+            dataset_id: meta.id,
+            admin_pcode: r[joinField],
             admin_level: meta.admin_level,
-            value: isNaN(val) ? null : val,
+            value: Number(r[valueField]) || null,
             unit: meta.unit || null,
-          };
-        });
-
+          })) || [];
         const clean = rows.filter(
-          (r) => r.admin_pcode && r.value !== null && !isNaN(Number(r.value))
+          (r) => r.admin_pcode && typeof r.value === "number"
         );
-        if (!clean.length)
-          throw new Error("No valid numeric rows found for gradient dataset.");
+        if (clean.length) {
+          const { error } = await supabase
+            .from("dataset_values")
+            .insert(clean);
+          if (error) throw error;
+        }
+      } else if (meta.dataset_type === "categorical") {
+        const joinField = meta.join_field || "admin_pcode";
+        const categoryCols: string[] = meta.category_fields || [];
+        if (!categoryCols.length)
+          throw new Error("No category columns selected.");
 
-        const { error } = await supabase
-          .from("dataset_values")
-          .insert(clean as any);
-        if (error) throw error;
-
-        setMessage(`Saved ${clean.length} gradient rows.`);
-        return;
-      }
-
-      // --- Categorical datasets --------------------------------------------
-      if (meta.dataset_type === "categorical" && parsed) {
-        const joinKey = meta.join_field || parsed.headers[0];
-        const categoryCols = parsed.headers.filter((h) => h !== joinKey);
-
-        let catRows: any[] = [];
-
-        parsed.rows.forEach((r) => {
-          categoryCols.forEach((col: string) => {
-            const v = r[col];
-            const num = v === "" ? null : Number(v);
-            catRows.push(
-              ({
-                dataset_id: id,
-                admin_pcode: r[joinKey],
-                admin_level: meta.admin_level,
-                category_code: col.toLowerCase().replace(/\s+/g, "_"),
-                category_label: col,
-                category_score: isNaN(num as any) ? null : num,
-              } as any)
-            );
+        const rows: any[] = [];
+        parsed?.rows.forEach((r) => {
+          categoryCols.forEach((col) => {
+            const num = Number(r[col]);
+            rows.push({
+              dataset_id: meta.id,
+              admin_pcode: r[joinField],
+              admin_level: meta.admin_level,
+              category_code: col.toLowerCase().replace(/\s+/g, "_"),
+              category_label: col,
+              category_score: isNaN(num) ? null : num,
+            });
           });
         });
 
-        const clean = catRows.filter(
-          (r) => r.admin_pcode && r.category_label && r.category_code
+        const clean = rows.filter(
+          (r) => r.admin_pcode && r.category_code && r.category_label
         );
         if (clean.length) {
           const { error } = await supabase
@@ -117,67 +91,93 @@ export default function Step4Save({
             .insert(clean);
           if (error) throw error;
         }
-
-        setMessage(`Saved ${clean.length} categorical rows.`);
-        return;
       }
 
-      throw new Error("Unsupported dataset type or missing parsed data.");
-    } catch (err: any) {
-      console.error(err);
-      setMessage(err.message || "Failed to save dataset.");
+      // -----------------------------
+      // 2️⃣ Link to indicator
+      // -----------------------------
+      if (meta.indicator_id) {
+        const link = {
+          indicator_id: meta.indicator_id,
+          dataset_id: meta.id,
+        };
+        const { error: linkErr } = await supabase
+          .from("indicator_dataset_links")
+          .upsert(link, { onConflict: "indicator_id,dataset_id" });
+        if (linkErr) console.warn("Failed to link indicator:", linkErr);
+      }
+
+      // -----------------------------
+      // 3️⃣ Done
+      // -----------------------------
+      setMessage("✅ Dataset successfully saved.");
+      setTimeout(() => onClose(), 1200);
+    } catch (e: any) {
+      console.error(e);
+      setMessage(
+        e.message || "Failed to save dataset. Check console for details."
+      );
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
-      <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
-          Step 4 – Save Dataset
-        </h2>
-        <p className="text-sm mb-3">
-          Click <strong>Save</strong> to upload parsed data rows to Supabase.
-          Once saved, this dataset will appear in the catalogue for{" "}
-          <strong>{meta.country_iso}</strong>.
-        </p>
+    <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
+      <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
+        Step 4 – Save Dataset
+      </h2>
+      <p className="text-sm mb-4">
+        Click <strong>Save</strong> to upload parsed data rows to Supabase. Once
+        saved, this dataset will appear in the catalogue for{" "}
+        <strong>{meta.country_iso}</strong>.
+      </p>
 
-        {message && (
-          <div
-            className="mt-2 text-sm"
-            style={{
-              color: message.includes("Failed") || message.includes("Error")
-                ? "var(--gsc-red)"
-                : "var(--gsc-green)",
-            }}
-          >
-            {message}
-          </div>
-        )}
-      </div>
-
-      <div className="flex justify-between items-center">
+      <div className="flex justify-end gap-2">
         <button
           onClick={back}
-          className="px-4 py-2 rounded border border-gray-300"
+          className="px-3 py-2 rounded border border-gray-400"
         >
           Back
         </button>
-
         <button
-          onClick={handleSave}
           disabled={saving}
+          onClick={handleSave}
           className="px-4 py-2 rounded text-white"
           style={{
-            background: saving
-              ? "var(--gsc-light-gray)"
-              : "var(--gsc-blue)",
+            background: saving ? "var(--gsc-light-gray)" : "var(--gsc-blue)",
           }}
         >
           {saving ? "Saving…" : "Save Dataset"}
         </button>
       </div>
+
+      {message && (
+        <div
+          className="mt-4 text-sm"
+          style={{
+            color: message.includes("✅")
+              ? "var(--gsc-green)"
+              : message.includes("Missing")
+              ? "var(--gsc-green)"
+              : "var(--gsc-red)",
+          }}
+        >
+          {message}
+        </div>
+      )}
+
+      {message?.includes("✅") && (
+        <div className="flex justify-end mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded text-white"
+            style={{ background: "var(--gsc-blue)" }}
+          >
+            Close
+          </button>
+        </div>
+      )}
     </div>
   );
 }
