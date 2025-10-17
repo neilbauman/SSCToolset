@@ -263,41 +263,44 @@ export default function CountryDatasetsPage() {
         ),
       }}
     >
-      {/* ------------------------------------- */}
-      {/* Search + Add button header */}
-      {/* ------------------------------------- */}
-      <div
-        className="rounded-xl p-3 flex items-center justify-between"
-        style={{
-          background: "var(--gsc-beige)",
-          border: "1px solid var(--gsc-light-gray)",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <div className="text-sm text-[var(--gsc-gray)]">
-            <span className="font-semibold">{filtered.length}</span> datasets
-          </div>
-          <div className="relative ml-4">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search title, type, format, source, taxonomy…"
-              className="rounded-lg border px-8 py-1 text-sm"
-              style={{ borderColor: "var(--gsc-light-gray)" }}
-            />
-            <Search className="absolute left-2 top-1.5 h-4 w-4 text-gray-400" />
-          </div>
-        </div>
-        <button
-          onClick={() => setAdding(true)}
-          className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-white"
-          style={{ background: "var(--gsc-red)" }}
-        >
-          <PlusCircle className="h-4 w-4" />
-          Add Dataset
-        </button>
-      </div>
+   {/* ------------------------------------- */}
+{/* Section Title + Search + Add Button */}
+{/* ------------------------------------- */}
+<h2 className="text-xl font-bold text-[color:var(--gsc-red)] mb-2 mt-4">
+  Other Datasets
+</h2>
 
+<div
+  className="rounded-xl p-3 flex items-center justify-between"
+  style={{
+    background: "var(--gsc-beige)",
+    border: "1px solid var(--gsc-light-gray)",
+  }}
+>
+  <div className="flex items-center gap-2">
+    <div className="text-sm text-[var(--gsc-gray)]">
+      <span className="font-semibold">{filtered.length}</span> datasets
+    </div>
+    <div className="relative ml-4">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search title, type, format, source, taxonomy…"
+        className="rounded-lg border px-8 py-1 text-sm"
+        style={{ borderColor: "var(--gsc-light-gray)" }}
+      />
+      <Search className="absolute left-2 top-1.5 h-4 w-4 text-gray-400" />
+    </div>
+  </div>
+  <button
+    onClick={() => setAdding(true)}
+    className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-white"
+    style={{ background: "var(--gsc-red)" }}
+  >
+    <PlusCircle className="h-4 w-4" />
+    Add Dataset
+  </button>
+</div>
       {/* ------------------------------------- */}
       {/* Table */}
       {/* ------------------------------------- */}
