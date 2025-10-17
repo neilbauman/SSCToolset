@@ -1,72 +1,37 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
-type Parsed = { headers?: string[]; rows?: Record<string, string>[] } | null;
+import { useState, useMemo } from "react";
 
 export default function Step2PreviewAndMap({
+  parsed,
   meta,
   setMeta,
-  parsed,
   back,
   next,
 }: {
+  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
   meta: any;
   setMeta: (m: any) => void;
-  parsed: Parsed;
   back: () => void;
   next: () => void;
 }) {
-  const headers = parsed?.headers ?? [];
-  const rows = parsed?.rows ?? [];
+  const [selectedJoin, setSelectedJoin] = useState<string>("");
+  const [selectedCols, setSelectedCols] = useState<string[]>([]);
 
-  // heuristics: guess join field, guess value field (first numeric-ish), and category fields (for categorical)
-  const numericish = (v: string) => {
-    if (v == null) return false;
-    const x = String(v).replace(/,/g, "").trim();
-    if (x === "") return false;
-    return !isNaN(Number(x));
-  };
+  const headers = parsed?.headers || [];
+  const preview = useMemo(() => parsed?.rows?.slice(0, 10) || [], [parsed]);
 
-  const sample = rows.slice(0, 20);
-  const defaultJoin = useMemo(() => {
-    const candidates = headers.filter((h) => /pcode|code|admin/i.test(h));
-    return candidates[0] || headers[0] || "";
-  }, [headers]);
-
-  const defaultValueField = useMemo(() => {
-    // pick first column where majority of sample values are numeric-like
-    for (const h of headers) {
-      const ok = sample.filter((r) => numericish(r[h])).length;
-      if (ok >= Math.max(3, Math.ceil(sample.length * 0.6))) return h;
-    }
-    return "";
-  }, [headers, sample]);
-
-  const [joinField, setJoinField] = useState<string>(meta.join_field || defaultJoin);
-  const [valueField, setValueField] = useState<string>(meta.value_field || defaultValueField);
-  const [categoryFields, setCategoryFields] = useState<string[]>(meta.category_fields || []);
-
-  const isAdm0 = meta.admin_level === "ADM0" && !rows.length; // ADM0 single-value path
-  const isCategorical = meta.dataset_type === "categorical";
-  const isGradient = meta.dataset_type === "gradient";
-
-  function toggleCategory(h: string) {
-    setCategoryFields((prev) => (prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]));
+  function toggleColumn(h: string) {
+    setSelectedCols((prev) =>
+      prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]
+    );
   }
 
-  function proceed() {
-    // basic validation
-    if (!isAdm0) {
-      if (!joinField) return alert("Select a join (PCode) field.");
-      if (isGradient && !valueField) return alert("Select a value field for gradient datasets.");
-      if (isCategorical && categoryFields.length === 0) return alert("Select at least one category column.");
-    }
+  function handleContinue() {
     setMeta({
       ...meta,
-      join_field: joinField,
-      value_field: isGradient ? valueField : "",
-      category_fields: isCategorical ? categoryFields : [],
+      join_field_csv: selectedJoin,
+      category_columns: selectedCols,
     });
     next();
   }
@@ -74,101 +39,91 @@ export default function Step2PreviewAndMap({
   return (
     <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
       <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">Step 2 – Preview & Map</h2>
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
+          Step 2 – Preview and Mapping
+        </h2>
+        <p className="mb-4">
+          Match the <strong>{meta.join_field}</strong> field from the admin level
+          to your CSV join column. Then select columns that contain numeric or
+          percentage values.
+        </p>
 
-        {isAdm0 ? (
-          <div className="text-sm">ADM0 single-value dataset. No file mapping needed.</div>
-        ) : (
-          <>
-            {/* Join field */}
-            <div className="grid md:grid-cols-3 gap-3 mb-4">
-              <label className="text-sm md:col-span-1">Join Field (PCode)
-                <select className="border rounded p-2 w-full mt-1" value={joinField} onChange={(e) => setJoinField(e.target.value)}>
-                  <option value="">Select…</option>
-                  {headers.map((h: string) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
+        <div className="grid md:grid-cols-2 gap-3 mb-3">
+          <label className="text-sm">
+            Join Field (Pcode)
+            <select
+              className="border rounded p-2 w-full"
+              value={selectedJoin}
+              onChange={(e) => setSelectedJoin(e.target.value)}
+            >
+              <option value="">Select CSV column…</option>
+              {headers.map((h) => (
+                <option key={h}>{h}</option>
+              ))}
+            </select>
+          </label>
+          <div className="text-xs text-gray-500 flex items-end">
+            Target key from admin level: <span className="ml-1 font-medium">{meta.join_field}</span>
+          </div>
+        </div>
+
+        <div className="max-h-[55vh] overflow-auto border rounded p-2 bg-white mb-3">
+          <div className="mb-2 font-medium">Category Columns</div>
+          <div className="grid grid-cols-3 gap-x-4 gap-y-1 mb-3">
+            {headers.map((h) => (
+              <label key={h} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selectedCols.includes(h)}
+                  onChange={() => toggleColumn(h)}
+                />
+                {h}
               </label>
+            ))}
+          </div>
 
-              {/* Gradient */}
-              {isGradient && (
-                <label className="text-sm md:col-span-1">Value Field
-                  <select className="border rounded p-2 w-full mt-1" value={valueField} onChange={(e) => setValueField(e.target.value)}>
-                    <option value="">Select…</option>
-                    {headers.map((h: string) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {/* Categorical */}
-              {isCategorical && (
-                <div className="text-sm md:col-span-2">
-                  <div className="font-medium mb-1">Category Columns</div>
-                  <div className="flex flex-wrap gap-2">
-                    {headers.map((h: string) => (
-                      <label key={h} className="inline-flex items-center gap-1 border rounded px-2 py-1 bg-white">
-                        <input type="checkbox" checked={categoryFields.includes(h)} onChange={() => toggleCategory(h)} />
-                        <span>{h}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="text-xs mt-1 text-gray-500">
-                    Non-numeric columns will be stored with <em>NULL</em> category_score; numeric values will be parsed.
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Preview table */}
-            <div className="rounded-xl border overflow-auto bg-white">
-              <table className="min-w-full text-sm">
-                <thead className="bg-[var(--gsc-light-gray)]/50">
-                  <tr>
-                    {headers.map((h: string) => (
-                      <th key={h} className="px-2 py-1 border-b text-left font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.slice(0, 20).map((r, i) => (
-                    <tr key={i} className="odd:bg-[var(--gsc-beige)]/40">
-                      {headers.map((h: string) => (
-                        <td key={h} className="px-2 py-1 border-b">
-                          {r[h] ?? ""}
-                        </td>
-                      ))}
-                    </tr>
+          <table className="min-w-full text-xs border-t">
+            <thead className="bg-[var(--gsc-light-gray)]/40 sticky top-0">
+              <tr>
+                {headers.map((h) => (
+                  <th key={h} className="px-2 py-1 border-b text-left font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {preview.map((r, i) => (
+                <tr key={i} className="border-b">
+                  {headers.map((h) => (
+                    <td key={h} className="px-2 py-1">
+                      {r[h]}
+                    </td>
                   ))}
-                  {rows.length === 0 && (
-                    <tr>
-                      <td className="px-2 py-2 text-gray-500" colSpan={headers.length || 1}>
-                        No rows to preview.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </div>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <div className="flex justify-between">
-        <button onClick={back} className="px-3 py-2 rounded border">
-          Back
-        </button>
-        <button onClick={proceed} className="px-4 py-2 rounded text-white" style={{ background: "var(--gsc-blue)" }}>
-          Continue →
-        </button>
+        <div className="sticky bottom-0 bg-[var(--gsc-beige)] border-t pt-3 flex justify-between">
+          <button onClick={back} className="px-3 py-2 rounded border">
+            Back
+          </button>
+          <button
+            onClick={handleContinue}
+            disabled={!selectedJoin || selectedCols.length === 0}
+            className="px-4 py-2 rounded text-white"
+            style={{
+              background:
+                !selectedJoin || selectedCols.length === 0
+                  ? "var(--gsc-light-gray)"
+                  : "var(--gsc-blue)",
+            }}
+          >
+            Continue →
+          </button>
+        </div>
       </div>
     </div>
   );
