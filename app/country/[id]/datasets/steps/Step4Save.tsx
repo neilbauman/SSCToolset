@@ -82,7 +82,7 @@ export default function Step4Save({
 
       // 🟥 ADM0 DATASET
       if (meta.dataset_type === "adm0") {
-        const v = Number(meta.value_field ?? null);
+        const v = Number(meta.adm0_value ?? meta.value_field ?? null);
         const row = {
           dataset_id: meta.id,
           admin_pcode: "ADM0",
