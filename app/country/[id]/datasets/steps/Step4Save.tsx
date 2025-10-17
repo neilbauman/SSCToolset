@@ -2,188 +2,87 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-// simple inline UUID generator – avoids external dependency
-const uuidv4 = () =>
-  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
 
-export default function Step4Save({
-  meta,
-  parsed,
-  back,
-  onClose,
-}: {
-  meta: any;
-  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
-  back: () => void;
-  onClose: () => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+export default function Step4Save({ meta, parsed, back, onClose }: any) {
+  const [status, setStatus] = useState("");
 
   async function handleSave() {
-    try {
-      setSaving(true);
-      setMessage(null);
-
-      if (!meta?.id) throw new Error("Missing dataset metadata ID.");
-
-      // 🟦 GRADIENT DATASET
-      if (meta.dataset_type === "gradient") {
-        const joinField = meta.join_field || "admin_pcode";
-        const valueField =
-          meta.value_field ||
-          (parsed?.headers.find((h: string) => h !== joinField) as string);
-
-        const rows =
-          parsed?.rows.map((r: Record<string, string>) => ({
-            id: uuidv4(),
-            dataset_id: meta.id,
-            admin_pcode: r[joinField],
-            admin_level: meta.admin_level,
-            value: Number(r[valueField]) || null,
-            unit: meta.unit || null,
-            notes: null,
-          })) || [];
-
-        const clean = rows.filter(
-          (r) => r.admin_pcode && typeof r.value === "number"
-        );
-
-        if (clean.length) {
-          const { error } = await supabase.from("dataset_values").insert(clean);
-          if (error) throw error;
-          setMessage(`✅ Inserted ${clean.length} gradient rows.`);
-        } else {
-          setMessage("⚠ No valid rows to insert (check join or value fields).");
-        }
-      }
-
-      // 🟨 CATEGORICAL DATASET
-      if (meta.dataset_type === "categorical") {
-        const joinField = meta.join_field || "admin_pcode";
-        const categoryCols: string[] = meta.category_fields || [];
-        if (!categoryCols.length)
-          throw new Error("No category columns selected.");
-
-        const rows: any[] = [];
-        parsed?.rows.forEach((r: Record<string, string>) => {
-          categoryCols.forEach((col) => {
-            const num = Number(r[col]);
-            rows.push({
-              id: uuidv4(),
-              dataset_id: meta.id,
-              admin_pcode: r[joinField],
-              admin_level: meta.admin_level,
-              category_label: col,
-              value: isNaN(num) ? null : num,
-              unit: meta.unit || null,
-              notes: null,
-            });
-          });
-        });
-
-        const clean = rows.filter((r) => r.admin_pcode && r.category_label);
-        if (clean.length) {
-          const { error } = await supabase
-            .from("dataset_values_cat")
-            .insert(clean);
-          if (error) throw error;
-          setMessage(`✅ Inserted ${clean.length} categorical rows.`);
-        } else {
-          setMessage("⚠ No valid categorical rows to insert.");
-        }
-      }
-
-      // 🟥 ADM0 DATASET
-      if (meta.dataset_type === "adm0") {
-        const v = Number(meta.adm0_value ?? meta.value_field ?? null);
-        const row = {
-          id: uuidv4(),
-          dataset_id: meta.id,
-          admin_pcode: "ADM0",
-          admin_level: "ADM0",
-          value: v,
-          unit: meta.unit || null,
-          notes: null,
-        };
-        const { error } = await supabase.from("dataset_values").insert(row);
-        if (error) throw error;
-        setMessage("✅ ADM0 value saved.");
-      }
-
-      // 🧩 LINK TO INDICATOR
-      if (meta.indicator_id) {
-        const { error } = await supabase
-          .from("indicator_dataset_links")
-          .insert({
-            indicator_id: meta.indicator_id,
-            dataset_id: meta.id,
-          });
-        if (error) throw error;
-      }
-
-      if (!message) setMessage("✅ Dataset successfully saved.");
-    } catch (e: any) {
-      console.error(e);
-      setMessage(e.message || "Failed to save dataset.");
-    } finally {
-      setSaving(false);
+    if (!meta?.id) {
+      setStatus("Missing dataset metadata ID.");
+      return;
     }
+
+    const rows =
+      parsed?.rows?.map((r: any) => ({
+        id: crypto.randomUUID(),
+        dataset_id: meta.id,
+        admin_pcode: r[meta.join_field],
+        value: r[meta.value_field] ? Number(r[meta.value_field]) : null,
+        admin_level: meta.admin_level,
+        category_label: meta.title,
+      })) || [];
+
+    if (rows.length === 0) {
+      setStatus("No data rows to insert.");
+      return;
+    }
+
+    console.log("🔍 Prepared rows for insert:", rows.slice(0, 3));
+
+    const { error } = await supabase.from("dataset_values").insert(rows);
+    if (error) {
+      console.error(error);
+      setStatus(`❌ ${error.message}`);
+      return;
+    }
+
+    // link taxonomy + indicator
+    if (meta.indicator_id) {
+      await supabase.from("indicator_dataset_links").insert({
+        indicator_id: meta.indicator_id,
+        dataset_id: meta.id,
+      });
+    }
+
+    setStatus("✅ Dataset successfully saved.");
   }
 
   return (
-    <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
-      <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-2">
+    <div className="text-sm flex flex-col gap-4">
+      <h2 className="text-base font-semibold text-[var(--gsc-blue)]">
         Step 4 – Save Dataset
       </h2>
-      <p className="text-sm mb-4">
-        Click <strong>Save</strong> to upload parsed data rows to Supabase. Once
-        saved, this dataset will appear in the catalogue for{" "}
-        <strong>{meta.country_iso}</strong>.
+      <p>
+        Click <b>Save</b> to upload parsed data rows to Supabase. Once saved, this dataset will appear in the catalogue for{" "}
+        <b>{meta.country_iso}</b>.
       </p>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex gap-3">
         <button
-          onClick={back}
-          disabled={saving}
-          className="px-3 py-2 rounded border border-gray-400"
-        >
-          Back
-        </button>
-        <button
-          disabled={saving}
           onClick={handleSave}
-          className="px-4 py-2 rounded text-white"
-          style={{
-            background: saving ? "var(--gsc-light-gray)" : "var(--gsc-blue)",
-          }}
+          className="px-4 py-2 rounded bg-[var(--gsc-blue)] text-white"
         >
-          {saving ? "Saving..." : "Save Dataset"}
+          Save Dataset
+        </button>
+        <button onClick={back} className="px-4 py-2 rounded border">
+          ← Back
+        </button>
+        <button onClick={onClose} className="px-4 py-2 rounded border">
+          Close
         </button>
       </div>
 
-      {message && (
+      {status && (
         <div
-          className={`mt-4 text-sm ${
-            message.includes("✅") ? "text-green-700" : "text-red-700"
+          className={`p-2 rounded ${
+            status.includes("✅")
+              ? "bg-green-50 text-green-600"
+              : status.includes("❌")
+              ? "bg-red-50 text-red-600"
+              : "bg-yellow-50 text-gray-600"
           }`}
         >
-          {message}
-        </div>
-      )}
-
-      {message?.includes("✅") && (
-        <div className="flex justify-end mt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded text-white bg-[var(--gsc-blue)]"
-          >
-            Close
-          </button>
+          {status}
         </div>
       )}
     </div>
