@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { v4 as uuidv4 } from "uuid";
+// simple inline UUID generator – avoids external dependency
+const uuidv4 = () =>
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 
 export default function Step4Save({
   meta,
