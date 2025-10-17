@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { v4 as uuidv4 } from "uuid";
 
 export default function Step4Save({
   meta,
@@ -30,13 +31,16 @@ export default function Step4Save({
         const valueField =
           meta.value_field ||
           (parsed?.headers.find((h: string) => h !== joinField) as string);
+
         const rows =
           parsed?.rows.map((r: Record<string, string>) => ({
+            id: uuidv4(),
             dataset_id: meta.id,
             admin_pcode: r[joinField],
             admin_level: meta.admin_level,
             value: Number(r[valueField]) || null,
             unit: meta.unit || null,
+            notes: null,
           })) || [];
 
         const clean = rows.filter(
@@ -46,6 +50,9 @@ export default function Step4Save({
         if (clean.length) {
           const { error } = await supabase.from("dataset_values").insert(clean);
           if (error) throw error;
+          setMessage(`✅ Inserted ${clean.length} gradient rows.`);
+        } else {
+          setMessage("⚠ No valid rows to insert (check join or value fields).");
         }
       }
 
@@ -61,12 +68,14 @@ export default function Step4Save({
           categoryCols.forEach((col) => {
             const num = Number(r[col]);
             rows.push({
+              id: uuidv4(),
               dataset_id: meta.id,
               admin_pcode: r[joinField],
               admin_level: meta.admin_level,
-              category_code: col.toLowerCase().replace(/\s+/g, "_"),
               category_label: col,
-              category_score: isNaN(num) ? null : num,
+              value: isNaN(num) ? null : num,
+              unit: meta.unit || null,
+              notes: null,
             });
           });
         });
@@ -77,6 +86,9 @@ export default function Step4Save({
             .from("dataset_values_cat")
             .insert(clean);
           if (error) throw error;
+          setMessage(`✅ Inserted ${clean.length} categorical rows.`);
+        } else {
+          setMessage("⚠ No valid categorical rows to insert.");
         }
       }
 
@@ -84,14 +96,17 @@ export default function Step4Save({
       if (meta.dataset_type === "adm0") {
         const v = Number(meta.adm0_value ?? meta.value_field ?? null);
         const row = {
+          id: uuidv4(),
           dataset_id: meta.id,
           admin_pcode: "ADM0",
           admin_level: "ADM0",
           value: v,
           unit: meta.unit || null,
+          notes: null,
         };
         const { error } = await supabase.from("dataset_values").insert(row);
         if (error) throw error;
+        setMessage("✅ ADM0 value saved.");
       }
 
       // 🧩 LINK TO INDICATOR
@@ -105,7 +120,7 @@ export default function Step4Save({
         if (error) throw error;
       }
 
-      setMessage("✅ Dataset successfully saved.");
+      if (!message) setMessage("✅ Dataset successfully saved.");
     } catch (e: any) {
       console.error(e);
       setMessage(e.message || "Failed to save dataset.");
@@ -121,7 +136,7 @@ export default function Step4Save({
       </h2>
       <p className="text-sm mb-4">
         Click <strong>Save</strong> to upload parsed data rows to Supabase. Once
-        saved, this dataset will appear in the dataset catalogue for{" "}
+        saved, this dataset will appear in the catalogue for{" "}
         <strong>{meta.country_iso}</strong>.
       </p>
 
