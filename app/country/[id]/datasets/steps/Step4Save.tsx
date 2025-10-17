@@ -48,10 +48,18 @@ export default function Step4Save({
       // --- Gradient datasets -----------------------------------------------
       if (meta.dataset_type === "gradient" && parsed) {
         const joinKey = meta.join_field || parsed.headers[0];
-        const valueCols = parsed.headers.filter((h) => h !== joinKey);
+        const otherCols = parsed.headers.filter((h) => h !== joinKey);
+
+        // Find the first numeric-like column
+        const testRow = parsed.rows[0] || {};
+        const numericCol =
+          otherCols.find((h) => !isNaN(Number(testRow[h]))) || otherCols[0];
+
+        if (!numericCol)
+          throw new Error("No numeric column found for gradient dataset.");
 
         const rows = parsed.rows.map((r) => {
-          const val = Number(r[valueCols[0]]);
+          const val = Number(r[numericCol]);
           return {
             dataset_id: id,
             admin_pcode: r[joinKey],
@@ -64,12 +72,14 @@ export default function Step4Save({
         const clean = rows.filter(
           (r) => r.admin_pcode && r.value !== null && !isNaN(Number(r.value))
         );
-        if (clean.length) {
-          const { error } = await supabase
-            .from("dataset_values")
-            .insert(clean);
-          if (error) throw error;
-        }
+        if (!clean.length)
+          throw new Error("No valid numeric rows found for gradient dataset.");
+
+        const { error } = await supabase
+          .from("dataset_values")
+          .insert(clean as any);
+        if (error) throw error;
+
         setMessage(`Saved ${clean.length} gradient rows.`);
         return;
       }
@@ -85,7 +95,6 @@ export default function Step4Save({
           categoryCols.forEach((col: string) => {
             const v = r[col];
             const num = v === "" ? null : Number(v);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             catRows.push(
               ({
                 dataset_id: id,
