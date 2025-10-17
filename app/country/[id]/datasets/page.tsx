@@ -388,7 +388,10 @@ export default function CountryDatasetsPage() {
             border: "1px solid var(--gsc-light-gray)",
           }}
         >
-          <DatasetPreview datasetId={selected.id} datasetType={selected.dataset_type} />
+          <DatasetPreview
+  datasetId={selected.id}
+  datasetType={(selected.dataset_type as "adm0" | "gradient" | "categorical") || "gradient"}
+/>
         </div>
       )}
 
