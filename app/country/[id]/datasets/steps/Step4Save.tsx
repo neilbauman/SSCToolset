@@ -26,21 +26,7 @@ export default function Step4Save({
       setSaving(true);
       setMessage(null);
 
-      // 🌐 Insert rows
-      if (meta.dataset_type === "adm0") {
-        const valueNum = Number(parsed?.rows?.[0]?.[meta.value_field] ?? NaN);
-        const v = isNaN(valueNum) ? null : valueNum;
-        const row = {
-          dataset_id: meta.id,
-          admin_pcode: "ADM0",
-          admin_level: "ADM0",
-          value: v,
-          unit: meta.unit || null,
-        };
-        const { error } = await supabase.from("dataset_values").insert(row);
-        if (error) throw error;
-      }
-
+      // 🧩 1️⃣ Save rows based on dataset type
       if (meta.dataset_type === "gradient") {
         const joinField = meta.join_field || "admin_pcode";
         const valueField =
@@ -57,9 +43,7 @@ export default function Step4Save({
           (r) => r.admin_pcode && typeof r.value === "number"
         );
         if (clean.length) {
-          const { error } = await supabase
-            .from("dataset_values")
-            .insert(clean);
+          const { error } = await supabase.from("dataset_values").insert(clean);
           if (error) throw error;
         }
       }
@@ -96,33 +80,29 @@ export default function Step4Save({
         }
       }
 
-      // 🔗 Link to indicator
+      if (meta.dataset_type === "adm0") {
+        const v = Number(meta.value_field ?? null);
+        const row = {
+          dataset_id: meta.id,
+          admin_pcode: "ADM0",
+          admin_level: "ADM0",
+          value: v,
+          unit: meta.unit || null,
+        };
+        const { error } = await supabase.from("dataset_values").insert(row);
+        if (error) throw error;
+      }
+
+      // 🧩 2️⃣ Link dataset to indicator
       if (meta.indicator_id) {
         const link = {
           indicator_id: meta.indicator_id,
           dataset_id: meta.id,
         };
-        const { error: linkErr } = await supabase
+        const { error } = await supabase
           .from("indicator_dataset_links")
           .upsert(link, { onConflict: "indicator_id,dataset_id" });
-        if (linkErr) console.warn("Failed to link indicator:", linkErr);
-
-        // 🌐 inherit taxonomy (category + term)
-        const { data: indicatorData } = await supabase
-          .from("indicator_taxonomy_links")
-          .select("taxonomy_id, category_id")
-          .eq("indicator_id", meta.indicator_id)
-          .single();
-
-        if (indicatorData) {
-          await supabase
-            .from("dataset_metadata")
-            .update({
-              taxonomy_term_id: indicatorData.taxonomy_id,
-              taxonomy_category: indicatorData.category_id,
-            })
-            .eq("id", meta.id);
-        }
+        if (error) throw error;
       }
 
       setMessage("✅ Dataset successfully saved.");
@@ -171,24 +151,10 @@ export default function Step4Save({
           style={{
             color: message.includes("✅")
               ? "var(--gsc-green)"
-              : message.includes("Missing")
-              ? "var(--gsc-green)"
               : "var(--gsc-red)",
           }}
         >
           {message}
-        </div>
-      )}
-
-      {message?.includes("✅") && (
-        <div className="flex justify-end mt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded text-white"
-            style={{ background: "var(--gsc-blue)" }}
-          >
-            Close
-          </button>
         </div>
       )}
     </div>
