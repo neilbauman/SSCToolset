@@ -3,100 +3,63 @@
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function Step3Indicator({
-  meta,
-  setMeta,
-  back,
-  next,
-}: {
-  meta: any;
-  setMeta: (m: any) => void;
-  back: () => void;
-  next: () => void;
-}) {
+export default function Step3Indicator({ meta, setMeta, back, next }: any) {
   const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [terms, setTerms] = useState<{ id: string; name: string }[]>([]);
   const [indicators, setIndicators] = useState<{ id: string; name: string }[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  // 1️⃣ Load indicator categories (high-level groups)
   useEffect(() => {
     async function loadCategories() {
-      const { data, error } = await supabase
-        .from("indicator_categories")
-        .select("name")
-        .order("category_order");
-      if (!error && data) setCategories(data);
+      const { data } = await supabase
+        .from("taxonomy_terms")
+        .select("category")
+        .not("category", "is", null);
+      if (data) {
+        const unique = [...new Set(data.map((d) => d.category))].sort();
+        setCategories(unique.map((c) => ({ name: c })));
+      }
     }
     loadCategories();
   }, []);
 
-  // 2️⃣ Load taxonomy terms for the selected category
   useEffect(() => {
     async function loadTerms() {
       if (!meta.taxonomy_category) return;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("taxonomy_terms")
         .select("id,name,category")
         .eq("category", meta.taxonomy_category)
-        .order("sort_order", { ascending: true });
-      if (!error && data) setTerms(data);
+        .order("name");
+      if (data) setTerms(data);
     }
     loadTerms();
   }, [meta.taxonomy_category]);
 
-  // 3️⃣ Load indicators filtered by selected term
   useEffect(() => {
     async function loadIndicators() {
-      setLoading(true);
-      let q = supabase.from("indicator_catalogue").select("id,name").order("name");
-      if (meta.taxonomy_term_id) {
-        // find indicator_ids from indicator_taxonomy_links
-        const { data: links, error: linkErr } = await supabase
-          .from("indicator_taxonomy_links")
-          .select("indicator_id")
-          .eq("taxonomy_id", meta.taxonomy_term_id);
-        if (linkErr || !links?.length) {
-          setIndicators([]);
-          setLoading(false);
-          return;
-        }
-        const ids = links.map((l: any) => l.indicator_id);
-        q = q.in("id", ids);
+      if (!meta.taxonomy_term_id) {
+        const { data } = await supabase
+          .from("indicator_catalogue")
+          .select("id,name")
+          .order("name");
+        if (data) setIndicators(data);
+        return;
       }
-      const { data, error } = await q;
-      if (!error && data) setIndicators(data);
-      setLoading(false);
+      const { data: links } = await supabase
+        .from("indicator_taxonomy_links")
+        .select("indicator_id")
+        .eq("taxonomy_id", meta.taxonomy_term_id);
+      const ids = links?.map((l) => l.indicator_id) || [];
+      if (!ids.length) return setIndicators([]);
+      const { data } = await supabase
+        .from("indicator_catalogue")
+        .select("id,name")
+        .in("id", ids)
+        .order("name");
+      if (data) setIndicators(data);
     }
     loadIndicators();
   }, [meta.taxonomy_term_id]);
-
-  function handleCategoryChange(e: any) {
-    const val = e.target.value;
-    setMeta((m: any) => ({
-      ...m,
-      taxonomy_category: val,
-      taxonomy_term_id: "",
-      indicator_id: "",
-    }));
-  }
-
-  function handleTermChange(e: any) {
-    const val = e.target.value;
-    setMeta((m: any) => ({
-      ...m,
-      taxonomy_term_id: val,
-      indicator_id: "",
-    }));
-  }
-
-  function handleIndicatorChange(e: any) {
-    const val = e.target.value;
-    setMeta((m: any) => ({
-      ...m,
-      indicator_id: val,
-    }));
-  }
 
   return (
     <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
@@ -113,9 +76,11 @@ export default function Step3Indicator({
           <select
             className="border rounded p-2 w-full"
             value={meta.taxonomy_category}
-            onChange={handleCategoryChange}
+            onChange={(e) =>
+              setMeta({ ...meta, taxonomy_category: e.target.value, taxonomy_term_id: "" })
+            }
           >
-            <option value="">Select category…</option>
+            <option value="">Select category...</option>
             {categories.map((c) => (
               <option key={c.name} value={c.name}>
                 {c.name}
@@ -129,10 +94,11 @@ export default function Step3Indicator({
           <select
             className="border rounded p-2 w-full"
             value={meta.taxonomy_term_id}
-            onChange={handleTermChange}
-            disabled={!meta.taxonomy_category}
+            onChange={(e) =>
+              setMeta({ ...meta, taxonomy_term_id: e.target.value, indicator_id: "" })
+            }
           >
-            <option value="">Select term…</option>
+            <option value="">Select term...</option>
             {terms.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -146,10 +112,9 @@ export default function Step3Indicator({
           <select
             className="border rounded p-2 w-full"
             value={meta.indicator_id}
-            onChange={handleIndicatorChange}
-            disabled={loading}
+            onChange={(e) => setMeta({ ...meta, indicator_id: e.target.value })}
           >
-            <option value="">Select indicator…</option>
+            <option value="">Select indicator...</option>
             {indicators.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.name}
@@ -159,11 +124,8 @@ export default function Step3Indicator({
         </label>
       </div>
 
-      <div className="flex justify-end gap-2 pt-5">
-        <button
-          onClick={back}
-          className="px-3 py-2 rounded border border-gray-400"
-        >
+      <div className="flex justify-end gap-2 mt-4">
+        <button onClick={back} className="px-3 py-2 rounded border border-gray-400">
           Back
         </button>
         <button
