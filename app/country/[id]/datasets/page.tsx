@@ -388,7 +388,7 @@ export default function CountryDatasetsPage() {
             border: "1px solid var(--gsc-light-gray)",
           }}
         >
-          <DatasetPreview dataset={selected} />
+          <DatasetPreview datasetId={selected.id} datasetType={selected.dataset_type} />
         </div>
       )}
 
