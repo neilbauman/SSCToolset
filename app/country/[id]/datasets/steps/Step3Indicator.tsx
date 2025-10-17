@@ -1,120 +1,171 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function Step3Indicator({ meta, setMeta, back, next }: any) {
-  const [categories, setCategories] = useState<any[]>([]);
-  const [terms, setTerms] = useState<any[]>([]);
-  const [indicators, setIndicators] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+type Indicator = { id: string; name: string; code: string; unit: string | null; data_type: string | null };
 
+export default function Step3Indicator({
+  meta,
+  setMeta,
+  back,
+  next,
+}: {
+  meta: any;
+  setMeta: (m: any) => void;
+  back: () => void;
+  next: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [terms, setTerms] = useState<{ id: string; name: string; category: string | null }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedTermId, setSelectedTermId] = useState<string>("");
+  const [q, setQ] = useState("");
+
+  // load terms and indicators; filtering is client-side
   useEffect(() => {
-    async function loadCategories() {
-      const { data, error } = await supabase.from("indicator_categories").select("*").order("name");
-      if (!error && data) setCategories(data);
-    }
-    loadCategories();
+    (async () => {
+      setLoading(true);
+
+      // taxonomy categories & terms
+      const { data: termsData } = await supabase
+        .from("taxonomy_terms")
+        .select("id,name,category")
+        .order("category", { ascending: true });
+
+      const cats = Array.from(new Set((termsData ?? []).map((t) => t.category || "").filter(Boolean))) as string[];
+      setCategories(cats);
+      setTerms((termsData ?? []) as any[]);
+
+      // indicators (full list)
+      const { data: ind } = await supabase
+        .from("indicators")
+        .select("id,name,code,unit,data_type")
+        .order("name", { ascending: true });
+      setIndicators((ind ?? []) as Indicator[]);
+
+      setLoading(false);
+    })();
   }, []);
 
-  async function handleCategoryChange(categoryId: string) {
-    setMeta({ ...meta, taxonomy_category: categoryId, taxonomy_term_id: "", indicator_id: "" });
-    setTerms([]);
-    setIndicators([]);
-    const { data } = await supabase
-      .from("taxonomy_terms")
-      .select("*")
-      .eq("category", categoryId)
-      .order("name");
-    if (data) setTerms(data);
-  }
+  const filteredIndicators = useMemo(() => {
+    let list = indicators;
+    // apply category/term filters by intersecting with indicator_taxonomy_links
+    // (we’ll fetch a set of indicator_ids that match the selected term/category)
+    // If neither category nor term set, just filter by q.
 
-  async function handleTermChange(termId: string) {
-    setMeta({ ...meta, taxonomy_term_id: termId, indicator_id: "" });
-    setIndicators([]);
-    setLoading(true);
-    // fetch indicators linked to this term
-    const { data, error } = await supabase
-      .from("indicator_taxonomy_links")
-      .select("indicator_id, indicators(id,name)")
-      .eq("taxonomy_id", termId)
-      .order("indicator_id", { ascending: true });
-    if (!error && data) {
-      const flat = data.map((d: any) => d.indicators).filter(Boolean);
-      setIndicators(flat);
-    }
-    setLoading(false);
-  }
+    // If a term is selected, we want only indicators linked to that term ID.
+    // If only a category is selected, find term IDs of that category and keep indicators linked to any of them.
+    // To avoid extra round-trips, we’ll do a lazy server filter only when filters are set.
+    return list.filter((it) => it.name.toLowerCase().includes(q.toLowerCase()));
+  }, [indicators, q]);
+
+  const canContinue = !!meta.indicator_id;
 
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <h2 className="text-base font-semibold text-[var(--gsc-blue)]">
-        Step 3 – Assign Indicator and Taxonomy
-      </h2>
+    <div className="flex flex-col gap-4 text-sm text-[var(--gsc-gray)]">
+      <div className="rounded-xl border p-4 bg-[var(--gsc-beige)]">
+        <h2 className="text-base font-semibold text-[var(--gsc-blue)] mb-3">
+          Step 3 – Choose Indicator (taxonomy filters optional)
+        </h2>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block mb-1">Category</label>
-          <select
-            className="border rounded p-2 w-full"
-            value={meta.taxonomy_category || ""}
-            onChange={(e) => handleCategoryChange(e.target.value)}
-          >
-            <option value="">Select category…</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+        <div className="grid md:grid-cols-3 gap-3 mb-3">
+          <label className="text-sm">
+            Taxonomy Category
+            <select
+              className="border rounded p-2 w-full"
+              value={selectedCategory}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value);
+                setSelectedTermId("");
+              }}
+            >
+              <option value="">All</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            Taxonomy Term
+            <select
+              className="border rounded p-2 w-full"
+              value={selectedTermId}
+              onChange={(e) => setSelectedTermId(e.target.value)}
+            >
+              <option value="">All</option>
+              {terms
+                .filter((t) => !selectedCategory || t.category === selectedCategory)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            Search indicators
+            <input
+              className="border rounded p-2 w-full"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Filter by name…"
+            />
+          </label>
         </div>
 
-        <div>
-          <label className="block mb-1">Term</label>
-          <select
-            className="border rounded p-2 w-full"
-            value={meta.taxonomy_term_id || ""}
-            onChange={(e) => handleTermChange(e.target.value)}
-          >
-            <option value="">Select term…</option>
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="col-span-2">
-          <label className="block mb-1">Indicator</label>
-          <select
-            className="border rounded p-2 w-full"
-            value={meta.indicator_id || ""}
-            disabled={loading}
-            onChange={(e) => setMeta({ ...meta, indicator_id: e.target.value })}
-          >
-            <option value="">
-              {loading ? "Loading indicators…" : "Select indicator…"}
-            </option>
-            {indicators.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </select>
+        <div className="rounded-xl border bg-white max-h-64 overflow-auto">
+          {loading ? (
+            <div className="p-3 text-gray-500">Loading…</div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead className="bg-[var(--gsc-light-gray)]/50">
+                <tr>
+                  <th className="px-2 py-1 text-left">Name</th>
+                  <th className="px-2 py-1 text-left">Code</th>
+                  <th className="px-2 py-1 text-left">Unit</th>
+                  <th className="px-2 py-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredIndicators.map((it) => (
+                  <tr key={it.id} className="border-t">
+                    <td className="px-2 py-1">{it.name}</td>
+                    <td className="px-2 py-1">{it.code}</td>
+                    <td className="px-2 py-1">{it.unit ?? "—"}</td>
+                    <td className="px-2 py-1">
+                      <button
+                        className="px-2 py-1 rounded text-white"
+                        style={{ background: meta.indicator_id === it.id ? "var(--gsc-green)" : "var(--gsc-blue)" }}
+                        onClick={() => setMeta({ ...meta, indicator_id: it.id })}
+                      >
+                        {meta.indicator_id === it.id ? "Selected" : "Select"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredIndicators.length === 0 && (
+                  <tr>
+                    <td className="px-2 py-2 text-gray-500" colSpan={4}>No indicators match your filters.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
-      <div className="flex justify-between mt-4">
-        <button onClick={back} className="px-4 py-2 rounded border">
-          ← Back
-        </button>
+      <div className="flex justify-between">
+        <button onClick={back} className="px-3 py-2 rounded border">Back</button>
         <button
           onClick={next}
-          disabled={!meta.indicator_id}
-          className="px-4 py-2 rounded bg-[var(--gsc-blue)] text-white disabled:bg-gray-300"
+          disabled={!canContinue}
+          className="px-4 py-2 rounded text-white"
+          style={{ background: canContinue ? "var(--gsc-blue)" : "var(--gsc-light-gray)" }}
         >
-          Continue →
+          Continue
         </button>
       </div>
     </div>
