@@ -363,23 +363,47 @@ export default function CountryDatasetsPage() {
         </table>
       </div>
 
-      {selected && (
-        <div
-          className="rounded-xl p-4"
-          style={{
-            background: "var(--gsc-beige)",
-            border: "1px solid var(--gsc-light-gray)",
-          }}
-        >
-          <DatasetPreview
-            datasetId={selected.id}
-            datasetType={
-              (selected.dataset_type as "adm0" | "gradient" | "categorical") ||
-              "gradient"
-            }
-          />
+     {selected && (
+  <div
+    className="rounded-xl p-4 space-y-3"
+    style={{
+      background: "var(--gsc-beige)",
+      border: "1px solid var(--gsc-light-gray)",
+    }}
+  >
+    {/* --- Dataset header summary --- */}
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
+      <div>
+        <h3 className="text-lg font-semibold text-[color:var(--gsc-red)]">
+          {selected.title}
+        </h3>
+        <p className="text-sm text-gray-600">
+          {selected.indicator_id
+            ? `Linked Indicator: ${tax[selected.indicator_id]?.term || "—"}`
+            : "No linked indicator"}
+          {" · "}Admin Level: {selected.admin_level ?? "—"}
+        </p>
+      </div>
+      <div className="min-w-[180px]">
+        <h4 className="text-sm font-semibold mb-1 text-gray-700">
+          Data Health
+        </h4>
+        <div className="border rounded-lg bg-white p-2 shadow-sm">
+          <DatasetHealth datasetId={selected.id} />
         </div>
-      )}
+      </div>
+    </div>
+
+    {/* --- Existing dataset preview panel --- */}
+    <DatasetPreview
+      datasetId={selected.id}
+      datasetType={
+        (selected.dataset_type as "adm0" | "gradient" | "categorical") ||
+        "gradient"
+      }
+    />
+  </div>
+)}
 
       {adding && (
         <AddDatasetModal
