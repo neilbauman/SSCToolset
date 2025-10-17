@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function Step4Save({ meta, parsed, back, onClose }: any) {
+export default function Step4Save({
+  meta,
+  parsed,
+  back,
+  onClose,
+}: {
+  meta: any;
+  parsed: { headers: string[]; rows: Record<string, string>[] } | null;
+  back: () => void;
+  onClose: () => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -18,9 +28,10 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
       if (meta.dataset_type === "gradient") {
         const joinField = meta.join_field || "admin_pcode";
         const valueField =
-          meta.value_field || parsed?.headers.find((h) => h !== joinField);
+          meta.value_field ||
+          (parsed?.headers.find((h: string) => h !== joinField) as string);
         const rows =
-          parsed?.rows.map((r: any) => ({
+          parsed?.rows.map((r: Record<string, string>) => ({
             dataset_id: meta.id,
             admin_pcode: r[joinField],
             admin_level: meta.admin_level,
@@ -46,7 +57,7 @@ export default function Step4Save({ meta, parsed, back, onClose }: any) {
           throw new Error("No category columns selected.");
 
         const rows: any[] = [];
-        parsed?.rows.forEach((r: any) => {
+        parsed?.rows.forEach((r: Record<string, string>) => {
           categoryCols.forEach((col) => {
             const num = Number(r[col]);
             rows.push({
