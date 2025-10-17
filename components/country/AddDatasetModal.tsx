@@ -6,10 +6,8 @@ import Step1UploadOrDefine from "@/app/country/[id]/datasets/steps/Step1UploadOr
 import Step2PreviewAndMap from "@/app/country/[id]/datasets/steps/Step2PreviewAndMap";
 import Step3Indicator from "@/app/country/[id]/datasets/steps/Step3Indicator";
 import Step4Save from "@/app/country/[id]/datasets/steps/Step4Save";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2 } from "lucide-react";
 
-type Parsed = { headers: string[]; rows: Record<string, string>[] };
+export type Parsed = { headers: string[]; rows: Record<string, string>[] };
 
 export default function AddDatasetModal({
   open,
@@ -23,34 +21,37 @@ export default function AddDatasetModal({
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<Parsed | null>(null);
-  const [savingMeta, setSavingMeta] = useState(false);
 
   const [meta, setMeta] = useState<any>({
     country_iso: countryIso,
+
+    // Step 1 – required
     title: "",
     admin_level: "ADM0",
-    data_format: "numeric",
-    dataset_type: "",
+    data_format: "numeric", // "numeric" | "percentage" | "text"
+    dataset_type: "",       // "adm0" | "gradient" | "categorical"
     join_field: "admin_pcode",
     year: "",
     unit: "",
     source_name: "",
     source_url: "",
-    value_field: "",
-    category_fields: [],
-    taxonomy_category: "",
-    taxonomy_term_id: "",
-    indicator_id: "",
+
+    // special ADM0 single-value path
+    adm0_value: "",
+
+    // Step 2 – mapping
+    value_field: "",           // gradient only
+    category_fields: [] as string[], // categorical only
+    csv_join_field: "",        // the CSV column that contains the Pcode
+
+    // Step 3 – indicator selection
+    indicator_id: "",          // selected indicator id
   });
 
-  function next() {
-    setStep((s) => Math.min(s + 1, 3));
-  }
-  function back() {
-    setStep((s) => Math.max(s - 1, 0));
-  }
+  function next() { setStep((s) => Math.min(s + 1, 3)); }
+  function back() { setStep((s) => Math.max(s - 1, 0)); }
 
-  function resetAll() {
+  function hardReset() {
     setStep(0);
     setFile(null);
     setParsed(null);
@@ -65,23 +66,18 @@ export default function AddDatasetModal({
       unit: "",
       source_name: "",
       source_url: "",
+      adm0_value: "",
       value_field: "",
       category_fields: [],
-      taxonomy_category: "",
-      taxonomy_term_id: "",
+      csv_join_field: "",
       indicator_id: "",
     });
   }
 
-  function closeModal() {
-    onOpenChange(false);
-    resetAll();
-  }
-
   async function parseCsv(f: File): Promise<Parsed> {
-    const text = await f.text();
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-    if (lines.length === 0) return { headers: [], rows: [] };
+    const text = (await f.text()).replace(/\r/g, "");
+    const lines = text.split("\n").filter((l) => l.trim().length);
+    if (!lines.length) return { headers: [], rows: [] };
     const headers = lines[0].split(",").map((h) => h.trim());
     const rows = lines.slice(1).map((line) => {
       const cells = line.split(",");
@@ -92,49 +88,13 @@ export default function AddDatasetModal({
     return { headers, rows };
   }
 
-  async function handleMetaSave() {
-    if (meta.id) return next(); // already created
-
-    setSavingMeta(true);
-    const { data, error } = await supabase
-      .from("dataset_metadata")
-      .insert([
-        {
-          country_iso: meta.country_iso,
-          title: meta.title || "Untitled dataset",
-          admin_level: meta.admin_level,
-          data_format: meta.data_format,
-          dataset_type: meta.dataset_type,
-          join_field: meta.join_field,
-          year: meta.year ? Number(meta.year) : null,
-          unit: meta.unit || null,
-          source_name: meta.source_name || null,
-          source_url: meta.source_url || null,
-        },
-      ])
-      .select("id")
-      .single();
-
-    setSavingMeta(false);
-
-    if (error) {
-      alert("Error saving dataset metadata: " + error.message);
-      console.error(error);
-      return;
-    }
-
-    if (data?.id) {
-      setMeta({ ...meta, id: data.id });
-      next();
-    }
-  }
+  const closeModal = () => { onOpenChange(false); hardReset(); };
 
   return (
     <Dialog.Root open={open} onOpenChange={(v) => (v ? onOpenChange(v) : closeModal())}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
         <Dialog.Content
-          aria-describedby="dataset-wizard-description"
           className="fixed left-1/2 top-1/2 z-50 w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-xl bg-[var(--gsc-beige)] p-6 shadow-lg focus:outline-none border"
           style={{ borderColor: "var(--gsc-light-gray)" }}
         >
@@ -144,15 +104,10 @@ export default function AddDatasetModal({
             </span>
           </Dialog.Title>
 
-          <p id="dataset-wizard-description" className="sr-only">
-            Modal dialog for uploading and mapping datasets to indicators.
-          </p>
-
           <div className="text-sm mb-4 text-[var(--gsc-gray)]">
             Step {step + 1}/4 • {["Upload / Define", "Preview & Map", "Indicator", "Save"][step]}
           </div>
 
-          {/* ---- Steps ---- */}
           {step === 0 && (
             <Step1UploadOrDefine
               countryIso={countryIso}
@@ -163,29 +118,36 @@ export default function AddDatasetModal({
               setParsed={setParsed}
               meta={meta}
               setMeta={setMeta}
-              next={handleMetaSave}
+              next={next}
             />
           )}
 
           {step === 1 && (
-            <Step2PreviewAndMap meta={meta} setMeta={setMeta} parsed={parsed} back={back} next={next} />
+            <Step2PreviewAndMap
+              meta={meta}
+              setMeta={setMeta}
+              parsed={parsed}
+              back={back}
+              next={next}
+            />
           )}
 
           {step === 2 && (
-            <Step3Indicator meta={meta} setMeta={setMeta} back={back} next={next} />
+            <Step3Indicator
+              meta={meta}
+              setMeta={setMeta}
+              back={back}
+              next={next}
+            />
           )}
 
           {step === 3 && (
-            <Step4Save meta={meta} parsed={parsed} back={back} onClose={closeModal} />
-          )}
-
-          {/* ---- Loader overlay during save ---- */}
-          {savingMeta && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-xl">
-              <div className="flex items-center gap-2 text-[var(--gsc-blue)] font-medium">
-                <Loader2 className="h-5 w-5 animate-spin" /> Saving metadata...
-              </div>
-            </div>
+            <Step4Save
+              meta={meta}
+              parsed={parsed}
+              back={back}
+              onClose={closeModal}
+            />
           )}
         </Dialog.Content>
       </Dialog.Portal>
