@@ -198,7 +198,12 @@ export default function CountryDatasetsPage() {
           tool: "Dataset Manager",
           breadcrumbs: (
             <Breadcrumbs
-              items={[{ label: "Countries", href: "/country" }, { label: "Datasets" }]}
+             items={[
+    { label: "Dashboard", href: "/" },
+    { label: "Country Configuration", href: "/country" },
+    { label: country?.name || id.toUpperCase(), href: `/country/${id}` },
+    { label: "Datasets" },
+  ]}
             />
           ),
         }}
