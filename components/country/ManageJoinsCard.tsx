@@ -1,168 +1,190 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Circle, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-interface ManageJoinsCardProps {
-  countryIso: string;
-  joins: any[];
-}
+import { CheckCircle2, Circle, Database, Link2 } from "lucide-react";
+import Link from "next/link";
 
 /**
- * Displays and manages dataset joins (active/inactive) for a given country.
+ * ManageJoinsCard
+ * Lists and manages dataset joins for a given country.
+ * Displays linked datasets, their taxonomy domains, and allows activating a join.
  */
-export default function ManageJoinsCard({ countryIso, joins }: ManageJoinsCardProps) {
-  const [localJoins, setLocalJoins] = useState<any[]>(joins);
-  const [loading, setLoading] = useState<string | null>(null);
+export default function ManageJoinsCard({ countryIso }: { countryIso: string }) {
+  const [joins, setJoins] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const activateJoin = async (joinId: string) => {
-    try {
-      setLoading(joinId);
-      // deactivate others
-      await supabase
-        .from("dataset_joins")
-        .update({ is_active: false })
-        .eq("country_iso", countryIso);
-
-      // activate target
-      await supabase
-        .from("dataset_joins")
-        .update({ is_active: true })
-        .eq("id", joinId);
-
-      const { data } = await supabase
-        .from("dataset_joins")
-        .select("*")
-        .eq("country_iso", countryIso);
-
-      setLocalJoins(data || []);
-    } catch (err) {
-      console.error("Error activating join:", err);
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const deleteJoin = async (joinId: string) => {
-    if (!confirm("Are you sure you want to delete this join configuration?")) return;
-    try {
-      setLoading(joinId);
-      await supabase.from("dataset_joins").delete().eq("id", joinId);
-      setLocalJoins((prev) => prev.filter((j) => j.id !== joinId));
-    } catch (err) {
-      console.error("Error deleting join:", err);
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const addNewJoin = async () => {
-    try {
-      setLoading("new");
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
       const { data, error } = await supabase
         .from("dataset_joins")
-        .insert({
-          country_iso: countryIso,
-          name: `Join ${new Date().toISOString().split("T")[0]}`,
-          is_active: false,
-          created_at: new Date().toISOString(),
-        })
         .select("*")
-        .single();
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (!error && data) setJoins(data);
+      setLoading(false);
+    };
+    load();
+  }, [countryIso]);
 
-      if (error) throw error;
-      setLocalJoins((prev) => [...prev, data]);
-    } catch (err) {
-      console.error("Error adding join:", err);
-    } finally {
-      setLoading(null);
+  const activateJoin = async (id: string) => {
+    // Set all inactive, then set this one active
+    await supabase
+      .from("dataset_joins")
+      .update({ is_active: false })
+      .eq("country_iso", countryIso);
+    await supabase.from("dataset_joins").update({ is_active: true }).eq("id", id);
+    const { data } = await supabase
+      .from("dataset_joins")
+      .select("*")
+      .eq("country_iso", countryIso)
+      .order("created_at", { ascending: false });
+    setJoins(data || []);
+  };
+
+  if (loading)
+    return <div className="text-gray-500 italic py-2">Loading joins...</div>;
+
+  if (!joins || joins.length === 0)
+    return (
+      <div className="text-gray-500 italic py-2">
+        No dataset joins defined yet.
+      </div>
+    );
+
+  const renderTaxonomyChip = (name: string, category?: string) => {
+    const colors = {
+      Shelter: "bg-blue-100 text-blue-700",
+      Exposure: "bg-yellow-100 text-yellow-700",
+      Vulnerability: "bg-red-100 text-red-700",
+      Infrastructure: "bg-green-100 text-green-700",
+      default: "bg-gray-100 text-gray-700",
+    };
+    const cls =
+      colors[category as keyof typeof colors] ?? colors.default;
+    return (
+      <span
+        key={name}
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mr-1 ${cls}`}
+      >
+        {name}
+      </span>
+    );
+  };
+
+  const parseDatasets = (join: any) => {
+    if (!join.datasets) return [];
+    try {
+      const obj = typeof join.datasets === "string"
+        ? JSON.parse(join.datasets)
+        : join.datasets;
+      const arr = [];
+      if (obj.admin) arr.push({ type: "Admin", name: obj.admin.title });
+      if (obj.population) arr.push({ type: "Population", name: obj.population.title });
+      if (obj.gis) arr.push({ type: "GIS", name: obj.gis.title });
+      if (obj.other && Array.isArray(obj.other))
+        obj.other.forEach((o: any) => arr.push({ type: "Other", name: o.title }));
+      return arr;
+    } catch {
+      return [];
     }
   };
 
-  const activeJoin = localJoins.find((j) => j.is_active);
-
   return (
-    <div className="border rounded-lg p-5 shadow-sm bg-white mt-4">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          Dataset Joins
+    <div className="border rounded-lg p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-2xl font-semibold text-[#123865] flex items-center gap-2">
+          <Link2 className="w-5 h-5 text-[#123865]" /> Manage Joins
         </h3>
-        <button
-          onClick={addNewJoin}
-          disabled={loading === "new"}
-          className="flex items-center gap-1 px-2 py-1 text-sm bg-green-600 text-white rounded hover:opacity-90 disabled:opacity-60"
-        >
-          <Plus className="w-4 h-4" /> Add New Join
-        </button>
       </div>
 
-      {localJoins.length === 0 ? (
-        <p className="text-sm text-gray-500 italic">
-          No join configurations exist for this country yet.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border rounded">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-3 py-2 text-left">Name</th>
-                <th className="px-3 py-2 text-left">Created</th>
-                <th className="px-3 py-2 text-center">Active</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {localJoins.map((j) => (
-                <tr
-                  key={j.id}
-                  className={`border-t hover:bg-gray-50 ${
-                    j.is_active ? "bg-green-50" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2 font-medium">{j.name || "Unnamed Join"}</td>
-                  <td className="px-3 py-2 text-gray-600">
-                    {j.created_at
-                      ? new Date(j.created_at).toLocaleDateString()
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {j.is_active ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-600 inline" />
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm text-left">
+          <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Join ID</th>
+              <th className="px-4 py-3 font-semibold">Linked Datasets</th>
+              <th className="px-4 py-3 font-semibold">Domains</th>
+              <th className="px-4 py-3 font-semibold text-center">Status</th>
+              <th className="px-4 py-3 font-semibold text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {joins.map((join) => {
+              const linked = parseDatasets(join);
+              const isActive = join.is_active;
+              const domains: { name: string; category?: string }[] = [];
+
+              // Look for taxonomy data embedded in datasets
+              linked.forEach((ds: any) => {
+                if (ds.taxonomy?.length) {
+                  ds.taxonomy.forEach((t: any) =>
+                    domains.push({
+                      name: t.name,
+                      category: t.category,
+                    })
+                  );
+                }
+              });
+
+              return (
+                <tr key={join.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-gray-700">{join.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3">
+                    {linked.length > 0 ? (
+                      linked.map((l, i) => (
+                        <div key={i} className="text-gray-800 flex items-center gap-1">
+                          <Database className="w-3 h-3 text-gray-400" />
+                          <span className="font-medium">{l.type}</span>: {l.name}
+                        </div>
+                      ))
                     ) : (
-                      <Circle className="w-4 h-4 text-gray-400 inline" />
+                      <span className="text-gray-500 italic">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right flex justify-end gap-2">
-                    {!j.is_active && (
+                  <td className="px-4 py-3">
+                    {domains.length > 0
+                      ? domains.map((d, i) =>
+                          renderTaxonomyChip(d.name, d.category)
+                        )
+                      : renderTaxonomyChip("Unspecified")}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {isActive ? (
+                      <span className="inline-flex items-center gap-1 text-green-600 font-medium">
+                        <CheckCircle2 className="w-4 h-4" /> Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-gray-400">
+                        <Circle className="w-4 h-4" /> Inactive
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {!isActive && (
                       <button
-                        onClick={() => activateJoin(j.id)}
-                        disabled={loading === j.id}
-                        className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                        onClick={() => activateJoin(join.id)}
+                        className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
                       >
-                        {loading === j.id ? "Activating..." : "Activate"}
+                        Activate
                       </button>
                     )}
-                    <button
-                      onClick={() => deleteJoin(j.id)}
-                      disabled={loading === j.id}
-                      className="text-sm text-[color:var(--gsc-red)] hover:underline disabled:opacity-50 flex items-center gap-1"
-                    >
-                      <Trash2 className="w-4 h-4" /> Delete
-                    </button>
+                    {isActive && (
+                      <Link
+                        href={`/country/${countryIso}/datasets`}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        View
+                      </Link>
+                    )}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {activeJoin && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
-          <strong>Active Join:</strong> {activeJoin.name}
-        </div>
-      )}
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
