@@ -99,11 +99,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         return;
       }
 
-      // aggregated query — one call, no pagination
       const { data, error } = await supabase
         .from("population_data")
         .select(
-          "sum(population)::bigint as total_population, count(distinct pcode) as admin_area_count"
+          "sum(population) as total_population, count(distinct pcode) as admin_area_count"
         )
         .eq("dataset_version_id", populationVersion.id)
         .maybeSingle();
@@ -182,7 +181,9 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
   /* ---------------------- Render ---------------------- */
   if (loading) {
     return (
-      <div className="text-sm text-gray-500 italic">Loading dataset summary…</div>
+      <div className="text-sm text-gray-500 italic">
+        Loading dataset summary…
+      </div>
     );
   }
 
