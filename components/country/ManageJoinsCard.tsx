@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Brain, Loader2 } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { Database } from "@/lib/database.types";
 import GenerateDerivedDatasetButton from "@/components/country/GenerateDerivedDatasetButton";
 
-type DatasetJoin = Database["public"]["Tables"]["dataset_joins"]["Row"];
+// 🔧 Temporary fallback until Supabase types are regenerated
+type DatasetJoin = any;
 
 export default function ManageJoinsCard({
   countryIso,
@@ -27,7 +27,7 @@ export default function ManageJoinsCard({
     setLoading(true);
     setStatus(null);
 
-    // deactivate others, activate selected
+    // deactivate others, then activate selected
     const { error: deactivateError } = await supabase
       .from("dataset_joins")
       .update({ is_active: false })
@@ -67,7 +67,7 @@ export default function ManageJoinsCard({
       {/* Join list */}
       {joins.length > 0 ? (
         <div className="divide-y divide-gray-200">
-          {joins.map((join) => (
+          {joins.map((join: any) => (
             <div key={join.id} className="py-2">
               <div
                 className="flex items-center justify-between cursor-pointer"
