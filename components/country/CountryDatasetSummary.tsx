@@ -32,21 +32,23 @@ function StatLine({
 }
 
 export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
-  // Admin
   const [adminVersion, setAdminVersion] = useState<any | null>(null);
   const [adminByLevel, setAdminByLevel] = useState<Record<string, number>>({});
-
-  // Population
   const [pop, setPop] = useState<any | null>(null);
-
-  // GIS
   const [gisRows, setGisRows] = useState<
     { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
   >([]);
-
-  // Other datasets
   const [otherDatasets, setOtherDatasets] = useState<
-    { id: string; title: string; indicator: string | null; admin_level: string; record_count: number; data_health: string | null }[]
+    {
+      id: string;
+      title: string;
+      indicator_name: string | null;
+      taxonomy_category: string | null;
+      taxonomy_term: string | null;
+      admin_level: string;
+      record_count: number;
+      data_health: string | null;
+    }[]
   >([]);
 
   // Fetch Admin
@@ -66,7 +68,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           .from("admin_units")
           .select("level, pcode")
           .eq("dataset_version_id", v.id);
-
         if (rows) {
           const grouped: Record<string, Set<string>> = {};
           for (const r of rows) {
@@ -82,7 +83,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // Population (view)
+  // Population
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -94,7 +95,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // GIS (view)
+  // GIS
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -105,19 +106,21 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // Other datasets (raw)
+  // Other datasets (view with indicator + taxonomy)
   useEffect(() => {
     (async () => {
       const { data } = await supabase
-        .from("dataset_metadata")
-        .select("id, title, admin_level, record_count, data_type, dataset_type, year, source_name, indicator_id")
+        .from("view_dataset_with_indicator")
+        .select("id, title, indicator_name, taxonomy_category, taxonomy_term, admin_level, record_count")
         .eq("country_iso", countryIso)
         .order("year", { ascending: false });
       if (data) {
         const enriched = data.map((d: any) => ({
           id: d.id,
           title: d.title,
-          indicator: d.indicator_id ?? null,
+          indicator_name: d.indicator_name,
+          taxonomy_category: d.taxonomy_category,
+          taxonomy_term: d.taxonomy_term,
           admin_level: d.admin_level ?? "—",
           record_count: d.record_count ?? 0,
           data_health: "good",
@@ -145,7 +148,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     return any?.adm0_total_km2 ?? null;
   }, [gisRows]);
 
-  // Health badges
   const adminHealth: Health = adminByLevel ? "good" : "missing";
   const popHealth: Health = pop && pop.total_population ? "good" : "missing";
   const gisHealth: Health = gisRows?.length > 0 ? "good" : "missing";
@@ -154,6 +156,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     <section className="mt-4">
       <h2 className="text-xl font-semibold mb-4">Core Datasets</h2>
 
+      {/* Core dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Admin Areas */}
         <div className="border rounded-lg p-4 shadow-sm">
@@ -161,7 +164,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <h3 className="text-lg font-semibold text-[#123865]">Admin Areas</h3>
             <Badge status={adminHealth} />
           </div>
-
           {adminVersion ? (
             <>
               <StatLine className="mb-1 text-gray-600">
@@ -177,12 +179,8 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           ) : (
             <div className="text-gray-500 text-sm">No active admin dataset found</div>
           )}
-
           <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/admins`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
+            <Link href={`/country/${countryIso}/admins`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -194,7 +192,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <h3 className="text-lg font-semibold text-[#123865]">Population Data</h3>
             <Badge status={popHealth} />
           </div>
-
           {pop ? (
             <>
               <StatLine className="mb-1 text-gray-600">
@@ -212,12 +209,8 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           ) : (
             <div className="text-gray-500 text-sm">No population dataset found</div>
           )}
-
           <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/population`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
+            <Link href={`/country/${countryIso}/population`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -229,7 +222,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <h3 className="text-lg font-semibold text-[#123865]">GIS Layers</h3>
             <Badge status={gisHealth} />
           </div>
-
           {gisRows && gisRows.length > 0 ? (
             <>
               <StatLine className="mb-1 text-gray-600">{countryIso} (active)</StatLine>
@@ -237,7 +229,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
                 ADM0 total area:{" "}
                 {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
               </StatLine>
-
               {["ADM0", "ADM1", "ADM2", "ADM3"].map((lvl) => (
                 <StatLine key={lvl}>
                   <span className="font-medium">{lvl}</span> –{" "}
@@ -251,12 +242,8 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           ) : (
             <div className="text-gray-500 text-sm">No active GIS dataset</div>
           )}
-
           <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/gis`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
+            <Link href={`/country/${countryIso}/gis`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -265,7 +252,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
 
       {/* === Other Datasets === */}
       <h2 className="text-xl font-semibold mt-8 mb-3">Other Datasets</h2>
-
       {otherDatasets.length === 0 ? (
         <div className="text-gray-500 italic text-sm">
           No other datasets uploaded yet.
@@ -286,7 +272,14 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
               {otherDatasets.map((d) => (
                 <tr key={d.id} className="border-t hover:bg-gray-50">
                   <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-3 py-2">{d.indicator ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <div>{d.indicator_name ?? "—"}</div>
+                    {d.taxonomy_term && (
+                      <div className="text-xs text-gray-500">
+                        {d.taxonomy_category ?? ""} → {d.taxonomy_term}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{d.admin_level}</td>
                   <td className="px-3 py-2 text-right">
                     {Intl.NumberFormat().format(d.record_count)}
