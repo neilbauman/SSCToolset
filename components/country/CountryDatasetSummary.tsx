@@ -19,8 +19,15 @@ function Badge({ status }: { status: Health }) {
   );
 }
 
-function StatLine({ children }: { children: React.ReactNode }) {
-  return <div className="text-gray-700 leading-relaxed">{children}</div>;
+// ✅ FIX: Added className prop
+function StatLine({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={`text-gray-700 leading-relaxed ${className}`}>{children}</div>;
 }
 
 export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
@@ -38,7 +45,13 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
 
   // GIS (from view)
   const [gisRows, setGisRows] = useState<
-    { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
+    {
+      admin_level: string;
+      represented_distinct_pcodes: number;
+      total_admins: number;
+      coverage_pct: number | null;
+      adm0_total_km2: number | null;
+    }[]
   >([]);
 
   // ============= Fetch Admin =============
@@ -96,7 +109,9 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     (async () => {
       const { data, error } = await supabase
         .from("view_gis_country_active_summary")
-        .select("admin_level, represented_distinct_pcodes, total_admins, coverage_pct, adm0_total_km2")
+        .select(
+          "admin_level, represented_distinct_pcodes, total_admins, coverage_pct, adm0_total_km2"
+        )
         .eq("country_iso", countryIso);
 
       if (!error && data) setGisRows(data);
@@ -157,7 +172,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           )}
 
           <div className="mt-3">
-            <Link href={`/country/${countryIso}/admins`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/admins`}
+              className="text-blue-600 font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -189,7 +207,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           )}
 
           <div className="mt-3">
-            <Link href={`/country/${countryIso}/population`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/population`}
+              className="text-blue-600 font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -204,16 +225,13 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
 
           {gisRows && gisRows.length > 0 ? (
             <>
-              <StatLine className="mb-1">
-                {countryIso} (active)
-              </StatLine>
+              <StatLine className="mb-1">{countryIso} (active)</StatLine>
 
-              {/* ADM0 area */}
               <StatLine>
-                ADM0 total area: {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
+                ADM0 total area:{" "}
+                {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
               </StatLine>
 
-              {/* Levels */}
               {["ADM0", "ADM1", "ADM2", "ADM3"].map((lvl) => (
                 <StatLine key={lvl}>
                   <span className="font-medium">{lvl}</span> –{" "}
@@ -229,7 +247,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           )}
 
           <div className="mt-3">
-            <Link href={`/country/${countryIso}/gis`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/gis`}
+              className="text-blue-600 font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
