@@ -1,359 +1,251 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import CountrySummaryCard from "@/components/country/CountrySummaryCard";
+import { ArrowRight } from "lucide-react";
 
-type AdminLevelStat = { level: string; pcodes: number; records: number };
-type GisLevelStat = { level: string; features: number; coveragePct: number };
+type Health = "good" | "fair" | "poor" | "missing";
 
-const ADM_LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
+function Badge({ status }: { status: Health }) {
+  const styles: Record<Health, string> = {
+    good: "bg-green-100 text-green-700",
+    fair: "bg-yellow-100 text-yellow-700",
+    poor: "bg-red-100 text-red-700",
+    missing: "bg-red-100 text-red-700",
+  };
+  return (
+    <span className={`px-3 py-1 text-sm rounded ${styles[status]}`}>{status}</span>
+  );
+}
 
-function admNum(level?: string | null) {
-  if (!level) return 0;
-  const n = parseInt(level.replace("ADM", ""), 10);
-  return Number.isFinite(n) ? n : 0;
+function StatLine({ children }: { children: React.ReactNode }) {
+  return <div className="text-gray-700 leading-relaxed">{children}</div>;
 }
 
 export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
-  const [adminVersion, setAdminVersion] = useState<any>(null);
-  const [populationVersion, setPopulationVersion] = useState<any>(null);
-  const [gisVersion, setGisVersion] = useState<any>(null);
+  // Admin
+  const [adminVersion, setAdminVersion] = useState<any | null>(null);
+  const [adminByLevel, setAdminByLevel] = useState<Record<string, number>>({});
 
-  const [adminStats, setAdminStats] = useState<AdminLevelStat[]>([]);
-  const [popTotal, setPopTotal] = useState<number | null>(null);
-  const [popCoverage, setPopCoverage] = useState<number | null>(null);
-  const [gisStats, setGisStats] = useState<GisLevelStat[]>([]);
-  const [otherDatasets, setOtherDatasets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Population (from view)
+  const [pop, setPop] = useState<{
+    population_title?: string;
+    population_year?: number | null;
+    total_population?: number;
+    admin_area_count?: number;
+  } | null>(null);
 
-  /* ---------------------- Fetch Active Versions ---------------------- */
+  // GIS (from view)
+  const [gisRows, setGisRows] = useState<
+    { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
+  >([]);
+
+  // ============= Fetch Admin =============
   useEffect(() => {
-    const fetchVersions = async () => {
-      setLoading(true);
+    (async () => {
+      // active admin version
+      const { data: v } = await supabase
+        .from("admin_dataset_versions")
+        .select("id, title, year")
+        .eq("country_iso", countryIso)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
 
-      const [adminRes, popRes, gisRes] = await Promise.all([
-        supabase
-          .from("admin_dataset_versions")
-          .select("*")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true)
-          .maybeSingle(),
-        supabase
-          .from("population_dataset_versions")
-          .select("*")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true)
-          .maybeSingle(),
-        supabase
-          .from("gis_dataset_versions")
-          .select("*")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true)
-          .maybeSingle(),
-      ]);
+      if (v?.id) {
+        setAdminVersion(v);
+        // counts by level (DISTINCT pcode)
+        const { data: rows, error } = await supabase
+          .from("admin_units")
+          .select("level, pcode")
+          .eq("dataset_version_id", v.id);
 
-      setAdminVersion(adminRes.data);
-      setPopulationVersion(popRes.data);
-      setGisVersion(gisRes.data);
-      setLoading(false);
-    };
-
-    fetchVersions();
+        if (!error && rows) {
+          const grouped: Record<string, Set<string>> = {};
+          for (const r of rows) {
+            const lvl = String(r.level);
+            if (!grouped[lvl]) grouped[lvl] = new Set<string>();
+            if (r.pcode) grouped[lvl].add(r.pcode);
+          }
+          const out: Record<string, number> = {};
+          Object.keys(grouped).forEach((k) => (out[k] = grouped[k].size));
+          setAdminByLevel(out);
+        }
+      }
+    })();
   }, [countryIso]);
 
-  /* ---------------------- Admin Stats ---------------------- */
+  // ============= Fetch Population summary (view) =============
   useEffect(() => {
-    const run = async () => {
-      if (!adminVersion?.id) {
-        setAdminStats([]);
-        return;
-      }
-
-      const perLevel: AdminLevelStat[] = [];
-
-      for (const lvl of ADM_LEVELS) {
-        const { count } = await supabase
-          .from("admin_units")
-          .select("id", { count: "exact", head: true })
-          .eq("dataset_version_id", adminVersion.id)
-          .eq("level", lvl);
-
-        if ((count ?? 0) > 0)
-          perLevel.push({ level: lvl, pcodes: count!, records: count! });
-      }
-
-      perLevel.sort((a, b) => admNum(a.level) - admNum(b.level));
-      setAdminStats(perLevel);
-    };
-
-    run();
-  }, [adminVersion?.id]);
-
-  /* ---------------------- Population Summary ---------------------- */
-  useEffect(() => {
-    const run = async () => {
-      if (!populationVersion?.id) {
-        setPopTotal(null);
-        setPopCoverage(null);
-        return;
-      }
-
-      // 1️⃣ Get coverage count (distinct pcodes)
-      const { count: coverageCount, error: covErr } = await supabase
-        .from("population_data")
-        .select("pcode", { count: "exact", head: true })
-        .eq("dataset_version_id", populationVersion.id);
-
-      if (covErr) console.error("Population coverage error:", covErr);
-
-      // 2️⃣ Get total population via manual aggregation
-      let total = 0;
+    (async () => {
       const { data, error } = await supabase
-        .from("population_data")
-        .select("population")
-        .eq("dataset_version_id", populationVersion.id);
+        .from("view_population_country_active_summary")
+        .select("population_title, population_year, total_population, admin_area_count")
+        .eq("country_iso", countryIso)
+        .maybeSingle();
 
-      if (error) {
-        console.error("Population sum error:", error);
-        setPopTotal(null);
-        setPopCoverage(coverageCount ?? null);
-        return;
+      if (!error && data) {
+        setPop(data);
       }
+    })();
+  }, [countryIso]);
 
-      if (data?.length) {
-        for (const row of data) total += Number(row.population) || 0;
-      }
-
-      setPopTotal(total);
-      setPopCoverage(coverageCount ?? null);
-    };
-
-    run();
-  }, [populationVersion?.id]);
-
-  /* ---------------------- GIS Stats ---------------------- */
+  // ============= Fetch GIS coverage (view) =============
   useEffect(() => {
-    const run = async () => {
-      if (!gisVersion?.id) {
-        setGisStats([]);
-        return;
-      }
-
-      const { data: gisLayers, error } = await supabase
-        .from("gis_layers")
-        .select("admin_level, feature_count")
-        .eq("dataset_version_id", gisVersion.id);
-
-      if (error) {
-        console.error("GIS fetch error:", error);
-        setGisStats([]);
-        return;
-      }
-
-      const byLevel: Record<string, number> = {};
-      for (const a of adminStats) byLevel[a.level] = a.pcodes;
-
-      const gis: GisLevelStat[] =
-        gisLayers?.map((g) => {
-          const lvl = g.admin_level || "ADM?";
-          const features = Number(g.feature_count) || 0;
-          const denom = byLevel[lvl] || 0;
-          const pct = denom > 0 ? Math.round((features / denom) * 1000) / 10 : 0;
-          return { level: lvl, features, coveragePct: pct };
-        }) ?? [];
-
-      gis.sort((a, b) => admNum(a.level) - admNum(b.level));
-      setGisStats(gis);
-    };
-
-    run();
-  }, [gisVersion?.id, adminStats]);
-
-  /* ---------------------- Other Datasets ---------------------- */
-  useEffect(() => {
-    const run = async () => {
-      const { data } = await supabase
-        .from("view_dataset_summary")
-        .select("id, title, year, admin_level, dataset_type, record_count, source")
+    (async () => {
+      const { data, error } = await supabase
+        .from("view_gis_country_active_summary")
+        .select("admin_level, represented_distinct_pcodes, total_admins, coverage_pct, adm0_total_km2")
         .eq("country_iso", countryIso);
 
-      const others =
-        data?.filter(
-          (d) => !["admin", "population", "gis"].includes(d.dataset_type || "")
-        ) ?? [];
-
-      setOtherDatasets(others);
-    };
-
-    run();
+      if (!error && data) setGisRows(data);
+    })();
   }, [countryIso]);
 
-  /* ---------------------- Render ---------------------- */
-  if (loading) {
-    return (
-      <div className="text-sm text-gray-500 italic">
-        Loading dataset summary…
-      </div>
-    );
-  }
+  // Health heuristics
+  const adminHealth: Health =
+    adminByLevel && (adminByLevel["ADM1"] || adminByLevel["ADM0"]) ? "good" : "missing";
+  const popHealth: Health = pop && (pop.total_population ?? 0) > 0 ? "good" : "missing";
+  const gisHealth: Health = gisRows && gisRows.length > 0 ? "good" : "missing";
+
+  const gisByLevel = useMemo(() => {
+    const map: Record<string, { rep: number; tot: number; pct: number | null }> = {};
+    for (const r of gisRows) {
+      map[r.admin_level] = {
+        rep: r.represented_distinct_pcodes || 0,
+        tot: r.total_admins || 0,
+        pct: r.coverage_pct,
+      };
+    }
+    return map;
+  }, [gisRows]);
+
+  const adm0Km2 = useMemo(() => {
+    const any = gisRows.find((r) => r.admin_level === "ADM0");
+    return any?.adm0_total_km2 ?? null;
+  }, [gisRows]);
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold mb-4 text-gsc-red">
-        Country Dataset Summary
-      </h2>
+    <section className="mt-4">
+      <h2 className="text-2xl font-semibold mb-4">Core Datasets</h2>
 
-      {/* Core Datasets */}
-      <h3 className="text-md font-semibold mb-3 text-gray-700">
-        Core Datasets
-      </h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Admin Areas */}
-        <CountrySummaryCard
-          title="Admin Areas"
-          subtitle={
-            adminVersion
-              ? `${adminVersion.title ?? "—"} (${adminVersion.year ?? "—"})`
-              : "No active dataset"
-          }
-          metric={
-            adminVersion ? (
-              <ul className="text-sm text-gray-600 list-none m-0 p-0">
-                {adminStats.length === 0 ? (
-                  <li>No admin data found</li>
-                ) : (
-                  adminStats.map((a) => (
-                    <li key={a.level}>
-                      {a.level} – {a.pcodes.toLocaleString()} pcodes (
-                      {a.records.toLocaleString()} records)
-                    </li>
-                  ))
-                )}
-              </ul>
-            ) : (
-              "No admin dataset found"
-            )
-          }
-          health={adminVersion ? "good" : "missing"}
-          link={`/country/${countryIso}/admins`}
-        />
+        <div className="border rounded-lg p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-2xl font-semibold text-[#123865]">Admin Areas</h3>
+            <Badge status={adminHealth} />
+          </div>
+
+          {adminVersion ? (
+            <>
+              <StatLine className="mb-1">
+                <span className="text-gray-700">
+                  {adminVersion.title} ({adminVersion.year})
+                </span>
+              </StatLine>
+              {["ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
+                <StatLine key={lvl}>
+                  <span className="font-medium">{lvl}</span> –{" "}
+                  {adminByLevel[lvl] ?? 0} pcodes ({adminByLevel[lvl] ?? 0} records)
+                </StatLine>
+              ))}
+            </>
+          ) : (
+            <div className="text-gray-500">No active admin dataset found</div>
+          )}
+
+          <div className="mt-3">
+            <Link href={`/country/${countryIso}/admins`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+              View details <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
 
         {/* Population */}
-        <CountrySummaryCard
-          title="Population Data"
-          subtitle={
-            populationVersion
-              ? `${populationVersion.title ?? "—"} (${populationVersion.year ?? "—"})`
-              : "No active dataset"
-          }
-          metric={
-            populationVersion ? (
-              <div className="text-sm text-gray-600">
-                <div>
-                  Lowest level: {populationVersion.lowest_level ?? "—"}
-                </div>
-                <div>
-                  Total population:{" "}
-                  {popTotal ? popTotal.toLocaleString() : "—"}
-                </div>
-                <div>
-                  Coverage:{" "}
-                  {popCoverage ? popCoverage.toLocaleString() : "—"} admin areas
-                </div>
-              </div>
-            ) : (
-              "No population dataset found"
-            )
-          }
-          health={populationVersion ? "good" : "missing"}
-          link={`/country/${countryIso}/population`}
-        />
+        <div className="border rounded-lg p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-2xl font-semibold text-[#123865]">Population Data</h3>
+            <Badge status={popHealth} />
+          </div>
+
+          {pop ? (
+            <>
+              <StatLine className="mb-1">
+                {pop.population_title} ({pop.population_year ?? "—"})
+              </StatLine>
+              <StatLine>Lowest level: —</StatLine>
+              <StatLine>
+                Total population:{" "}
+                {Intl.NumberFormat().format(pop.total_population ?? 0)}
+              </StatLine>
+              <StatLine>
+                Coverage: {Intl.NumberFormat().format(pop.admin_area_count ?? 0)} admin areas
+              </StatLine>
+            </>
+          ) : (
+            <div className="text-gray-500">No population dataset found</div>
+          )}
+
+          <div className="mt-3">
+            <Link href={`/country/${countryIso}/population`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+              View details <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
 
         {/* GIS Layers */}
-        <CountrySummaryCard
-          title="GIS Layers"
-          subtitle={
-            gisVersion
-              ? `${gisVersion.title ?? "—"} (${gisVersion.year ?? "—"})`
-              : "No active GIS dataset"
-          }
-          metric={
-            gisVersion ? (
-              <ul className="text-sm text-gray-600 list-none m-0 p-0">
-                {gisStats.length === 0 ? (
-                  <li>No GIS layers found</li>
-                ) : (
-                  gisStats.map((g) => (
-                    <li key={g.level}>
-                      {g.level} – {g.features.toLocaleString()} features (
-                      {g.coveragePct.toFixed(1)}%)
-                    </li>
-                  ))
-                )}
-              </ul>
-            ) : (
-              "No GIS layers found"
-            )
-          }
-          health={gisVersion ? "good" : "missing"}
-          link={`/country/${countryIso}/gis`}
-        />
-      </div>
+        <div className="border rounded-lg p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-2xl font-semibold text-[#123865]">GIS Layers</h3>
+            <Badge status={gisHealth} />
+          </div>
 
-      {/* Other Datasets */}
-      <h3 className="text-md font-semibold mb-2 text-gray-700">
-        Other Datasets
-      </h3>
-      {otherDatasets.length > 0 ? (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-gray-700">
-              <tr>
-                <th className="px-4 py-2 text-left">Dataset</th>
-                <th className="px-4 py-2 text-left">Type</th>
-                <th className="px-4 py-2 text-left">Admin Level</th>
-                <th className="px-4 py-2 text-left">Records</th>
-                <th className="px-4 py-2 text-left">Year</th>
-                <th className="px-4 py-2 text-left">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {otherDatasets.map((d) => (
-                <tr
-                  key={d.id}
-                  className="border-t hover:bg-gray-50 transition-colors"
-                >
-                  <td className="px-4 py-2">{d.title ?? "—"}</td>
-                  <td className="px-4 py-2 capitalize">
-                    {d.dataset_type ?? "—"}
-                  </td>
-                  <td className="px-4 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    {d.record_count?.toLocaleString() ?? "—"}
-                  </td>
-                  <td className="px-4 py-2">{d.year ?? "—"}</td>
-                  <td className="px-4 py-2 text-gray-600">{d.source ?? "—"}</td>
-                </tr>
+          {gisRows && gisRows.length > 0 ? (
+            <>
+              <StatLine className="mb-1">
+                {countryIso} (active)
+              </StatLine>
+
+              {/* ADM0 area */}
+              <StatLine>
+                ADM0 total area: {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
+              </StatLine>
+
+              {/* Levels */}
+              {["ADM0", "ADM1", "ADM2", "ADM3"].map((lvl) => (
+                <StatLine key={lvl}>
+                  <span className="font-medium">{lvl}</span> –{" "}
+                  {Intl.NumberFormat().format(gisByLevel[lvl]?.rep ?? 0)} features{" "}
+                  {gisByLevel[lvl]?.tot
+                    ? `(${(gisByLevel[lvl]?.pct ?? 0).toFixed(1)}%)`
+                    : "(0.0%)"}
+                </StatLine>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="text-sm text-gray-500 italic mb-6">
-          No other datasets uploaded yet.
-        </div>
-      )}
+            </>
+          ) : (
+            <div className="text-gray-500">No active GIS dataset</div>
+          )}
 
-      {/* Derived Datasets */}
-      <div className="mt-6">
-        <h3 className="text-md font-semibold mb-2 text-gray-700">
-          Derived Datasets
-        </h3>
-        <div className="text-sm text-gray-500 italic">
-          Derived datasets will appear here once analytical joins are created.
+          <div className="mt-3">
+            <Link href={`/country/${countryIso}/gis`} className="text-blue-600 font-medium inline-flex items-center gap-1">
+              View details <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Other + Derived headings (unchanged placeholders) */}
+      <h2 className="text-2xl font-semibold mt-10 mb-3">Other Datasets</h2>
+      <div className="text-gray-500 italic">
+        Linked indicator datasets will appear here.
+      </div>
+
+      <h2 className="text-2xl font-semibold mt-10 mb-3">Derived Datasets</h2>
+      <div className="text-gray-500 italic">
+        Derived and analytical datasets will appear once joins are created.
+      </div>
+    </section>
   );
 }
