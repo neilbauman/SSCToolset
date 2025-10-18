@@ -99,36 +99,24 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         return;
       }
 
-      const { count: coverage } = await supabase
+      // aggregated query — one call, no pagination
+      const { data, error } = await supabase
         .from("population_data")
-        .select("id", { count: "exact", head: true })
-        .eq("dataset_version_id", populationVersion.id);
+        .select(
+          "sum(population)::bigint as total_population, count(distinct pcode) as admin_area_count"
+        )
+        .eq("dataset_version_id", populationVersion.id)
+        .maybeSingle();
 
-      setPopCoverage(coverage ?? null);
-
-      // compute total population (chunked to avoid default limit)
-      const { count: totalRows } = await supabase
-        .from("population_data")
-        .select("id", { count: "exact", head: true })
-        .eq("dataset_version_id", populationVersion.id);
-
-      const total = totalRows ?? 0;
-      const CHUNK = 5000;
-      let sum = 0;
-
-      for (let from = 0; from < total; from += CHUNK) {
-        const { data } = await supabase
-          .from("population_data")
-          .select("population")
-          .eq("dataset_version_id", populationVersion.id)
-          .range(from, Math.min(from + CHUNK - 1, total - 1));
-
-        if (data?.length) {
-          for (const row of data) sum += Number(row.population) || 0;
-        }
+      if (error) {
+        console.error("Population aggregation error:", error);
+        setPopTotal(null);
+        setPopCoverage(null);
+        return;
       }
 
-      setPopTotal(sum);
+      setPopTotal(Number(data?.total_population ?? 0));
+      setPopCoverage(Number(data?.admin_area_count ?? 0));
     };
 
     run();
@@ -142,10 +130,16 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         return;
       }
 
-      const { data: gisLayers } = await supabase
+      const { data: gisLayers, error } = await supabase
         .from("gis_layers")
         .select("admin_level, feature_count")
         .eq("dataset_version_id", gisVersion.id);
+
+      if (error) {
+        console.error("GIS fetch error:", error);
+        setGisStats([]);
+        return;
+      }
 
       const byLevel: Record<string, number> = {};
       for (const a of adminStats) byLevel[a.level] = a.pcodes;
@@ -176,8 +170,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
 
       const others =
         data?.filter(
-          (d) =>
-            !["admin", "population", "gis"].includes(d.dataset_type || "")
+          (d) => !["admin", "population", "gis"].includes(d.dataset_type || "")
         ) ?? [];
 
       setOtherDatasets(others);
@@ -200,7 +193,9 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
       </h2>
 
       {/* Core Datasets */}
-      <h3 className="text-md font-semibold mb-3 text-gray-700">Core Datasets</h3>
+      <h3 className="text-md font-semibold mb-3 text-gray-700">
+        Core Datasets
+      </h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Admin Areas */}
         <CountrySummaryCard
@@ -243,12 +238,16 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           metric={
             populationVersion ? (
               <div className="text-sm text-gray-600">
-                <div>Lowest level: {populationVersion.lowest_level ?? "—"}</div>
                 <div>
-                  Total population: {popTotal?.toLocaleString() ?? "—"}
+                  Lowest level: {populationVersion.lowest_level ?? "—"}
                 </div>
                 <div>
-                  Coverage: {popCoverage?.toLocaleString() ?? "—"} admin areas
+                  Total population:{" "}
+                  {popTotal ? popTotal.toLocaleString() : "—"}
+                </div>
+                <div>
+                  Coverage:{" "}
+                  {popCoverage ? popCoverage.toLocaleString() : "—"} admin areas
                 </div>
               </div>
             ) : (
@@ -259,7 +258,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           link={`/country/${countryIso}/population`}
         />
 
-        {/* GIS */}
+        {/* GIS Layers */}
         <CountrySummaryCard
           title="GIS Layers"
           subtitle={
@@ -291,7 +290,9 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
       </div>
 
       {/* Other Datasets */}
-      <h3 className="text-md font-semibold mb-2 text-gray-700">Other Datasets</h3>
+      <h3 className="text-md font-semibold mb-2 text-gray-700">
+        Other Datasets
+      </h3>
       {otherDatasets.length > 0 ? (
         <div className="overflow-x-auto border rounded-lg">
           <table className="min-w-full text-sm">
@@ -312,9 +313,13 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
                   className="border-t hover:bg-gray-50 transition-colors"
                 >
                   <td className="px-4 py-2">{d.title ?? "—"}</td>
-                  <td className="px-4 py-2 capitalize">{d.dataset_type ?? "—"}</td>
+                  <td className="px-4 py-2 capitalize">
+                    {d.dataset_type ?? "—"}
+                  </td>
                   <td className="px-4 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-4 py-2">{d.record_count?.toLocaleString() ?? "—"}</td>
+                  <td className="px-4 py-2">
+                    {d.record_count?.toLocaleString() ?? "—"}
+                  </td>
                   <td className="px-4 py-2">{d.year ?? "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{d.source ?? "—"}</td>
                 </tr>
