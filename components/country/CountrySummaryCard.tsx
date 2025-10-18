@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ReactNode } from "react";
 
 export default function CountrySummaryCard({
   title,
@@ -11,7 +12,7 @@ export default function CountrySummaryCard({
 }: {
   title: string;
   subtitle?: string;
-  metric: string;
+  metric: string | ReactNode;
   health: "good" | "fair" | "missing" | "empty";
   link: string;
 }) {
@@ -34,10 +35,16 @@ export default function CountrySummaryCard({
           {health}
         </span>
       </div>
+
       {subtitle && (
         <p className="text-sm text-gray-600 mb-1">{subtitle}</p>
       )}
-      <p className="text-sm text-gray-500 mb-2">{metric}</p>
+
+      {/* Metric can be string or JSX */}
+      <div className="text-sm text-gray-500 mb-2">
+        {typeof metric === "string" ? metric : metric}
+      </div>
+
       <Link
         href={link}
         className="inline-block text-sm text-blue-600 hover:underline"
