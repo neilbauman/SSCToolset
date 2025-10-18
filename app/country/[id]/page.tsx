@@ -38,6 +38,7 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
+  // fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data, error } = await supabase
@@ -67,9 +68,10 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* --- Overall health summary --- */}
       <CountryHealthSummary countryIso={id} />
 
-      {/* Map + Metadata */}
+      {/* --- Map + Metadata --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
@@ -98,17 +100,17 @@ export default function CountryConfigLandingPage({ params }: any) {
         />
       </div>
 
-      {/* --- Country Dataset Summary --- */}
+      {/* --- Dataset Summary Panel --- */}
       <div className="mt-6">
         <CountryDatasetSummary countryIso={id} />
       </div>
 
-      {/* Manage Joins */}
+      {/* --- Manage Joins Panel --- */}
       <div className="mt-6">
         <ManageJoinsCard countryIso={id} joins={[]} />
       </div>
 
-      {/* Modals */}
+      {/* --- Upload & Edit Modals --- */}
       <UploadAdminUnitsModal
         open={openAdminUpload}
         onClose={() => setOpenAdminUpload(false)}
