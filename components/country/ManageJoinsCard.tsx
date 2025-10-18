@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, Brain, Loader2 } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import Modal from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
+import Button from "@/components/ui/Button";
 
 type DatasetJoin = {
   id: string;
@@ -23,7 +23,6 @@ export default function ManageJoinsCard({ countryIso }: { countryIso: string }) 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load joins for this country
   useEffect(() => {
     const fetchJoins = async () => {
       setLoading(true);
@@ -180,7 +179,6 @@ export default function ManageJoinsCard({ countryIso }: { countryIso: string }) 
             you select multiple datasets, preview overlaps, and define formulas.
           </p>
           <Button
-            variant="primary"
             onClick={() => setWizardOpen(false)}
             className="bg-blue-600 text-white hover:bg-blue-700"
           >
