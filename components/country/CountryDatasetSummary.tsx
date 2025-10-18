@@ -51,7 +51,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     }[]
   >([]);
 
-  // Fetch Admin
+  // --- Admin dataset ---
   useEffect(() => {
     (async () => {
       const { data: v } = await supabase
@@ -83,7 +83,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // Population
+  // --- Population ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -95,7 +95,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // GIS
+  // --- GIS layers ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -106,7 +106,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // Other datasets (view with indicator + taxonomy)
+  // --- Other datasets ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -130,7 +130,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // Derived values
+  // --- Derived values ---
   const gisByLevel = useMemo(() => {
     const map: Record<string, { rep: number; tot: number; pct: number | null }> = {};
     for (const r of gisRows) {
@@ -152,16 +152,19 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
   const popHealth: Health = pop && pop.total_population ? "good" : "missing";
   const gisHealth: Health = gisRows?.length > 0 ? "good" : "missing";
 
+  // --- Render ---
   return (
     <section className="mt-4">
       <h2 className="text-xl font-semibold mb-4">Core Datasets</h2>
 
-      {/* Core dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Admin Areas */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
-            <Link href={`/country/${countryIso}/admins`} className="text-lg font-semibold text-[#123865] hover:underline">
+            <Link
+              href={`/country/${countryIso}/admins`}
+              className="text-lg font-semibold text-[#123865] hover:underline"
+            >
               Admin Areas
             </Link>
             <Badge status={adminHealth} />
@@ -182,16 +185,22 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <div className="text-gray-500 text-sm">No active admin dataset found</div>
           )}
           <div className="mt-2">
-            <Link href={`/country/${countryIso}/admins`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/admins`}
+              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
         </div>
 
-        {/* Population */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        {/* Population Data */}
+        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
-            <Link href={`/country/${countryIso}/population`} className="text-lg font-semibold text-[#123865] hover:underline">
+            <Link
+              href={`/country/${countryIso}/population`}
+              className="text-lg font-semibold text-[#123865] hover:underline"
+            >
               Population Data
             </Link>
             <Badge status={popHealth} />
@@ -213,16 +222,22 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <div className="text-gray-500 text-sm">No population dataset found</div>
           )}
           <div className="mt-2">
-            <Link href={`/country/${countryIso}/population`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/population`}
+              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
         </div>
 
         {/* GIS Layers */}
-        <div className="border rounded-lg p-4 shadow-sm">
+        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
-            <Link href={`/country/${countryIso}/gis`} className="text-lg font-semibold text-[#123865] hover:underline">
+            <Link
+              href={`/country/${countryIso}/gis`}
+              className="text-lg font-semibold text-[#123865] hover:underline"
+            >
               GIS Layers
             </Link>
             <Badge status={gisHealth} />
@@ -248,7 +263,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <div className="text-gray-500 text-sm">No active GIS dataset</div>
           )}
           <div className="mt-2">
-            <Link href={`/country/${countryIso}/gis`} className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+            <Link
+              href={`/country/${countryIso}/gis`}
+              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
+            >
               View details <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -258,9 +276,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
       {/* === Other Datasets === */}
       <h2 className="text-xl font-semibold mt-8 mb-3">Other Datasets</h2>
       {otherDatasets.length === 0 ? (
-        <div className="text-gray-500 italic text-sm">
-          No other datasets uploaded yet.
-        </div>
+        <div className="text-gray-500 italic text-sm">No other datasets uploaded yet.</div>
       ) : (
         <div className="overflow-x-auto border rounded-lg">
           <table className="min-w-full text-sm text-gray-700">
