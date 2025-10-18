@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, Brain, Loader2 } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import Modal from "@/components/ui/Modal";
-import Button from "@/components/ui/Button";
+import { Button } from "@/components/ui/Button"; // ✅ Named export from your repo
 
 type DatasetJoin = {
   id: string;
@@ -53,7 +53,6 @@ export default function ManageJoinsCard({ countryIso }: { countryIso: string }) 
       );
 
       if (error) throw error;
-      console.log("Derived dataset ID:", data);
       alert(`Derived dataset created: ${data}`);
     } catch (err: any) {
       console.error("Error generating dataset:", err.message);
