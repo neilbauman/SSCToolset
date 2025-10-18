@@ -4,51 +4,148 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import CountrySummaryCard from "@/components/country/CountrySummaryCard";
 
+type AdminStats = {
+  level: string;
+  uniquePcodes: number;
+  totalRecords: number;
+};
+
+type GISStats = {
+  level: string;
+  features: number;
+  coveragePct: number;
+};
+
 export default function CountryDatasetSummary({
   countryIso,
 }: {
   countryIso: string;
 }) {
-  const [core, setCore] = useState<any>(null);
-  const [gisLayers, setGisLayers] = useState<any[]>([]);
+  const [adminStats, setAdminStats] = useState<AdminStats[]>([]);
+  const [populationSummary, setPopulationSummary] = useState<{
+    total: number;
+    recordCount: number;
+    lowestLevel: string;
+  } | null>(null);
+  const [gisStats, setGisStats] = useState<GISStats[]>([]);
   const [other, setOther] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
-      // --- Admin Units ---
-      const { data: admins, count: adminCount } = await supabase
-        .from("admin_units")
-        .select("level", { count: "exact" })
-        .eq("country_iso", countryIso);
+      /* ----------------------------- ADMINS ----------------------------- */
+      const { data: adminAgg, error: adminErr } = await supabase.rpc(
+        "admin_level_summary",
+        { country_code: countryIso }
+      );
 
-      const lowestAdmin =
-        admins && admins.length
-          ? `ADM${Math.max(
-              ...admins.map((a: any) =>
-                parseInt(a.level?.toString().replace("ADM", "") || "0", 10)
-              )
-            )}`
-          : "—";
+      // Fallback if view or function not found: do it client-side
+      let adminResults: AdminStats[] = [];
+      if (adminAgg && Array.isArray(adminAgg)) {
+        adminResults = adminAgg.map((r: any) => ({
+          level: r.level_label,
+          uniquePcodes: r.unique_pcodes,
+          totalRecords: r.total_records,
+        }));
+      } else {
+        const { data: adminRaw } = await supabase
+          .from("admin_units")
+          .select("pcode, level")
+          .eq("country_iso", countryIso);
 
-      // --- Population Data ---
-      const { count: popCount, data: popData } = await supabase
-        .from("population_data")
-        .select("population", { count: "exact" })
-        .eq("country_iso", countryIso);
+        if (adminRaw) {
+          const grouped: Record<string, { pcodes: Set<string>; total: number }> =
+            {};
+          adminRaw.forEach((r) => {
+            const lvl = r.level || "ADM?";
+            if (!grouped[lvl]) grouped[lvl] = { pcodes: new Set(), total: 0 };
+            grouped[lvl].pcodes.add(r.pcode);
+            grouped[lvl].total += 1;
+          });
+          adminResults = Object.entries(grouped)
+            .map(([level, v]) => ({
+              level,
+              uniquePcodes: v.pcodes.size,
+              totalRecords: v.total,
+            }))
+            .sort(
+              (a, b) =>
+                parseInt(a.level.replace("ADM", "")) -
+                parseInt(b.level.replace("ADM", ""))
+            );
+        }
+      }
+      setAdminStats(adminResults);
 
-      const totalPopulation =
-        popData?.reduce(
-          (sum: number, row: any) => sum + (Number(row.population) || 0),
-          0
-        ) ?? 0;
+      /* --------------------------- POPULATION --------------------------- */
+      const { data: popAgg, error: popErr } = await supabase.rpc(
+        "population_summary_by_country",
+        { country_code: countryIso }
+      );
 
-      // --- GIS Layers ---
-      const { data: gis } = await supabase
+      if (popAgg && popAgg[0]) {
+        setPopulationSummary({
+          total: popAgg[0].total_population ?? 0,
+          recordCount: popAgg[0].record_count ?? 0,
+          lowestLevel: popAgg[0].lowest_level ?? "—",
+        });
+      } else {
+        const { data: popRaw } = await supabase
+          .from("population_data")
+          .select("pcode, population")
+          .eq("country_iso", countryIso);
+
+        if (popRaw) {
+          const uniquePcodes = new Set(popRaw.map((r) => r.pcode)).size;
+          const totalPopulation = popRaw.reduce(
+            (sum, r) => sum + (Number(r.population) || 0),
+            0
+          );
+          setPopulationSummary({
+            total: totalPopulation,
+            recordCount: uniquePcodes,
+            lowestLevel:
+              adminResults.length > 0
+                ? adminResults[adminResults.length - 1].level
+                : "—",
+          });
+        }
+      }
+
+      /* ----------------------------- GIS ----------------------------- */
+      const { data: gisRaw } = await supabase
         .from("gis_layers")
-        .select("layer_name, feature_count, admin_level")
+        .select("admin_level, feature_count")
         .eq("country_iso", countryIso);
 
-      // --- Other Datasets ---
+      let gisResults: GISStats[] = [];
+      if (gisRaw) {
+        gisResults = gisRaw
+          .map((g) => {
+            const level = g.admin_level || "ADM?";
+            const adminAtLevel = adminResults.find(
+              (a) => a.level === level
+            )?.uniquePcodes;
+            const coveragePct =
+              adminAtLevel && adminAtLevel > 0
+                ? Math.round(
+                    ((g.feature_count ?? 0) / adminAtLevel) * 100 * 10
+                  ) / 10
+                : 0;
+            return {
+              level,
+              features: g.feature_count ?? 0,
+              coveragePct,
+            };
+          })
+          .sort(
+            (a, b) =>
+              parseInt(a.level.replace("ADM", "")) -
+              parseInt(b.level.replace("ADM", ""))
+          );
+      }
+      setGisStats(gisResults);
+
+      /* --------------------------- OTHER DATASETS -------------------------- */
       const { data: otherData } = await supabase
         .from("dataset_metadata")
         .select("id, title, admin_level, record_count, indicator_id, year")
@@ -64,19 +161,6 @@ export default function CountryDatasetSummary({
           {}
         ) ?? {};
 
-      setCore({
-        admins: {
-          count: adminCount ?? 0,
-          lowest: lowestAdmin,
-        },
-        population: {
-          count: popCount ?? 0,
-          lowest: lowestAdmin,
-          total: totalPopulation,
-        },
-      });
-
-      setGisLayers(gis || []);
       setOther(
         otherData?.map((d) => ({
           ...d,
@@ -88,6 +172,7 @@ export default function CountryDatasetSummary({
     fetchData();
   }, [countryIso]);
 
+  /* ----------------------------- RENDER ----------------------------- */
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4 text-gsc-red">
@@ -95,54 +180,89 @@ export default function CountryDatasetSummary({
       </h2>
 
       {/* --- Core Datasets --- */}
-      <h3 className="text-md font-semibold mb-3 text-gray-700">Core Datasets</h3>
+      <h3 className="text-md font-semibold mb-3 text-gray-700">
+        Core Datasets
+      </h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Admin Areas */}
         <CountrySummaryCard
-          title="Admin Boundaries"
-          subtitle={`Lowest level: ${core?.admins?.lowest ?? "—"}`}
-          metric={`${core?.admins?.count?.toLocaleString() ?? 0} records`}
-          health={core?.admins?.count ? "good" : "missing"}
+          title="Admin Areas"
+          subtitle="Administrative hierarchy coverage"
+          metric={
+            adminStats.length ? (
+              <ul className="text-sm text-gray-600 list-none m-0 p-0">
+                {adminStats.map((a) => (
+                  <li key={a.level}>
+                    {a.level} – {a.uniquePcodes.toLocaleString()} pcodes (
+                    {a.totalRecords.toLocaleString()} records)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              "No admin data found"
+            )
+          }
+          health={adminStats.length > 0 ? "good" : "missing"}
           link={`/country/${countryIso}/admins`}
         />
+
+        {/* Population */}
         <CountrySummaryCard
           title="Population Data"
-          subtitle={`Lowest level: ${core?.population?.lowest ?? "—"}`}
-          metric={`Total population: ${core?.population?.total?.toLocaleString() ?? 0}`}
-          health={core?.population?.count ? "good" : "missing"}
-          link={`/country/${countryIso}/population`}
-        />
-        <CountrySummaryCard
-          title="GIS Layers"
-          subtitle={
-            gisLayers.length
-              ? `${gisLayers.length} layers`
-              : "No layers uploaded"
-          }
+          subtitle={`Lowest level: ${
+            populationSummary?.lowestLevel ?? "—"
+          }`}
           metric={
-            gisLayers.length
-              ? gisLayers
-                  .map(
-                    (g) =>
-                      `${g.layer_name ?? "Untitled"} (${g.admin_level ?? "?"}) – ${
-                        g.feature_count ?? 0
-                      } features`
-                  )
-                  .join("; ")
-              : "—"
+            populationSummary ? (
+              <div className="text-sm text-gray-600">
+                <div>
+                  Total population:{" "}
+                  {populationSummary.total.toLocaleString()}
+                </div>
+                <div>
+                  Coverage:{" "}
+                  {populationSummary.recordCount.toLocaleString()} admin areas
+                </div>
+              </div>
+            ) : (
+              "No population data found"
+            )
           }
           health={
-            gisLayers.length > 3
+            populationSummary && populationSummary.recordCount > 0
               ? "good"
-              : gisLayers.length > 0
-              ? "fair"
               : "missing"
           }
+          link={`/country/${countryIso}/population`}
+        />
+
+        {/* GIS Layers */}
+        <CountrySummaryCard
+          title="GIS Layers"
+          subtitle="Features and admin coverage"
+          metric={
+            gisStats.length ? (
+              <ul className="text-sm text-gray-600 list-none m-0 p-0">
+                {gisStats.map((g) => (
+                  <li key={g.level}>
+                    {g.level} – {g.features.toLocaleString()} features (
+                    {g.coveragePct.toFixed(1)}%)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              "No GIS data found"
+            )
+          }
+          health={gisStats.length > 0 ? "good" : "missing"}
           link={`/country/${countryIso}/gis`}
         />
       </div>
 
       {/* --- Other Datasets (Table Layout) --- */}
-      <h3 className="text-md font-semibold mb-2 text-gray-700">Other Datasets</h3>
+      <h3 className="text-md font-semibold mb-2 text-gray-700">
+        Other Datasets
+      </h3>
       {other.length > 0 ? (
         <div className="overflow-x-auto border rounded-lg">
           <table className="min-w-full text-sm">
@@ -166,7 +286,9 @@ export default function CountryDatasetSummary({
                     {d.indicator ?? "—"}
                   </td>
                   <td className="px-4 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-4 py-2">{d.record_count?.toLocaleString() ?? 0}</td>
+                  <td className="px-4 py-2">
+                    {d.record_count?.toLocaleString() ?? 0}
+                  </td>
                   <td className="px-4 py-2">
                     <span
                       className={`px-2 py-1 rounded text-xs ${
