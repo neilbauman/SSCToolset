@@ -1,150 +1,193 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Brain, Loader2 } from "lucide-react";
-import CreateDerivedDatasetWizard from "@/components/country/CreateDerivedDatasetWizard";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import Modal from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 
 type DatasetJoin = {
   id: string;
-  title?: string;
   country_iso: string;
+  notes: string | null;
   is_active: boolean;
-  notes?: string;
-  datasets: any;
   created_at: string;
+  datasets: any;
 };
 
-interface ManageJoinsCardProps {
-  countryIso: string;
-  joins: DatasetJoin[];
-}
-
-export default function ManageJoinsCard({ countryIso, joins }: ManageJoinsCardProps) {
-  const [openJoin, setOpenJoin] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+export default function ManageJoinsCard({ countryIso }: { countryIso: string }) {
+  const [joins, setJoins] = useState<DatasetJoin[]>([]);
+  const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [activeJoin, setActiveJoin] = useState<DatasetJoin | null>(null);
+  const [expandedJoin, setExpandedJoin] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Load joins for this country
   useEffect(() => {
-    const active = joins.find((j) => j.is_active);
-    if (active) setActiveJoin(active);
-  }, [joins]);
+    const fetchJoins = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("dataset_joins")
+        .select("*")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (error) console.error("Error fetching joins:", error);
+      setJoins(data || []);
+      setLoading(false);
+    };
+    fetchJoins();
+  }, [countryIso]);
 
-  const handleSetActive = async (joinId: string) => {
-    setLoading(true);
-    await supabase.from("dataset_joins").update({ is_active: false }).eq("country_iso", countryIso);
-    await supabase.from("dataset_joins").update({ is_active: true }).eq("id", joinId);
-    setLoading(false);
-    window.location.reload();
+  const toggleExpand = (id: string) => {
+    setExpandedJoin(expandedJoin === id ? null : id);
+  };
+
+  const handleGenerate = async () => {
+    try {
+      setGenerating(true);
+      setError(null);
+
+      const { data, error } = await supabase.rpc(
+        "create_population_density_derived",
+        { p_country_iso: countryIso }
+      );
+
+      if (error) throw error;
+      console.log("Derived dataset ID:", data);
+      alert(`Derived dataset created: ${data}`);
+    } catch (err: any) {
+      console.error("Error generating dataset:", err.message);
+      setError("Error generating dataset");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
-    <div className="border rounded-lg shadow-sm p-6 bg-white">
-      <h2 className="text-xl font-semibold text-gray-800 mb-3">Manage Dataset Joins</h2>
-      <p className="text-sm text-gray-600 mb-4">
-        Each join combines Admin, Population, and GIS data to form an integrated analytical dataset. 
-        You can activate one join per country.
-      </p>
+    <div className="border rounded-lg p-5 shadow-sm bg-white">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Manage Dataset Joins</h2>
+        <Button
+          onClick={() => setWizardOpen(true)}
+          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
+        >
+          + Create Derived Dataset
+        </Button>
+      </div>
 
-      {/* Join List */}
-      <div className="divide-y border rounded">
-        {joins.length === 0 && (
-          <div className="p-4 text-gray-500 text-sm">No joins configured for this country yet.</div>
-        )}
-        {joins.map((j) => (
-          <div key={j.id} className="p-4">
+      {loading ? (
+        <div className="flex items-center gap-2 text-gray-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading joins...
+        </div>
+      ) : joins.length === 0 ? (
+        <p className="text-gray-500 text-sm">
+          No dataset joins defined yet for this country.
+        </p>
+      ) : (
+        joins.map((join) => (
+          <div
+            key={join.id}
+            className="border rounded-md mb-3 bg-gray-50 hover:bg-gray-100 transition"
+          >
             <div
-              className="flex justify-between items-center cursor-pointer"
-              onClick={() => setOpenJoin(openJoin === j.id ? null : j.id)}
+              className="flex justify-between items-center p-3 cursor-pointer"
+              onClick={() => toggleExpand(join.id)}
             >
               <div className="flex items-center gap-2">
-                {openJoin === j.id ? (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                {expandedJoin === join.id ? (
+                  <ChevronDown className="w-4 h-4 text-gray-600" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                  <ChevronRight className="w-4 h-4 text-gray-600" />
                 )}
-                <h3 className="font-medium text-gray-800">
-                  {j.title || "Unnamed Join"}{" "}
-                  {!j.is_active && (
-                    <span className="text-xs text-gray-400">(inactive)</span>
-                  )}
-                </h3>
+                <span className="font-medium">
+                  {join.notes || "Unnamed Join"}
+                </span>
               </div>
-              <Button
-                size="sm"
-                disabled={loading || j.is_active}
-                onClick={() => handleSetActive(j.id)}
-              >
-                {loading && j.is_active ? (
-                  <Loader2 className="animate-spin w-4 h-4 mr-1" />
-                ) : (
-                  "Set Active"
-                )}
-              </Button>
+              {join.is_active && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                  Active
+                </span>
+              )}
             </div>
-
-            {openJoin === j.id && (
-              <div className="mt-2 ml-6 text-sm text-gray-700 space-y-1">
+            {expandedJoin === join.id && (
+              <div className="p-4 border-t text-sm text-gray-700">
                 <ul className="list-disc list-inside space-y-1">
                   <li>
-                    <strong>GIS:</strong>{" "}
-                    {j.datasets?.gis_dataset_id
-                      ? "Active GIS Layers"
-                      : "—"}
-                  </li>
-                  <li>
                     <strong>Admin:</strong>{" "}
-                    {j.datasets?.admin_dataset_id
-                      ? "Active Admin Boundaries"
-                      : "—"}
+                    {join.datasets?.admin_dataset_id || "Not linked"}
                   </li>
                   <li>
                     <strong>Population:</strong>{" "}
-                    {j.datasets?.population_dataset_id
-                      ? "Active Population Dataset"
-                      : "—"}
+                    {join.datasets?.population_dataset_id || "Not linked"}
                   </li>
                   <li>
-                    <strong>Other:</strong>{" "}
-                    {j.datasets?.other_datasets?.length
-                      ? j.datasets.other_datasets.length + " linked"
-                      : "—"}
+                    <strong>GIS:</strong>{" "}
+                    {join.datasets?.gis_dataset_id || "Not linked"}
+                  </li>
+                  <li>
+                    <strong>Other Datasets:</strong>{" "}
+                    {join.datasets?.others?.length
+                      ? join.datasets.others.join(", ")
+                      : "None"}
                   </li>
                 </ul>
-                {j.notes && <p className="text-xs text-gray-500 mt-2">{j.notes}</p>}
               </div>
             )}
           </div>
-        ))}
-      </div>
+        ))
+      )}
 
       {/* Derived Datasets Section */}
-      <div className="mt-8">
-        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-2">
-          <Brain className="w-5 h-5 text-blue-600" /> Derived Datasets
+      <div className="mt-6 border-t pt-4">
+        <h3 className="text-md font-semibold flex items-center gap-2 mb-2">
+          <Brain className="w-5 h-5 text-blue-600" />
+          Derived Datasets
         </h3>
-        <p className="text-sm text-gray-600 mb-4">
-          Generate analytical datasets derived from existing Population and GIS data.
-          This process computes new indicators such as Population Density.
+        <p className="text-sm text-gray-600 mb-3">
+          Generate analytical datasets derived from existing Population and GIS
+          data.
         </p>
-
         <Button
-          onClick={() => setWizardOpen(true)}
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          onClick={handleGenerate}
+          disabled={generating}
+          className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
         >
-          <Brain className="w-4 h-4 mr-2" />
-          Construct New Dataset
+          {generating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Generating...
+            </>
+          ) : (
+            "Generate Population Density"
+          )}
         </Button>
-
-        <CreateDerivedDatasetWizard
-          open={wizardOpen}
-          onClose={() => setWizardOpen(false)}
-          countryIso={countryIso}
-          onComplete={() => window.location.reload()}
-        />
+        {error && (
+          <p className="text-red-600 text-sm mt-2">
+            ❌ Error generating dataset
+          </p>
+        )}
       </div>
+
+      {/* Wizard Modal */}
+      <Modal
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        title="Create Derived Dataset"
+      >
+        <div className="text-sm text-gray-700">
+          <p className="mb-3">
+            This is a placeholder for the Derived Dataset Wizard. It will let
+            you select multiple datasets, preview overlaps, and define formulas.
+          </p>
+          <Button
+            variant="primary"
+            onClick={() => setWizardOpen(false)}
+            className="bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Close
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
