@@ -99,23 +99,34 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         return;
       }
 
+      // 1️⃣ Get coverage count (distinct pcodes)
+      const { count: coverageCount, error: covErr } = await supabase
+        .from("population_data")
+        .select("pcode", { count: "exact", head: true })
+        .eq("dataset_version_id", populationVersion.id);
+
+      if (covErr) console.error("Population coverage error:", covErr);
+
+      // 2️⃣ Get total population via manual aggregation
+      let total = 0;
       const { data, error } = await supabase
         .from("population_data")
-        .select(
-          "sum(population) as total_population, count(distinct pcode) as admin_area_count"
-        )
-        .eq("dataset_version_id", populationVersion.id)
-        .maybeSingle();
+        .select("population")
+        .eq("dataset_version_id", populationVersion.id);
 
       if (error) {
-        console.error("Population aggregation error:", error);
+        console.error("Population sum error:", error);
         setPopTotal(null);
-        setPopCoverage(null);
+        setPopCoverage(coverageCount ?? null);
         return;
       }
 
-      setPopTotal(Number(data?.total_population ?? 0));
-      setPopCoverage(Number(data?.admin_area_count ?? 0));
+      if (data?.length) {
+        for (const row of data) total += Number(row.population) || 0;
+      }
+
+      setPopTotal(total);
+      setPopCoverage(coverageCount ?? null);
     };
 
     run();
