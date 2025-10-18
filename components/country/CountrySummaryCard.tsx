@@ -23,8 +23,8 @@ export default function CountrySummaryCard({
   };
 
   return (
-    <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition">
-      <div className="flex items-center justify-between mb-3">
+    <div className="border rounded-lg p-5 shadow-sm hover:shadow-md transition bg-white">
+      <div className="flex items-center justify-between mb-2">
         <Link href={link}>
           <h3 className="text-lg font-semibold hover:underline">{title}</h3>
         </Link>
