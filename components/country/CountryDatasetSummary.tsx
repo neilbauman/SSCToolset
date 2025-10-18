@@ -274,7 +274,15 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
       </div>
 
       {/* === Other Datasets === */}
-      <h2 className="text-xl font-semibold mt-8 mb-3">Other Datasets</h2>
+      <div className="flex items-center justify-between mt-8 mb-3">
+        <Link
+          href={`/country/${countryIso}/datasets/page`}
+          className="text-xl font-semibold hover:underline"
+        >
+          Other Datasets
+        </Link>
+      </div>
+
       {otherDatasets.length === 0 ? (
         <div className="text-gray-500 italic text-sm">No other datasets uploaded yet.</div>
       ) : (
@@ -292,14 +300,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
             <tbody>
               {otherDatasets.map((d) => (
                 <tr key={d.id} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/country/${countryIso}/datasets/${d.id}`}
-                      className="text-blue-700 hover:underline"
-                    >
-                      {d.title}
-                    </Link>
-                  </td>
+                  <td className="px-3 py-2">{d.title}</td>
                   <td className="px-3 py-2">
                     <div>{d.indicator_name ?? "—"}</div>
                     {d.taxonomy_term && (
