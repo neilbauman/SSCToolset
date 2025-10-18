@@ -15,23 +15,40 @@ export default function CountryDatasetSummary({
 
   useEffect(() => {
     const fetchData = async () => {
-      // --- Core datasets ---
-      const { data: admins } = await supabase
+      // --- Admin Units ---
+      const { data: admins, count: adminCount } = await supabase
         .from("admin_units")
-        .select("level")
+        .select("level", { count: "exact" })
         .eq("country_iso", countryIso);
 
-      const { data: pop } = await supabase
+      const lowestAdmin =
+        admins && admins.length
+          ? `ADM${Math.max(
+              ...admins.map((a: any) =>
+                parseInt(a.level?.toString().replace("ADM", "") || "0", 10)
+              )
+            )}`
+          : "—";
+
+      // --- Population Data ---
+      const { count: popCount, data: popData } = await supabase
         .from("population_data")
-        .select("pcode, population")
+        .select("population", { count: "exact" })
         .eq("country_iso", countryIso);
 
+      const totalPopulation =
+        popData?.reduce(
+          (sum: number, row: any) => sum + (Number(row.population) || 0),
+          0
+        ) ?? 0;
+
+      // --- GIS Layers ---
       const { data: gis } = await supabase
         .from("gis_layers")
         .select("layer_name, feature_count, admin_level")
         .eq("country_iso", countryIso);
 
-      // --- Other datasets ---
+      // --- Other Datasets ---
       const { data: otherData } = await supabase
         .from("dataset_metadata")
         .select("id, title, admin_level, record_count, indicator_id, year")
@@ -47,14 +64,18 @@ export default function CountryDatasetSummary({
           {}
         ) ?? {};
 
-      const lowestAdmin = admins?.length
-        ? `ADM${Math.max(...admins.map((a: any) => parseInt(a.level || "0", 10) || 0))}`
-        : "—";
-
       setCore({
-        admins: { count: admins?.length || 0, lowest: lowestAdmin },
-        population: { count: pop?.length || 0, lowest: lowestAdmin },
+        admins: {
+          count: adminCount ?? 0,
+          lowest: lowestAdmin,
+        },
+        population: {
+          count: popCount ?? 0,
+          lowest: lowestAdmin,
+          total: totalPopulation,
+        },
       });
+
       setGisLayers(gis || []);
       setOther(
         otherData?.map((d) => ({
@@ -63,12 +84,15 @@ export default function CountryDatasetSummary({
         })) || []
       );
     };
+
     fetchData();
   }, [countryIso]);
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4 text-gsc-red">Country Dataset Summary</h2>
+      <h2 className="text-lg font-semibold mb-4 text-gsc-red">
+        Country Dataset Summary
+      </h2>
 
       {/* --- Core Datasets --- */}
       <h3 className="text-md font-semibold mb-3 text-gray-700">Core Datasets</h3>
@@ -76,30 +100,36 @@ export default function CountryDatasetSummary({
         <CountrySummaryCard
           title="Admin Boundaries"
           subtitle={`Lowest level: ${core?.admins?.lowest ?? "—"}`}
-          metric={`${core?.admins?.count ?? 0} records`}
+          metric={`${core?.admins?.count?.toLocaleString() ?? 0} records`}
           health={core?.admins?.count ? "good" : "missing"}
           link={`/country/${countryIso}/admins`}
         />
         <CountrySummaryCard
           title="Population Data"
           subtitle={`Lowest level: ${core?.population?.lowest ?? "—"}`}
-          metric={`${core?.population?.count ?? 0} records`}
+          metric={`Total population: ${core?.population?.total?.toLocaleString() ?? 0}`}
           health={core?.population?.count ? "good" : "missing"}
           link={`/country/${countryIso}/population`}
         />
         <CountrySummaryCard
           title="GIS Layers"
-          subtitle={`${
-            gisLayers.length ? gisLayers.length + " layers" : "No layers uploaded"
-          }`}
-          metric={gisLayers
-            .map(
-              (g) =>
-                `${g.layer_name ?? "Untitled"} (${g.admin_level ?? "?"}) – ${
-                  g.feature_count ?? 0
-                } features`
-            )
-            .join("; ")}
+          subtitle={
+            gisLayers.length
+              ? `${gisLayers.length} layers`
+              : "No layers uploaded"
+          }
+          metric={
+            gisLayers.length
+              ? gisLayers
+                  .map(
+                    (g) =>
+                      `${g.layer_name ?? "Untitled"} (${g.admin_level ?? "?"}) – ${
+                        g.feature_count ?? 0
+                      } features`
+                  )
+                  .join("; ")
+              : "—"
+          }
           health={
             gisLayers.length > 3
               ? "good"
@@ -136,7 +166,7 @@ export default function CountryDatasetSummary({
                     {d.indicator ?? "—"}
                   </td>
                   <td className="px-4 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-4 py-2">{d.record_count ?? 0}</td>
+                  <td className="px-4 py-2">{d.record_count?.toLocaleString() ?? 0}</td>
                   <td className="px-4 py-2">
                     <span
                       className={`px-2 py-1 rounded text-xs ${
@@ -161,7 +191,9 @@ export default function CountryDatasetSummary({
 
       {/* --- Derived --- */}
       <div className="mt-6">
-        <h3 className="text-md font-semibold mb-2 text-gray-700">Derived Datasets</h3>
+        <h3 className="text-md font-semibold mb-2 text-gray-700">
+          Derived Datasets
+        </h3>
         <div className="text-sm text-gray-500 italic">
           Derived datasets will appear here once analytical joins are created.
         </div>
