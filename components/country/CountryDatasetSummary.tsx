@@ -276,7 +276,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
       {/* === Other Datasets === */}
       <div className="flex items-center justify-between mt-8 mb-3">
         <Link
-          href={`/country/${countryIso}/datasets/page`}
+          href={`/country/${countryIso}/datasets`}
           className="text-xl font-semibold hover:underline"
         >
           Other Datasets
