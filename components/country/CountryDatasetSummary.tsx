@@ -12,37 +12,41 @@ interface CountryDatasetSummaryProps {
 export default function CountryDatasetSummary({
   countryIso,
 }: CountryDatasetSummaryProps) {
-  const [adminSummary, setAdminSummary] = useState<any>(null);
-  const [popSummary, setPopSummary] = useState<any>(null);
-  const [gisSummary, setGisSummary] = useState<any>(null);
-  const [otherDatasets, setOtherDatasets] = useState<any[]>([]);
+  const [adminStats, setAdminStats] = useState<any[]>([]);
+  const [popStats, setPopStats] = useState<any>(null);
+  const [gisStats, setGisStats] = useState<any[]>([]);
+  const [datasets, setDatasets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadSummaries = async () => {
+    const fetchData = async () => {
       setLoading(true);
 
-      const [{ data: admin }, { data: pop }, { data: gis }, { data: others }] =
-        await Promise.all([
-          supabase.rpc("get_country_admin_summary", { p_country_iso: countryIso }),
-          supabase.rpc("get_country_population_summary", {
-            p_country_iso: countryIso,
-          }),
-          supabase.rpc("get_country_gis_summary", { p_country_iso: countryIso }),
-          supabase
-            .from("view_dataset_summary")
-            .select("*")
-            .eq("country_iso", countryIso)
-            .not("dataset_type", "in", "(admin,population,gis)"),
-        ]);
+      try {
+        const [{ data: admin }, { data: pop }, { data: gis }, { data: others }] =
+          await Promise.all([
+            supabase.rpc("get_admin_summary", { p_country_iso: countryIso }),
+            supabase.rpc("get_population_summary", { p_country_iso: countryIso }),
+            supabase.rpc("get_gis_summary", { p_country_iso: countryIso }),
+            supabase
+              .from("view_dataset_summary")
+              .select("*")
+              .eq("country_iso", countryIso)
+              .not("dataset_type", "in", "(admin,population,gis)"),
+          ]);
 
-      setAdminSummary(admin || null);
-      setPopSummary(pop || null);
-      setGisSummary(gis || null);
-      setOtherDatasets(others || []);
+        setAdminStats(admin || []);
+        setPopStats(pop || null);
+        setGisStats(gis || []);
+        setDatasets(others || []);
+      } catch (error) {
+        console.error("Error fetching dataset summaries:", error);
+      }
+
       setLoading(false);
     };
-    loadSummaries();
+
+    fetchData();
   }, [countryIso]);
 
   if (loading) {
@@ -54,40 +58,37 @@ export default function CountryDatasetSummary({
   }
 
   return (
-    <div>
+    <div className="mt-4">
       <h2 className="text-2xl font-semibold mb-4">Core Datasets</h2>
 
-      {/* Core dataset cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {/* Admin Areas */}
         <div className="border rounded-lg shadow-sm bg-white p-4">
           <Link
             href={`/country/${countryIso}/admins`}
-            className="text-xl font-semibold text-blue-800 hover:underline"
+            className="text-lg font-semibold text-blue-800 hover:underline"
           >
             Admin Areas
           </Link>
-          <div className="mt-1">
-            {adminSummary ? (
-              <>
-                <p className="text-gray-700 text-sm">
-                  {adminSummary.title} ({adminSummary.year})
+          {adminStats && adminStats.length > 0 ? (
+            <div className="mt-2 text-sm text-gray-700">
+              <p>{adminStats[0].title}</p>
+              {adminStats.map((a) => (
+                <p key={a.admin_level}>
+                  <strong>{a.admin_level}</strong> – {a.unique_pcodes} pcodes (
+                  {a.total_records} records)
                 </p>
-                {adminSummary.levels?.map((lvl: any) => (
-                  <p key={lvl.level} className="text-sm">
-                    <strong>{lvl.level}</strong> – {lvl.pcodes} pcodes (
-                    {lvl.records} records)
-                  </p>
-                ))}
-              </>
-            ) : (
-              <p className="text-gray-500 text-sm">No admin dataset found</p>
-            )}
-          </div>
-          <div className="mt-3 text-sm">
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm mt-1">
+              No admin dataset found
+            </p>
+          )}
+          <div className="mt-3">
             <Link
               href={`/country/${countryIso}/admins`}
-              className="text-blue-600 hover:underline"
+              className="text-sm text-blue-600 hover:underline"
             >
               View details →
             </Link>
@@ -98,31 +99,31 @@ export default function CountryDatasetSummary({
         <div className="border rounded-lg shadow-sm bg-white p-4">
           <Link
             href={`/country/${countryIso}/population`}
-            className="text-xl font-semibold text-blue-800 hover:underline"
+            className="text-lg font-semibold text-blue-800 hover:underline"
           >
             Population Data
           </Link>
-          <div className="mt-1">
-            {popSummary ? (
-              <>
-                <p className="text-gray-700 text-sm">
-                  {popSummary.title} ({popSummary.year})
-                </p>
-                <p className="text-sm">
-                  Total population: {popSummary.total_population?.toLocaleString()}
-                </p>
-                <p className="text-sm">
-                  Coverage: {popSummary.coverage_admins} admin areas
-                </p>
-              </>
-            ) : (
-              <p className="text-gray-500 text-sm">No population dataset found</p>
-            )}
-          </div>
-          <div className="mt-3 text-sm">
+          {popStats ? (
+            <div className="mt-2 text-sm text-gray-700">
+              <p>{popStats.title}</p>
+              <p>
+                Total population:{" "}
+                {popStats.total_population?.toLocaleString() ?? "—"}
+              </p>
+              <p>
+                Coverage:{" "}
+                {popStats.coverage_admins?.toLocaleString() ?? "—"} admin areas
+              </p>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm mt-1">
+              No population dataset found
+            </p>
+          )}
+          <div className="mt-3">
             <Link
               href={`/country/${countryIso}/population`}
-              className="text-blue-600 hover:underline"
+              className="text-sm text-blue-600 hover:underline"
             >
               View details →
             </Link>
@@ -133,31 +134,29 @@ export default function CountryDatasetSummary({
         <div className="border rounded-lg shadow-sm bg-white p-4">
           <Link
             href={`/country/${countryIso}/gis`}
-            className="text-xl font-semibold text-blue-800 hover:underline"
+            className="text-lg font-semibold text-blue-800 hover:underline"
           >
             GIS Layers
           </Link>
-          <div className="mt-1">
-            {gisSummary ? (
-              <>
-                <p className="text-gray-700 text-sm">
-                  {gisSummary.title} ({gisSummary.year})
+          {gisStats && gisStats.length > 0 ? (
+            <div className="mt-2 text-sm text-gray-700">
+              <p>
+                {gisStats[0].title} ({gisStats[0].year})
+              </p>
+              {gisStats.map((l) => (
+                <p key={l.admin_level}>
+                  <strong>{l.admin_level}</strong> – {l.feature_count} features (
+                  {l.coverage_pct?.toFixed(1) ?? "0.0"}%)
                 </p>
-                {gisSummary.layers?.map((l: any) => (
-                  <p key={l.admin_level} className="text-sm">
-                    <strong>{l.admin_level}</strong> – {l.features} features (
-                    {l.coverage_pct?.toFixed(1)}%)
-                  </p>
-                ))}
-              </>
-            ) : (
-              <p className="text-gray-500 text-sm">No GIS layers found</p>
-            )}
-          </div>
-          <div className="mt-3 text-sm">
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm mt-1">No GIS layers found</p>
+          )}
+          <div className="mt-3">
             <Link
               href={`/country/${countryIso}/gis`}
-              className="text-blue-600 hover:underline"
+              className="text-sm text-blue-600 hover:underline"
             >
               View details →
             </Link>
@@ -165,9 +164,9 @@ export default function CountryDatasetSummary({
         </div>
       </div>
 
-      {/* Other datasets */}
-      <h2 className="text-2xl font-semibold mb-2">Other Datasets</h2>
-      {otherDatasets.length === 0 ? (
+      {/* Other Datasets */}
+      <h2 className="text-2xl font-semibold mb-3">Other Datasets</h2>
+      {datasets.length === 0 ? (
         <p className="text-gray-500 italic text-sm">
           No other datasets uploaded yet.
         </p>
@@ -184,16 +183,23 @@ export default function CountryDatasetSummary({
               </tr>
             </thead>
             <tbody>
-              {otherDatasets.map((d) => (
+              {datasets.map((d) => (
                 <tr
                   key={d.id}
                   className="border-t hover:bg-gray-50 transition-colors"
                 >
-                  <td className="px-3 py-2">{d.title}</td>
+                  <td className="px-3 py-2">
+                    <Link
+                      href={`/country/${countryIso}/datasets/${d.id}`}
+                      className="text-blue-700 hover:underline"
+                    >
+                      {d.title}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2">{d.indicator || "—"}</td>
                   <td className="px-3 py-2">{d.admin_level || "—"}</td>
                   <td className="px-3 py-2">
-                    {d.record_count?.toLocaleString() || "—"}
+                    {d.record_count?.toLocaleString() ?? "—"}
                   </td>
                   <td className="px-3 py-2">
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
