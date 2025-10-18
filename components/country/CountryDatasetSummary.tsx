@@ -10,26 +10,25 @@ export default function CountryDatasetSummary({
   countryIso: string;
 }) {
   const [core, setCore] = useState<any>(null);
+  const [gisLayers, setGisLayers] = useState<any[]>([]);
   const [other, setOther] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
-      // --- Admins ---
-      const { count: adminCount } = await supabase
+      // --- Core datasets ---
+      const { data: admins } = await supabase
         .from("admin_units")
-        .select("id", { count: "exact", head: true })
+        .select("level")
         .eq("country_iso", countryIso);
 
-      // --- Population ---
-      const { count: popCount } = await supabase
+      const { data: pop } = await supabase
         .from("population_data")
-        .select("id", { count: "exact", head: true })
+        .select("pcode, population")
         .eq("country_iso", countryIso);
 
-      // --- GIS ---
-      const { count: gisCount } = await supabase
+      const { data: gis } = await supabase
         .from("gis_layers")
-        .select("id", { count: "exact", head: true })
+        .select("layer_name, feature_count, admin_level")
         .eq("country_iso", countryIso);
 
       // --- Other datasets ---
@@ -38,33 +37,30 @@ export default function CountryDatasetSummary({
         .select("id, title, admin_level, record_count, indicator_id, year")
         .eq("country_iso", countryIso);
 
-      const indicators =
-        otherData && otherData.length
-          ? await supabase
-              .from("indicators")
-              .select("id, name")
-              .in(
-                "id",
-                otherData.map((d) => d.indicator_id).filter(Boolean)
-              )
-          : { data: [] };
+      const { data: indData } = await supabase
+        .from("indicators")
+        .select("id, name");
 
-      const indicatorMap =
-        indicators?.data?.reduce(
+      const indMap =
+        indData?.reduce(
           (acc: any, cur: any) => ({ ...acc, [cur.id]: cur.name }),
           {}
         ) ?? {};
 
+      const lowestAdmin = admins?.length
+        ? `ADM${Math.max(...admins.map((a: any) => parseInt(a.level || "0", 10) || 0))}`
+        : "—";
+
       setCore({
-        admins: { count: adminCount ?? 0 },
-        population: { count: popCount ?? 0 },
-        gis: { count: gisCount ?? 0 },
+        admins: { count: admins?.length || 0, lowest: lowestAdmin },
+        population: { count: pop?.length || 0, lowest: lowestAdmin },
       });
+      setGisLayers(gis || []);
       setOther(
         otherData?.map((d) => ({
           ...d,
-          indicator: indicatorMap[d.indicator_id] ?? "—",
-        })) ?? []
+          indicator: indMap[d.indicator_id] ?? "—",
+        })) || []
       );
     };
     fetchData();
@@ -72,27 +68,42 @@ export default function CountryDatasetSummary({
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4">Country Dataset Summary</h2>
+      <h2 className="text-lg font-semibold mb-4 text-gsc-red">Country Dataset Summary</h2>
+
+      {/* --- Core Datasets --- */}
+      <h3 className="text-md font-semibold mb-3 text-gray-700">Core Datasets</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <CountrySummaryCard
           title="Admin Boundaries"
+          subtitle={`Lowest level: ${core?.admins?.lowest ?? "—"}`}
           metric={`${core?.admins?.count ?? 0} records`}
           health={core?.admins?.count ? "good" : "missing"}
           link={`/country/${countryIso}/admins`}
         />
         <CountrySummaryCard
           title="Population Data"
+          subtitle={`Lowest level: ${core?.population?.lowest ?? "—"}`}
           metric={`${core?.population?.count ?? 0} records`}
           health={core?.population?.count ? "good" : "missing"}
           link={`/country/${countryIso}/population`}
         />
         <CountrySummaryCard
           title="GIS Layers"
-          metric={`${core?.gis?.count ?? 0} layers`}
+          subtitle={`${
+            gisLayers.length ? gisLayers.length + " layers" : "No layers uploaded"
+          }`}
+          metric={gisLayers
+            .map(
+              (g) =>
+                `${g.layer_name ?? "Untitled"} (${g.admin_level ?? "?"}) – ${
+                  g.feature_count ?? 0
+                } features`
+            )
+            .join("; ")}
           health={
-            (core?.gis?.count ?? 0) > 3
+            gisLayers.length > 3
               ? "good"
-              : (core?.gis?.count ?? 0) > 0
+              : gisLayers.length > 0
               ? "fair"
               : "missing"
           }
@@ -100,34 +111,57 @@ export default function CountryDatasetSummary({
         />
       </div>
 
-      <h3 className="text-md font-semibold mb-2">Other Datasets</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {other.length > 0 ? (
-          other.map((d) => (
-            <CountrySummaryCard
-              key={d.id}
-              title={d.title}
-              subtitle={d.indicator}
-              metric={`${d.record_count ?? 0} recs @ ${d.admin_level ?? "?"}`}
-              health={
-                d.record_count > 0
-                  ? "good"
-                  : d.record_count === 0
-                  ? "empty"
-                  : "missing"
-              }
-              link={`/country/${countryIso}/datasets`}
-            />
-          ))
-        ) : (
-          <div className="text-sm text-gray-500 italic">
-            No other datasets uploaded yet.
-          </div>
-        )}
-      </div>
+      {/* --- Other Datasets (Table Layout) --- */}
+      <h3 className="text-md font-semibold mb-2 text-gray-700">Other Datasets</h3>
+      {other.length > 0 ? (
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-gray-700">
+              <tr>
+                <th className="px-4 py-2 text-left">Dataset</th>
+                <th className="px-4 py-2 text-left">Indicator</th>
+                <th className="px-4 py-2 text-left">Admin Level</th>
+                <th className="px-4 py-2 text-left">Records</th>
+                <th className="px-4 py-2 text-left">Health</th>
+              </tr>
+            </thead>
+            <tbody>
+              {other.map((d) => (
+                <tr
+                  key={d.id}
+                  className="border-t hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-4 py-2">{d.title}</td>
+                  <td className="px-4 py-2 text-gray-600">
+                    {d.indicator ?? "—"}
+                  </td>
+                  <td className="px-4 py-2">{d.admin_level ?? "—"}</td>
+                  <td className="px-4 py-2">{d.record_count ?? 0}</td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={`px-2 py-1 rounded text-xs ${
+                        d.record_count > 0
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {d.record_count > 0 ? "good" : "missing"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-sm text-gray-500 italic mb-6">
+          No other datasets uploaded yet.
+        </div>
+      )}
 
+      {/* --- Derived --- */}
       <div className="mt-6">
-        <h3 className="text-md font-semibold mb-2">Derived Datasets</h3>
+        <h3 className="text-md font-semibold mb-2 text-gray-700">Derived Datasets</h3>
         <div className="text-sm text-gray-500 italic">
           Derived datasets will appear here once analytical joins are created.
         </div>
