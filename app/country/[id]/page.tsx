@@ -2,10 +2,9 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Map, Users, Database, AlertCircle } from "lucide-react";
+import { Map } from "lucide-react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
-import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
@@ -18,7 +17,6 @@ import type { CountryParams } from "@/app/country/types";
 import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 import CountryDatasetSummary from "@/components/country/CountryDatasetSummary";
 
-// ✅ Dynamic Leaflet import
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -32,24 +30,6 @@ async function reloadPage() {
   if (typeof window !== "undefined") window.location.reload();
 }
 
-function StatusBadge({
-  status,
-}: {
-  status: "uploaded" | "partial" | "missing" | "empty";
-}) {
-  const styles: Record<string, string> = {
-    uploaded: "bg-green-100 text-green-700",
-    partial: "bg-yellow-100 text-yellow-700",
-    missing: "bg-red-100 text-red-700",
-    empty: "bg-gray-100 text-gray-700",
-  };
-  return (
-    <span className={`px-2 py-1 text-xs rounded ${styles[status]}`}>
-      {status}
-    </span>
-  );
-}
-
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
   const [country, setCountry] = useState<any>(null);
@@ -58,7 +38,6 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
-  // ✅ Country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data, error } = await supabase
@@ -90,7 +69,7 @@ export default function CountryConfigLandingPage({ params }: any) {
     <SidebarLayout headerProps={headerProps}>
       <CountryHealthSummary countryIso={id} />
 
-      {/* Top row: Map + Metadata */}
+      {/* Map + Metadata */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
           <h2 className="text-lg font-semibold mb-3">Map Overview</h2>
@@ -119,12 +98,12 @@ export default function CountryConfigLandingPage({ params }: any) {
         />
       </div>
 
-      {/* ✅ Replaces ActiveJoinSummaryCard */}
+      {/* --- Country Dataset Summary --- */}
       <div className="mt-6">
         <CountryDatasetSummary countryIso={id} />
       </div>
 
-      {/* Manage joins */}
+      {/* Manage Joins */}
       <div className="mt-6">
         <ManageJoinsCard countryIso={id} joins={[]} />
       </div>
