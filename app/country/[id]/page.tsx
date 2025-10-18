@@ -9,14 +9,13 @@ import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import CountryMetadataCard from "@/components/country/CountryMetadataCard";
+import ManageJoinsCard from "@/components/country/ManageJoinsCard";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
 import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
+import type { CountryParams } from "@/app/country/types";
 import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 import CountryDatasetSummary from "@/components/country/CountryDatasetSummary";
-import ManageJoinsCard from "@/components/country/ManageJoinsCard";
-import DerivedDatasetTable from "@/components/country/DerivedDatasetTable";
-import type { CountryParams } from "@/app/country/types";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -33,12 +32,15 @@ async function reloadPage() {
 
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
+
   const [country, setCountry] = useState<any>(null);
+  const [joins, setJoins] = useState<any[]>([]);
   const [openMeta, setOpenMeta] = useState(false);
   const [openAdminUpload, setOpenAdminUpload] = useState(false);
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
 
+  // ✅ Fetch country metadata
   useEffect(() => {
     const fetchCountry = async () => {
       const { data, error } = await supabase
@@ -49,6 +51,22 @@ export default function CountryConfigLandingPage({ params }: any) {
       if (!error && data) setCountry(data);
     };
     fetchCountry();
+  }, [id]);
+
+  // ✅ Fetch dataset joins for this country
+  useEffect(() => {
+    const fetchJoins = async () => {
+      const { data, error } = await supabase
+        .from("dataset_joins")
+        .select("*")
+        .eq("country_iso", id);
+      if (error) {
+        console.error("Join fetch failed:", error);
+      } else if (data) {
+        setJoins(data);
+      }
+    };
+    fetchJoins();
   }, [id]);
 
   const headerProps = {
@@ -68,13 +86,14 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* --- Country Data Health --- */}
       <CountryHealthSummary countryIso={id} />
 
       {/* --- Map + Metadata --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-sm">
-        <div className="lg:col-span-2 border rounded-lg p-3 shadow-sm">
-          <h2 className="text-base font-semibold mb-2 text-[#123865]">Map Overview</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-3 text-[#123865]">
+            Map Overview
+          </h2>
           {typeof window !== "undefined" && (
             <MapContainer
               center={[12.8797, 121.774]}
@@ -94,7 +113,6 @@ export default function CountryConfigLandingPage({ params }: any) {
             </MapContainer>
           )}
         </div>
-
         <CountryMetadataCard
           country={country}
           onEdit={() => setOpenMeta(true)}
@@ -108,19 +126,10 @@ export default function CountryConfigLandingPage({ params }: any) {
 
       {/* --- Manage Joins --- */}
       <div className="mt-6">
-        <ManageJoinsCard countryIso={id} />
+        <ManageJoinsCard countryIso={id} joins={joins} />
       </div>
 
-      {/* --- Derived Datasets --- */}
-      <div className="mt-6">
-        <h2 className="text-base font-semibold text-[#123865] mb-2">Derived Datasets</h2>
-        <p className="text-gray-600 text-sm mb-2">
-          These datasets represent analytical joins between multiple indicators. They serve as inputs for SSC Instances.
-        </p>
-        <DerivedDatasetTable countryIso={id} />
-      </div>
-
-      {/* --- Upload / Edit Modals --- */}
+      {/* --- Modals --- */}
       <UploadAdminUnitsModal
         open={openAdminUpload}
         onClose={() => setOpenAdminUpload(false)}
