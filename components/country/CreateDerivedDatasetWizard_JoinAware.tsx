@@ -6,15 +6,11 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 /**
  * CreateDerivedDatasetWizard_JoinAware
  * ------------------------------------
- * Analyst-focused wizard for constructing derived datasets
- * across population, GIS, admin, and indicator datasets.
- * 
- * Features:
- * - Dynamic join-field discovery
- * - Shows dataset attributes and source table
+ * Builds derived datasets by joining population, GIS, admin, or indicator datasets.
+ * - Dynamic join-field detection
  * - Formula helper presets
  * - Handles percentages automatically
- * - Custom formula and rounding control
+ * - Rounds derived values to desired precision
  */
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
@@ -41,7 +37,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [title, setTitle] = useState("");
   const [unit, setUnit] = useState("");
   const [formula, setFormula] = useState("");
-  const [round, setRound] = useState(2);
+  const [round, setRound] = useState(0);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,19 +58,22 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           .eq("country_iso", countryIso),
         supabase
           .from("population_dataset_versions")
-          .select("id,title,admin_level,year")
-          .eq("country_iso", countryIso),
+          .select("id,title,admin_level,year,is_active,country_iso")
+          .eq("country_iso", countryIso)
+          .or("is_active.eq.true,is_active.is.null"),
         supabase
           .from("gis_dataset_versions")
-          .select("id,title,admin_level")
-          .eq("country_iso", countryIso),
+          .select("id,title,admin_level,is_active,country_iso")
+          .eq("country_iso", countryIso)
+          .or("is_active.eq.true,is_active.is.null"),
         supabase
           .from("admin_dataset_versions")
-          .select("id,title,is_active")
-          .eq("country_iso", countryIso),
+          .select("id,title,is_active,country_iso")
+          .eq("country_iso", countryIso)
+          .or("is_active.eq.true,is_active.is.null"),
       ]);
 
-      if (meta.data)
+      if (meta.data?.length) {
         results.push(
           ...meta.data.map((d) => ({
             id: d.id,
@@ -88,12 +87,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             source_table: "dataset_values",
           }))
         );
+      }
 
-      if (pop.data)
+      if (pop.data?.length) {
         results.push(
           ...pop.data.map((d) => ({
             id: d.id,
-            title: d.title ?? "Population",
+            title: d.title ?? "Population Dataset",
             dataset_type: "population",
             admin_level: d.admin_level ?? "ADM3",
             year: d.year ?? null,
@@ -103,12 +103,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             source_table: "population_data",
           }))
         );
+      }
 
-      if (gis.data)
+      if (gis.data?.length) {
         results.push(
           ...gis.data.map((d) => ({
             id: d.id,
-            title: d.title ?? "GIS Layer",
+            title: d.title ?? "GIS Dataset",
             dataset_type: "gis",
             admin_level: d.admin_level ?? null,
             year: null,
@@ -118,8 +119,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             source_table: "gis_layers",
           }))
         );
+      }
 
-      if (admin.data)
+      if (admin.data?.length) {
         results.push(
           ...admin.data.map((d) => ({
             id: d.id,
@@ -133,6 +135,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             source_table: "admin_units",
           }))
         );
+      }
 
       setDatasets(results);
     })();
@@ -149,14 +152,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (!meta) return;
     try {
       const table = meta.source_table;
-      const { data, error } = await supabase
-        .from(table)
-        .select("*")
-        .limit(1);
+      const { data, error } = await supabase.from(table).select("*").limit(1);
       if (error) throw error;
       const cols = data && data.length > 0 ? Object.keys(data[0]) : [];
-      setFields(cols.filter((c) => c !== "value"));
-    } catch (err) {
+      setFields(cols.filter((c) => !["value"].includes(c)));
+    } catch {
       setFields([meta.join_field || "admin_pcode"]);
     }
   }
@@ -190,7 +190,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setLoadingPreview(true);
     setError(null);
     setPreview([]);
-
     try {
       const { data, error } = await supabase.rpc("preview_dataset_join", {
         p_dataset_a: aId,
@@ -252,7 +251,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   if (!open) return null;
 
-  const renderDatasetCard = (meta: any, joinField: string, setJoin: any, joinFields: string[]) => (
+  const renderDatasetCard = (
+    meta: any,
+    joinField: string,
+    setJoin: any,
+    joinFields: string[]
+  ) => (
     <div className="text-xs mt-1 border rounded p-2 bg-gray-50">
       {meta ? (
         <>
