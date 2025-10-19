@@ -15,6 +15,7 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 import CountryDatasetSummary from "@/components/country/CountryDatasetSummary";
 import ManageJoinsCard from "@/components/country/ManageJoinsCard";
+import DerivedDatasetsPanel from "@/components/country/DerivedDatasetsPanel";   // ✅ added
 import type { CountryParams } from "@/app/country/types";
 
 const MapContainer = dynamic(
@@ -106,6 +107,11 @@ export default function CountryConfigLandingPage({ params }: any) {
       {/* --- Manage Joins --- */}
       <div className="mt-6">
         <ManageJoinsCard countryIso={id} />
+      </div>
+
+      {/* --- Derived Datasets --- */}
+      <div className="mt-6">
+        <DerivedDatasetsPanel countryIso={id} />
       </div>
 
       {/* Modals */}
