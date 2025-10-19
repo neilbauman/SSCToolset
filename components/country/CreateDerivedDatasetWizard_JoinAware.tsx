@@ -181,7 +181,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                 <label className="block text-sm font-medium mb-1">Dataset {lbl}</label>
                 <select value={id} onChange={(e) => setId(e.target.value)} className="w-full border rounded px-2 py-1.5">
                   <option value="">Select...</option>
-                  {datasets.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                  {datasets.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
                 </select>
                 {meta && <div className="text-xs text-gray-600 mt-1">
                   Type:{meta.dataset_type} · Level:{meta.admin_level ?? "—"} · Records:{meta.record_count ?? "?"}</div>}
@@ -189,7 +189,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                   <div className="mt-2">
                     <label className="text-xs text-gray-700">Join Field</label>
                     <select value={join} onChange={(e) => setJoin(e.target.value)} className="w-full border rounded px-2 py-1 text-xs">
-                      {fields.map(f => <option key={f}>{f}</option>)}
+                      {fields.map((f: string) => <option key={f}>{f}</option>)}
                     </select>
                   </div>}
               </div>)}
@@ -198,13 +198,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           <div>
             <label className="text-sm font-medium mb-1">Join Level</label>
             <select value={targetLevel} onChange={(e) => setTargetLevel(e.target.value)} className="border rounded px-2 py-1.5">
-              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map(l => <option key={l}>{l}</option>)}
+              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((l) => <option key={l}>{l}</option>)}
             </select>
           </div>
 
           <div><label className="text-sm font-medium mb-1">Method</label>
             <div className="flex flex-wrap gap-2">
-              {(["multiply", "ratio", "sum", "difference", "aggregate", "custom"] as Method[]).map(m =>
+              {(["multiply", "ratio", "sum", "difference", "aggregate", "custom"] as Method[]).map((m) =>
                 <button key={m} onClick={() => setMethod(m)} className={`px-3 py-1.5 border rounded ${method === m ? "bg-blue-600 text-white border-blue-600" : ""}`}>{m}</button>)}
             </div></div>
 
