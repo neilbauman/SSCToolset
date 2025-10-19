@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
+/**
+ * CreateDerivedDatasetWizard_JoinAware
+ * ------------------------------------
+ * Enables building derived datasets from any pair of datasets.
+ * - Detects dataset type and admin level.
+ * - Previews join (via preview_dataset_join RPC).
+ * - Calls compute-derived edge function for creation.
+ */
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
   onClose,
@@ -19,7 +27,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [bId, setBId] = useState("");
   const [aMeta, setAMeta] = useState<any>(null);
   const [bMeta, setBMeta] = useState<any>(null);
-  const [method, setMethod] = useState<string>("ratio");
+  const [method, setMethod] = useState("ratio");
   const [targetLevel, setTargetLevel] = useState("ADM3");
   const [title, setTitle] = useState("");
   const [unit, setUnit] = useState("");
@@ -28,20 +36,22 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load all datasets (population, admin, derived, gis)
+  // Load all datasets from dataset_metadata
   useEffect(() => {
     if (!open) return;
     (async () => {
       const { data, error } = await supabase
         .from("dataset_metadata")
-        .select("id,title,dataset_type,admin_level,year,data_format,record_count")
+        .select(
+          "id,title,dataset_type,admin_level,year,data_format,record_count"
+        )
         .eq("country_iso", countryIso)
         .order("dataset_type");
       if (!error && data) setDatasets(data);
     })();
   }, [open, countryIso]);
 
-  // Load metadata on selection
+  // Derive metadata
   useEffect(() => {
     setAMeta(datasets.find((d) => d.id === aId) || null);
     setBMeta(datasets.find((d) => d.id === bId) || null);
@@ -82,14 +92,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   // Create derived dataset
   async function handleCreate() {
-    if (!aId || !bId) {
-      setError("Select both datasets.");
-      return;
-    }
-    if (!title.trim()) {
-      setError("Enter a title.");
-      return;
-    }
+    if (!aId || !bId) return setError("Select both datasets.");
+    if (!title.trim()) return setError("Enter a title.");
     setSaving(true);
     setError(null);
     try {
@@ -132,7 +136,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6">
         <h2 className="text-lg font-semibold mb-4">Create Derived Dataset</h2>
 
-        {/* dataset selectors */}
+        {/* Dataset selectors */}
         <div className="grid grid-cols-2 gap-4">
           {[["A", aId, setAId, aMeta], ["B", bId, setBId, bMeta]].map(
             ([label, value, setter, meta]) => (
@@ -161,7 +165,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* level + method */}
+        {/* Target level + method */}
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
             <label className="text-sm text-gray-600">Target Admin Level</label>
@@ -170,7 +174,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               onChange={(e) => setTargetLevel(e.target.value)}
               className="mt-1 w-full rounded border p-2"
             >
-              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((l) => (
+              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((l) => (
                 <option key={l}>{l}</option>
               ))}
             </select>
@@ -193,7 +197,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
         </div>
 
-        {/* title/unit */}
+        {/* Metadata */}
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
             <label className="text-sm text-gray-600">Title</label>
@@ -213,7 +217,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
         </div>
 
-        {/* preview section */}
+        {/* Preview */}
         <div className="mt-4">
           <button
             onClick={handlePreview}
@@ -224,7 +228,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </button>
 
           {preview.length > 0 && (
-            <div className="mt-2 max-h-40 overflow-y-auto border rounded p-2 text-xs">
+            <div className="mt-2 max-h-48 overflow-y-auto border rounded p-2 text-xs">
               <table className="w-full">
                 <thead>
                   <tr className="text-gray-600 text-left">
@@ -251,7 +255,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
 
-        {/* actions */}
         <div className="mt-6 flex justify-end gap-2">
           <button
             onClick={onClose}
