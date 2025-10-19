@@ -7,10 +7,12 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
  * CreateDerivedDatasetWizard_JoinAware
  * ------------------------------------
  * Builds derived datasets by joining population, GIS, admin, or indicator datasets.
+ * Includes:
  * - Dynamic join-field detection
  * - Formula helper presets
  * - Handles percentages automatically
- * - Rounds derived values to desired precision
+ * - Rounds derived values
+ * - Shows banner if datasets are missing due to RLS or data gaps
  */
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
@@ -42,99 +44,127 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   // Load all dataset types
   useEffect(() => {
     if (!open) return;
+
     (async () => {
       const results: any[] = [];
+      const errors: string[] = [];
 
-      const [meta, pop, gis, admin] = await Promise.all([
-        supabase
-          .from("dataset_metadata")
-          .select(
-            "id,title,dataset_type,admin_level,year,data_format,record_count,join_field"
-          )
-          .eq("country_iso", countryIso),
-        supabase
-          .from("population_dataset_versions")
-          .select("id,title,admin_level,year,is_active,country_iso")
-          .eq("country_iso", countryIso)
-          .or("is_active.eq.true,is_active.is.null"),
-        supabase
-          .from("gis_dataset_versions")
-          .select("id,title,admin_level,is_active,country_iso")
-          .eq("country_iso", countryIso)
-          .or("is_active.eq.true,is_active.is.null"),
-        supabase
-          .from("admin_dataset_versions")
-          .select("id,title,is_active,country_iso")
-          .eq("country_iso", countryIso)
-          .or("is_active.eq.true,is_active.is.null"),
+      async function fetchFamily(
+        name: string,
+        query: Promise<any>,
+        transform: (rows: any[]) => any[]
+      ) {
+        try {
+          const { data, error } = await query;
+          if (error) throw error;
+          console.log(`✅ ${name}: ${data?.length || 0} rows`);
+          if (!data?.length) {
+            console.warn(`⚠️ ${name} → 0 rows (check RLS or filters)`);
+            errors.push(name);
+          } else {
+            results.push(...transform(data));
+          }
+        } catch (err: any) {
+          console.error(`❌ ${name} failed:`, err.message);
+          errors.push(name);
+        }
+      }
+
+      await Promise.all([
+        fetchFamily(
+          "dataset_metadata",
+          supabase
+            .from("dataset_metadata")
+            .select(
+              "id,title,dataset_type,admin_level,year,data_format,record_count,join_field"
+            )
+            .eq("country_iso", countryIso),
+          (rows) =>
+            rows.map((d) => ({
+              id: d.id,
+              title: d.title,
+              dataset_type: d.dataset_type ?? "other",
+              admin_level: d.admin_level ?? null,
+              year: d.year ?? null,
+              data_format: d.data_format ?? "numeric",
+              record_count: d.record_count ?? null,
+              join_field: d.join_field ?? "admin_pcode",
+              source_table: "dataset_values",
+            }))
+        ),
+        fetchFamily(
+          "population_dataset_versions",
+          supabase
+            .from("population_dataset_versions")
+            .select("id,title,admin_level,year,is_active,country_iso")
+            .eq("country_iso", countryIso)
+            .or("is_active.is.null,is_active.eq.true"),
+          (rows) =>
+            rows.map((d) => ({
+              id: d.id,
+              title: d.title ?? "Population Dataset",
+              dataset_type: "population",
+              admin_level: d.admin_level ?? "ADM3",
+              year: d.year ?? null,
+              data_format: "numeric",
+              record_count: null,
+              join_field: "pcode",
+              source_table: "population_data",
+            }))
+        ),
+        fetchFamily(
+          "gis_dataset_versions",
+          supabase
+            .from("gis_dataset_versions")
+            .select("id,title,admin_level,is_active,country_iso")
+            .eq("country_iso", countryIso)
+            .or("is_active.is.null,is_active.eq.true"),
+          (rows) =>
+            rows.map((d) => ({
+              id: d.id,
+              title: d.title ?? "GIS Dataset",
+              dataset_type: "gis",
+              admin_level: d.admin_level ?? null,
+              year: null,
+              data_format: "numeric",
+              record_count: null,
+              join_field: "admin_pcode",
+              source_table: "gis_layers",
+            }))
+        ),
+        fetchFamily(
+          "admin_dataset_versions",
+          supabase
+            .from("admin_dataset_versions")
+            .select("id,title,is_active,country_iso")
+            .eq("country_iso", countryIso)
+            .or("is_active.is.null,is_active.eq.true"),
+          (rows) =>
+            rows.map((d) => ({
+              id: d.id,
+              title: d.title ?? "Admin Units",
+              dataset_type: "admin",
+              admin_level: null,
+              year: null,
+              data_format: "categorical",
+              record_count: null,
+              join_field: "pcode",
+              source_table: "admin_units",
+            }))
+        ),
       ]);
 
-      if (meta.data?.length) {
-        results.push(
-          ...meta.data.map((d) => ({
-            id: d.id,
-            title: d.title,
-            dataset_type: d.dataset_type ?? "other",
-            admin_level: d.admin_level ?? null,
-            year: d.year ?? null,
-            data_format: d.data_format ?? "numeric",
-            record_count: d.record_count ?? null,
-            join_field: d.join_field ?? "admin_pcode",
-            source_table: "dataset_values",
-          }))
+      if (errors.length > 0) {
+        setWarning(
+          "⚠️ Some dataset types could not be loaded. This may be due to database permissions (RLS) or missing data sources."
         );
-      }
-
-      if (pop.data?.length) {
-        results.push(
-          ...pop.data.map((d) => ({
-            id: d.id,
-            title: d.title ?? "Population Dataset",
-            dataset_type: "population",
-            admin_level: d.admin_level ?? "ADM3",
-            year: d.year ?? null,
-            data_format: "numeric",
-            record_count: null,
-            join_field: "pcode",
-            source_table: "population_data",
-          }))
-        );
-      }
-
-      if (gis.data?.length) {
-        results.push(
-          ...gis.data.map((d) => ({
-            id: d.id,
-            title: d.title ?? "GIS Dataset",
-            dataset_type: "gis",
-            admin_level: d.admin_level ?? null,
-            year: null,
-            data_format: "numeric",
-            record_count: null,
-            join_field: "admin_pcode",
-            source_table: "gis_layers",
-          }))
-        );
-      }
-
-      if (admin.data?.length) {
-        results.push(
-          ...admin.data.map((d) => ({
-            id: d.id,
-            title: d.title ?? "Admin Units",
-            dataset_type: "admin",
-            admin_level: null,
-            year: null,
-            data_format: "categorical",
-            record_count: null,
-            join_field: "pcode",
-            source_table: "admin_units",
-          }))
-        );
+      } else {
+        setWarning(null);
       }
 
       setDatasets(results);
@@ -291,6 +321,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6">
         <h2 className="text-lg font-semibold mb-4">Create Derived Dataset</h2>
 
+        {warning && (
+          <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-800 text-sm border border-yellow-200">
+            {warning}
+          </div>
+        )}
+
         {/* Dataset selectors */}
         <div className="grid grid-cols-2 gap-4">
           {[["A", aId, setAId, aMeta, joinA, setJoinA, joinFieldsA],
@@ -445,25 +481,4 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
-
-        {/* Actions */}
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded border text-gray-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreate}
-            disabled={saving}
-            className="px-4 py-1.5 rounded bg-blue-600 text-white"
-          >
-            {saving ? "Creating..." : "Create"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+        {error && <p className="text-red-600 text-sm mt-3">{error}</
