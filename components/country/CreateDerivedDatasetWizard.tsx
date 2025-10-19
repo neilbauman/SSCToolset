@@ -1,123 +1,181 @@
 "use client";
 
-import { useState } from "react";
-import Modal from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
+import { useEffect, useState } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-interface CreateDerivedDatasetWizardProps {
-  open: boolean;
-  onClose: () => void;
-  onSave?: () => void;
-}
-
-/**
- * CreateDerivedDatasetWizard
- *
- * Tailwind-only wizard for composing derived datasets from multiple sources.
- * It does NOT use shadcn/ui, only your repo’s Modal and Button components.
- */
 export default function CreateDerivedDatasetWizard({
   open,
   onClose,
-  onSave,
-}: CreateDerivedDatasetWizardProps) {
-  const [step, setStep] = useState(1);
+  countryIso,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+  onCreated: (id: string) => void;
+}) {
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [aId, setAId] = useState("");
+  const [bId, setBId] = useState("");
+  const [method, setMethod] = useState("ratio");
+  const [title, setTitle] = useState("");
+  const [unit, setUnit] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("id,title,admin_level,year,data_format")
+        .eq("country_iso", countryIso)
+        .in("data_format", ["numeric", "percentage"]);
+      if (!error && data) setDatasets(data);
+    })();
+  }, [open, countryIso]);
+
+  const handleCreate = async () => {
+    if (!aId || !bId) {
+      setError("Select two datasets.");
+      return;
+    }
+    if (!title.trim()) {
+      setError("Enter a title.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        country_iso: countryIso,
+        datasets: [{ id: aId }, { id: bId }],
+        method,
+        admin_level: "ADM3", // MVP assumption (same level)
+        title: title.trim(),
+        unit: unit || null,
+      };
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/compute-derived`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Failed to create derived dataset");
+
+      onCreated(json.derived_dataset_id);
+      onClose();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Derived Dataset">
-      <div className="space-y-5 text-sm text-gray-700">
-        {/* Step 1 — Select Datasets */}
-        {step === 1 && (
-          <>
-            <h3 className="text-base font-medium">Step 1: Select Datasets</h3>
-            <p>Select at least two datasets to use in your derived calculation.</p>
-            <div className="p-3 border rounded bg-gray-50">
-              <p className="italic text-gray-500">
-                Dataset selector placeholder — will list available datasets for
-                this country.
-              </p>
-            </div>
-          </>
-        )}
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl p-6">
+        <h2 className="text-lg font-semibold mb-4">Create Derived Dataset</h2>
 
-        {/* Step 2 — Define Join Rules */}
-        {step === 2 && (
-          <>
-            <h3 className="text-base font-medium">Step 2: Define Join Rules</h3>
-            <p>
-              Define how the selected datasets align — matching admin levels,
-              time periods, and Pcodes.
-            </p>
-            <div className="p-3 border rounded bg-gray-50">
-              <p className="italic text-gray-500">
-                Join preview and alignment configuration will appear here.
-              </p>
-            </div>
-          </>
-        )}
-
-        {/* Step 3 — Define Formula */}
-        {step === 3 && (
-          <>
-            <h3 className="text-base font-medium">Step 3: Define Calculation</h3>
-            <p>
-              Create a formula combining selected indicators (for example:
-              “Population / Area = Density”).
-            </p>
-            <div className="p-3 border rounded bg-gray-50">
-              <p className="italic text-gray-500">
-                Formula builder and derived indicator metadata placeholder.
-              </p>
-            </div>
-          </>
-        )}
-
-        {/* Step 4 — Review */}
-        {step === 4 && (
-          <>
-            <h3 className="text-base font-medium">Step 4: Review & Confirm</h3>
-            <p>Review your configuration before generating the dataset.</p>
-            <div className="p-3 border rounded bg-gray-50">
-              <p className="italic text-gray-500">
-                A summary of join and formula configuration will appear here.
-              </p>
-            </div>
-          </>
-        )}
-
-        {/* Footer */}
-        <div className="flex justify-between pt-4 border-t border-gray-200">
-          {step > 1 ? (
-            <Button
-              onClick={() => setStep(step - 1)}
-              className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm text-gray-600">Dataset A</label>
+            <select
+              value={aId}
+              onChange={(e) => setAId(e.target.value)}
+              className="mt-1 w-full rounded border p-2"
             >
-              Back
-            </Button>
-          ) : (
-            <span />
-          )}
+              <option value="">Select...</option>
+              {datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.title} — {d.admin_level}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {step < 4 ? (
-            <Button
-              onClick={() => setStep(step + 1)}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+          <div>
+            <label className="text-sm text-gray-600">Dataset B</label>
+            <select
+              value={bId}
+              onChange={(e) => setBId(e.target.value)}
+              className="mt-1 w-full rounded border p-2"
             >
-              Next
-            </Button>
-          ) : (
-            <Button
-              onClick={() => {
-                if (onSave) onSave();
-                onClose();
-              }}
-              className="bg-green-600 text-white hover:bg-green-700"
-            >
-              Save Derived Dataset
-            </Button>
-          )}
+              <option value="">Select...</option>
+              {datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.title} — {d.admin_level}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="text-sm text-gray-600">Method</label>
+          <div className="mt-1 flex gap-2">
+            {["ratio", "sum", "difference"].map((m) => (
+              <button
+                key={m}
+                onClick={() => setMethod(m)}
+                className={`px-3 py-1 rounded border ${
+                  method === m ? "bg-gray-900 text-white" : ""
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm text-gray-600">Title</label>
+            <input
+              className="mt-1 w-full rounded border p-2"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Unit</label>
+            <input
+              className="mt-1 w-full rounded border p-2"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded border text-gray-600"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={saving}
+            className="px-4 py-1.5 rounded bg-blue-600 text-white"
+          >
+            {saving ? "Creating..." : "Create"}
+          </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
