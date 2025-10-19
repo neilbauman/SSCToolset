@@ -276,11 +276,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Method */}
+                {/* Method */}
         <div className="mt-4">
           <label className="text-sm text-gray-600">Method</label>
           <div className="mt-1 flex gap-2 flex-wrap">
-            {["multiply", "ratio", "sum", "difference", "aggregate"].map((m) => (
+            {["multiply", "ratio", "sum", "difference", "aggregate", "custom"].map((m) => (
               <button
                 key={m}
                 onClick={() => setMethod(m)}
@@ -294,14 +294,32 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
         </div>
 
-        {/* Metadata */}
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm text-gray-600">Title</label>
+        {/* Optional formula and rounding */}
+        {method === "custom" && (
+          <div className="mt-3">
+            <label className="text-sm text-gray-600">Custom Formula</label>
             <input
+              className="mt-1 w-full rounded border p-2 text-xs"
+              placeholder="Example: (a.value * b.value / 100)"
+              value={formula}
+              onChange={(e) => setFormula(e.target.value)}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Use <code>a.value</code> and <code>b.value</code> in your expression.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm text-gray-600">Round to Decimals</label>
+            <input
+              type="number"
               className="mt-1 w-full rounded border p-2"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={round}
+              min={0}
+              max={6}
+              onChange={(e) => setRound(parseInt(e.target.value) || 0)}
             />
           </div>
           <div>
