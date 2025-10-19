@@ -6,10 +6,10 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 /**
  * CreateDerivedDatasetWizard_JoinAware
  * ------------------------------------
- * Supports creating derived datasets by joining population, admin, GIS, or indicator datasets.
- * - Auto-detects dataset type and handles percentages intelligently.
- * - Allows selecting join field per dataset.
- * - Preview aware of chosen join fields and admin levels.
+ * Builds derived datasets by joining population, admin, GIS, or indicator datasets.
+ * - Shows dataset attributes and join keys
+ * - Auto-handles percentages and numeric formats
+ * - Allows custom formula + rounding control
  */
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
@@ -33,12 +33,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [targetLevel, setTargetLevel] = useState("ADM3");
   const [title, setTitle] = useState("");
   const [unit, setUnit] = useState("");
+  const [formula, setFormula] = useState("");
+  const [round, setRound] = useState(2);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load datasets from multiple tables
+  // Load datasets from metadata, population, gis, admin tables
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -47,7 +49,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       const [meta, pop, gis, admin] = await Promise.all([
         supabase
           .from("dataset_metadata")
-          .select("id,title,dataset_type,admin_level,year,data_format,record_count,join_field")
+          .select(
+            "id,title,dataset_type,admin_level,year,data_format,record_count,join_field"
+          )
           .eq("country_iso", countryIso),
         supabase
           .from("population_dataset_versions")
@@ -123,7 +127,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     })();
   }, [open, countryIso]);
 
-  // Find selected dataset metadata
+  // Set metadata
   useEffect(() => {
     setAMeta(datasets.find((d) => d.id === aId) || null);
     setBMeta(datasets.find((d) => d.id === bId) || null);
@@ -153,6 +157,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         p_admin_level: targetLevel,
         p_join_a: joinA,
         p_join_b: joinB,
+        p_formula: formula || null,
+        p_round: round,
       });
       if (error) throw error;
       setPreview(data || []);
@@ -169,6 +175,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (!title.trim()) return setError("Enter a title.");
     setSaving(true);
     setError(null);
+
     try {
       const payload = {
         country_iso: countryIso,
@@ -204,15 +211,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   if (!open) return null;
 
-  const renderDatasetCard = (label: string, meta: any, joinField: string, setJoin: any) => (
+  const renderDatasetCard = (meta: any, joinField: string, setJoin: any) => (
     <div className="text-xs mt-1 border rounded p-2 bg-gray-50">
       {meta ? (
         <>
           <div>
-            <strong>{meta.title}</strong> — {meta.dataset_type} ({meta.admin_level})
+            <strong>{meta.title}</strong> — {meta.dataset_type}{" "}
+            {meta.admin_level ? `(${meta.admin_level})` : ""}
           </div>
           <div>Format: {meta.data_format}</div>
-          <div>Join Field:
+          <div>
+            Join Field:
             <select
               value={joinField}
               onChange={(e) => setJoin(e.target.value)}
@@ -256,7 +265,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                     </option>
                   ))}
                 </select>
-                {renderDatasetCard(label as string, meta, joinField as string, setJoin)}
+                {renderDatasetCard(meta, joinField as string, setJoin)}
               </div>
             )
           )}
@@ -276,7 +285,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-                {/* Method */}
+        {/* Method */}
         <div className="mt-4">
           <label className="text-sm text-gray-600">Method</label>
           <div className="mt-1 flex gap-2 flex-wrap">
@@ -330,6 +339,16 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               onChange={(e) => setUnit(e.target.value)}
             />
           </div>
+        </div>
+
+        {/* Title */}
+        <div className="mt-3">
+          <label className="text-sm text-gray-600">Title</label>
+          <input
+            className="mt-1 w-full rounded border p-2"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </div>
 
         {/* Preview */}
