@@ -31,18 +31,6 @@ function StatLine({
   return <div className={`text-sm text-gray-700 leading-relaxed ${className}`}>{children}</div>;
 }
 
-type OtherRow = {
-  id: string;
-  title: string;
-  indicator_name: string | null;
-  taxonomy_category: string | null;
-  taxonomy_term: string | null;
-  admin_level: string | null;
-  record_count: number | null;
-  dataset_type?: string | null;
-  data_health?: string | null;
-};
-
 export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
   const [adminVersion, setAdminVersion] = useState<any | null>(null);
   const [adminByLevel, setAdminByLevel] = useState<Record<string, number>>({});
@@ -50,7 +38,8 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
   const [gisRows, setGisRows] = useState<
     { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
   >([]);
-  const [otherDatasets, setOtherDatasets] = useState<OtherRow[]>([]);
+  const [otherDatasets, setOtherDatasets] = useState<any[]>([]);
+  const [derivedDatasets, setDerivedDatasets] = useState<any[]>([]);
 
   // --- Admin dataset ---
   useEffect(() => {
@@ -84,7 +73,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Population ---
+  // --- Population dataset ---
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -107,46 +96,42 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Other datasets (view first; fallback to dataset_metadata) ---
+  // --- Other datasets ---
   useEffect(() => {
     (async () => {
-      // Try view first (includes indicator/taxonomy decoration)
-      const { data: vdata, error } = await supabase
+      const { data: vdata } = await supabase
         .from("view_dataset_with_indicator")
-        .select("id, title, indicator_name, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type")
+        .select(
+          "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name"
+        )
         .eq("country_iso", countryIso)
         .order("year", { ascending: false });
 
-      let rows: OtherRow[] = vdata || [];
+      let rows = vdata || [];
 
-      // Fallback: if view is empty or unavailable, read from dataset_metadata
-      if ((!rows || rows.length === 0) || error) {
+      if (!rows.length) {
         const { data: md } = await supabase
           .from("dataset_metadata")
-          .select("id, title, admin_level, record_count, dataset_type")
+          .select("id, title, admin_level, record_count, dataset_type, source_name")
           .eq("country_iso", countryIso)
           .order("created_at", { ascending: false });
-
-        rows =
-          (md || []).map((d: any) => ({
-            id: d.id,
-            title: d.title,
-            indicator_name: null,
-            taxonomy_category: null,
-            taxonomy_term: null,
-            admin_level: d.admin_level ?? "—",
-            record_count: d.record_count ?? 0,
-            dataset_type: d.dataset_type ?? null,
-          })) || [];
+        rows = md || [];
       }
 
-      // Show everything that's NOT core families (admin/population/gis/derived)
       const filtered = rows.filter(
-        (d) => !["admin", "population", "gis", "derived"].includes((d.dataset_type || "").toLowerCase())
+        (d) =>
+          !["admin", "population", "gis", "derived"].includes(
+            (d.dataset_type || "").toLowerCase()
+          )
       );
 
-      const enriched = filtered.map((d) => ({
-        ...d,
+      const enriched = filtered.map((d: any) => ({
+        id: d.id,
+        title: d.title,
+        indicator_name:
+          d.indicator_title || d.source_name || null,
+        taxonomy_category: d.taxonomy_category,
+        taxonomy_term: d.taxonomy_term,
         admin_level: d.admin_level ?? "—",
         record_count: d.record_count ?? 0,
         data_health: "good",
@@ -156,7 +141,19 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Derived values ---
+  // --- Derived datasets ---
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("derived_datasets")
+        .select("id, title, admin_level, year, record_count")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false });
+      if (!error && data) setDerivedDatasets(data);
+    })();
+  }, [countryIso]);
+
+  // --- Derived computed values ---
   const gisByLevel = useMemo(() => {
     const map: Record<string, { rep: number; tot: number; pct: number | null }> = {};
     for (const r of gisRows) {
@@ -220,7 +217,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           </div>
         </div>
 
-        {/* Population Data */}
+        {/* Population */}
         <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <Link
@@ -236,7 +233,6 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
               <StatLine className="mb-1 text-gray-600">
                 {pop.population_title} ({pop.population_year ?? "—"})
               </StatLine>
-              <StatLine>Lowest level: —</StatLine>
               <StatLine>
                 Total population: {Intl.NumberFormat().format(pop.total_population ?? 0)}
               </StatLine>
@@ -257,7 +253,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           </div>
         </div>
 
-        {/* GIS Layers */}
+        {/* GIS */}
         <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <Link
@@ -327,20 +323,13 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
               {otherDatasets.map((d) => (
                 <tr key={d.id} className="border-t hover:bg-gray-50">
                   <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-3 py-2">
-                    <div>{d.indicator_name ?? "—"}</div>
-                    {d.taxonomy_term && (
-                      <div className="text-xs text-gray-500">
-                        {d.taxonomy_category ?? ""} → {d.taxonomy_term}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">{d.admin_level ?? "—"}</td>
+                  <td className="px-3 py-2">{d.indicator_name ?? "—"}</td>
+                  <td className="px-3 py-2">{d.admin_level}</td>
                   <td className="px-3 py-2 text-right">
-                    {Intl.NumberFormat().format(d.record_count ?? 0)}
+                    {Intl.NumberFormat().format(d.record_count)}
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <Badge status={(d.data_health as Health) || "good"} />
+                    <Badge status={d.data_health as Health} />
                   </td>
                 </tr>
               ))}
@@ -349,11 +338,39 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         </div>
       )}
 
-      {/* === Derived Datasets placeholder (unchanged) === */}
+      {/* === Derived Datasets === */}
       <h2 className="text-xl font-semibold mt-8 mb-3">Derived Datasets</h2>
-      <div className="text-gray-500 italic text-sm">
-        Derived and analytical datasets will appear once joins are created.
-      </div>
+
+      {derivedDatasets.length === 0 ? (
+        <div className="text-gray-500 italic text-sm">
+          Derived and analytical datasets will appear once joins are created.
+        </div>
+      ) : (
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="min-w-full text-sm text-gray-700">
+            <thead className="bg-gray-50 text-gray-600 font-medium">
+              <tr>
+                <th className="px-3 py-2 text-left">Title</th>
+                <th className="px-3 py-2 text-left">Admin Level</th>
+                <th className="px-3 py-2 text-left">Year</th>
+                <th className="px-3 py-2 text-right">Records</th>
+              </tr>
+            </thead>
+            <tbody>
+              {derivedDatasets.map((d) => (
+                <tr key={d.id} className="border-t hover:bg-gray-50">
+                  <td className="px-3 py-2">{d.title}</td>
+                  <td className="px-3 py-2">{d.admin_level ?? "—"}</td>
+                  <td className="px-3 py-2">{d.year ?? "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    {Intl.NumberFormat().format(d.record_count ?? 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
