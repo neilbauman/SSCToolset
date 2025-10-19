@@ -6,10 +6,10 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 /**
  * CreateDerivedDatasetWizard_JoinAware
  * ------------------------------------
- * Supports creating derived datasets across population, admin, GIS, and metadata datasets.
- * - Detects dataset type and admin level
- * - Allows selecting join level
- * - Previews joins across different data sources
+ * Supports creating derived datasets by joining population, admin, GIS, or indicator datasets.
+ * - Auto-detects dataset type and handles percentages intelligently.
+ * - Allows selecting join field per dataset.
+ * - Preview aware of chosen join fields and admin levels.
  */
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
@@ -27,6 +27,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [bId, setBId] = useState("");
   const [aMeta, setAMeta] = useState<any>(null);
   const [bMeta, setBMeta] = useState<any>(null);
+  const [joinA, setJoinA] = useState("admin_pcode");
+  const [joinB, setJoinB] = useState("admin_pcode");
   const [method, setMethod] = useState("multiply");
   const [targetLevel, setTargetLevel] = useState("ADM3");
   const [title, setTitle] = useState("");
@@ -45,7 +47,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       const [meta, pop, gis, admin] = await Promise.all([
         supabase
           .from("dataset_metadata")
-          .select("id,title,dataset_type,admin_level,year,data_format,record_count")
+          .select("id,title,dataset_type,admin_level,year,data_format,record_count,join_field")
           .eq("country_iso", countryIso),
         supabase
           .from("population_dataset_versions")
@@ -69,7 +71,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             dataset_type: d.dataset_type ?? "other",
             admin_level: d.admin_level ?? null,
             year: d.year ?? null,
+            data_format: d.data_format ?? "numeric",
             record_count: d.record_count ?? null,
+            join_field: d.join_field ?? "admin_pcode",
           }))
         );
 
@@ -81,7 +85,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             dataset_type: "population",
             admin_level: d.admin_level ?? "ADM3",
             year: d.year ?? null,
+            data_format: "numeric",
             record_count: null,
+            join_field: "admin_pcode",
           }))
         );
 
@@ -93,7 +99,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             dataset_type: "gis",
             admin_level: d.admin_level ?? null,
             year: null,
+            data_format: "numeric",
             record_count: null,
+            join_field: "admin_pcode",
           }))
         );
 
@@ -105,7 +113,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             dataset_type: "admin",
             admin_level: null,
             year: null,
+            data_format: "categorical",
             record_count: null,
+            join_field: "pcode",
           }))
         );
 
@@ -113,13 +123,22 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     })();
   }, [open, countryIso]);
 
-  // Derive metadata objects
+  // Find selected dataset metadata
   useEffect(() => {
     setAMeta(datasets.find((d) => d.id === aId) || null);
     setBMeta(datasets.find((d) => d.id === bId) || null);
   }, [aId, bId, datasets]);
 
-  // Preview logic (auto-detect dataset source)
+  // Auto-suggest method
+  useEffect(() => {
+    if (!aMeta || !bMeta) return;
+    const isRate =
+      aMeta.data_format === "percentage" || bMeta.data_format === "percentage";
+    if (isRate) setMethod("multiply");
+    else setMethod("ratio");
+  }, [aMeta, bMeta]);
+
+  // Preview join
   async function handlePreview() {
     if (!aId || !bId) return;
     setLoadingPreview(true);
@@ -127,19 +146,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setPreview([]);
 
     try {
-      const getSource = (meta: any) =>
-        meta?.dataset_type === "population" ? "population_data" : "dataset_values";
-
-      const tableA = getSource(aMeta);
-      const tableB = getSource(bMeta);
-
       const { data, error } = await supabase.rpc("preview_dataset_join", {
         p_dataset_a: aId,
         p_dataset_b: bId,
-        p_method: method === "multiply" ? "product" : method,
+        p_method: method,
         p_admin_level: targetLevel,
+        p_join_a: joinA,
+        p_join_b: joinB,
       });
-
       if (error) throw error;
       setPreview(data || []);
     } catch (err: any) {
@@ -155,11 +169,10 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (!title.trim()) return setError("Enter a title.");
     setSaving(true);
     setError(null);
-
     try {
       const payload = {
         country_iso: countryIso,
-        datasets: [{ id: aId }, { id: bId }],
+        datasets: [{ id: aId, join_field: joinA }, { id: bId, join_field: joinB }],
         method,
         admin_level: targetLevel,
         title: title.trim(),
@@ -191,6 +204,33 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   if (!open) return null;
 
+  const renderDatasetCard = (label: string, meta: any, joinField: string, setJoin: any) => (
+    <div className="text-xs mt-1 border rounded p-2 bg-gray-50">
+      {meta ? (
+        <>
+          <div>
+            <strong>{meta.title}</strong> — {meta.dataset_type} ({meta.admin_level})
+          </div>
+          <div>Format: {meta.data_format}</div>
+          <div>Join Field:
+            <select
+              value={joinField}
+              onChange={(e) => setJoin(e.target.value)}
+              className="ml-2 border rounded px-1"
+            >
+              {[meta.join_field || "admin_pcode", "pcode", "adm_code"].map((f) => (
+                <option key={f}>{f}</option>
+              ))}
+            </select>
+          </div>
+          {meta.record_count && <div>Records: {meta.record_count}</div>}
+        </>
+      ) : (
+        <div className="italic text-gray-500">No dataset selected.</div>
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6">
@@ -198,8 +238,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {/* Dataset selectors */}
         <div className="grid grid-cols-2 gap-4">
-          {[["A", aId, setAId, aMeta], ["B", bId, setBId, bMeta]].map(
-            ([label, value, setter, meta]) => (
+          {[["A", aId, setAId, aMeta, joinA, setJoinA],
+            ["B", bId, setBId, bMeta, joinB, setJoinB]].map(
+            ([label, value, setter, meta, joinField, setJoin]) => (
               <div key={label as string}>
                 <label className="text-sm text-gray-600">Dataset {label}</label>
                 <select
@@ -215,18 +256,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                     </option>
                   ))}
                 </select>
-                {meta && (
-                  <div className="mt-1 text-xs text-gray-500">
-                    Type: {meta.dataset_type}, Level: {meta.admin_level ?? "N/A"},{" "}
-                    Records: {meta.record_count ?? "?"}
-                  </div>
-                )}
+                {renderDatasetCard(label as string, meta, joinField as string, setJoin)}
               </div>
             )
           )}
         </div>
 
-        {/* Target admin level */}
+        {/* Join Level */}
         <div className="mt-4">
           <label className="text-sm text-gray-600">Join / Target Admin Level</label>
           <select
@@ -258,7 +294,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
         </div>
 
-        {/* Metadata fields */}
+        {/* Metadata */}
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
             <label className="text-sm text-gray-600">Title</label>
