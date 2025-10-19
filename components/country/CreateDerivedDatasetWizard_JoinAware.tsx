@@ -82,23 +82,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     setWarn(aL && bL && aL !== bL ? `⚠️ Joining ${aL} with ${bL} may require aggregation or flattening.` : null);
   }, [aMeta?.admin_level, bMeta?.admin_level]);
 
-  /** Basic computation **/
-  const compute = (m: Method, a: number | null, b: number | null) =>
-    m === "multiply" ? (a != null && b != null ? a * b : null)
-      : m === "ratio" ? (a != null && b ? a / b : null)
-      : m === "sum" ? (a ?? 0) + (b ?? 0)
-      : m === "difference" ? (a ?? 0) - (b ?? 0) : null;
-
-  /** Simple preview using admin table for base names **/
+  /** Simple preview **/
   async function previewJoin() {
     if (!aMeta || !bMeta) return;
-    setRows([]);
     const { data: admins } = await supabase.from("admin_units")
       .select("pcode,name").eq("country_iso", countryIso).eq("level", target).limit(12);
     setRows(admins?.map(a => ({ name: a.name, key: a.pcode, a: "—", b: "—", derived: "—" })) || []);
   }
 
-  /** Create derived dataset (placeholder RPC) **/
+  /** Create derived dataset **/
   async function handleCreate() {
     if (!aMeta || !bMeta) return; setLoading(true);
     try {
@@ -133,7 +125,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                 <label className="block text-sm font-medium mb-1">Dataset {l}</label>
                 <select value={id} onChange={(e) => sId(e.target.value)} className="w-full border rounded px-2 py-1.5">
                   <option value="">Select dataset…</option>
-                  {datasets.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                  {datasets.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
                 </select>
                 {meta && <div className="text-xs text-gray-600 mt-1">
                   Type:{meta.dataset_type} · Level:{meta.admin_level ?? "—"} · Records:{meta.record_count ?? "?"}
@@ -141,7 +133,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                 <div className="mt-2">
                   <label className="text-xs text-gray-700">Join Field</label>
                   <select value={join} onChange={(e) => sJoin(e.target.value)} className="w-full border rounded px-2 py-1 text-xs">
-                    {fields.map((f) => <option key={f}>{f}</option>)}
+                    {fields.map((f: string) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -152,16 +146,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           <div>
             <label className="text-sm font-medium mb-1">Join Level</label>
             <select value={target} onChange={(e) => setTarget(e.target.value)} className="border rounded px-2 py-1.5">
-              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map(l => <option key={l}>{l}</option>)}
+              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"].map((l) => <option key={l}>{l}</option>)}
             </select>
           </div>
 
           <div>
             <label className="text-sm font-medium mb-1">Method</label>
             <div className="flex flex-wrap gap-2">
-              {(["multiply", "ratio", "sum", "difference", "aggregate", "custom"] as Method[]).map(m =>
+              {(["multiply", "ratio", "sum", "difference", "aggregate", "custom"] as Method[]).map((m) => (
                 <button key={m} onClick={() => setMethod(m)}
-                  className={`px-3 py-1.5 border rounded ${method === m ? "bg-blue-600 text-white border-blue-600" : ""}`}>{m}</button>)}
+                  className={`px-3 py-1.5 border rounded ${method === m ? "bg-blue-600 text-white border-blue-600" : ""}`}>{m}</button>
+              ))}
             </div>
           </div>
 
