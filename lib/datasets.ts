@@ -28,8 +28,8 @@ export type CountryDatasetResponse = {
 
 /**
  * Fetch datasets (and optionally indicators) for a given country.
- * @param countryIso ISO code (e.g., "PHL")
- * @param includeIndicators whether to include linked indicator metadata
+ * Calls the RLS-safe Edge Function `get-country-datasets`.
+ * Returns a consistent, typed payload for both UI and analytical use.
  */
 export async function fetchCountryDatasets(
   countryIso: string,
@@ -40,13 +40,23 @@ export async function fetchCountryDatasets(
   const viewUrl = `${baseUrl}/rest/v1/view_dataset_with_indicator?select=*`;
 
   try {
+    // -----------------------------------------------------------------------
     // Primary unified dataset fetch
-    const res = await fetch(edgeUrl, { headers: { "Content-Type": "application/json" } });
-    if (!res.ok) throw new Error(`Edge function failed (${res.status})`);
+    const res = await fetch(edgeUrl, {
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+      console.error("❌ Edge function error:", res.status, res.statusText);
+      throw new Error(`Edge function failed (${res.status})`);
+    }
+
     const json = await res.json();
 
-    let datasets: DatasetInfo[] = (json.datasets || []).map((d: any) => ({
-      id: d.id,
+    // Defensive handling: ensure proper structure
+    const raw = json?.datasets ?? [];
+    const datasets: DatasetInfo[] = raw.map((d: any) => ({
+      id: d.id ?? crypto.randomUUID(),
       title: d.title ?? "Untitled Dataset",
       dataset_type: d.dataset_type ?? "other",
       join_field: d.join_field ?? "admin_pcode",
@@ -58,37 +68,49 @@ export async function fetchCountryDatasets(
       year: d.year ?? null,
     }));
 
-    // Optional indicator enrichment
+    // -----------------------------------------------------------------------
+    // Optional indicator enrichment (SSC linkage)
     if (includeIndicators) {
-      const resp = await fetch(`${viewUrl}&country_iso=eq.${countryIso}`, {
-        headers: {
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          "Content-Type": "application/json",
-        },
-      });
-      if (resp.ok) {
-        const indicators = await resp.json();
-        const map = new Map<string, any>();
-        for (const i of indicators) map.set(i.dataset_id, i);
-
-        datasets = datasets.map((d) => {
-          const link = map.get(d.id);
-          return link
-            ? {
-                ...d,
-                indicator_id: link.indicator_id,
-                indicator_title: link.indicator_title,
-                theme: link.theme,
-                subtheme: link.subtheme,
-              }
-            : d;
+      try {
+        const resp = await fetch(`${viewUrl}&country_iso=eq.${countryIso}`, {
+          headers: {
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+            "Content-Type": "application/json",
+          },
         });
-      } else {
-        console.warn("view_dataset_with_indicator fetch failed:", resp.status);
+
+        if (resp.ok) {
+          const indicators = await resp.json();
+          const map = new Map<string, any>();
+          for (const i of indicators) map.set(i.dataset_id, i);
+
+          for (const d of datasets) {
+            const link = map.get(d.id);
+            if (link) {
+              d.indicator_id = link.indicator_id;
+              d.indicator_title = link.indicator_title ?? link.indicator_name ?? null;
+              d.theme = link.theme ?? null;
+              d.subtheme = link.subtheme ?? null;
+            }
+          }
+        } else {
+          console.warn(
+            "⚠️ view_dataset_with_indicator fetch failed:",
+            resp.status
+          );
+        }
+      } catch (err: any) {
+        console.warn("⚠️ Indicator enrichment skipped:", err.message);
       }
     }
 
-    return { country_iso: json.country_iso, total: datasets.length, datasets };
+    // -----------------------------------------------------------------------
+    // Return standardized object
+    return {
+      country_iso: json.country_iso ?? countryIso,
+      total: datasets.length,
+      datasets,
+    };
   } catch (err: any) {
     console.error("fetchCountryDatasets failed:", err.message);
     return { country_iso: countryIso, total: 0, datasets: [] };
