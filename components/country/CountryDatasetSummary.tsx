@@ -31,6 +31,19 @@ function StatLine({
   return <div className={`text-sm text-gray-700 leading-relaxed ${className}`}>{children}</div>;
 }
 
+// --- Type definitions ---------------------------------------------------------
+type DatasetRow = {
+  id: string;
+  title: string;
+  indicator_title?: string | null;
+  taxonomy_category?: string | null;
+  taxonomy_term?: string | null;
+  admin_level?: string | null;
+  record_count?: number | null;
+  dataset_type?: string | null;
+  source_name?: string | null;
+};
+
 export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
   const [adminVersion, setAdminVersion] = useState<any | null>(null);
   const [adminByLevel, setAdminByLevel] = useState<Record<string, number>>({});
@@ -38,10 +51,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
   const [gisRows, setGisRows] = useState<
     { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
   >([]);
-  const [otherDatasets, setOtherDatasets] = useState<any[]>([]);
+  const [otherDatasets, setOtherDatasets] = useState<DatasetRow[]>([]);
   const [derivedDatasets, setDerivedDatasets] = useState<any[]>([]);
 
-  // --- Admin dataset ---
+  // --- Admin dataset ----------------------------------------------------------
   useEffect(() => {
     (async () => {
       const { data: v } = await supabase
@@ -73,7 +86,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Population dataset ---
+  // --- Population dataset -----------------------------------------------------
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -85,7 +98,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- GIS layers ---
+  // --- GIS layers -------------------------------------------------------------
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -96,10 +109,10 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Other datasets ---
+  // --- Other datasets ---------------------------------------------------------
   useEffect(() => {
     (async () => {
-      const { data: vdata } = await supabase
+      let { data: vdata } = await supabase
         .from("view_dataset_with_indicator")
         .select(
           "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name"
@@ -107,7 +120,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
         .eq("country_iso", countryIso)
         .order("year", { ascending: false });
 
-      let rows = vdata || [];
+      let rows: DatasetRow[] = vdata || [];
 
       if (!rows.length) {
         const { data: md } = await supabase
@@ -115,7 +128,18 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           .select("id, title, admin_level, record_count, dataset_type, source_name")
           .eq("country_iso", countryIso)
           .order("created_at", { ascending: false });
-        rows = md || [];
+        rows =
+          (md || []).map((d: any) => ({
+            id: d.id,
+            title: d.title,
+            indicator_title: null,
+            taxonomy_category: null,
+            taxonomy_term: null,
+            admin_level: d.admin_level ?? "—",
+            record_count: d.record_count ?? 0,
+            dataset_type: d.dataset_type ?? null,
+            source_name: d.source_name ?? null,
+          })) || [];
       }
 
       const filtered = rows.filter(
@@ -125,15 +149,9 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
           )
       );
 
-      const enriched = filtered.map((d: any) => ({
-        id: d.id,
-        title: d.title,
-        indicator_name:
-          d.indicator_title || d.source_name || null,
-        taxonomy_category: d.taxonomy_category,
-        taxonomy_term: d.taxonomy_term,
-        admin_level: d.admin_level ?? "—",
-        record_count: d.record_count ?? 0,
+      const enriched = filtered.map((d) => ({
+        ...d,
+        indicator_title: d.indicator_title ?? d.source_name ?? null,
         data_health: "good",
       }));
 
@@ -141,7 +159,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Derived datasets ---
+  // --- Derived datasets -------------------------------------------------------
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -153,7 +171,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
     })();
   }, [countryIso]);
 
-  // --- Derived computed values ---
+  // --- Derived computed values ------------------------------------------------
   const gisByLevel = useMemo(() => {
     const map: Record<string, { rep: number; tot: number; pct: number | null }> = {};
     for (const r of gisRows) {
@@ -175,7 +193,7 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
   const popHealth: Health = pop && pop.total_population ? "good" : "missing";
   const gisHealth: Health = gisRows?.length > 0 ? "good" : "missing";
 
-  // --- Render ---
+  // --- Render -----------------------------------------------------------------
   return (
     <section className="mt-4">
       <h2 className="text-xl font-semibold mb-4">Core Datasets</h2>
@@ -323,13 +341,13 @@ export default function CountryDatasetSummary({ countryIso }: { countryIso: stri
               {otherDatasets.map((d) => (
                 <tr key={d.id} className="border-t hover:bg-gray-50">
                   <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-3 py-2">{d.indicator_name ?? "—"}</td>
-                  <td className="px-3 py-2">{d.admin_level}</td>
+                  <td className="px-3 py-2">{d.indicator_title ?? "—"}</td>
+                  <td className="px-3 py-2">{d.admin_level ?? "—"}</td>
                   <td className="px-3 py-2 text-right">
-                    {Intl.NumberFormat().format(d.record_count)}
+                    {Intl.NumberFormat().format(d.record_count ?? 0)}
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <Badge status={d.data_health as Health} />
+                    <Badge status={"good"} />
                   </td>
                 </tr>
               ))}
