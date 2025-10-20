@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, AlertTriangle } from "lucide-react";
 
-// Local lightweight button to avoid external dependency drift
 function Button({
   children,
   onClick,
@@ -82,26 +81,48 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showJoinPreview, setShowJoinPreview] = useState(false);
   const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
 
-  // ---- Fetch available datasets ----
+  // ✅ Fixed dataset query
   useEffect(() => {
     const fetchDatasets = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("dataset_metadata")
-        .select("id, dataset_title as title, dataset_type, admin_level, dataset_title")
+        .select(
+          `
+            id,
+            dataset_title,
+            dataset_type,
+            admin_level,
+            country_iso,
+            is_active
+          `
+        )
         .eq("country_iso", countryIso)
         .eq("is_active", true)
         .order("dataset_title");
+
+      if (error) {
+        console.error("Error loading datasets:", error);
+        setDatasets([]);
+        return;
+      }
+
       const rows =
         data?.map((d: any) => ({
-          ...d,
-          table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
+          id: d.id,
+          title: d.dataset_title,
+          dataset_type: d.dataset_type,
+          admin_level: d.admin_level,
+          table_name: d.dataset_title
+            ? d.dataset_title.replace(/\s+/g, "_").toLowerCase()
+            : "",
         })) || [];
+
       setDatasets(rows);
     };
     fetchDatasets();
   }, [countryIso]);
 
-  // ---- Auto-detect admin level and warn if aggregation required ----
+  // ---- Auto-detect aggregation
   useEffect(() => {
     if (!datasetA || !datasetB) return;
     const hierarchy = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"];
@@ -122,7 +143,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     }
   }, [datasetA, datasetB]);
 
-  // ---- Preview join ----
+  // ---- Preview join
   const handlePreviewJoin = async () => {
     if (!datasetA || !datasetB) return;
     setLoading(true);
@@ -316,7 +337,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 ))}
               </tbody>
             </table>
-            <p className="text-[10px] text-gray-500 mt-1">Showing up to 25 rows.</p>
+            <p className="text-[10px] text-gray-500 mt-1">
+              Showing up to 25 rows.
+            </p>
           </div>
         )}
 
