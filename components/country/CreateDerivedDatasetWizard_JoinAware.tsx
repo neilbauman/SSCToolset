@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, AlertTriangle } from "lucide-react";
 
+// --- Minimal build-safe Button ---
 function Button({
   children,
   onClick,
@@ -36,6 +37,7 @@ function Button({
     </button>
   );
 }
+// ---------------------------------
 
 type DatasetOption = {
   id: string;
@@ -81,48 +83,29 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showJoinPreview, setShowJoinPreview] = useState(false);
   const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
 
-  // ✅ Fixed dataset query
+  // ✅ Restored: Working dataset fetch logic
   useEffect(() => {
     const fetchDatasets = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("dataset_metadata")
         .select(
-          `
-            id,
-            dataset_title,
-            dataset_type,
-            admin_level,
-            country_iso,
-            is_active
-          `
+          "id, dataset_title as title, dataset_type, admin_level, dataset_title"
         )
         .eq("country_iso", countryIso)
         .eq("is_active", true)
         .order("dataset_title");
 
-      if (error) {
-        console.error("Error loading datasets:", error);
-        setDatasets([]);
-        return;
-      }
-
       const rows =
         data?.map((d: any) => ({
-          id: d.id,
-          title: d.dataset_title,
-          dataset_type: d.dataset_type,
-          admin_level: d.admin_level,
-          table_name: d.dataset_title
-            ? d.dataset_title.replace(/\s+/g, "_").toLowerCase()
-            : "",
+          ...d,
+          table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
         })) || [];
-
       setDatasets(rows);
     };
     fetchDatasets();
   }, [countryIso]);
 
-  // ---- Auto-detect aggregation
+  // Auto detect level relationships
   useEffect(() => {
     if (!datasetA || !datasetB) return;
     const hierarchy = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"];
@@ -143,7 +126,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     }
   }, [datasetA, datasetB]);
 
-  // ---- Preview join
+  // Join preview
   const handlePreviewJoin = async () => {
     if (!datasetA || !datasetB) return;
     setLoading(true);
@@ -175,6 +158,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setLoading(false);
   };
 
+  // ----------- Modal Wrapper -------------
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40"
@@ -197,7 +181,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           <span>Include GIS datasets</span>
         </label>
 
-        {/* Step 1 */}
         <h3 className="text-sm font-semibold mb-2">Step 1 Join Alignment</h3>
         {aggregationNotice && (
           <div className="flex items-start space-x-2 bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded">
@@ -224,6 +207,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 </option>
               ))}
             </select>
+
             <div className="flex space-x-2 mt-2">
               <label className="text-xs">Join Field</label>
               <select
@@ -237,6 +221,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 <option value="id">id</option>
               </select>
             </div>
+
             <Button
               variant="link"
               className="text-xs mt-1"
@@ -269,6 +254,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 </option>
               ))}
             </select>
+
             <div className="flex space-x-2 mt-2">
               <label className="text-xs">Join Field</label>
               <select
@@ -282,6 +268,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 <option value="id">id</option>
               </select>
             </div>
+
             <Button
               variant="link"
               className="text-xs mt-1"
@@ -337,12 +324,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 ))}
               </tbody>
             </table>
-            <p className="text-[10px] text-gray-500 mt-1">
-              Showing up to 25 rows.
-            </p>
+            <p className="text-[10px] text-gray-500 mt-1">Showing up to 25 rows.</p>
           </div>
         )}
 
+        {/* Step 2 */}
         <h3 className="text-sm font-semibold mt-4 mb-2">
           Step 2 Derivation / Aggregation
         </h3>
