@@ -120,7 +120,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (idxA === -1 || idxB === -1) return;
     const deeper = idxA > idxB ? datasetA.admin_level : datasetB.admin_level;
     const higher = idxA > idxB ? datasetB.admin_level : datasetA.admin_level;
-    setTargetLevel(deeper);
+    setTargetLevel((deeper ?? "ADM4") as string);
     if (deeper !== higher) {
       setAggregationNotice(
         `Aggregating ${deeper} data upward to ${higher} may require summarization or averaging.`
