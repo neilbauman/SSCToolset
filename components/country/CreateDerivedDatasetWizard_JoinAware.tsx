@@ -83,7 +83,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showJoinPreview, setShowJoinPreview] = useState(false);
   const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
 
-  // ✅ FIXED dataset fetch (uses correct column names)
+  // ✅ FIXED: fetches datasets + injects Admin, Population, GIS
   useEffect(() => {
     const fetchDatasets = async () => {
       const { data, error } = await supabase
@@ -100,12 +100,40 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       const filtered =
         data?.filter((d: any) => d.country_iso === countryIso) ?? [];
 
-      const rows = filtered.map((d: any) => ({
+      const metadataRows = filtered.map((d: any) => ({
         ...d,
         table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
       }));
 
-      setDatasets(rows);
+      // 🔹 Add system-level base datasets
+      const baseRows = [
+        {
+          id: "admins",
+          title: "Administrative Boundaries",
+          dataset_type: "admin",
+          admin_level: "ADM4",
+          table_name: "admin_units",
+          country_iso: countryIso,
+        },
+        {
+          id: "population",
+          title: "Population Data",
+          dataset_type: "population",
+          admin_level: "ADM4",
+          table_name: "population_data",
+          country_iso: countryIso,
+        },
+        {
+          id: "gis",
+          title: "GIS Data",
+          dataset_type: "gis",
+          admin_level: "ADM4",
+          table_name: "gis_layers",
+          country_iso: countryIso,
+        },
+      ];
+
+      setDatasets([...baseRows, ...metadataRows]);
     };
     fetchDatasets();
   }, [countryIso]);
