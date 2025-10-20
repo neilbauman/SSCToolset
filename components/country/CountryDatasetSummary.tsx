@@ -1,394 +1,178 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { ArrowRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-type Health = "good" | "fair" | "poor" | "missing";
-
-function Badge({ status }: { status: Health }) {
-  const styles: Record<Health, string> = {
-    good: "bg-green-100 text-green-700",
-    fair: "bg-yellow-100 text-yellow-700",
-    poor: "bg-red-100 text-red-700",
-    missing: "bg-red-100 text-red-700",
-  };
-  return (
-    <span className={`px-2 py-0.5 text-xs font-medium rounded ${styles[status]}`}>
-      {status}
-    </span>
-  );
-}
-
-function StatLine({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={`text-sm text-gray-700 leading-relaxed ${className}`}>{children}</div>;
-}
-
-// --- Type definitions ---------------------------------------------------------
-type DatasetRow = {
-  id: string;
+type DatasetSummary = {
   title: string;
-  indicator_title?: string | null;
-  taxonomy_category?: string | null;
-  taxonomy_term?: string | null;
-  admin_level?: string | null;
-  record_count?: number | null;
-  dataset_type?: string | null;
-  source_name?: string | null;
+  dataset_type: string | null;
+  admin_level: string | null;
+  year: number | null;
+  record_count: number | null;
+  data_health?: string | null;
 };
 
-export default function CountryDatasetSummary({ countryIso }: { countryIso: string }) {
-  const [adminVersion, setAdminVersion] = useState<any | null>(null);
-  const [adminByLevel, setAdminByLevel] = useState<Record<string, number>>({});
-  const [pop, setPop] = useState<any | null>(null);
-  const [gisRows, setGisRows] = useState<
-    { admin_level: string; represented_distinct_pcodes: number; total_admins: number; coverage_pct: number | null; adm0_total_km2: number | null }[]
-  >([]);
-  const [otherDatasets, setOtherDatasets] = useState<DatasetRow[]>([]);
-  const [derivedDatasets, setDerivedDatasets] = useState<any[]>([]);
+type DerivedSummary = {
+  derived_dataset_id: string;
+  derived_title: string;
+  admin_level: string | null;
+  year: number | null;
+  record_count: number | null;
+  data_health: string | null;
+};
 
-  // --- Admin dataset ----------------------------------------------------------
+export default function CountryDatasetSummary({
+  countryIso,
+  showDerived = true,
+}: {
+  countryIso: string;
+  showDerived?: boolean;
+}) {
+  const [coreDatasets, setCoreDatasets] = useState<DatasetSummary[]>([]);
+  const [derivedDatasets, setDerivedDatasets] = useState<DerivedSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    (async () => {
-      const { data: v } = await supabase
-        .from("admin_dataset_versions")
-        .select("id, title, year")
-        .eq("country_iso", countryIso)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
+    async function load() {
+      if (!countryIso) return;
+      setLoading(true);
+      setError(null);
 
-      if (v?.id) {
-        setAdminVersion(v);
-        const { data: rows } = await supabase
-          .from("admin_units")
-          .select("level, pcode")
-          .eq("dataset_version_id", v.id);
-        if (rows) {
-          const grouped: Record<string, Set<string>> = {};
-          for (const r of rows) {
-            const lvl = String(r.level);
-            if (!grouped[lvl]) grouped[lvl] = new Set<string>();
-            if (r.pcode) grouped[lvl].add(r.pcode);
-          }
-          const out: Record<string, number> = {};
-          Object.keys(grouped).forEach((k) => (out[k] = grouped[k].size));
-          setAdminByLevel(out);
+      try {
+        const [{ data: core, error: err1 }, { data: derived, error: err2 }] =
+          await Promise.all([
+            supabase
+              .from("dataset_metadata")
+              .select(
+                "title, dataset_type, admin_level, year, record_count, data_health"
+              )
+              .eq("country_iso", countryIso)
+              .order("title", { ascending: true }),
+            supabase
+              .from("view_derived_dataset_summary")
+              .select(
+                "derived_dataset_id, derived_title, admin_level, year, record_count, data_health"
+              )
+              .eq("country_iso", countryIso)
+              .order("year", { ascending: false }),
+          ]);
+
+        if (err1 || err2) {
+          setError(err1?.message || err2?.message || "Error loading datasets");
+        } else {
+          setCoreDatasets(core || []);
+          setDerivedDatasets(derived || []);
         }
-      }
-    })();
-  }, [countryIso]);
-
-  // --- Population dataset -----------------------------------------------------
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("view_population_country_active_summary")
-        .select("population_title, population_year, total_population, admin_area_count")
-        .eq("country_iso", countryIso)
-        .maybeSingle();
-      if (data) setPop(data);
-    })();
-  }, [countryIso]);
-
-  // --- GIS layers -------------------------------------------------------------
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("view_gis_country_active_summary")
-        .select("admin_level, represented_distinct_pcodes, total_admins, coverage_pct, adm0_total_km2")
-        .eq("country_iso", countryIso);
-      if (data) setGisRows(data);
-    })();
-  }, [countryIso]);
-
-  // --- Other datasets ---------------------------------------------------------
-  useEffect(() => {
-    (async () => {
-      let { data: vdata } = await supabase
-        .from("view_dataset_with_indicator")
-        .select(
-          "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name"
-        )
-        .eq("country_iso", countryIso)
-        .order("year", { ascending: false });
-
-      let rows: DatasetRow[] = vdata || [];
-
-      if (!rows.length) {
-        const { data: md } = await supabase
-          .from("dataset_metadata")
-          .select("id, title, admin_level, record_count, dataset_type, source_name")
-          .eq("country_iso", countryIso)
-          .order("created_at", { ascending: false });
-        rows =
-          (md || []).map((d: any) => ({
-            id: d.id,
-            title: d.title,
-            indicator_title: null,
-            taxonomy_category: null,
-            taxonomy_term: null,
-            admin_level: d.admin_level ?? "—",
-            record_count: d.record_count ?? 0,
-            dataset_type: d.dataset_type ?? null,
-            source_name: d.source_name ?? null,
-          })) || [];
+      } catch (e: any) {
+        setError(e.message);
       }
 
-      const filtered = rows.filter(
-        (d) =>
-          !["admin", "population", "gis", "derived"].includes(
-            (d.dataset_type || "").toLowerCase()
-          )
-      );
-
-      const enriched = filtered.map((d) => ({
-        ...d,
-        indicator_title: d.indicator_title ?? d.source_name ?? null,
-        data_health: "good",
-      }));
-
-      setOtherDatasets(enriched);
-    })();
-  }, [countryIso]);
-
-  // --- Derived datasets -------------------------------------------------------
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("derived_datasets")
-        .select("id, title, admin_level, year, record_count")
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
-      if (!error && data) setDerivedDatasets(data);
-    })();
-  }, [countryIso]);
-
-  // --- Derived computed values ------------------------------------------------
-  const gisByLevel = useMemo(() => {
-    const map: Record<string, { rep: number; tot: number; pct: number | null }> = {};
-    for (const r of gisRows) {
-      map[r.admin_level] = {
-        rep: r.represented_distinct_pcodes || 0,
-        tot: r.total_admins || 0,
-        pct: r.coverage_pct,
-      };
+      setLoading(false);
     }
-    return map;
-  }, [gisRows]);
 
-  const adm0Km2 = useMemo(() => {
-    const any = gisRows.find((r) => r.admin_level === "ADM0");
-    return any?.adm0_total_km2 ?? null;
-  }, [gisRows]);
+    load();
+  }, [countryIso]);
 
-  const adminHealth: Health = adminByLevel ? "good" : "missing";
-  const popHealth: Health = pop && pop.total_population ? "good" : "missing";
-  const gisHealth: Health = gisRows?.length > 0 ? "good" : "missing";
+  if (loading) {
+    return (
+      <div className="text-gray-500 text-sm flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading datasets…
+      </div>
+    );
+  }
 
-  // --- Render -----------------------------------------------------------------
+  if (error) {
+    return <div className="text-sm text-red-600">{error}</div>;
+  }
+
   return (
-    <section className="mt-4">
-      <h2 className="text-xl font-semibold mb-4">Core Datasets</h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {/* Admin Areas */}
-        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <Link
-              href={`/country/${countryIso}/admins`}
-              className="text-lg font-semibold text-[#123865] hover:underline"
-            >
-              Admin Areas
-            </Link>
-            <Badge status={adminHealth} />
-          </div>
-          {adminVersion ? (
-            <>
-              <StatLine className="mb-1 text-gray-600">
-                {adminVersion.title} ({adminVersion.year})
-              </StatLine>
-              {["ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
-                <StatLine key={lvl}>
-                  <span className="font-medium">{lvl}</span> –{" "}
-                  {adminByLevel[lvl] ?? 0} pcodes ({adminByLevel[lvl] ?? 0} records)
-                </StatLine>
-              ))}
-            </>
-          ) : (
-            <div className="text-gray-500 text-sm">No active admin dataset found</div>
-          )}
-          <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/admins`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
-              View details <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-
-        {/* Population */}
-        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <Link
-              href={`/country/${countryIso}/population`}
-              className="text-lg font-semibold text-[#123865] hover:underline"
-            >
-              Population Data
-            </Link>
-            <Badge status={popHealth} />
-          </div>
-          {pop ? (
-            <>
-              <StatLine className="mb-1 text-gray-600">
-                {pop.population_title} ({pop.population_year ?? "—"})
-              </StatLine>
-              <StatLine>
-                Total population: {Intl.NumberFormat().format(pop.total_population ?? 0)}
-              </StatLine>
-              <StatLine>
-                Coverage: {Intl.NumberFormat().format(pop.admin_area_count ?? 0)} admin areas
-              </StatLine>
-            </>
-          ) : (
-            <div className="text-gray-500 text-sm">No population dataset found</div>
-          )}
-          <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/population`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
-              View details <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-
-        {/* GIS */}
-        <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <Link
-              href={`/country/${countryIso}/gis`}
-              className="text-lg font-semibold text-[#123865] hover:underline"
-            >
-              GIS Layers
-            </Link>
-            <Badge status={gisHealth} />
-          </div>
-          {gisRows && gisRows.length > 0 ? (
-            <>
-              <StatLine className="mb-1 text-gray-600">{countryIso} (active)</StatLine>
-              <StatLine>
-                ADM0 total area:{" "}
-                {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
-              </StatLine>
-              {["ADM0", "ADM1", "ADM2", "ADM3"].map((lvl) => (
-                <StatLine key={lvl}>
-                  <span className="font-medium">{lvl}</span> –{" "}
-                  {Intl.NumberFormat().format(gisByLevel[lvl]?.rep ?? 0)} features{" "}
-                  {gisByLevel[lvl]?.tot
-                    ? `(${(gisByLevel[lvl]?.pct ?? 0).toFixed(1)}%)`
-                    : "(0.0%)"}
-                </StatLine>
-              ))}
-            </>
-          ) : (
-            <div className="text-gray-500 text-sm">No active GIS dataset</div>
-          )}
-          <div className="mt-2">
-            <Link
-              href={`/country/${countryIso}/gis`}
-              className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
-            >
-              View details <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* === Other Datasets === */}
-      <div className="flex items-center justify-between mt-8 mb-3">
-        <Link
-          href={`/country/${countryIso}/datasets`}
-          className="text-xl font-semibold hover:underline"
-        >
+    <div className="space-y-6">
+      {/* Core Datasets */}
+      <div className="border rounded-lg p-4 shadow-sm">
+        <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
           Other Datasets
-        </Link>
+        </h2>
+        {coreDatasets.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No datasets have been uploaded for this country yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm border-collapse">
+              <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
+                <tr>
+                  <th className="px-2 py-1 text-left">Title</th>
+                  <th className="px-2 py-1 text-left">Type</th>
+                  <th className="px-2 py-1 text-left">Admin Level</th>
+                  <th className="px-2 py-1 text-left">Year</th>
+                  <th className="px-2 py-1 text-right">Records</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coreDatasets.map((d) => (
+                  <tr
+                    key={d.title}
+                    className="border-t border-[var(--gsc-light-gray)]"
+                  >
+                    <td className="px-2 py-1">{d.title}</td>
+                    <td className="px-2 py-1">{d.dataset_type ?? "—"}</td>
+                    <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
+                    <td className="px-2 py-1">{d.year ?? "—"}</td>
+                    <td className="px-2 py-1 text-right">
+                      {d.record_count ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {otherDatasets.length === 0 ? (
-        <div className="text-gray-500 italic text-sm">No other datasets uploaded yet.</div>
-      ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="min-w-full text-sm text-gray-700">
-            <thead className="bg-gray-50 text-gray-600 font-medium">
-              <tr>
-                <th className="px-3 py-2 text-left">Title</th>
-                <th className="px-3 py-2 text-left">Indicator</th>
-                <th className="px-3 py-2 text-left">Admin Level</th>
-                <th className="px-3 py-2 text-right">Records</th>
-                <th className="px-3 py-2 text-center">Health</th>
-              </tr>
-            </thead>
-            <tbody>
-              {otherDatasets.map((d) => (
-                <tr key={d.id} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-3 py-2">{d.indicator_title ?? "—"}</td>
-                  <td className="px-3 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-3 py-2 text-right">
-                    {Intl.NumberFormat().format(d.record_count ?? 0)}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <Badge status={"good"} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Derived Datasets (conditionally shown) */}
+      {showDerived && (
+        <div className="border rounded-lg p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
+            Derived Datasets
+          </h2>
+          {derivedDatasets.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No derived datasets have been created yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border-collapse">
+                <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Title</th>
+                    <th className="px-2 py-1 text-left">Admin Level</th>
+                    <th className="px-2 py-1 text-left">Year</th>
+                    <th className="px-2 py-1 text-right">Records</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {derivedDatasets.map((d) => (
+                    <tr
+                      key={d.derived_dataset_id}
+                      className="border-t border-[var(--gsc-light-gray)]"
+                    >
+                      <td className="px-2 py-1">{d.derived_title}</td>
+                      <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
+                      <td className="px-2 py-1">{d.year ?? "—"}</td>
+                      <td className="px-2 py-1 text-right">
+                        {d.record_count ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
-
-      {/* === Derived Datasets === */}
-      <h2 className="text-xl font-semibold mt-8 mb-3">Derived Datasets</h2>
-
-      {derivedDatasets.length === 0 ? (
-        <div className="text-gray-500 italic text-sm">
-          Derived and analytical datasets will appear once joins are created.
-        </div>
-      ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="min-w-full text-sm text-gray-700">
-            <thead className="bg-gray-50 text-gray-600 font-medium">
-              <tr>
-                <th className="px-3 py-2 text-left">Title</th>
-                <th className="px-3 py-2 text-left">Admin Level</th>
-                <th className="px-3 py-2 text-left">Year</th>
-                <th className="px-3 py-2 text-right">Records</th>
-              </tr>
-            </thead>
-            <tbody>
-              {derivedDatasets.map((d) => (
-                <tr key={d.id} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-3 py-2">{d.admin_level ?? "—"}</td>
-                  <td className="px-3 py-2">{d.year ?? "—"}</td>
-                  <td className="px-3 py-2 text-right">
-                    {Intl.NumberFormat().format(d.record_count ?? 0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    </div>
   );
 }
