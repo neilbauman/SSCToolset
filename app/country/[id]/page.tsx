@@ -2,11 +2,11 @@
 
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Map } from "lucide-react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+
 import EditMetadataModal from "@/components/country/EditMetadataModal";
 import CountryMetadataCard from "@/components/country/CountryMetadataCard";
 import UploadAdminUnitsModal from "@/components/country/UploadAdminUnitsModal";
@@ -14,8 +14,11 @@ import UploadPopulationModal from "@/components/country/UploadPopulationModal";
 import UploadGISModal from "@/components/country/UploadGISModal";
 import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 import CountryDatasetSummary from "@/components/country/CountryDatasetSummary";
-import ManageJoinsCard from "@/components/country/ManageJoinsCard";
+
+// New: clean Derived Datasets section without demo artifacts
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
+import DerivedDatasetTable from "@/components/country/DerivedDatasetTable";
+
 import type { CountryParams } from "@/app/country/types";
 
 const MapContainer = dynamic(
@@ -34,10 +37,14 @@ async function reloadPage() {
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
   const [country, setCountry] = useState<any>(null);
+
+  // Modals
   const [openMeta, setOpenMeta] = useState(false);
   const [openAdminUpload, setOpenAdminUpload] = useState(false);
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
+
+  // Derived wizard
   const [openDerivedWizard, setOpenDerivedWizard] = useState(false);
 
   useEffect(() => {
@@ -69,6 +76,7 @@ export default function CountryConfigLandingPage({ params }: any) {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Health overview */}
       <CountryHealthSummary countryIso={id} />
 
       {/* Map + Metadata */}
@@ -94,33 +102,32 @@ export default function CountryConfigLandingPage({ params }: any) {
             </MapContainer>
           )}
         </div>
-        <CountryMetadataCard country={country} onEdit={() => setOpenMeta(true)} />
+        <CountryMetadataCard
+          country={country}
+          onEdit={() => setOpenMeta(true)}
+        />
       </div>
 
-      {/* --- Country Dataset Summary --- */}
+      {/* Country Dataset Summary */}
       <div className="mt-6">
         <CountryDatasetSummary countryIso={id} />
       </div>
 
-      {/* --- Manage Joins --- */}
-      <div className="mt-6">
-        <ManageJoinsCard countryIso={id} />
-      </div>
-
-      {/* --- Derived Datasets Section --- */}
-      <div className="mt-8 border-t pt-6">
+      {/* Derived Datasets (clean, no demo artifacts) */}
+      <div className="mt-6 border rounded-lg p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold">Derived Datasets</h2>
+          <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <button
-            onClick={() => setOpenDerivedWizard(true)}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition"
+            onClick={() => setOpenDerivedWizard(true)} // ✅ opens wizard
+            className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
           >
             + Create Derived Dataset
           </button>
         </div>
-        <p className="text-gray-500 text-sm italic">
-          Derived and analytical datasets will appear once joins are created.
+        <p className="text-sm text-gray-600 mb-4">
+          Construct analytical datasets by joining population, admin, GIS, or other datasets.
         </p>
+        <DerivedDatasetTable countryIso={id} />
       </div>
 
       {/* Modals */}
@@ -186,12 +193,12 @@ export default function CountryConfigLandingPage({ params }: any) {
         />
       )}
 
-      {/* --- Create Derived Dataset Wizard --- */}
+      {/* Create Derived Dataset Wizard (Join-aware) */}
       <CreateDerivedDatasetWizard_JoinAware
         open={openDerivedWizard}
         onClose={() => setOpenDerivedWizard(false)}
         countryIso={id}
-        onCreated={reloadPage}
+        onCreated={() => reloadPage()}
       />
     </SidebarLayout>
   );
