@@ -15,10 +15,6 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import CountryHealthSummary from "@/components/country/CountryHealthSummary";
 import CountryDatasetSummary from "@/components/country/CountryDatasetSummary";
 
-// New: clean Derived Datasets section without demo artifacts
-import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
-import DerivedDatasetTable from "@/components/country/DerivedDatasetTable";
-
 import type { CountryParams } from "@/app/country/types";
 
 const MapContainer = dynamic(
@@ -34,6 +30,51 @@ async function reloadPage() {
   if (typeof window !== "undefined") window.location.reload();
 }
 
+// Small internal component to preview recent derived datasets
+function DerivedDatasetsPreview({ countryIso }: { countryIso: string }) {
+  const [rows, setRows] = useState<
+    { derived_dataset_id: string; derived_title: string; year: number | null }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const { data, error } = await supabase
+        .from("view_derived_dataset_summary")
+        .select("derived_dataset_id, derived_title, year")
+        .eq("country_iso", countryIso)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (!error && data) setRows(data);
+      setLoading(false);
+    }
+    load();
+  }, [countryIso]);
+
+  if (loading)
+    return (
+      <p className="text-sm text-gray-500">Loading derived datasets…</p>
+    );
+
+  if (rows.length === 0)
+    return (
+      <p className="text-sm text-gray-500">
+        No derived datasets have been created yet.
+      </p>
+    );
+
+  return (
+    <ul className="divide-y divide-[var(--gsc-light-gray)] text-sm">
+      {rows.map((r) => (
+        <li key={r.derived_dataset_id} className="py-1.5 flex justify-between">
+          <span>{r.derived_title}</span>
+          <span className="text-gray-500">{r.year ?? "—"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function CountryConfigLandingPage({ params }: any) {
   const { id } = params as CountryParams;
   const [country, setCountry] = useState<any>(null);
@@ -43,9 +84,6 @@ export default function CountryConfigLandingPage({ params }: any) {
   const [openAdminUpload, setOpenAdminUpload] = useState(false);
   const [openPopUpload, setOpenPopUpload] = useState(false);
   const [openGISUpload, setOpenGISUpload] = useState(false);
-
-  // Derived wizard
-  const [openDerivedWizard, setOpenDerivedWizard] = useState(false);
 
   useEffect(() => {
     const fetchCountry = async () => {
@@ -113,21 +151,24 @@ export default function CountryConfigLandingPage({ params }: any) {
         <CountryDatasetSummary countryIso={id} />
       </div>
 
-      {/* Derived Datasets (clean, no demo artifacts) */}
+      {/* Derived Datasets – mirror of Other Datasets section */}
       <div className="mt-6 border rounded-lg p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Derived Datasets</h2>
-          <button
-            onClick={() => setOpenDerivedWizard(true)} // ✅ opens wizard
-            className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
+          <h2 className="text-lg font-semibold text-[color:var(--gsc-red)]">
+            Derived Datasets
+          </h2>
+          <a
+            href={`/country/${id}/derived`}
+            className="text-sm font-medium text-[color:var(--gsc-red)] hover:underline"
           >
-            + Create Derived Dataset
-          </button>
+            View all →
+          </a>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
-          Construct analytical datasets by joining population, admin, GIS, or other datasets.
+        <p className="text-sm text-gray-600 mb-3">
+          Analytical datasets produced by joining population, administrative, GIS,
+          or other country datasets.
         </p>
-        <DerivedDatasetTable countryIso={id} />
+        <DerivedDatasetsPreview countryIso={id} />
       </div>
 
       {/* Modals */}
@@ -192,14 +233,6 @@ export default function CountryConfigLandingPage({ params }: any) {
           }}
         />
       )}
-
-      {/* Create Derived Dataset Wizard (Join-aware) */}
-      <CreateDerivedDatasetWizard_JoinAware
-        open={openDerivedWizard}
-        onClose={() => setOpenDerivedWizard(false)}
-        countryIso={id}
-        onCreated={() => reloadPage()}
-      />
     </SidebarLayout>
   );
 }
