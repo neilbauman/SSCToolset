@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, AlertTriangle } from "lucide-react";
 
-// --- Minimal build-safe Button ---
+// --------- Lightweight Local Button (build-safe replacement) ---------
 function Button({
   children,
   onClick,
@@ -37,7 +37,7 @@ function Button({
     </button>
   );
 }
-// ---------------------------------
+// ---------------------------------------------------------------------
 
 type DatasetOption = {
   id: string;
@@ -83,29 +83,34 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showJoinPreview, setShowJoinPreview] = useState(false);
   const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
 
-  // ✅ Restored: Working dataset fetch logic
+  // ✅ FIXED dataset fetch (uses correct column names)
   useEffect(() => {
     const fetchDatasets = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("dataset_metadata")
-        .select(
-          "id, dataset_title as title, dataset_type, admin_level, dataset_title"
-        )
-        .eq("country_iso", countryIso)
-        .eq("is_active", true)
-        .order("dataset_title");
+        .select("id, title, dataset_type, admin_level, country_iso")
+        .order("title");
 
-      const rows =
-        data?.map((d: any) => ({
-          ...d,
-          table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
-        })) || [];
+      if (error) {
+        console.error("Supabase dataset fetch error:", error);
+        setDatasets([]);
+        return;
+      }
+
+      const filtered =
+        data?.filter((d: any) => d.country_iso === countryIso) ?? [];
+
+      const rows = filtered.map((d: any) => ({
+        ...d,
+        table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
+      }));
+
       setDatasets(rows);
     };
     fetchDatasets();
   }, [countryIso]);
 
-  // Auto detect level relationships
+  // ---- Auto-detect admin level and warn if aggregation required ----
   useEffect(() => {
     if (!datasetA || !datasetB) return;
     const hierarchy = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"];
@@ -126,7 +131,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     }
   }, [datasetA, datasetB]);
 
-  // Join preview
+  // ---- Preview join ----
   const handlePreviewJoin = async () => {
     if (!datasetA || !datasetB) return;
     setLoading(true);
@@ -158,7 +163,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setLoading(false);
   };
 
-  // ----------- Modal Wrapper -------------
+  // ---- Modal Wrapper ----
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40"
