@@ -1,6 +1,5 @@
 "use client";
 
-
 import { ArrowUpDown, Eye, RefreshCw, Trash2 } from "lucide-react";
 import DatasetHealth from "@/components/country/DatasetHealth";
 
@@ -39,6 +38,7 @@ export default function DerivedDatasetTable({
   selectedId,
   onDelete,
   onRegenerate,
+  countryIso, // optional: accepted for compatibility with landing page usage
 }: {
   rows: DerivedRow[];
   loading: boolean;
@@ -50,7 +50,11 @@ export default function DerivedDatasetTable({
   selectedId: string | null;
   onDelete: (row: DerivedRow) => void;
   onRegenerate: (row: DerivedRow) => void;
+  countryIso?: string;
 }) {
+  // explicitly unused; keeps TS happy if parent passes it
+  void countryIso;
+
   return (
     <div
       className="overflow-auto rounded-xl"
@@ -129,7 +133,9 @@ export default function DerivedDatasetTable({
                   </td>
                   <td className="px-2 py-2">{d.admin_level ?? "—"}</td>
                   <td className="px-2 py-2">{d.year ?? "—"}</td>
-                  <td className="px-2 py-2 text-right">{d.record_count ?? "—"}</td>
+                  <td className="px-2 py-2 text-right">
+                    {d.record_count ?? "—"}
+                  </td>
                   <td className="px-2 py-2">
                     {d.data_health ? (
                       <div className="border rounded bg-white p-1 inline-block">
@@ -140,9 +146,15 @@ export default function DerivedDatasetTable({
                     )}
                   </td>
                   <td className="px-2 py-2">{d.domains ?? "—"}</td>
-                  <td className="px-2 py-2 text-right">{d.linked_count ?? 0}</td>
+                  <td className="px-2 py-2 text-right">
+                    {d.linked_count ?? 0}
+                  </td>
                   <td className="px-2 py-2">
-                    {d.join_active === null ? "—" : d.join_active ? "Yes" : "No"}
+                    {d.join_active === null
+                      ? "—"
+                      : d.join_active
+                      ? "Yes"
+                      : "No"}
                   </td>
                   <td className="px-2 py-2">
                     {new Date(d.created_at).toLocaleDateString()}
@@ -152,7 +164,9 @@ export default function DerivedDatasetTable({
                       <button
                         className="p-1 rounded hover:bg-gray-100"
                         title="View details"
-                        onClick={() => onSelect(isSel ? "" : d.derived_dataset_id)}
+                        onClick={() =>
+                          onSelect(isSel ? "" : d.derived_dataset_id)
+                        }
                       >
                         <Eye className="h-4 w-4" />
                       </button>
