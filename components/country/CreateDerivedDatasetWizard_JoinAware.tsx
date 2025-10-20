@@ -150,26 +150,29 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       }
 
       if (includeOther) {
-        const { data: md } = await supabase
-          .from("dataset_metadata")
-          .select("id, title, admin_level, dataset_type")
-          .eq("country_iso", countryIso)
-          .eq("is_active", true)
-          .order("title");
-        if (md) {
-          merged.push(
-            ...md.map((d: any) => ({
-              id: d.id as string,
-              title: d.title as string,
-              admin_level: (d.admin_level as string) ?? null,
-              dataset_type: (d.dataset_type as string) ?? null,
-              source: "other" as const,
-              table_name: (d.title as string).replace(/\s+/g, "_").toLowerCase(),
-            }))
-          );
-        }
-      }
+  const { data: md, error } = await supabase
+    .from("dataset_metadata")
+    .select("id, title, admin_level, dataset_type, country_iso")
+    .eq("country_iso", countryIso)
+    .order("title");
 
+  if (error) console.error("Dataset metadata fetch error:", error);
+
+  if (md) {
+    merged.push(
+      ...md.map((d: any) => ({
+        id: d.id as string,
+        title: d.title || "(Untitled dataset)",
+        admin_level: d.admin_level || null,
+        dataset_type: d.dataset_type || null,
+        source: "other" as const,
+        table_name: (d.title || `dataset_${d.id}`)
+          .replace(/\s+/g, "_")
+          .toLowerCase(),
+      }))
+    );
+  }
+}
       if (includeDerived) {
         const { data: dv } = await supabase
           .from("view_derived_dataset_summary")
