@@ -38,7 +38,7 @@ export default function DerivedDatasetTable({
   selectedId,
   onDelete,
   onRegenerate,
-  countryIso, // optional: accepted for compatibility with landing page usage
+  countryIso,
 }: {
   rows: DerivedRow[];
   loading: boolean;
@@ -52,7 +52,6 @@ export default function DerivedDatasetTable({
   onRegenerate: (row: DerivedRow) => void;
   countryIso?: string;
 }) {
-  // explicitly unused; keeps TS happy if parent passes it
   void countryIso;
 
   return (
@@ -111,7 +110,7 @@ export default function DerivedDatasetTable({
           ) : rows.length === 0 ? (
             <tr>
               <td className="px-2 py-3 text-gray-500" colSpan={10}>
-                No derived datasets.
+                No derived datasets found.
               </td>
             </tr>
           ) : (
@@ -172,14 +171,14 @@ export default function DerivedDatasetTable({
                       </button>
                       <button
                         className="p-1 rounded hover:bg-gray-100"
-                        title="Regenerate (coming soon)"
+                        title="Regenerate"
                         onClick={() => onRegenerate(d)}
                       >
                         <RefreshCw className="h-4 w-4" />
                       </button>
                       <button
                         className="p-1 rounded hover:bg-gray-100"
-                        title="Delete derived dataset"
+                        title="Delete"
                         onClick={() => onDelete(d)}
                       >
                         <Trash2 className="h-4 w-4" />
