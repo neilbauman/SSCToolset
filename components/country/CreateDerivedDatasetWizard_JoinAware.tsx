@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 
-// ---- Fallback lightweight button to prevent missing import errors ----
+// --------- Lightweight Local Button (build-safe replacement) ---------
 function Button({
   children,
   onClick,
@@ -56,12 +56,18 @@ type JoinPreviewRow = {
 };
 
 export default function CreateDerivedDatasetWizard_JoinAware({
+  open = true,
   countryIso,
   onClose,
+  onCreated,
 }: {
+  open?: boolean;
   countryIso: string;
   onClose: () => void;
+  onCreated?: () => void;
 }) {
+  if (!open) return null;
+
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
@@ -75,8 +81,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showPreviewA, setShowPreviewA] = useState(false);
   const [showPreviewB, setShowPreviewB] = useState(false);
   const [showJoinPreview, setShowJoinPreview] = useState(false);
+  const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
 
-  // ---- Fetch datasets ----
+  // ---- Fetch available datasets ----
   useEffect(() => {
     const fetchDatasets = async () => {
       const { data } = await supabase
@@ -95,15 +102,25 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     fetchDatasets();
   }, [countryIso]);
 
-  // ---- Auto-detect admin level for aggregation ----
+  // ---- Auto-detect admin level and warn if aggregation required ----
   useEffect(() => {
     if (!datasetA || !datasetB) return;
     const hierarchy = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"];
     const idxA = hierarchy.indexOf(datasetA.admin_level);
     const idxB = hierarchy.indexOf(datasetB.admin_level);
     if (idxA === -1 || idxB === -1) return;
+
     const deeperLevel = idxA > idxB ? datasetA.admin_level : datasetB.admin_level;
+    const higherLevel = idxA > idxB ? datasetB.admin_level : datasetA.admin_level;
+
     setTargetLevel(deeperLevel);
+    if (deeperLevel !== higherLevel) {
+      setAggregationNotice(
+        `Aggregating ${deeperLevel} data upward to ${higherLevel} may require summarization or averaging.`
+      );
+    } else {
+      setAggregationNotice(null);
+    }
   }, [datasetA, datasetB]);
 
   // ---- Preview join ----
@@ -156,6 +173,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
       {/* Step 1 */}
       <h3 className="text-sm font-semibold mb-2">Step 1 Join Alignment</h3>
+      {aggregationNotice && (
+        <div className="flex items-start space-x-2 bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded">
+          <AlertTriangle className="w-4 h-4 mt-[2px]" />
+          <span>{aggregationNotice}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Dataset A */}
         <div>
@@ -319,7 +343,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <Button variant="outline" className="mr-2" onClick={onClose}>
           Cancel
         </Button>
-        <Button>Create</Button>
+        <Button
+          onClick={() => {
+            if (onCreated) onCreated();
+            onClose();
+          }}
+        >
+          Create
+        </Button>
       </div>
     </div>
   );
