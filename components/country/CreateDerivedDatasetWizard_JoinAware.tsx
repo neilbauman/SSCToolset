@@ -2,8 +2,42 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+
+// ---- Fallback lightweight button to prevent missing import errors ----
+function Button({
+  children,
+  onClick,
+  variant = "default",
+  size = "md",
+  disabled = false,
+  className = "",
+}: any) {
+  const base =
+    "rounded px-3 py-1 text-sm font-medium transition-colors " +
+    (disabled
+      ? "opacity-50 cursor-not-allowed "
+      : "hover:bg-gray-100 cursor-pointer ");
+  const variants: Record<string, string> = {
+    default: "bg-blue-600 text-white hover:bg-blue-700",
+    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
+    link: "text-blue-600 underline hover:text-blue-800",
+  };
+  const sizes: Record<string, string> = {
+    sm: "text-xs px-2 py-0.5",
+    md: "text-sm px-3 py-1",
+  };
+  return (
+    <button
+      className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+}
+// ---------------------------------------------------------------------
 
 type DatasetOption = {
   id: string;
@@ -42,7 +76,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [showPreviewB, setShowPreviewB] = useState(false);
   const [showJoinPreview, setShowJoinPreview] = useState(false);
 
-  // Fetch available datasets
+  // ---- Fetch datasets ----
   useEffect(() => {
     const fetchDatasets = async () => {
       const { data } = await supabase
@@ -51,15 +85,28 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         .eq("country_iso", countryIso)
         .eq("is_active", true)
         .order("dataset_title");
-      const rows = (data || []).map((d) => ({
-        ...d,
-        table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
-      }));
+      const rows =
+        data?.map((d: any) => ({
+          ...d,
+          table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
+        })) || [];
       setDatasets(rows);
     };
     fetchDatasets();
   }, [countryIso]);
 
+  // ---- Auto-detect admin level for aggregation ----
+  useEffect(() => {
+    if (!datasetA || !datasetB) return;
+    const hierarchy = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"];
+    const idxA = hierarchy.indexOf(datasetA.admin_level);
+    const idxB = hierarchy.indexOf(datasetB.admin_level);
+    if (idxA === -1 || idxB === -1) return;
+    const deeperLevel = idxA > idxB ? datasetA.admin_level : datasetB.admin_level;
+    setTargetLevel(deeperLevel);
+  }, [datasetA, datasetB]);
+
+  // ---- Preview join ----
   const handlePreviewJoin = async () => {
     if (!datasetA || !datasetB) return;
     setLoading(true);
@@ -94,7 +141,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   return (
     <div className="p-4 w-full max-w-5xl mx-auto">
       <h2 className="text-xl font-semibold mb-2">Create Derived Dataset</h2>
-      <p className="text-xs text-gray-600 mb-4">Step 1 Join Alignment → Step 2 Derivation</p>
+      <p className="text-xs text-gray-600 mb-4">
+        Step 1 Join Alignment → Step 2 Derivation
+      </p>
 
       <label className="flex items-center space-x-2 mb-4 text-sm">
         <input
@@ -108,6 +157,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       {/* Step 1 */}
       <h3 className="text-sm font-semibold mb-2">Step 1 Join Alignment</h3>
       <div className="grid grid-cols-2 gap-4 mb-4">
+        {/* Dataset A */}
         <div>
           <label className="text-xs font-semibold">Dataset A</label>
           <select
@@ -137,20 +187,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               <option value="id">id</option>
             </select>
           </div>
-          <div className="flex space-x-2 mt-2">
-            <label className="text-xs">Admin Level</label>
-            <select
-              value={datasetA?.admin_level || "ADM4"}
-              onChange={(e) => setTargetLevel(e.target.value)}
-              className="border rounded px-2 py-1 text-xs"
-            >
-              <option value="ADM0">ADM0</option>
-              <option value="ADM1">ADM1</option>
-              <option value="ADM2">ADM2</option>
-              <option value="ADM3">ADM3</option>
-              <option value="ADM4">ADM4</option>
-            </select>
-          </div>
           <Button
             variant="link"
             className="text-xs mt-1"
@@ -166,6 +202,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
+        {/* Dataset B */}
         <div>
           <label className="text-xs font-semibold">Dataset B</label>
           <select
@@ -193,20 +230,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               <option value="admin_pcode">admin_pcode</option>
               <option value="adm_code">adm_code</option>
               <option value="id">id</option>
-            </select>
-          </div>
-          <div className="flex space-x-2 mt-2">
-            <label className="text-xs">Admin Level</label>
-            <select
-              value={datasetB?.admin_level || "ADM4"}
-              onChange={(e) => setTargetLevel(e.target.value)}
-              className="border rounded px-2 py-1 text-xs"
-            >
-              <option value="ADM0">ADM0</option>
-              <option value="ADM1">ADM1</option>
-              <option value="ADM2">ADM2</option>
-              <option value="ADM3">ADM3</option>
-              <option value="ADM4">ADM4</option>
             </select>
           </div>
           <Button
@@ -268,7 +291,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </div>
       )}
 
-      {/* Step 2 */}
       <h3 className="text-sm font-semibold mt-4 mb-2">
         Step 2 Derivation / Aggregation
       </h3>
