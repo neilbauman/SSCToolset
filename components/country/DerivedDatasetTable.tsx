@@ -1,112 +1,180 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { BadgeCheck, Layers } from "lucide-react";
+import { ArrowUpDown, Eye, RefreshCw, Trash2 } from "lucide-react";
+import DatasetHealth from "@/components/country/DatasetHealth";
 
-/**
- * DerivedDatasetTable
- * Displays semantic summaries of derived datasets from the view_derived_dataset_summary.
- * Each derived dataset corresponds to one analytical join.
- */
-export default function DerivedDatasetTable({ countryIso }: { countryIso: string }) {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+export type DerivedRow = {
+  derived_dataset_id: string;
+  derived_title: string;
+  admin_level: string | null;
+  year: number | null;
+  record_count: number | null;
+  data_health: "good" | "fair" | "poor" | string | null;
+  domains: string | null;
+  linked_count: number | null;
+  join_active: boolean | null;
+  created_at: string;
+};
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("view_derived_dataset_summary")
-        .select(
-          "derived_dataset_id, derived_title, year, admin_level, record_count, data_health, linked_count, domains, join_active"
-        )
-        .eq("country_iso", countryIso)
-        .order("created_at", { ascending: false });
+export type SortKey =
+  | "derived_title"
+  | "admin_level"
+  | "year"
+  | "record_count"
+  | "data_health"
+  | "domains"
+  | "linked_count"
+  | "join_active"
+  | "created_at";
 
-      if (!error && data) setRows(data);
-      setLoading(false);
-    };
-    load();
-  }, [countryIso]);
-
-  if (loading) {
-    return <div className="text-gray-500 italic py-2">Loading derived datasets...</div>;
-  }
-
-  if (!rows || rows.length === 0) {
-    return <div className="text-gray-500 italic py-2">No derived datasets yet.</div>;
-  }
-
-  const renderDomains = (domains: string | null) => {
-    if (!domains) return <span className="text-gray-400 italic">Unspecified</span>;
-    return domains.split(" + ").map((d) => (
-      <span
-        key={d.trim()}
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mr-1 bg-blue-100 text-blue-700"
-      >
-        {d.trim()}
-      </span>
-    ));
-  };
-
+export default function DerivedDatasetTable({
+  rows,
+  loading,
+  error,
+  sortBy,
+  sortDir,
+  onSort,
+  onSelect,
+  selectedId,
+  onDelete,
+  onRegenerate,
+}: {
+  rows: DerivedRow[];
+  loading: boolean;
+  error: string | null;
+  sortBy: SortKey;
+  sortDir: "asc" | "desc";
+  onSort: (k: SortKey) => void;
+  onSelect: (id: string) => void;
+  selectedId: string | null;
+  onDelete: (row: DerivedRow) => void;
+  onRegenerate: (row: DerivedRow) => void;
+}) {
   return (
-    <div className="mt-4 border rounded-lg overflow-hidden shadow-sm">
-      <table className="min-w-full text-sm text-left">
-        <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
+    <div
+      className="overflow-auto rounded-xl"
+      style={{ border: "1px solid var(--gsc-light-gray)" }}
+    >
+      <table className="min-w-full text-sm">
+        <thead
+          className="text-xs uppercase"
+          style={{ background: "var(--gsc-beige)", color: "var(--gsc-gray)" }}
+        >
           <tr>
-            <th className="px-4 py-3 font-semibold">Title</th>
-            <th className="px-4 py-3 font-semibold">Domains</th>
-            <th className="px-4 py-3 font-semibold text-center">Linked Datasets</th>
-            <th className="px-4 py-3 font-semibold text-center">Admin Level</th>
-            <th className="px-4 py-3 font-semibold text-right">Records</th>
-            <th className="px-4 py-3 font-semibold text-right">Health</th>
+            {([
+              ["derived_title", "Title"],
+              ["admin_level", "Admin"],
+              ["year", "Year"],
+              ["record_count", "Records"],
+              ["data_health", "Health"],
+              ["domains", "Domains"],
+              ["linked_count", "# Linked"],
+              ["join_active", "Join Active"],
+              ["created_at", "Created"],
+              ["actions", "Actions"],
+            ] as [SortKey | "actions", string][]).map(([k, label]) => (
+              <th key={k} className="px-2 py-2 whitespace-nowrap">
+                {k === "actions" ? (
+                  label
+                ) : (
+                  <button
+                    className="inline-flex items-center gap-1"
+                    onClick={() => onSort(k as SortKey)}
+                    title={`Sort by ${label}`}
+                  >
+                    {label}
+                    <ArrowUpDown className="h-3 w-3 opacity-60" />
+                  </button>
+                )}
+              </th>
+            ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
-          {rows.map((r) => (
-            <tr
-              key={r.derived_dataset_id}
-              className={`hover:bg-gray-50 ${
-                r.join_active ? "border-l-4 border-green-400" : ""
-              }`}
-            >
-              <td className="px-4 py-3 font-medium text-gray-800">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-[#123865]" />
-                  {r.derived_title}
-                </div>
-                <div className="text-xs text-gray-500">{r.year || "—"}</div>
-              </td>
-
-              <td className="px-4 py-3">{renderDomains(r.domains)}</td>
-
-              <td className="px-4 py-3 text-center text-gray-700">
-                {r.linked_count ?? 0}
-              </td>
-
-              <td className="px-4 py-3 text-center">{r.admin_level ?? "—"}</td>
-
-              <td className="px-4 py-3 text-right">
-                {r.record_count ? r.record_count.toLocaleString() : "—"}
-              </td>
-
-              <td className="px-4 py-3 text-right">
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-                    r.data_health === "good"
-                      ? "bg-green-100 text-green-700"
-                      : r.data_health === "fair"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  <BadgeCheck className="w-3 h-3" />
-                  {r.data_health || "unknown"}
-                </span>
+        <tbody>
+          {loading ? (
+            <tr>
+              <td className="px-2 py-3 text-gray-500" colSpan={10}>
+                Loading…
               </td>
             </tr>
-          ))}
+          ) : error ? (
+            <tr>
+              <td className="px-2 py-3 text-red-700" colSpan={10}>
+                {error}
+              </td>
+            </tr>
+          ) : rows.length === 0 ? (
+            <tr>
+              <td className="px-2 py-3 text-gray-500" colSpan={10}>
+                No derived datasets.
+              </td>
+            </tr>
+          ) : (
+            rows.map((d) => {
+              const isSel = selectedId === d.derived_dataset_id;
+              return (
+                <tr
+                  key={d.derived_dataset_id}
+                  style={{
+                    background: isSel ? "rgba(0,75,135,0.06)" : "white",
+                    borderTop: "1px solid var(--gsc-light-gray)",
+                  }}
+                >
+                  <td
+                    className="px-2 py-2 font-medium cursor-pointer"
+                    onClick={() => onSelect(isSel ? "" : d.derived_dataset_id)}
+                  >
+                    {d.derived_title}
+                  </td>
+                  <td className="px-2 py-2">{d.admin_level ?? "—"}</td>
+                  <td className="px-2 py-2">{d.year ?? "—"}</td>
+                  <td className="px-2 py-2 text-right">{d.record_count ?? "—"}</td>
+                  <td className="px-2 py-2">
+                    {d.data_health ? (
+                      <div className="border rounded bg-white p-1 inline-block">
+                        <DatasetHealth datasetId={d.derived_dataset_id} />
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-2 py-2">{d.domains ?? "—"}</td>
+                  <td className="px-2 py-2 text-right">{d.linked_count ?? 0}</td>
+                  <td className="px-2 py-2">
+                    {d.join_active === null ? "—" : d.join_active ? "Yes" : "No"}
+                  </td>
+                  <td className="px-2 py-2">
+                    {new Date(d.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="p-1 rounded hover:bg-gray-100"
+                        title="View details"
+                        onClick={() => onSelect(isSel ? "" : d.derived_dataset_id)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="p-1 rounded hover:bg-gray-100"
+                        title="Regenerate (coming soon)"
+                        onClick={() => onRegenerate(d)}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="p-1 rounded hover:bg-gray-100"
+                        title="Delete derived dataset"
+                        onClick={() => onDelete(d)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>
