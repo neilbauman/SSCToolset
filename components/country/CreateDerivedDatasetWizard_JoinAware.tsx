@@ -1,195 +1,303 @@
 "use client";
-import { useEffect, useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type Dataset = { id: string; title: string; dataset_type: string; admin_level: string | null };
-type Method = "multiply" | "ratio" | "sum" | "difference";
+import { useState, useEffect } from "react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
+
+type DatasetOption = {
+  id: string;
+  title: string;
+  dataset_type: string;
+  admin_level: string;
+  table_name: string;
+};
+
+type JoinPreviewRow = {
+  pcode: string;
+  name: string;
+  a: number | null;
+  b: number | null;
+  derived: number | null;
+};
 
 export default function CreateDerivedDatasetWizard_JoinAware({
-  open,
-  onClose,
   countryIso,
-  onCreated,
+  onClose,
 }: {
-  open: boolean;
-  onClose: () => void;
   countryIso: string;
-  onCreated?: (id?: string) => void;
+  onClose: () => void;
 }) {
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [datasets, setDatasets] = useState<DatasetOption[]>([]);
+  const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
+  const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
+  const [joinFieldA, setJoinFieldA] = useState("pcode");
+  const [joinFieldB, setJoinFieldB] = useState("pcode");
+  const [targetLevel, setTargetLevel] = useState("ADM4");
+  const [method, setMethod] = useState<"multiply" | "ratio" | "sum" | "difference">("multiply");
+  const [loading, setLoading] = useState(false);
   const [includeGIS, setIncludeGIS] = useState(true);
-  const [a, setA] = useState(""), [b, setB] = useState(""),
-    [aJoin, setAJoin] = useState(""), [bJoin, setBJoin] = useState(""),
-    [aLevel, setALevel] = useState("ADM3"), [bLevel, setBLevel] = useState("ADM3");
-  const [aMeta, setAMeta] = useState<Dataset | null>(null), [bMeta, setBMeta] = useState<Dataset | null>(null);
-  const [aFields, setAFields] = useState<string[]>([]), [bFields, setBFields] = useState<string[]>([]);
-  const [aPreview, setAPreview] = useState<any[]>([]), [bPreview, setBPreview] = useState<any[]>([]);
-  const [aCollapsed, setACollapsed] = useState(true), [bCollapsed, setBCollapsed] = useState(true);
-  const [method, setMethod] = useState<Method>("multiply"), [rows, setRows] = useState<any[]>([]);
-  const [warn, setWarn] = useState<string | null>(null), [loading, setLoading] = useState(false);
-  const [title, setTitle] = useState("");
+  const [previewRows, setPreviewRows] = useState<JoinPreviewRow[]>([]);
+  const [showPreviewA, setShowPreviewA] = useState(false);
+  const [showPreviewB, setShowPreviewB] = useState(false);
+  const [showJoinPreview, setShowJoinPreview] = useState(false);
 
-  useEffect(() => { if (open) loadDatasets(); }, [open, includeGIS]);
-  async function loadDatasets() {
-    const all: Dataset[] = [];
-    const { data: meta } = await supabase.from("dataset_metadata").select("id,title,dataset_type,admin_level").eq("country_iso", countryIso);
-    if (meta) all.push(...meta);
-    const { data: pop } = await supabase.from("view_population_country_active_summary").select("population_title").eq("country_iso", countryIso);
-    if (pop?.length) all.push({ id: "population_data", title: pop[0].population_title || "Population Dataset", dataset_type: "population", admin_level: "ADM4" });
-    const { data: adm } = await supabase.from("admin_dataset_versions").select("id,title,is_active,year").eq("country_iso", countryIso);
-    if (adm) all.push(...adm.map((d: any) => ({ id: d.id, title: d.title || "Admin Dataset", dataset_type: "admin", admin_level: "ADM4" })));
-    if (includeGIS) {
-      const { data: gis } = await supabase.from("gis_datasets").select("id,title,is_active").eq("country_iso", countryIso);
-      if (gis) all.push(...gis.map((d: any) => ({ id: d.id, title: d.title || "GIS Dataset", dataset_type: "gis", admin_level: null })));
+  // Fetch available datasets
+  useEffect(() => {
+    const fetchDatasets = async () => {
+      const { data } = await supabase
+        .from("dataset_metadata")
+        .select("id, dataset_title as title, dataset_type, admin_level, dataset_title")
+        .eq("country_iso", countryIso)
+        .eq("is_active", true)
+        .order("dataset_title");
+      const rows = (data || []).map((d) => ({
+        ...d,
+        table_name: d.title.replace(/\s+/g, "_").toLowerCase(),
+      }));
+      setDatasets(rows);
+    };
+    fetchDatasets();
+  }, [countryIso]);
+
+  const handlePreviewJoin = async () => {
+    if (!datasetA || !datasetB) return;
+    setLoading(true);
+    setPreviewRows([]);
+    const { data, error } = await supabase.rpc("simulate_join_preview_aggregate", {
+      table_a: datasetA.table_name,
+      table_b: datasetB.table_name,
+      field_a: joinFieldA,
+      field_b: joinFieldB,
+      p_country: countryIso,
+      target_level: targetLevel,
+      method,
+    });
+    if (error) {
+      console.error("Join preview error:", error);
+      setLoading(false);
+      return;
     }
-    setDatasets(all);
-  }
-
-  useEffect(() => { setAMeta(datasets.find((d) => d.id === a) || null); setBMeta(datasets.find((d) => d.id === b) || null); }, [a, b, datasets]);
-
-  const getTableForDataset = (meta: Dataset | null) => {
-    if (!meta) return "dataset_values";
-    switch (meta.dataset_type) {
-      case "population": return "population_data";
-      case "admin": return "admin_units";
-      case "gis": return "gis_layers";
-      default: return "dataset_values";
-    }
+    const rows =
+      data?.map((r: any) => ({
+        pcode: r.pcode,
+        name: r.name,
+        a: r.a ?? null,
+        b: r.b ?? null,
+        derived: r.derived ?? null,
+      })) || [];
+    setPreviewRows(rows);
+    setShowJoinPreview(true);
+    setLoading(false);
   };
 
-  async function fetchFields(meta: Dataset | null, setter: (v: string[]) => void, setJoin: (v: string) => void) {
-    if (!meta) return setter([]);
-    const table = getTableForDataset(meta);
-    const { data, error } = await supabase.rpc("get_table_columns", { table_name: table });
-    if (error || !data) {
-      setter(["pcode", "admin_pcode", "adm_code", "id", "parent_pcode"]);
-      setJoin("pcode");
-    } else {
-      const names = data.map((f: { column_name: string }) => f.column_name);
-      setter(names);
-      const guess = names.find((n: string) => ["pcode", "admin_pcode", "adm_code", "parent_pcode"].includes(n));
-      setJoin(guess || names[0]);
-    }
-  }
-  useEffect(() => { if (aMeta) fetchFields(aMeta, setAFields, setAJoin); }, [aMeta]);
-  useEffect(() => { if (bMeta) fetchFields(bMeta, setBFields, setBJoin); }, [bMeta]);
+  return (
+    <div className="p-4 w-full max-w-5xl mx-auto">
+      <h2 className="text-xl font-semibold mb-2">Create Derived Dataset</h2>
+      <p className="text-xs text-gray-600 mb-4">Step 1 Join Alignment → Step 2 Derivation</p>
 
-  async function previewDataset(meta: Dataset | null, setter: (r: any[]) => void) {
-    if (!meta) return setter([]);
-    const table = getTableForDataset(meta);
-    const { data } = await supabase.from(table).select("*").limit(10);
-    setter(data || []);
-  }
-  useEffect(() => { if (aMeta) previewDataset(aMeta, setAPreview); }, [aMeta]);
-  useEffect(() => { if (bMeta) previewDataset(bMeta, setBPreview); }, [bMeta]);
+      <label className="flex items-center space-x-2 mb-4 text-sm">
+        <input
+          type="checkbox"
+          checked={includeGIS}
+          onChange={(e) => setIncludeGIS(e.target.checked)}
+        />
+        <span>Include GIS datasets</span>
+      </label>
 
-  useEffect(() => {
-    if (aLevel !== bLevel) setWarn(`⚠️ Joining ${aLevel} with ${bLevel} may require aggregation.`); else setWarn(null);
-  }, [aLevel, bLevel]);
+      {/* Step 1 */}
+      <h3 className="text-sm font-semibold mb-2">Step 1 Join Alignment</h3>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="text-xs font-semibold">Dataset A</label>
+          <select
+            className="w-full border rounded p-2 text-sm"
+            value={datasetA?.id || ""}
+            onChange={(e) =>
+              setDatasetA(datasets.find((d) => d.id === e.target.value) || null)
+            }
+          >
+            <option value="">Select...</option>
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+          </select>
+          <div className="flex space-x-2 mt-2">
+            <label className="text-xs">Join Field</label>
+            <select
+              value={joinFieldA}
+              onChange={(e) => setJoinFieldA(e.target.value)}
+              className="border rounded px-2 py-1 text-xs"
+            >
+              <option value="pcode">pcode</option>
+              <option value="admin_pcode">admin_pcode</option>
+              <option value="adm_code">adm_code</option>
+              <option value="id">id</option>
+            </select>
+          </div>
+          <div className="flex space-x-2 mt-2">
+            <label className="text-xs">Admin Level</label>
+            <select
+              value={datasetA?.admin_level || "ADM4"}
+              onChange={(e) => setTargetLevel(e.target.value)}
+              className="border rounded px-2 py-1 text-xs"
+            >
+              <option value="ADM0">ADM0</option>
+              <option value="ADM1">ADM1</option>
+              <option value="ADM2">ADM2</option>
+              <option value="ADM3">ADM3</option>
+              <option value="ADM4">ADM4</option>
+            </select>
+          </div>
+          <Button
+            variant="link"
+            className="text-xs mt-1"
+            onClick={() => setShowPreviewA((p) => !p)}
+          >
+            {showPreviewA ? "Hide preview" : "Show preview"}
+          </Button>
+          {showPreviewA && (
+            <div className="mt-2 p-2 border rounded max-h-32 overflow-y-auto text-xs text-gray-700">
+              <p>Preview of {datasetA?.title}</p>
+              <p className="italic text-gray-500">[dataset preview here]</p>
+            </div>
+          )}
+        </div>
 
-  async function previewJoin() {
-    if (!aMeta || !bMeta) return;
-    const aTable = getTableForDataset(aMeta), bTable = getTableForDataset(bMeta);
-    const { data, error } = await supabase.rpc("simulate_join_preview", { table_a: aTable, table_b: bTable, field_a: aJoin, field_b: bJoin, p_country: countryIso });
-    if (error || !data) {
-      const fb = await supabase.from("admin_units").select("pcode,name,level,parent_pcode").eq("country_iso", countryIso).eq("level", aLevel).limit(10);
-      setRows((fb.data || []).map((d) => ({ ...d, a: "—", b: "—", derived: "—" })));
-    } else setRows(data);
-  }
+        <div>
+          <label className="text-xs font-semibold">Dataset B</label>
+          <select
+            className="w-full border rounded p-2 text-sm"
+            value={datasetB?.id || ""}
+            onChange={(e) =>
+              setDatasetB(datasets.find((d) => d.id === e.target.value) || null)
+            }
+          >
+            <option value="">Select...</option>
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+          </select>
+          <div className="flex space-x-2 mt-2">
+            <label className="text-xs">Join Field</label>
+            <select
+              value={joinFieldB}
+              onChange={(e) => setJoinFieldB(e.target.value)}
+              className="border rounded px-2 py-1 text-xs"
+            >
+              <option value="pcode">pcode</option>
+              <option value="admin_pcode">admin_pcode</option>
+              <option value="adm_code">adm_code</option>
+              <option value="id">id</option>
+            </select>
+          </div>
+          <div className="flex space-x-2 mt-2">
+            <label className="text-xs">Admin Level</label>
+            <select
+              value={datasetB?.admin_level || "ADM4"}
+              onChange={(e) => setTargetLevel(e.target.value)}
+              className="border rounded px-2 py-1 text-xs"
+            >
+              <option value="ADM0">ADM0</option>
+              <option value="ADM1">ADM1</option>
+              <option value="ADM2">ADM2</option>
+              <option value="ADM3">ADM3</option>
+              <option value="ADM4">ADM4</option>
+            </select>
+          </div>
+          <Button
+            variant="link"
+            className="text-xs mt-1"
+            onClick={() => setShowPreviewB((p) => !p)}
+          >
+            {showPreviewB ? "Hide preview" : "Show preview"}
+          </Button>
+          {showPreviewB && (
+            <div className="mt-2 p-2 border rounded max-h-32 overflow-y-auto text-xs text-gray-700">
+              <p>Preview of {datasetB?.title}</p>
+              <p className="italic text-gray-500">[dataset preview here]</p>
+            </div>
+          )}
+        </div>
+      </div>
 
-  async function handleCreate() {
-    if (!aMeta || !bMeta) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.rpc("create_simple_derived_dataset_v2", {
-        p_country_iso: countryIso, p_dataset_a: aMeta.id, p_dataset_b: bMeta.id,
-        p_title: title || `${aMeta.title} × ${bMeta.title}`, p_method: method, p_admin_level: aLevel,
-      });
-      if (error) throw error;
-      onCreated?.(Array.isArray(data) ? data[0] : data); onClose();
-    } catch (e: any) { alert(e.message); } finally { setLoading(false); }
-  }
+      <Button
+        variant="link"
+        className="text-xs mb-2"
+        onClick={handlePreviewJoin}
+        disabled={loading}
+      >
+        {loading ? (
+          <>
+            <Loader2 className="w-3 h-3 animate-spin mr-1" /> Generating preview...
+          </>
+        ) : (
+          "Preview join"
+        )}
+      </Button>
 
-  const PreviewTable = ({ rows, collapsed, toggle }: { rows: any[]; collapsed: boolean; toggle: () => void }) => (
-    <div className="mt-1">
-      <button onClick={toggle} className="text-xs text-blue-600 hover:underline mb-1">{collapsed ? "Show preview" : "Hide preview"}</button>
-      {!collapsed && (
-        <div className="border rounded max-h-40 overflow-auto">
-          {rows.length ? (
-            <table className="text-xs min-w-full">
-              <thead className="bg-gray-50"><tr>{Object.keys(rows[0]).map((k) => <th key={k} className="px-2 py-1 text-left">{k}</th>)}</tr></thead>
-              <tbody>{rows.map((r, i) => <tr key={i} className="border-t">{Object.values(r).map((v, j) => <td key={j} className="px-2 py-1">{String(v ?? "—")}</td>)}</tr>)}</tbody>
-            </table>
-          ) : (<div className="text-xs text-gray-400 italic p-2">No data</div>)}
+      {showJoinPreview && (
+        <div className="mt-2 border rounded p-2 text-xs overflow-auto max-h-96">
+          <table className="min-w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-gray-600">
+                <th className="text-left p-1 border">PCode</th>
+                <th className="text-left p-1 border">Name</th>
+                <th className="text-right p-1 border">A</th>
+                <th className="text-right p-1 border">B</th>
+                <th className="text-right p-1 border">Derived</th>
+              </tr>
+            </thead>
+            <tbody>
+              {previewRows.slice(0, 25).map((r, i) => (
+                <tr key={i} className="border-b">
+                  <td className="p-1">{r.pcode}</td>
+                  <td className="p-1">{r.name}</td>
+                  <td className="p-1 text-right">{r.a ?? "—"}</td>
+                  <td className="p-1 text-right">{r.b ?? "—"}</td>
+                  <td className="p-1 text-right">{r.derived ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-gray-500 mt-1">Showing up to 25 rows.</p>
         </div>
       )}
-    </div>
-  );
 
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow-lg max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-5 border-b">
-          <h2 className="text-2xl font-semibold">Create Derived Dataset</h2>
-          <p className="text-xs text-gray-500">Step 1 Join Alignment → Step 2 Derivation</p>
-        </div>
-        <div className="p-5 overflow-y-auto space-y-5">
-          <div className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={includeGIS} onChange={(e) => setIncludeGIS(e.target.checked)} />
-            <label>Include GIS datasets</label>
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Step 1 Join Alignment</h3>
-          {warn && <div className="text-xs bg-yellow-100 text-yellow-800 border p-2 rounded">{warn}</div>}
+      {/* Step 2 */}
+      <h3 className="text-sm font-semibold mt-4 mb-2">
+        Step 2 Derivation / Aggregation
+      </h3>
+      <div className="flex items-center space-x-2 mb-2">
+        <span className="text-xs">Formula:</span>
+        <span className="text-xs font-semibold">
+          {datasetA?.title || "A"} {method} {datasetB?.title || "B"} → target{" "}
+          {targetLevel}
+        </span>
+      </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {[
-              ["A", a, setA, aMeta, aJoin, setAJoin, aFields, aLevel, setALevel, aPreview, aCollapsed, setACollapsed],
-              ["B", b, setB, bMeta, bJoin, setBJoin, bFields, bLevel, setBLevel, bPreview, bCollapsed, setBCollapsed],
-            ].map(([label, id, setId, meta, join, setJoin, fields, lvl, setLvl, preview, collapsed, setCollapsed]: any) => (
-              <div key={label}>
-                <label className="text-sm font-medium">Dataset {label}</label>
-                <select value={id} onChange={(e) => setId(e.target.value)} className="w-full border rounded px-2 py-1.5">
-                  <option value="">Select…</option>{datasets.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
-                </select>
-                {meta && <div className="text-xs text-gray-600 mt-1">Type:{meta.dataset_type} · Level:{meta.admin_level}</div>}
-                {fields.length > 0 && (
-                  <>
-                    <label className="text-xs text-gray-700 mt-1 block">Join Field</label>
-                    <select value={join} onChange={(e) => setJoin(e.target.value)} className="w-full border rounded px-2 py-1 text-xs">
-                      {fields.map((f: string, i: number) => <option key={i}>{f}</option>)}
-                    </select>
-                  </>
-                )}
-                <label className="text-xs text-gray-700 mt-1 block">Admin Level</label>
-                <select value={lvl} onChange={(e) => setLvl(e.target.value)} className="w-full border rounded px-2 py-1 text-xs">
-                  {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((l) => <option key={l}>{l}</option>)}
-                </select>
-                <PreviewTable rows={preview} collapsed={collapsed} toggle={() => setCollapsed(!collapsed)} />
-              </div>
-            ))}
-          </div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {(["multiply", "ratio", "sum", "difference"] as const).map((m) => (
+          <Button
+            key={m}
+            size="sm"
+            variant={method === m ? "default" : "outline"}
+            onClick={() => setMethod(m)}
+          >
+            {m}
+          </Button>
+        ))}
+      </div>
 
-          <button onClick={previewJoin} className="text-blue-600 text-xs hover:underline mt-2">Preview join</button>
-          <PreviewTable rows={rows} collapsed={false} toggle={() => {}} />
-
-          <h3 className="text-sm font-semibold text-gray-700">Step 2 Derivation / Aggregation</h3>
-          <div className="text-xs text-gray-600 border rounded p-2 bg-gray-50">
-            Formula: <strong>{aMeta?.title || "A"}</strong> {method} <strong>{bMeta?.title || "B"}</strong> → target <strong>{aLevel}</strong>
-          </div>
-
-          <div className="flex gap-2 mt-2">
-            {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
-              <button key={m} onClick={() => setMethod(m)} className={`px-3 py-1 border rounded text-xs ${method === m ? "bg-blue-600 text-white border-blue-600" : ""}`}>{m}</button>
-            ))}
-          </div>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="border rounded px-2 py-1 w-full mt-2 text-sm" placeholder="Derived Dataset Title" />
-        </div>
-
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="border px-3 py-1.5 rounded">Cancel</button>
-          <button onClick={handleCreate} disabled={loading || !aMeta || !bMeta} className="bg-blue-600 text-white px-3 py-1.5 rounded">{loading ? "Creating…" : "Create"}</button>
-        </div>
+      <div className="flex justify-end mt-4">
+        <Button variant="outline" className="mr-2" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button>Create</Button>
       </div>
     </div>
   );
