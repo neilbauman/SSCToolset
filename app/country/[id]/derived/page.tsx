@@ -179,7 +179,7 @@ export default function CountryDerivedDatasetsPage() {
   open={creating}
   countryIso={iso}
   onClose={() => setCreating(false)}
-  onCreated={() => loadDerived()} // ✅ new prop, triggers refresh after save
+  onCreated={() => reloadDerived()} // ✅ new prop, triggers refresh after save
 />
       )}
     </SidebarLayout>
