@@ -13,7 +13,7 @@ type DatasetRow = {
   table_name: string;       // actual table/view
 };
 
-type Option = { key: string; label: string; source: Option['source']; table: string };
+type Option = { key: string; label: string; source: 'core' | 'other' | 'derived' | 'gis'; table: string };
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
