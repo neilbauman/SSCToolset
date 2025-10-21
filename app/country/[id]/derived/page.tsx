@@ -75,7 +75,7 @@ export default function DerivedDatasetsPage() {
               countryIso={iso}
               onClose={() => {
                 setCreating(false);
-                router.refresh(); // ✅ Refresh the list after modal closes
+                router.refresh();
               }}
             />
           </div>
