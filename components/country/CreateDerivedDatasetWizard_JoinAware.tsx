@@ -34,7 +34,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
   const [categories, setCategories] = useState<Record<string, string[]>>({});
   const [targetLevel, setTargetLevel] = useState("ADM4");
 
-  // --- Load datasets
+  // Load dataset options
   useEffect(() => {
     const load = async () => {
       const all: Option[] = [];
@@ -68,7 +68,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) load();
   }, [includeCore, includeOther, includeDerived, includeGIS, open, countryIso]);
 
-  // --- Load taxonomy
+  // Load taxonomy
   useEffect(() => {
     const loadTaxonomy = async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
@@ -83,7 +83,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) loadTaxonomy();
   }, [open]);
 
-  // --- Peek datasets
+  // Peek dataset
   const peekDataset = async (table: string, side: "A" | "B") => {
     const { data } = await supabase.from(table).select("*").limit(5);
     if (data?.length) {
@@ -93,7 +93,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     }
   };
 
-  // --- Preview join
+  // Join preview
   const previewJoin = async () => {
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA?.table || "",
@@ -109,7 +109,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (!error && data) setPreview(data);
   };
 
-  // --- Save derived
+  // Save derived dataset
   const saveDerived = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -118,8 +118,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         title,
         description: desc,
         admin_level: targetLevel,
-        taxonomy_categories: Object.keys(taxonomy).join(","),
-        taxonomy_terms: Object.values(taxonomy).flat().join(","),
+        taxonomy_categories: Object.keys(taxonomy), // FIXED: send arrays
+        taxonomy_terms: Object.values(taxonomy).flat(), // FIXED: send arrays
       })
       .select()
       .single();
@@ -178,7 +178,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
             </div>}
           </div>
 
-          {/* Spacer + Dataset B/scalar */}
+          {/* Dataset B / scalar */}
           <div className="flex flex-1 items-start gap-2">
             {!useScalarB ? (
               <div className="flex-1">
