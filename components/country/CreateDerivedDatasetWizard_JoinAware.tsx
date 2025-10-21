@@ -133,7 +133,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }, [method, colA, colB, useScalarB, scalarB]);
 
   // ---------- peek helpers ----------
-  async function peek(table?: string, set: (rows: any[]) => void) {
+  async function peek(table: string | undefined, set: (rows: any[]) => void) {
     if (!table) return set([]);
     const sb = supabaseBrowser;
     const { data, error } = await sb.from(table).select('*').limit(10);
