@@ -4,29 +4,20 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, AlertTriangle, X, Divide, Plus, Minus, Asterisk } from "lucide-react";
 
 type Method = "multiply" | "ratio" | "sum" | "difference";
-type Source = "core" | "other" | "derived" | "gis";
+type Source = "core" | "other" | "derived";
 type DatasetOption = { id: string; title: string; admin_level?: string | null; source: Source; table_name: string };
 type JoinRow = { pcode: string; name: string; a?: number; b?: number; derived?: number };
 
 export default function CreateDerivedDatasetWizard_JoinAware({
-  open,
-  countryIso,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  countryIso: string;
-  onClose: () => void;
-  onCreated?: () => void;
-}) {
+  open, countryIso, onClose, onCreated,
+}: { open: boolean; countryIso: string; onClose: () => void; onCreated?: () => void }) {
   if (!open) return null;
   const ref = useRef<HTMLDivElement>(null);
 
   const [core, setCore] = useState(true);
+  const [includeGis, setIncludeGis] = useState(true);
   const [other, setOther] = useState(true);
   const [derived, setDerived] = useState(true);
-  const [gis, setGis] = useState(false);
-
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
@@ -51,45 +42,43 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     return () => window.removeEventListener("keydown", esc);
   }, [onClose]);
 
-  // Fetch datasets
   useEffect(() => {
     (async () => {
       const merged: DatasetOption[] = [];
-      if (core)
+      if (core) {
         merged.push(
-          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
-          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
-          ...(gis ? [{ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "gis", table_name: "gis_features" }] : [])
+          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core" as const, table_name: "admin_units" },
+          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core" as const, table_name: "population_data" },
         );
+        if (includeGis)
+          merged.push({ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "core" as const, table_name: "gis_features" });
+      }
       if (other) {
         const { data } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
         if (data)
-          merged.push(
-            ...data.map((d: any) => ({
-              id: d.id,
-              title: d.title || "(Untitled)",
-              admin_level: d.admin_level,
-              source: "other" as const,
-              table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
-            }))
-          );
+          merged.push(...data.map((d: any) => ({
+            id: d.id,
+            title: d.title || "(Untitled)",
+            admin_level: d.admin_level,
+            source: "other" as const,
+            table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
+          })));
       }
       if (derived) {
-        const { data } = await supabase.from("view_derived_dataset_summary").select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
+        const { data } = await supabase.from("view_derived_dataset_summary")
+          .select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
         if (data)
-          merged.push(
-            ...data.map((d: any) => ({
-              id: d.derived_dataset_id,
-              title: d.derived_title,
-              admin_level: d.admin_level,
-              source: "derived" as const,
-              table_name: `derived_${d.derived_dataset_id}`,
-            }))
-          );
+          merged.push(...data.map((d: any) => ({
+            id: d.derived_dataset_id,
+            title: d.derived_title,
+            admin_level: d.admin_level,
+            source: "derived" as const,
+            table_name: `derived_${d.derived_dataset_id}`,
+          })));
       }
       setDatasets(merged);
     })();
-  }, [countryIso, core, other, derived, gis]);
+  }, [countryIso, core, other, derived, includeGis]);
 
   const previewMini = async (tbl: string, setter: (r: any[]) => void) => {
     const { data } = await supabase.from(tbl).select("pcode,name,population,value").limit(5);
@@ -118,15 +107,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setLoading(false);
   };
 
-  const grouped = useMemo(
-    () => ({
-      core: datasets.filter((d) => d.source === "core"),
-      other: datasets.filter((d) => d.source === "other"),
-      derived: datasets.filter((d) => d.source === "derived"),
-      gis: datasets.filter((d) => d.source === "gis"),
-    }),
-    [datasets]
-  );
+  const grouped = useMemo(() => ({
+    core: datasets.filter((d) => d.source === "core"),
+    other: datasets.filter((d) => d.source === "other"),
+    derived: datasets.filter((d) => d.source === "derived"),
+  }), [datasets]);
 
   const renderMini = (rows: any[]) =>
     rows.length === 0 ? (
@@ -136,15 +121,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <thead className="bg-gray-50 text-gray-600">
           <tr>{Object.keys(rows[0]).slice(0, 3).map((k) => <th key={k} className="border p-1 text-left">{k}</th>)}</tr>
         </thead>
-        <tbody>{rows.map((r, i) => (<tr key={i}>{Object.keys(r).slice(0, 3).map((k) => <td key={k} className="border p-1">{String(r[k] ?? "")}</td>)}</tr>))}</tbody>
+        <tbody>{rows.map((r, i) => (
+          <tr key={i}>{Object.keys(r).slice(0, 3).map((k) => <td key={k} className="border p-1">{String(r[k] ?? "")}</td>)}</tr>
+        ))}</tbody>
       </table>
     );
 
   const icons: Record<Method, JSX.Element> = {
-    multiply: <Asterisk className="w-4 h-4" />,
-    ratio: <Divide className="w-4 h-4" />,
-    sum: <Plus className="w-4 h-4" />,
-    difference: <Minus className="w-4 h-4" />,
+    multiply: <Asterisk className="w-4 h-4" />, ratio: <Divide className="w-4 h-4" />,
+    sum: <Plus className="w-4 h-4" />, difference: <Minus className="w-4 h-4" />,
   };
 
   return (
@@ -158,13 +143,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <div className="p-4 max-h-[80vh] overflow-y-auto">
           {warn && <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center"><AlertTriangle className="w-4 h-4" />{warn}</div>}
 
-          {/* Fixed toggle types */}
           <div className="flex flex-wrap gap-4 mb-3 text-sm">
             {([
               ["Include Core", core, setCore],
+              ["Include GIS", includeGis, setIncludeGis],
               ["Include Other", other, setOther],
               ["Include Derived", derived, setDerived],
-              ["Include GIS", gis, setGis],
             ] as [string, boolean, (v: boolean) => void][]).map(([label, val, fn], i) => (
               <label key={i} className="flex items-center gap-1">
                 <input type="checkbox" checked={val} onChange={(e) => fn(e.target.checked)} />{label}
@@ -173,45 +157,39 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <div className="border rounded p-3">
-              <label className="text-xs font-semibold">Dataset A</label>
-              <select className="w-full border rounded p-2 text-sm mt-1" value={datasetA?.id || ""} onChange={(e) => setA(datasets.find((d) => d.id === e.target.value) || null)}>
-                <option value="">Select dataset…</option>
-                {(["core","other","derived","gis"] as const).map((k) => (
-                  <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
-                    {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title}{d.admin_level ? ` (${d.admin_level})` : ""}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-              <button onClick={() => setShowA((p) => !p)} className="text-xs text-blue-600 underline mt-2" disabled={!datasetA}>{showA ? "Hide preview" : "Show preview"}</button>
-              {showA && renderMini(rowsA)}
-            </div>
-
-            <div className="border rounded p-3">
-              <label className="text-xs font-semibold">Dataset B</label>
-              <label className="text-xs flex items-center gap-1 float-right">
-                <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />Use scalar for B
-              </label>
-              {useScalar ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <input type="number" step="any" className="border rounded px-2 py-1 text-sm w-24" value={scalar ?? ""} onChange={(e) => setScalar(e.target.value === "" ? null : Number(e.target.value))} />
-                  <span className="text-xs text-gray-500">Example: Avg HH Size</span>
-                </div>
-              ) : (
-                <>
-                  <select className="w-full border rounded p-2 text-sm mt-1" value={datasetB?.id || ""} onChange={(e) => setB(datasets.find((d) => d.id === e.target.value) || null)}>
-                    <option value="">Select dataset…</option>
-                    {(["core","other","derived","gis"] as const).map((k) => (
-                      <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
-                        {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title}{d.admin_level ? ` (${d.admin_level})` : ""}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <button onClick={() => setShowB((p) => !p)} className="text-xs text-blue-600 underline mt-2" disabled={!datasetB}>{showB ? "Hide preview" : "Show preview"}</button>
-                  {showB && renderMini(rowsB)}
-                </>
-              )}
-            </div>
+            {[["Dataset A", datasetA, setA, showA, setShowA, rowsA],
+              ["Dataset B", datasetB, setB, showB, setShowB, rowsB]].map(([label, ds, setDs, show, setShow, data], idx) => (
+              <div key={idx} className="border rounded p-3">
+                <label className="text-xs font-semibold">{label}</label>
+                {idx === 1 && (
+                  <label className="text-xs flex items-center gap-1 float-right">
+                    <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />Use scalar for B
+                  </label>
+                )}
+                {idx === 1 && useScalar ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input type="number" step="any" className="border rounded px-2 py-1 text-sm w-24"
+                      value={scalar ?? ""} onChange={(e) => setScalar(e.target.value === "" ? null : Number(e.target.value))} />
+                    <span className="text-xs text-gray-500">Example: Avg HH Size</span>
+                  </div>
+                ) : (
+                  <>
+                    <select className="w-full border rounded p-2 text-sm mt-1"
+                      value={(ds as DatasetOption | null)?.id || ""}
+                      onChange={(e) => setDs(datasets.find((d) => d.id === e.target.value) || null)}>
+                      <option value="">Select dataset…</option>
+                      {(["core", "other", "derived"] as const).map((k) => (
+                        <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
+                          {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title}{d.admin_level ? ` (${d.admin_level})` : ""}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <button onClick={() => setShow(!show)} className="text-xs text-blue-600 underline mt-2" disabled={!ds}>{show ? "Hide preview" : "Show preview"}</button>
+                    {show && renderMini(data as any[])}
+                  </>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="flex items-center gap-3 my-3 text-sm text-gray-700 justify-center">
@@ -223,7 +201,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
 
           <div className="flex flex-wrap gap-3 mb-3">
-            {(["multiply","ratio","sum","difference"] as Method[]).map((m) => (
+            {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
               <button key={m} onClick={() => setMethod(m)} className={`px-3 py-1 rounded text-xs ${method===m?"bg-blue-600 text-white":"border hover:bg-gray-50"}`}>{m}</button>
             ))}
             <button onClick={handlePreviewJoin} disabled={loading || !datasetA || (!datasetB && !useScalar)} className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50">
