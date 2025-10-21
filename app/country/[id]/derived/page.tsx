@@ -30,7 +30,7 @@ export default function DerivedDatasetsPage() {
   async function loadDerived() {
     setLoading(true);
     try {
-      const sb = supabase();
+      const sb = supabase;
       const { data, error } = await sb
         .from('view_derived_dataset_summary')
         .select('*')
