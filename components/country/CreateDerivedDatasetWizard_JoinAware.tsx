@@ -2,7 +2,13 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, countryIso }) {
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  countryIso: string;
+};
+
+export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, countryIso }: Props) {
   const [datasets, setDatasets] = useState([]);
   const [datasetA, setA] = useState(null);
   const [datasetB, setB] = useState(null);
