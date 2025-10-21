@@ -8,14 +8,14 @@ import { Loader2, Database } from "lucide-react";
 /**
  * CountryDatasetSummary.tsx
  * --------------------------
- * Accurate, Supabase-safe summaries of each dataset family:
+ * Displays a summary of all dataset categories for a country:
  *  - Administrative Areas (ADM1–ADM4)
- *  - Population (via RPC get_population_summary)
+ *  - Population (using RPC get_population_summary + fallback)
  *  - GIS Features
  *  - Other Datasets
  *  - Derived Datasets
  *
- * Uses verified RPCs and supported PostgREST patterns.
+ * Uses schema-safe queries (no count(*)) and handles Supabase RPC fallback.
  */
 
 type Props = {
@@ -44,7 +44,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         setLoading(true);
 
         /** ─────────────────────────────────────────────
-         * 1️⃣ Administrative Areas (client-safe aggregate)
+         * 1️⃣ Administrative Areas
          * ───────────────────────────────────────────── */
         const { data: adminRows, error: e1 } = await supabase
           .from("admin_units")
@@ -66,8 +66,11 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         setAdmin(adminSummary);
 
         /** ─────────────────────────────────────────────
-         * 2️⃣ Population Summary (server-side RPC)
+         * 2️⃣ Population Summary (RPC + fallback)
          * ───────────────────────────────────────────── */
+        let totalPop = 0;
+        let recordCount = 0;
+
         const { data: popRpc, error: e2 } = await supabase.rpc(
           "get_population_summary",
           {
@@ -78,12 +81,27 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
           }
         );
 
-        if (e2) throw e2;
+        if (e2 || !popRpc) {
+          console.warn(
+            "RPC get_population_summary failed, falling back to population_data table:",
+            e2?.message
+          );
+          const { data: popRows, error: e3 } = await supabase
+            .from("population_data")
+            .select("population")
+            .eq("country_iso", countryIso);
 
-        // The RPC may return a record or array depending on implementation
-        const popData = Array.isArray(popRpc) ? popRpc[0] : popRpc;
-        const totalPop = Number(popData?.total_population || 0);
-        const recordCount = Number(popData?.record_count || 0);
+          if (e3) throw e3;
+          totalPop = popRows?.reduce(
+            (sum, r) => sum + Number(r.population || 0),
+            0
+          );
+          recordCount = popRows?.length || 0;
+        } else {
+          const popData = Array.isArray(popRpc) ? popRpc[0] : popRpc;
+          totalPop = Number(popData?.total_population || 0);
+          recordCount = Number(popData?.record_count || 0);
+        }
 
         setPop({
           records: recordCount,
@@ -91,14 +109,14 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         });
 
         /** ─────────────────────────────────────────────
-         * 3️⃣ GIS Features (grouped by admin level)
+         * 3️⃣ GIS Features
          * ───────────────────────────────────────────── */
-        const { data: gisRows, error: e3 } = await supabase
+        const { data: gisRows, error: e4 } = await supabase
           .from("gis_features")
           .select("admin_level")
           .eq("country_iso", countryIso);
 
-        if (e3) throw e3;
+        if (e4) throw e4;
 
         const gisCount: Record<string, number> = {};
         (gisRows || []).forEach((r: any) => {
@@ -117,12 +135,12 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         /** ─────────────────────────────────────────────
          * 4️⃣ Other Datasets
          * ───────────────────────────────────────────── */
-        const { data: otherRows, error: e4 } = await supabase
+        const { data: otherRows, error: e5 } = await supabase
           .from("dataset_metadata")
           .select("year, record_count")
           .eq("country_iso", countryIso);
 
-        if (e4) throw e4;
+        if (e5) throw e5;
 
         const totalDatasets = otherRows?.length || 0;
         const totalRecords = otherRows?.reduce(
@@ -143,12 +161,12 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         /** ─────────────────────────────────────────────
          * 5️⃣ Derived Datasets
          * ───────────────────────────────────────────── */
-        const { data: derivedRows, error: e5 } = await supabase
+        const { data: derivedRows, error: e6 } = await supabase
           .from("view_derived_dataset_summary")
           .select("year, record_count")
           .eq("country_iso", countryIso);
 
-        if (e5) throw e5;
+        if (e6) throw e6;
 
         const derivedTotal = derivedRows?.length || 0;
         const derivedRecords = derivedRows?.reduce(
@@ -271,7 +289,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 /**
  * Panel Component
  * ----------------
- * Reusable, consistent layout for dataset summaries.
+ * Consistent layout for dataset summary sections.
  */
 function Panel({
   title,
