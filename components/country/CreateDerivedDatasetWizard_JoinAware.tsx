@@ -3,33 +3,21 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Props = { open: boolean; onClose: () => void; countryIso: string };
-
-type DatasetOption = {
-  id: string;
-  title: string;
-  admin_level?: string;
-  source: "core" | "other" | "derived";
-  table_name: string;
-};
+type DatasetOption = { id: string; title: string; admin_level?: string; source: "core" | "other" | "derived"; table_name: string; };
 type TaxonomyMap = Record<string, string[]>;
 
 export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, countryIso }: Props) {
-  // toggles for what to load into dropdowns
   const [incCore, setIncCore] = useState(true);
   const [incOther, setIncOther] = useState(true);
   const [incDerived, setIncDerived] = useState(true);
-
-  // loaded datasets (merged)
   const [allDatasets, setAllDatasets] = useState<DatasetOption[]>([]);
-  const datasets = useMemo(() => {
-    return allDatasets.filter(d =>
+  const datasets = useMemo(() =>
+    allDatasets.filter(d =>
       (incCore && d.source === "core") ||
       (incOther && d.source === "other") ||
       (incDerived && d.source === "derived")
-    );
-  }, [allDatasets, incCore, incOther, incDerived]);
+    ), [allDatasets, incCore, incOther, incDerived]);
 
-  // selections
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
   const [colA, setColA] = useState("population");
@@ -41,25 +29,20 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
   const [targetLevel, setTargetLevel] = useState("ADM4");
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-
-  // previews
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [peekRows, setPeekRows] = useState<any[]>([]);
   const [peekTitle, setPeekTitle] = useState<string>("");
-
-  // taxonomy
   const [taxonomy, setTaxonomy] = useState<TaxonomyMap>({});
   const [catChecked, setCatChecked] = useState<Record<string, boolean>>({});
   const [termChecked, setTermChecked] = useState<Record<string, Record<string, boolean>>>({});
 
-  // load datasets + taxonomy when modal opens or toggles change
   useEffect(() => {
     if (!open) return;
     (async () => {
       const core: DatasetOption[] = [
-        { id: "core-admin",  title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
-        { id: "core-pop",    title: "Population Data",          admin_level: "ADM4", source: "core", table_name: "population_data" },
-        { id: "core-gis",    title: "GIS Features",             admin_level: "ADM4", source: "core", table_name: "gis_features" },
+        { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
+        { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
+        { id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "core", table_name: "gis_features" },
       ];
       const other: DatasetOption[] = (await supabase
         .from("dataset_metadata")
@@ -86,7 +69,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         return a;
       }, {});
       setTaxonomy(grouped);
-      // initialize check states (unchecked by default)
       const initCat: Record<string, boolean> = {};
       const initTerms: Record<string, Record<string, boolean>> = {};
       Object.keys(grouped).forEach(c => { initCat[c] = false; initTerms[c] = {}; grouped[c].forEach(n => initTerms[c][n] = false); });
@@ -94,23 +76,25 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     })();
   }, [open, countryIso]);
 
-  // small helper
   const symbol = (m: string) => ({ ratio: "÷", multiply: "×", sum: "+", difference: "−" }[m] || "?");
 
-  // PEEK (shows pcode, name, and chosen value if exists, else population if exists)
+  // fixed doPeek
   async function doPeek(ds: DatasetOption | null, col: string) {
     setPeekRows([]); setPeekTitle("");
     if (!ds) return;
     const selectCols = ["pcode", "name", col].join(",");
-    let { data, error } = await supabase.from(ds.table_name).select(selectCols).limit(6);
-    if (error) {
-      // fallback to population
-      ({ data, error } = await supabase.from(ds.table_name).select("pcode,name,population").limit(6));
+    const { data, error } = await supabase.from(ds.table_name).select(selectCols).limit(6);
+    let rows = data;
+    if (error || !rows?.length) {
+      const fallback = await supabase.from(ds.table_name).select("pcode,name,population").limit(6);
+      rows = fallback.data;
     }
-    if (!error && data) { setPeekRows(data); setPeekTitle(`${ds.title} (${col})`); }
+    if (rows && rows.length) {
+      setPeekRows(rows);
+      setPeekTitle(`${ds.title} (${col})`);
+    }
   }
 
-  // PREVIEW (join/scalar)
   async function previewJoin() {
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA?.table_name || null,
@@ -119,7 +103,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
       p_target_level: targetLevel,
       p_method: method,
       p_col_a: colA,
-      p_col_b: useScalarB ? colA /*not used*/ : colB,
+      p_col_b: useScalarB ? colA : colB,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null
     });
@@ -127,22 +111,18 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     setPreviewRows(data || []);
   }
 
-  // SAVE (includes selected taxonomy)
   async function save() {
     const selectedCats = Object.entries(catChecked).filter(([, v]) => v).map(([k]) => k);
     const selectedTerms = Object.entries(termChecked)
-      .flatMap(([c, m]) => Object.entries(m).filter(([, v]) => v).map(([name]) => ({ c, name })));
-
+      .flatMap(([c, m]) => Object.entries(m).filter(([, v]) => v).map(([name]) => `${c}:${name}`));
     const { error } = await supabase.from("derived_dataset_metadata").insert({
-      country_iso: countryIso,
-      title, description: desc, admin_level: targetLevel,
+      country_iso: countryIso, title, description: desc, admin_level: targetLevel,
       table_a: datasetA?.table_name || null,
       table_b: useScalarB ? null : (datasetB?.table_name || null),
       col_a: colA, col_b: useScalarB ? null : colB,
       use_scalar_b: useScalarB, scalar_b_val: useScalarB ? scalarB : null,
       method, decimals,
-      taxonomy_categories: selectedCats,
-      taxonomy_terms: selectedTerms.map(t => `${t.c}:${t.name}`),
+      taxonomy_categories: selectedCats, taxonomy_terms: selectedTerms,
       formula: `A.${colA} ${symbol(method)} ${useScalarB ? scalarB : `B.${colB}`} → ${targetLevel}`
     });
     if (error) return alert("Save failed: " + error.message);
@@ -180,21 +160,19 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
               {datasets.map(d=><option key={d.id} value={d.id}>[{d.source}] {d.title}</option>)}
             </select>
             <div className="flex gap-2 mt-2">
-              <input className="border rounded p-2 flex-1" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column for A (e.g., population)" />
+              <input className="border rounded p-2 flex-1" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column for A" />
               <button className="border rounded px-3" onClick={()=>doPeek(datasetA,colA)}>peek</button>
             </div>
           </div>
 
-          {/* B side (hidden when scalar) */}
+          {/* B side */}
           <div className="border rounded p-3">
             <div className="flex items-center justify-between mb-1">
               <div className="font-semibold">Dataset B</div>
               <label className="text-xs flex items-center gap-2">
-                <input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)} />
-                Use scalar
+                <input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)} />Use scalar
               </label>
             </div>
-
             {!useScalarB ? (
               <>
                 <select className="border rounded p-2 w-full" value={datasetB?.id || ""} onChange={e=>setB(datasets.find(d=>d.id==e.target.value) || null)}>
@@ -202,7 +180,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                   {datasets.map(d=><option key={d.id} value={d.id}>[{d.source}] {d.title}</option>)}
                 </select>
                 <div className="flex gap-2 mt-2">
-                  <input className="border rounded p-2 flex-1" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column for B (e.g., population)" />
+                  <input className="border rounded p-2 flex-1" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column for B" />
                   <button className="border rounded px-3" onClick={()=>doPeek(datasetB,colB)}>peek</button>
                 </div>
               </>
@@ -230,7 +208,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           <button onClick={previewJoin} className="bg-blue-600 text-white px-3 py-1 rounded">Preview</button>
         </div>
 
-        {/* join preview (short, scrollable) */}
+        {/* join preview */}
         <div className="max-h-44 overflow-y-auto border rounded">
           <table className="w-full text-xs">
             <thead className="bg-gray-100 sticky top-0">
@@ -251,7 +229,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           </table>
         </div>
 
-        {/* peek (tiny) */}
+        {/* peek preview */}
         {!!peekRows.length && (
           <div className="max-h-32 overflow-y-auto border rounded">
             <div className="text-xs font-semibold px-2 py-1 bg-gray-50">{peekTitle}</div>
@@ -270,7 +248,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           </div>
         )}
 
-        {/* taxonomy (categories checkable; show terms only when checked) */}
+        {/* taxonomy */}
         <div>
           <div className="font-semibold mb-1">Taxonomy</div>
           <div className="grid grid-cols-4 gap-3">
@@ -284,8 +262,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                       const v = e.target.checked;
                       setCatChecked(s=>({...s,[cat]:v}));
                     }}
-                  />
-                  {cat}
+                  />{cat}
                 </label>
                 {catChecked[cat] && (
                   <div className="mt-1 pl-3 space-y-1">
@@ -302,8 +279,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                               return next;
                             });
                           }}
-                        />
-                        {t}
+                        />{t}
                       </label>
                     ))}
                   </div>
@@ -313,7 +289,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           </div>
         </div>
 
-        {/* footer */}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="border rounded px-3 py-1">Cancel</button>
           <button onClick={save} className="bg-green-600 text-white rounded px-3 py-1">Save</button>
