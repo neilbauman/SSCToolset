@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import SidebarLayout from '@/components/layout/SidebarLayout';
-import { supabaseBrowser as supabase } from '@/lib/supabase/supabaseBrowser';
+import { supabaseBrowser } from '@/lib/supabase/supabaseBrowser';
 import CreateDerivedDatasetWizard_JoinAware from '@/components/country/CreateDerivedDatasetWizard_JoinAware';
 import { Plus } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
@@ -30,7 +30,7 @@ export default function DerivedDatasetsPage() {
   async function loadDerived() {
     setLoading(true);
     try {
-      const sb = supabase;
+      const sb = supabaseBrowser; // ✅ fixed usage
       const { data, error } = await sb
         .from('view_derived_dataset_summary')
         .select('*')
@@ -50,7 +50,14 @@ export default function DerivedDatasetsPage() {
   }, [iso]);
 
   return (
-    <SidebarLayout>
+    <SidebarLayout
+      headerProps={{
+        title: 'Derived Datasets',
+        group: 'country-config', // ✅ correct group
+        description:
+          'View and manage datasets derived from existing country-level data sources.',
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">Derived Datasets</h1>
         <button
@@ -69,7 +76,7 @@ export default function DerivedDatasetsPage() {
               onClose={() => setCreating(false)}
               onCreated={() => {
                 setCreating(false);
-                router.refresh(); // ✅ replaces old setRefreshKey
+                router.refresh(); // ✅ refresh after save
               }}
             />
           </div>
