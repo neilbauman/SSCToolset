@@ -172,6 +172,7 @@ export default function CountryDatasetSummary({
           title="Derived Datasets"
           datasets={derivedDatasets}
           emptyMsg="No derived datasets created yet."
+          countryIso={countryIso}
         />
       )}
     </div>
@@ -286,10 +287,12 @@ function DerivedDatasetPanel({
   title,
   datasets,
   emptyMsg,
+  countryIso,
 }: {
   title: string;
   datasets: DerivedDataset[];
   emptyMsg: string;
+  countryIso: string;
 }) {
   return (
     <div className="border rounded-lg p-4 shadow-sm">
@@ -298,7 +301,7 @@ function DerivedDatasetPanel({
           {title}
         </h2>
         <a
-          href={`/country/${datasets[0]?.country_iso ?? ""}/derived`}
+          href={`/country/${countryIso}/derived`}
           className="text-sm font-medium text-[color:var(--gsc-red)] hover:underline"
         >
           View all →
