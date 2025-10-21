@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, X, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, X, Divide, Plus, Minus, Asterisk } from "lucide-react";
 
 type Method = "multiply" | "ratio" | "sum" | "difference";
-type Source = "core" | "other" | "derived";
+type Source = "core" | "other" | "derived" | "gis";
 type DatasetOption = { id: string; title: string; admin_level?: string | null; source: Source; table_name: string };
-type JoinPreviewRow = { pcode: string; name: string; a?: number | null; b?: number | null; derived?: number | null };
+type JoinRow = { pcode: string; name: string; a?: number; b?: number; derived?: number };
 
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
@@ -21,75 +21,92 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 }) {
   if (!open) return null;
   const ref = useRef<HTMLDivElement>(null);
+
+  const [core, setCore] = useState(true);
+  const [other, setOther] = useState(true);
+  const [derived, setDerived] = useState(true);
+  const [gis, setGis] = useState(false);
+
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
   const [joinA, setJoinA] = useState("pcode");
   const [joinB, setJoinB] = useState("pcode");
   const [target, setTarget] = useState("ADM4");
-  const [method, setMethod] = useState<Method>("multiply");
+  const [method, setMethod] = useState<Method>("ratio");
+
   const [useScalar, setUseScalar] = useState(false);
   const [scalar, setScalar] = useState<number | null>(5.1);
+
   const [rowsA, setRowsA] = useState<any[]>([]);
   const [rowsB, setRowsB] = useState<any[]>([]);
-  const [rows, setRows] = useState<JoinPreviewRow[]>([]);
+  const [rows, setRows] = useState<JoinRow[]>([]);
+  const [warn, setWarn] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
   const [showA, setShowA] = useState(false);
   const [showB, setShowB] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [warn, setWarn] = useState<string | null>(null);
 
-  // ESC closes
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
   }, [onClose]);
 
-  // Fetch dataset list
+  // Load dataset catalog
   useEffect(() => {
     (async () => {
-      const merged: DatasetOption[] = [
-        { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
-        { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
-      ];
-      const { data } = await supabase
-        .from("dataset_metadata")
-        .select("id,title,admin_level")
-        .eq("country_iso", countryIso);
-      if (data)
+      const merged: DatasetOption[] = [];
+      if (core)
         merged.push(
-          ...data.map((d: any) => ({
-            id: d.id,
-            title: d.title || "(Untitled)",
-            admin_level: d.admin_level,
-            source: "other" as Source,
-            table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
-          }))
+          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
+          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
+          ...(gis ? [{ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "gis", table_name: "gis_features" }] : [])
         );
+      if (other) {
+        const { data } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
+        if (data)
+          merged.push(
+            ...data.map((d: any) => ({
+              id: d.id,
+              title: d.title || "(Untitled)",
+              admin_level: d.admin_level,
+              source: "other" as Source,
+              table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
+            }))
+          );
+      }
+      if (derived) {
+        const { data } = await supabase.from("view_derived_dataset_summary").select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
+        if (data)
+          merged.push(
+            ...data.map((d: any) => ({
+              id: d.derived_dataset_id,
+              title: d.derived_title,
+              admin_level: d.admin_level,
+              source: "derived" as Source,
+              table_name: `derived_${d.derived_dataset_id}`,
+            }))
+          );
+      }
       setDatasets(merged);
     })();
-  }, [countryIso]);
+  }, [countryIso, core, other, derived, gis]);
 
-  // Human-readable mini preview
-  const previewReadable = async (tbl: string, setter: (r: any[]) => void) => {
-    const { data, error } = await supabase
-      .from(tbl)
-      .select("pcode,name,population,value")
-      .limit(5);
-    if (error) console.error(error);
+  const previewMini = async (tbl: string, setter: (r: any[]) => void) => {
+    const { data } = await supabase.from(tbl).select("pcode,name,population,value").limit(5);
     setter(data || []);
   };
   useEffect(() => {
-    if (showA && datasetA) previewReadable(datasetA.table_name, setRowsA);
+    if (showA && datasetA) previewMini(datasetA.table_name, setRowsA);
   }, [showA, datasetA]);
   useEffect(() => {
-    if (showB && datasetB && !useScalar) previewReadable(datasetB.table_name, setRowsB);
+    if (showB && datasetB && !useScalar) previewMini(datasetB.table_name, setRowsB);
   }, [showB, datasetB, useScalar]);
 
-  // Join preview (scalar or dataset)
   const handlePreviewJoin = async () => {
     if (!datasetA || (!datasetB && !useScalar)) return;
     setLoading(true);
@@ -106,242 +123,138 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_use_scalar_b: useScalar,
       p_scalar_b_val: scalar,
     });
-    if (error) {
-      console.error(error);
-      setWarn("Join preview failed. Check Supabase function or dataset alignment.");
-    } else setRows(data || []);
+    if (error) setWarn("Join preview failed. Check Supabase function or dataset alignment.");
+    else setRows(data || []);
     setShowJoin(true);
     setLoading(false);
   };
 
-  const grouped = useMemo(
-    () => ({
-      core: datasets.filter((d) => d.source === "core"),
-      other: datasets.filter((d) => d.source === "other"),
-    }),
-    [datasets]
-  );
+  const grouped = useMemo(() => ({
+    core: datasets.filter((d) => d.source === "core"),
+    other: datasets.filter((d) => d.source === "other"),
+    derived: datasets.filter((d) => d.source === "derived"),
+    gis: datasets.filter((d) => d.source === "gis"),
+  }), [datasets]);
 
   const renderMini = (rows: any[]) =>
     rows.length === 0 ? (
-      <div className="italic text-gray-500 mt-2">[dataset preview]</div>
+      <div className="italic text-gray-500 text-xs mt-1">[dataset preview]</div>
     ) : (
-      <table className="min-w-full border text-xs mt-2">
+      <table className="w-full border text-xs mt-2">
         <thead className="bg-gray-50 text-gray-600">
-          <tr>
-            {Object.keys(rows[0]).slice(0, 3).map((k) => (
-              <th key={k} className="border p-1 text-left capitalize">
-                {k}
-              </th>
-            ))}
-          </tr>
+          <tr>{Object.keys(rows[0]).slice(0, 3).map((k) => <th key={k} className="border p-1 text-left">{k}</th>)}</tr>
         </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {Object.keys(r)
-                .slice(0, 3)
-                .map((k) => (
-                  <td key={k} className="border p-1">
-                    {String(r[k] ?? "")}
-                  </td>
-                ))}
-            </tr>
-          ))}
-        </tbody>
+        <tbody>{rows.map((r, i) => (<tr key={i}>{Object.keys(r).slice(0, 3).map((k) => <td key={k} className="border p-1">{String(r[k] ?? "")}</td>)}</tr>))}</tbody>
       </table>
     );
 
+  const icons: Record<Method, JSX.Element> = {
+    multiply: <Asterisk className="w-4 h-4" />,
+    ratio: <Divide className="w-4 h-4" />,
+    sum: <Plus className="w-4 h-4" />,
+    difference: <Minus className="w-4 h-4" />,
+  };
+
   return (
-    <div
-      ref={ref}
-      onClick={(e) => e.target === ref.current && onClose()}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[9999]"
-    >
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow-lg overflow-hidden">
+    <div ref={ref} onClick={(e) => e.target === ref.current && onClose()} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[9999]">
+      <div className="w-full max-w-6xl bg-white rounded-lg shadow-lg overflow-hidden">
         <div className="flex justify-between items-center border-b px-4 py-2">
           <div>
             <h2 className="text-lg font-semibold">Create Derived Dataset</h2>
             <p className="text-xs text-gray-600">Step 1 Join → Step 2 Derivation</p>
           </div>
-          <button onClick={onClose}>
-            <X className="w-5 h-5 text-gray-700" />
-          </button>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-700" /></button>
         </div>
 
         <div className="p-4 max-h-[80vh] overflow-y-auto">
-          {warn && (
-            <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center">
-              <AlertTriangle className="w-4 h-4" /> {warn}
-            </div>
-          )}
+          {warn && <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center"><AlertTriangle className="w-4 h-4" /> {warn}</div>}
+
+          {/* Dataset toggles */}
+          <div className="flex flex-wrap gap-4 mb-3 text-sm">
+            {[["Include Core", core, setCore], ["Include Other", other, setOther], ["Include Derived", derived, setDerived], ["Include GIS", gis, setGis]].map(([label, val, fn], i) => (
+              <label key={i} className="flex items-center gap-1"><input type="checkbox" checked={val as boolean} onChange={(e) => (fn as any)(e.target.checked)} />{label}</label>
+            ))}
+          </div>
 
           <div className="grid md:grid-cols-2 gap-4">
+            {/* Dataset A */}
             <div className="border rounded p-3">
               <label className="text-xs font-semibold">Dataset A</label>
-              <select
-                className="w-full border rounded p-2 text-sm mt-1"
-                value={datasetA?.id || ""}
-                onChange={(e) => setA(datasets.find((d) => d.id === e.target.value) || null)}
-              >
+              <select className="w-full border rounded p-2 text-sm mt-1" value={datasetA?.id || ""} onChange={(e) => setA(datasets.find((d) => d.id === e.target.value) || null)}>
                 <option value="">Select dataset…</option>
-                {(["core", "other"] as const).map((k) => (
+                {(["core", "other", "derived", "gis"] as const).map((k) => (
                   <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
-                    {grouped[k].map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
-                      </option>
-                    ))}
+                    {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title} {d.admin_level ? `(${d.admin_level})` : ""}</option>)}
                   </optgroup>
                 ))}
               </select>
-              <button
-                onClick={() => setShowA((p) => !p)}
-                className="text-xs text-blue-600 underline mt-2"
-                disabled={!datasetA}
-              >
-                {showA ? "Hide preview" : "Show preview"}
-              </button>
+              <button onClick={() => setShowA((p) => !p)} className="text-xs text-blue-600 underline mt-2" disabled={!datasetA}>{showA ? "Hide preview" : "Show preview"}</button>
               {showA && renderMini(rowsA)}
             </div>
 
+            {/* Dataset B */}
             <div className="border rounded p-3">
               <label className="text-xs font-semibold">Dataset B</label>
-              <label className="text-xs flex items-center gap-1 float-right">
-                <input
-                  type="checkbox"
-                  checked={useScalar}
-                  onChange={(e) => setUseScalar(e.target.checked)}
-                />{" "}
-                Use scalar for B
-              </label>
+              <label className="text-xs flex items-center gap-1 float-right"><input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />Use scalar for B</label>
               {useScalar ? (
                 <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="any"
-                    className="border rounded px-2 py-1 text-sm w-24"
-                    value={scalar ?? ""}
-                    onChange={(e) =>
-                      setScalar(e.target.value === "" ? null : Number(e.target.value))
-                    }
-                  />
+                  <input type="number" step="any" className="border rounded px-2 py-1 text-sm w-24" value={scalar ?? ""} onChange={(e) => setScalar(e.target.value === "" ? null : Number(e.target.value))} />
                   <span className="text-xs text-gray-500">Example: Avg HH Size</span>
                 </div>
               ) : (
                 <>
-                  <select
-                    className="w-full border rounded p-2 text-sm mt-1"
-                    value={datasetB?.id || ""}
-                    onChange={(e) =>
-                      setB(datasets.find((d) => d.id === e.target.value) || null)
-                    }
-                  >
+                  <select className="w-full border rounded p-2 text-sm mt-1" value={datasetB?.id || ""} onChange={(e) => setB(datasets.find((d) => d.id === e.target.value) || null)}>
                     <option value="">Select dataset…</option>
-                    {(["core", "other"] as const).map((k) => (
+                    {(["core", "other", "derived", "gis"] as const).map((k) => (
                       <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
-                        {grouped[k].map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
-                          </option>
-                        ))}
+                        {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title} {d.admin_level ? `(${d.admin_level})` : ""}</option>)}
                       </optgroup>
                     ))}
                   </select>
-                  <button
-                    onClick={() => setShowB((p) => !p)}
-                    className="text-xs text-blue-600 underline mt-2"
-                    disabled={!datasetB}
-                  >
-                    {showB ? "Hide preview" : "Show preview"}
-                  </button>
+                  <button onClick={() => setShowB((p) => !p)} className="text-xs text-blue-600 underline mt-2" disabled={!datasetB}>{showB ? "Hide preview" : "Show preview"}</button>
                   {showB && renderMini(rowsB)}
                 </>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 mt-4">
+          {/* Formula visualization */}
+          <div className="flex items-center gap-3 my-3 text-sm text-gray-700 justify-center">
+            <span className="font-medium">{datasetA?.title || "A"}</span>
+            {icons[method]}
+            <span className="font-medium">{useScalar ? `scalar(${scalar ?? "?"})` : datasetB?.title || "B"}</span>
+            <span className="text-gray-500">→</span>
+            <span className="font-medium">{target}</span>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mb-3">
             {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMethod(m)}
-                className={`px-3 py-1 rounded text-xs ${
-                  method === m ? "bg-blue-600 text-white" : "border hover:bg-gray-50"
-                }`}
-              >
-                {m}
-              </button>
+              <button key={m} onClick={() => setMethod(m)} className={`px-3 py-1 rounded text-xs ${method === m ? "bg-blue-600 text-white" : "border hover:bg-gray-50"}`}>{m}</button>
             ))}
-            <button
-              onClick={handlePreviewJoin}
-              disabled={loading || !datasetA || (!datasetB && !useScalar)}
-              className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Generating…
-                </>
-              ) : (
-                "Preview join"
-              )}
+            <button onClick={handlePreviewJoin} disabled={loading || !datasetA || (!datasetB && !useScalar)} className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50">
+              {loading ? (<><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Generating…</>) : "Preview join"}
             </button>
           </div>
 
           {showJoin && (
-            <div className="mt-3 border rounded p-2 text-xs overflow-auto max-h-96">
-              <table className="min-w-full text-xs border-collapse">
+            <div className="border rounded p-2 text-xs overflow-auto max-h-80">
+              <table className="min-w-full border-collapse">
                 <thead className="bg-gray-50 text-gray-600">
-                  <tr>
-                    <th className="p-1 border">PCode</th>
-                    <th className="p-1 border">Name</th>
-                    <th className="p-1 border">A</th>
-                    <th className="p-1 border">B</th>
-                    <th className="p-1 border">Derived</th>
-                  </tr>
+                  <tr><th className="p-1 border">PCode</th><th className="p-1 border">Name</th><th className="p-1 border">A</th><th className="p-1 border">B</th><th className="p-1 border">Derived</th></tr>
                 </thead>
-                <tbody>
-                  {rows.slice(0, 100).map((r, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
-                      <td className="p-1">{r.pcode}</td>
-                      <td className="p-1">{r.name}</td>
-                      <td className="p-1 text-right">{r.a ?? "—"}</td>
-                      <td className="p-1 text-right">{r.b ?? "—"}</td>
-                      <td className="p-1 text-right">{r.derived ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <tbody>{rows.slice(0, 100).map((r, i) => (<tr key={i} className="border-b hover:bg-gray-50"><td className="p-1">{r.pcode}</td><td className="p-1">{r.name}</td><td className="p-1 text-right">{r.a ?? "—"}</td><td className="p-1 text-right">{r.b ?? "—"}</td><td className="p-1 text-right">{r.derived ?? "—"}</td></tr>))}</tbody>
               </table>
             </div>
           )}
 
           <h3 className="text-sm font-semibold mt-5 mb-1">Result Metadata</h3>
-          <input
-            className="border rounded px-3 py-2 text-sm w-full mb-2"
-            placeholder="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <textarea
-            className="w-full border rounded px-3 py-2 text-sm mb-2"
-            rows={2}
-            placeholder="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
+          <input className="border rounded px-3 py-2 text-sm w-full mb-2" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <textarea className="w-full border rounded px-3 py-2 text-sm mb-2" rows={2} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
 
         <div className="px-4 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="border rounded px-3 py-1 text-sm hover:bg-gray-50">
-            Cancel
-          </button>
-          <button
-            onClick={onCreated}
-            disabled={!title.trim()}
-            className="bg-blue-600 text-white rounded px-3 py-1 text-sm"
-          >
-            Create
-          </button>
+          <button onClick={onClose} className="border rounded px-3 py-1 text-sm hover:bg-gray-50">Cancel</button>
+          <button onClick={onCreated} disabled={!title.trim()} className="bg-blue-600 text-white rounded px-3 py-1 text-sm">Create</button>
         </div>
       </div>
     </div>
