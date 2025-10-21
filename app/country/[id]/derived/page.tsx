@@ -176,14 +176,13 @@ export default function CountryDerivedDatasetsPage() {
       {/* Create Derived Dataset Wizard */}
       {creating && (
         <CreateDerivedDatasetWizard_JoinAware
-          open={creating}
-          countryIso={iso}
-          onClose={() => setCreating(false)}
-          onCreated={() => {
-            reloadDerived(); // ✅ refresh table after creation
-            setCreating(false);
-          }}
-        />
+  open={creating}
+  countryIso={iso}
+  onClose={() => {
+    reloadDerived();   // refresh derived list after closing
+    setCreating(false);
+  }}
+/>
       )}
     </SidebarLayout>
   );
