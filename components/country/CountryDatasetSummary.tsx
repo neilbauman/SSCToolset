@@ -6,7 +6,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { ArrowRight } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
-// Types
+// Types & UI helpers
 // ─────────────────────────────────────────────────────────────
 type Health = "good" | "fair" | "poor" | "missing";
 
@@ -15,13 +15,19 @@ function Badge({ status }: { status: Health }) {
     good: "bg-green-100 text-green-700",
     fair: "bg-yellow-100 text-yellow-700",
     poor: "bg-red-100 text-red-700",
-    missing: "bg-red-100 text-red-700",
+    missing: "bg-gray-100 text-gray-500",
+  };
+  const labels: Record<Health, string> = {
+    good: "Good",
+    fair: "Fair",
+    poor: "Poor",
+    missing: "Missing",
   };
   return (
     <span
       className={`px-2 py-0.5 text-xs font-medium rounded ${styles[status]}`}
     >
-      {status}
+      {labels[status]}
     </span>
   );
 }
@@ -82,7 +88,6 @@ export default function CountryDatasetSummary({
           .from("admin_units")
           .select("level, pcode")
           .eq("dataset_version_id", v.id);
-
         if (rows) {
           const grouped: Record<string, Set<string>> = {};
           for (const r of rows) {
@@ -99,42 +104,42 @@ export default function CountryDatasetSummary({
   }, [countryIso]);
 
   // ─────────────────────────────────────────────────────────────
-  // Population Dataset (uses summary view)
+  // Population Dataset (summary view)
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("view_population_country_active_summary")
         .select(
           "population_title, population_year, total_population, admin_area_count"
         )
         .eq("country_iso", countryIso)
         .maybeSingle();
-      if (!error && data) setPop(data);
+      if (data) setPop(data);
     })();
   }, [countryIso]);
 
   // ─────────────────────────────────────────────────────────────
-  // GIS Layers (uses summary view)
+  // GIS Layers (summary view)
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("view_gis_country_active_summary")
         .select(
           "admin_level, represented_distinct_pcodes, total_admins, coverage_pct, adm0_total_km2"
         )
         .eq("country_iso", countryIso);
-      if (!error && data) setGisRows(data);
+      if (data) setGisRows(data);
     })();
   }, [countryIso]);
 
   // ─────────────────────────────────────────────────────────────
-  // Other Datasets (view_dataset_with_indicator)
+  // Other Datasets
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      let { data: vdata } = await supabase
+      const { data: vdata } = await supabase
         .from("view_dataset_with_indicator")
         .select(
           "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name, year"
@@ -142,39 +147,15 @@ export default function CountryDatasetSummary({
         .eq("country_iso", countryIso)
         .order("year", { ascending: false });
 
-      let rows: any[] = vdata || [];
-
-      if (!rows.length) {
-        const { data: md } = await supabase
-          .from("dataset_metadata")
-          .select(
-            "id, title, admin_level, record_count, dataset_type, source_name, year"
-          )
-          .eq("country_iso", countryIso)
-          .order("created_at", { ascending: false });
-        rows =
-          (md || []).map((d: any) => ({
-            id: d.id,
-            title: d.title,
-            indicator_title: null,
-            taxonomy_category: null,
-            taxonomy_term: null,
-            admin_level: d.admin_level ?? "—",
-            record_count: d.record_count ?? 0,
-            dataset_type: d.dataset_type ?? null,
-            source_name: d.source_name ?? null,
-            year: d.year ?? null,
-          })) || [];
+      if (vdata) {
+        const filtered = vdata.filter(
+          (d) =>
+            !["admin", "population", "gis", "derived"].includes(
+              (d.dataset_type || "").toLowerCase()
+            )
+        );
+        setOtherDatasets(filtered);
       }
-
-      const filtered = rows.filter(
-        (d) =>
-          !["admin", "population", "gis", "derived"].includes(
-            (d.dataset_type || "").toLowerCase()
-          )
-      );
-
-      setOtherDatasets(filtered);
     })();
   }, [countryIso]);
 
@@ -183,17 +164,17 @@ export default function CountryDatasetSummary({
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("derived_datasets")
         .select("id, title, admin_level, year, record_count")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
-      if (!error && data) setDerivedDatasets(data);
+      if (data) setDerivedDatasets(data);
     })();
   }, [countryIso]);
 
   // ─────────────────────────────────────────────────────────────
-  // Computed helpers
+  // Derived Computations
   // ─────────────────────────────────────────────────────────────
   const gisByLevel = useMemo(() => {
     const map: Record<string, { rep: number; tot: number; pct: number | null }> =
@@ -213,12 +194,29 @@ export default function CountryDatasetSummary({
     return any?.adm0_total_km2 ?? null;
   }, [gisRows]);
 
+  // ─────────────────────────────────────────────────────────────
+  // Health logic
+  // ─────────────────────────────────────────────────────────────
   const adminHealth: Health =
-    adminByLevel && Object.keys(adminByLevel).length > 0 ? "good" : "missing";
+    Object.keys(adminByLevel).length >= 3
+      ? "good"
+      : Object.keys(adminByLevel).length > 0
+      ? "fair"
+      : "missing";
+
   const popHealth: Health =
-    pop && pop.total_population ? "good" : "missing";
+    pop && pop.total_population && pop.total_population > 0 ? "good" : "missing";
+
   const gisHealth: Health =
-    gisRows && gisRows.length > 0 ? "good" : "missing";
+    gisRows && gisRows.some((r) => r.represented_distinct_pcodes > 0)
+      ? "good"
+      : "missing";
+
+  const otherHealth: Health =
+    otherDatasets && otherDatasets.length > 0 ? "good" : "missing";
+
+  const derivedHealth: Health =
+    derivedDatasets && derivedDatasets.length > 0 ? "good" : "missing";
 
   // ─────────────────────────────────────────────────────────────
   // Render
@@ -227,9 +225,9 @@ export default function CountryDatasetSummary({
     <section className="mt-4">
       <h2 className="text-xl font-semibold mb-4">Core Datasets</h2>
 
-      {/* Core datasets grid */}
+      {/* === Core Datasets Grid === */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {/* ───────── Admin Areas ───────── */}
+        {/* Admin Areas */}
         <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <Link
@@ -270,7 +268,7 @@ export default function CountryDatasetSummary({
           </div>
         </div>
 
-        {/* ───────── Population ───────── */}
+        {/* Population */}
         <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <Link
@@ -311,7 +309,7 @@ export default function CountryDatasetSummary({
           </div>
         </div>
 
-        {/* ───────── GIS Layers ───────── */}
+        {/* GIS Layers */}
         <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <Link
@@ -329,8 +327,7 @@ export default function CountryDatasetSummary({
               </StatLine>
               <StatLine>
                 ADM0 total area:{" "}
-                {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"}{" "}
-                km²
+                {adm0Km2 ? Intl.NumberFormat().format(Number(adm0Km2)) : "—"} km²
               </StatLine>
               {["ADM0", "ADM1", "ADM2", "ADM3"].map((lvl) => (
                 <StatLine key={lvl}>
@@ -356,7 +353,7 @@ export default function CountryDatasetSummary({
         </div>
       </div>
 
-      {/* ───────── Other Datasets ───────── */}
+      {/* Other Datasets */}
       <div className="flex items-center justify-between mt-8 mb-3">
         <Link
           href={`/country/${countryIso}/datasets`}
@@ -364,6 +361,7 @@ export default function CountryDatasetSummary({
         >
           Other Datasets
         </Link>
+        <Badge status={otherHealth} />
       </div>
 
       {otherDatasets.length === 0 ? (
@@ -397,8 +395,11 @@ export default function CountryDatasetSummary({
         </div>
       )}
 
-      {/* ───────── Derived Datasets ───────── */}
-      <h2 className="text-xl font-semibold mt-8 mb-3">Derived Datasets</h2>
+      {/* Derived Datasets */}
+      <h2 className="text-xl font-semibold mt-8 mb-3 flex items-center gap-2">
+        Derived Datasets <Badge status={derivedHealth} />
+      </h2>
+
       {derivedDatasets.length === 0 ? (
         <div className="text-gray-500 italic text-sm">
           Derived and analytical datasets will appear once joins are created.
