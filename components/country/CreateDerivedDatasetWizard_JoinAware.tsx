@@ -86,8 +86,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, countryIso,
 
         <div className="px-4 py-4 max-h-[80vh] overflow-y-auto">
           <div className="flex flex-wrap gap-4 mb-3 text-sm">
-            {[["Include Core", core, setCore], ["Include Other", other, setOther], ["Include Derived", derived, setDerived]].map(([l, v, s], i) => (
-              <label key={i} className="flex items-center space-x-1"><input type="checkbox" checked={v as boolean} onChange={(e) => (s as any)(e.target.checked)} /><span>{l}</span></label>
+            {([
+              { label: "Include Core", value: core, setter: setCore },
+              { label: "Include Other", value: other, setter: setOther },
+              { label: "Include Derived", value: derived, setter: setDerived },
+            ] as const).map(({ label, value, setter }, i) => (
+              <label key={i} className="flex items-center space-x-1">
+                <input type="checkbox" checked={value} onChange={(e) => setter(e.target.checked)} />
+                <span>{label}</span>
+              </label>
             ))}
             {core && <label className="flex items-center space-x-1"><input type="checkbox" checked={gis} onChange={(e) => setGis(e.target.checked)} /><span>Include GIS</span></label>}
           </div>
