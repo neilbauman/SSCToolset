@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
 
-type DatasetSummary = {
+type SimpleDataset = {
+  id: string;
   title: string;
-  dataset_type: string | null;
   admin_level: string | null;
   year: number | null;
   record_count: number | null;
@@ -28,7 +28,10 @@ export default function CountryDatasetSummary({
   countryIso: string;
   showDerived?: boolean;
 }) {
-  const [coreDatasets, setCoreDatasets] = useState<DatasetSummary[]>([]);
+  const [adminDatasets, setAdminDatasets] = useState<SimpleDataset[]>([]);
+  const [populationDatasets, setPopulationDatasets] = useState<SimpleDataset[]>([]);
+  const [gisDatasets, setGisDatasets] = useState<SimpleDataset[]>([]);
+  const [otherDatasets, setOtherDatasets] = useState<SimpleDataset[]>([]);
   const [derivedDatasets, setDerivedDatasets] = useState<DerivedSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,30 +43,57 @@ export default function CountryDatasetSummary({
       setError(null);
 
       try {
-        const [{ data: core, error: err1 }, { data: derived, error: err2 }] =
-          await Promise.all([
-            supabase
-              .from("dataset_metadata")
-              .select(
-                "title, dataset_type, admin_level, year, record_count"
-              )
-              .eq("country_iso", countryIso)
-              .order("title", { ascending: true }),
-            supabase
-              .from("view_derived_dataset_summary")
-              .select(
-                "derived_dataset_id, derived_title, admin_level, year, record_count, data_health"
-              )
-              .eq("country_iso", countryIso)
-              .order("year", { ascending: false }),
-          ]);
+        const [
+          { data: admin, error: errAdmin },
+          { data: pop, error: errPop },
+          { data: gis, error: errGis },
+          { data: other, error: errOther },
+          { data: derived, error: errDerived },
+        ] = await Promise.all([
+          supabase
+            .from("admin_datasets")
+            .select("id, title, admin_level, year, record_count")
+            .eq("country_iso", countryIso)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("population_datasets")
+            .select("id, title, admin_level, year, record_count")
+            .eq("country_iso", countryIso)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("gis_datasets")
+            .select("id, title, admin_level, year, record_count")
+            .eq("country_iso", countryIso)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("dataset_metadata")
+            .select("id, title, admin_level, year, record_count")
+            .eq("country_iso", countryIso)
+            .order("title", { ascending: true }),
+          supabase
+            .from("view_derived_dataset_summary")
+            .select(
+              "derived_dataset_id, derived_title, admin_level, year, record_count, data_health"
+            )
+            .eq("country_iso", countryIso)
+            .order("year", { ascending: false }),
+        ]);
 
-        if (err1 || err2) {
-          setError(err1?.message || err2?.message || "Error loading datasets");
-        } else {
-          setCoreDatasets(core || []);
-          setDerivedDatasets(derived || []);
+        if (errAdmin || errPop || errGis || errOther || errDerived) {
+          throw new Error(
+            errAdmin?.message ||
+              errPop?.message ||
+              errGis?.message ||
+              errOther?.message ||
+              errDerived?.message
+          );
         }
+
+        setAdminDatasets(admin || []);
+        setPopulationDatasets(pop || []);
+        setGisDatasets(gis || []);
+        setOtherDatasets(other || []);
+        setDerivedDatasets(derived || []);
       } catch (e: any) {
         setError(e.message);
       }
@@ -89,87 +119,95 @@ export default function CountryDatasetSummary({
 
   return (
     <div className="space-y-6">
-      {/* Core Datasets */}
-      <div className="border rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
-          Other Datasets
-        </h2>
-        {coreDatasets.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No datasets have been uploaded for this country yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border-collapse">
-              <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
-                <tr>
-                  <th className="px-2 py-1 text-left">Title</th>
-                  <th className="px-2 py-1 text-left">Type</th>
-                  <th className="px-2 py-1 text-left">Admin Level</th>
-                  <th className="px-2 py-1 text-left">Year</th>
-                  <th className="px-2 py-1 text-right">Records</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coreDatasets.map((d) => (
-                  <tr
-                    key={d.title}
-                    className="border-t border-[var(--gsc-light-gray)]"
-                  >
-                    <td className="px-2 py-1">{d.title}</td>
-                    <td className="px-2 py-1">{d.dataset_type ?? "—"}</td>
-                    <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
-                    <td className="px-2 py-1">{d.year ?? "—"}</td>
-                    <td className="px-2 py-1 text-right">
-                      {d.record_count ?? "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Admin Datasets */}
+      <DatasetPanel
+        title="Administrative Boundaries"
+        datasets={adminDatasets}
+        emptyMsg="No administrative datasets uploaded yet."
+      />
 
-      {/* Derived Datasets (conditionally shown) */}
+      {/* Population Datasets */}
+      <DatasetPanel
+        title="Population Datasets"
+        datasets={populationDatasets}
+        emptyMsg="No population datasets uploaded yet."
+      />
+
+      {/* GIS Datasets */}
+      <DatasetPanel
+        title="GIS Datasets"
+        datasets={gisDatasets}
+        emptyMsg="No GIS datasets uploaded yet."
+      />
+
+      {/* Other Datasets */}
+      <DatasetPanel
+        title="Other Datasets"
+        datasets={otherDatasets}
+        emptyMsg="No other datasets uploaded yet."
+      />
+
+      {/* Derived Datasets (optional) */}
       {showDerived && (
-        <div className="border rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
-            Derived Datasets
-          </h2>
-          {derivedDatasets.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No derived datasets have been created yet.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm border-collapse">
-                <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
-                  <tr>
-                    <th className="px-2 py-1 text-left">Title</th>
-                    <th className="px-2 py-1 text-left">Admin Level</th>
-                    <th className="px-2 py-1 text-left">Year</th>
-                    <th className="px-2 py-1 text-right">Records</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {derivedDatasets.map((d) => (
-                    <tr
-                      key={d.derived_dataset_id}
-                      className="border-t border-[var(--gsc-light-gray)]"
-                    >
-                      <td className="px-2 py-1">{d.derived_title}</td>
-                      <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
-                      <td className="px-2 py-1">{d.year ?? "—"}</td>
-                      <td className="px-2 py-1 text-right">
-                        {d.record_count ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <DatasetPanel
+          title="Derived Datasets"
+          datasets={derivedDatasets.map((d) => ({
+            id: d.derived_dataset_id,
+            title: d.derived_title,
+            admin_level: d.admin_level,
+            year: d.year,
+            record_count: d.record_count,
+          }))}
+          emptyMsg="No derived datasets created yet."
+        />
+      )}
+    </div>
+  );
+}
+
+function DatasetPanel({
+  title,
+  datasets,
+  emptyMsg,
+}: {
+  title: string;
+  datasets: SimpleDataset[];
+  emptyMsg: string;
+}) {
+  return (
+    <div className="border rounded-lg p-4 shadow-sm">
+      <h2 className="text-lg font-semibold mb-2 text-[color:var(--gsc-red)]">
+        {title}
+      </h2>
+      {datasets.length === 0 ? (
+        <p className="text-sm text-gray-500">{emptyMsg}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm border-collapse">
+            <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
+              <tr>
+                <th className="px-2 py-1 text-left">Title</th>
+                <th className="px-2 py-1 text-left">Admin Level</th>
+                <th className="px-2 py-1 text-left">Year</th>
+                <th className="px-2 py-1 text-right">Records</th>
+              </tr>
+            </thead>
+            <tbody>
+              {datasets.map((d) => (
+                <tr
+                  key={d.id}
+                  className="border-t border-[var(--gsc-light-gray)]"
+                >
+                  <td className="px-2 py-1">{d.title}</td>
+                  <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
+                  <td className="px-2 py-1">{d.year ?? "—"}</td>
+                  <td className="px-2 py-1 text-right">
+                    {d.record_count ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
