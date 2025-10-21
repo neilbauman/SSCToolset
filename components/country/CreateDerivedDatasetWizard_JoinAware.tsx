@@ -83,7 +83,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) loadTaxonomy();
   }, [open]);
 
-  // Peek dataset
+  // Peek dataset preview
   const peekDataset = async (table: string, side: "A" | "B") => {
     const { data } = await supabase.from(table).select("*").limit(5);
     if (data?.length) {
@@ -118,11 +118,18 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         title,
         description: desc,
         admin_level: targetLevel,
-        taxonomy_categories: Object.keys(taxonomy), // FIXED: send arrays
-        taxonomy_terms: Object.values(taxonomy).flat(), // FIXED: send arrays
+        method,                 // ✅ required field
+        col_a: colA || null,
+        col_b: colB || null,
+        use_scalar_b: useScalarB,
+        scalar_b_val: useScalarB ? scalarB : null,
+        decimals,
+        taxonomy_categories: Object.keys(taxonomy), // ✅ array fix
+        taxonomy_terms: Object.values(taxonomy).flat(),
       })
       .select()
       .single();
+
     if (error) return alert("Save failed: " + error.message);
     try {
       await supabase.rpc("create_derived_dataset", { p_derived_id: data.id });
@@ -138,7 +145,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
       <div className="bg-white w-[90%] max-w-5xl rounded-lg p-5 shadow-lg overflow-y-auto max-h-[90vh] text-sm">
         <h2 className="text-lg font-semibold mb-2">Create Derived Dataset</h2>
 
-        {/* Toggles */}
+        {/* Dataset Source Toggles */}
         <div className="flex flex-wrap gap-4 mb-3">
           {[{ label: "Include Core", val: includeCore, set: setIncludeCore },
             { label: "Include Other", val: includeOther, set: setIncludeOther },
@@ -151,7 +158,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           ))}
         </div>
 
-        {/* Title */}
+        {/* Title, Level, Desc */}
         <div className="flex gap-2 mb-3">
           <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
           <select className="border p-1 rounded" value={targetLevel} onChange={(e) => setTargetLevel(e.target.value)}>
@@ -160,7 +167,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           <input className="border p-1 flex-1 rounded" placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
         </div>
 
-        {/* Dataset selectors */}
+        {/* Dataset Pickers */}
         <div className="flex gap-2 mb-2">
           {/* Dataset A */}
           <div className="flex-1">
@@ -178,7 +185,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
             </div>}
           </div>
 
-          {/* Dataset B / scalar */}
+          {/* Dataset B / Scalar */}
           <div className="flex flex-1 items-start gap-2">
             {!useScalarB ? (
               <div className="flex-1">
@@ -208,7 +215,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           </div>
         </div>
 
-        {/* Method + preview */}
+        {/* Method + Preview */}
         <div className="flex items-center gap-2 mb-3">
           <span>Method:</span>
           {["multiply","ratio","sum","difference"].map((m) => (
@@ -221,7 +228,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           Derived = A.{colA} {method==="ratio"?"÷":method==="multiply"?"×":method==="sum"?"+":"-"} {useScalarB?`scalar(${scalarB})`:`B.${colB}`} → {targetLevel}
         </p>
 
-        {/* Derived preview table */}
+        {/* Derived Preview */}
         <div className="max-h-40 overflow-y-auto border rounded text-xs mb-3">
           <table className="w-full">
             <thead className="bg-gray-100"><tr><th className="p-1">Pcode</th><th className="p-1">Name</th><th className="p-1">A</th><th className="p-1">B</th><th className="p-1">Derived</th></tr></thead>
