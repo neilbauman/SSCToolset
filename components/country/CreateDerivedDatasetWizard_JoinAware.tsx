@@ -40,7 +40,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
       if (includeCore) {
         all.push({ id: "core-admin", title: "Administrative Boundaries [core]", source: "core", table: "admin_units" });
         all.push({ id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" });
-        if (includeGIS) all.push({ id: "core-gis", title: "GIS Features [core]", source: "core", table: "gis_features" });
+        if (includeGIS)
+          all.push({ id: "core-gis", title: "GIS Features [core]", source: "core", table: "gis_features" });
       }
       if (includeOther) {
         const { data } = await supabase.from("dataset_metadata").select("id,title").eq("country_iso", countryIso);
@@ -66,7 +67,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) load();
   }, [includeCore, includeOther, includeDerived, includeGIS, open, countryIso]);
 
-  // ---- Taxonomy ----
+  // ---- Load taxonomy ----
   useEffect(() => {
     const loadTaxonomy = async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
@@ -124,7 +125,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
       .single();
 
     if (error) return alert("Save failed: " + error.message);
-    await supabase.rpc("create_derived_dataset", { p_derived_id: data.id }).catch(() => {});
+
+    try {
+      await supabase.rpc("create_derived_dataset", { p_derived_id: data.id });
+    } catch {
+      /* ignore missing RPC */
+    }
+
     alert("Derived dataset created successfully.");
     onClose();
   };
@@ -153,25 +160,74 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
         {/* Title */}
         <div className="flex gap-2 mb-3">
-          <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <select className="border p-1 rounded" value={targetLevel} onChange={(e) => setTargetLevel(e.target.value)}>
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <select
+            className="border p-1 rounded"
+            value={targetLevel}
+            onChange={(e) => setTargetLevel(e.target.value)}
+          >
             {["ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
               <option key={lvl}>{lvl}</option>
             ))}
           </select>
-          <input className="border p-1 flex-1 rounded" placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Description (optional)"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+          />
         </div>
 
         {/* Dataset selectors */}
         <div className="flex items-start gap-2 mb-2">
           <div className="flex-1">
-            <select className="border p-1 rounded w-full" value={datasetA?.id || ""} onChange={(e) => setDatasetA(datasets.find((x) => x.id === e.target.value) || null)}>
+            <select
+              className="border p-1 rounded w-full"
+              value={datasetA?.id || ""}
+              onChange={(e) => setDatasetA(datasets.find((x) => x.id === e.target.value) || null)}
+            >
               <option value="">Select Dataset A</option>
-              <optgroup label="Core">{datasets.filter((d) => d.source === "core").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Other">{datasets.filter((d) => d.source === "other").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Derived">{datasets.filter((d) => d.source === "derived").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+              <optgroup label="Core">
+                {datasets
+                  .filter((d) => d.source === "core")
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Other">
+                {datasets
+                  .filter((d) => d.source === "other")
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Derived">
+                {datasets
+                  .filter((d) => d.source === "derived")
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
-            {datasetA && <button onClick={() => peekDataset(datasetA.table, "A")} className="mt-1 text-xs border px-2 py-1 rounded">peek</button>}
+            {datasetA && (
+              <button
+                onClick={() => peekDataset(datasetA.table, "A")}
+                className="mt-1 text-xs border px-2 py-1 rounded"
+              >
+                peek
+              </button>
+            )}
             {previewA.length > 0 && (
               <div className="max-h-20 overflow-y-auto text-xs border mt-1">
                 {previewA.map((r, i) => (
@@ -187,13 +243,32 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
           {!useScalarB && (
             <div className="flex-1">
-              <select className="border p-1 rounded w-full" value={datasetB?.id || ""} onChange={(e) => setDatasetB(datasets.find((x) => x.id === e.target.value) || null)}>
+              <select
+                className="border p-1 rounded w-full"
+                value={datasetB?.id || ""}
+                onChange={(e) => setDatasetB(datasets.find((x) => x.id === e.target.value) || null)}
+              >
                 <option value="">Select Dataset B</option>
-                <optgroup label="Core">{datasets.filter((d) => d.source === "core").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-                <optgroup label="Other">{datasets.filter((d) => d.source === "other").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-                <optgroup label="Derived">{datasets.filter((d) => d.source === "derived").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+                {["core", "other", "derived"].map((group) => (
+                  <optgroup key={group} label={group}>
+                    {datasets
+                      .filter((d) => d.source === group)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
               </select>
-              {datasetB && <button onClick={() => peekDataset(datasetB.table, "B")} className="mt-1 text-xs border px-2 py-1 rounded">peek</button>}
+              {datasetB && (
+                <button
+                  onClick={() => peekDataset(datasetB.table, "B")}
+                  className="mt-1 text-xs border px-2 py-1 rounded"
+                >
+                  peek
+                </button>
+              )}
               {previewB.length > 0 && (
                 <div className="max-h-20 overflow-y-auto text-xs border mt-1">
                   {previewB.map((r, i) => (
@@ -210,9 +285,19 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
           <div className="flex items-center gap-1 mt-5">
             <label className="flex items-center gap-1">
-              <input type="checkbox" checked={useScalarB} onChange={(e) => setUseScalarB(e.target.checked)} /> Use scalar
+              <input
+                type="checkbox"
+                checked={useScalarB}
+                onChange={(e) => setUseScalarB(e.target.checked)}
+              />{" "}
+              Use scalar
             </label>
-            <input type="number" className="w-20 border p-1 rounded text-right" value={scalarB} onChange={(e) => setScalarB(parseFloat(e.target.value))} />
+            <input
+              type="number"
+              className="w-20 border p-1 rounded text-right"
+              value={scalarB}
+              onChange={(e) => setScalarB(parseFloat(e.target.value))}
+            />
           </div>
         </div>
 
@@ -220,13 +305,33 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         <div className="flex items-center gap-2 mb-3">
           <span>Method:</span>
           {["multiply", "ratio", "sum", "difference"].map((m) => (
-            <button key={m} onClick={() => setMethod(m as any)} className={`px-2 py-1 border rounded ${method === m ? "bg-blue-600 text-white" : "bg-gray-100"}`}>{m}</button>
+            <button
+              key={m}
+              onClick={() => setMethod(m as any)}
+              className={`px-2 py-1 border rounded ${
+                method === m ? "bg-blue-600 text-white" : "bg-gray-100"
+              }`}
+            >
+              {m}
+            </button>
           ))}
-          <button onClick={previewJoin} className="px-3 py-1 bg-blue-600 text-white rounded ml-auto">Preview</button>
+          <button
+            onClick={previewJoin}
+            className="px-3 py-1 bg-blue-600 text-white rounded ml-auto"
+          >
+            Preview
+          </button>
         </div>
 
         <p className="text-xs italic mb-2">
-          Derived = A.{colA} {method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"}{" "}
+          Derived = A.{colA}{" "}
+          {method === "ratio"
+            ? "÷"
+            : method === "multiply"
+            ? "×"
+            : method === "sum"
+            ? "+"
+            : "-"}{" "}
           {useScalarB ? `scalar(${scalarB})` : `B.${colB}`} → {targetLevel}
         </p>
 
@@ -234,7 +339,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         <div className="max-h-40 overflow-y-auto border rounded text-xs mb-3">
           <table className="w-full">
             <thead className="bg-gray-100">
-              <tr><th className="p-1">Pcode</th><th className="p-1">Name</th><th className="p-1">A</th><th className="p-1">B</th><th className="p-1">Derived</th></tr>
+              <tr>
+                <th className="p-1">Pcode</th>
+                <th className="p-1">Name</th>
+                <th className="p-1">A</th>
+                <th className="p-1">B</th>
+                <th className="p-1">Derived</th>
+              </tr>
             </thead>
             <tbody>
               {preview.map((r, i) => (
@@ -277,7 +388,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                         checked={taxonomy[cat]?.includes(t)}
                         onChange={(e) => {
                           const nt = { ...taxonomy };
-                          if (e.target.checked) nt[cat] = [...(nt[cat] || []), t];
+                          if (e.target.checked)
+                            nt[cat] = [...(nt[cat] || []), t];
                           else nt[cat] = nt[cat].filter((x) => x !== t);
                           setTaxonomy(nt);
                         }}
@@ -293,8 +405,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
         {/* Footer */}
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-          <button onClick={saveDerived} className="px-3 py-1 bg-green-600 text-white rounded">Save Derived</button>
+          <button onClick={onClose} className="px-3 py-1 border rounded">
+            Cancel
+          </button>
+          <button onClick={saveDerived} className="px-3 py-1 bg-green-600 text-white rounded">
+            Save Derived
+          </button>
         </div>
       </div>
     </div>
