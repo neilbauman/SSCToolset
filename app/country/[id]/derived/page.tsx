@@ -176,10 +176,10 @@ export default function CountryDerivedDatasetsPage() {
       {/* Create Derived Dataset Wizard */}
       {creating && (
        <CreateDerivedDatasetWizard_JoinAware
-  open={open}
-  onClose={() => setOpen(false)}
+  open={creating} // ✅ boolean state that controls modal visibility
+  onClose={() => setCreating(false)}
   countryIso={countryIso}
-  onCreated={() => setRefreshKey((k) => k + 1)} // ✅ triggers refresh after save
+  onCreated={() => setRefreshKey((k) => k + 1)}
 />
       )}
     </SidebarLayout>
