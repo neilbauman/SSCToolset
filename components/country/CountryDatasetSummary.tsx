@@ -8,14 +8,14 @@ import { Loader2, Database } from "lucide-react";
 /**
  * CountryDatasetSummary.tsx
  * --------------------------
- * Accurate, aggregated summaries for each core dataset family:
- *  - Administrative Areas
- *  - Population
- *  - GIS
- *  - Other datasets
- *  - Derived datasets
+ * Accurate, Supabase-safe summaries of each dataset family:
+ *  - Administrative Areas (ADM1–ADM4)
+ *  - Population (via RPC get_population_summary)
+ *  - GIS Features
+ *  - Other Datasets
+ *  - Derived Datasets
  *
- * Uses safe Supabase-compatible aggregate queries (no .group()).
+ * Uses verified RPCs and supported PostgREST patterns.
  */
 
 type Props = {
@@ -43,7 +43,9 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
       try {
         setLoading(true);
 
-        // --- 1️⃣ Administrative Areas (Distinct count per level) ---
+        /** ─────────────────────────────────────────────
+         * 1️⃣ Administrative Areas (client-safe aggregate)
+         * ───────────────────────────────────────────── */
         const { data: adminRows, error: e1 } = await supabase
           .from("admin_units")
           .select("level, pcode")
@@ -51,32 +53,46 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 
         if (e1) throw e1;
 
-        const counts: Record<string, Set<string>> = {};
+        const levelCounts: Record<string, Set<string>> = {};
         (adminRows || []).forEach((r: any) => {
-          if (!counts[r.level]) counts[r.level] = new Set();
-          counts[r.level].add(r.pcode);
+          if (!r.level || !r.pcode) return;
+          if (!levelCounts[r.level]) levelCounts[r.level] = new Set();
+          levelCounts[r.level].add(r.pcode);
         });
 
-        const adminSummary = Object.entries(counts).map(([level, set]) => ({
-          level,
-          count: set.size,
-        }));
+        const adminSummary = Object.entries(levelCounts)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([level, set]) => ({ level, count: set.size }));
         setAdmin(adminSummary);
 
-        // --- 2️⃣ Population (aggregate totals) ---
-        const { data: popAgg, error: e2 } = await supabase
-          .from("population_data")
-          .select("count(*), sum(population)")
-          .eq("country_iso", countryIso)
-          .single();
+        /** ─────────────────────────────────────────────
+         * 2️⃣ Population Summary (server-side RPC)
+         * ───────────────────────────────────────────── */
+        const { data: popRpc, error: e2 } = await supabase.rpc(
+          "get_population_summary",
+          {
+            country_iso: countryIso,
+            dataset_version_id: null,
+            total_population: null,
+            record_count: null,
+          }
+        );
 
         if (e2) throw e2;
+
+        // The RPC may return a record or array depending on implementation
+        const popData = Array.isArray(popRpc) ? popRpc[0] : popRpc;
+        const totalPop = Number(popData?.total_population || 0);
+        const recordCount = Number(popData?.record_count || 0);
+
         setPop({
-          records: Number(popAgg?.count || 0),
-          total_population: Number(popAgg?.sum || 0),
+          records: recordCount,
+          total_population: totalPop,
         });
 
-        // --- 3️⃣ GIS (features per admin_level) ---
+        /** ─────────────────────────────────────────────
+         * 3️⃣ GIS Features (grouped by admin level)
+         * ───────────────────────────────────────────── */
         const { data: gisRows, error: e3 } = await supabase
           .from("gis_features")
           .select("admin_level")
@@ -90,43 +106,69 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
           gisCount[lvl] = (gisCount[lvl] || 0) + 1;
         });
 
-        const gisSummary = Object.entries(gisCount).map(([admin_level, features]) => ({
-          admin_level,
-          features,
-        }));
+        const gisSummary = Object.entries(gisCount)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([admin_level, features]) => ({
+            admin_level,
+            features,
+          }));
         setGis(gisSummary);
 
-        // --- 4️⃣ Other Datasets (aggregated) ---
-        const { data: otherAgg, error: e4 } = await supabase
+        /** ─────────────────────────────────────────────
+         * 4️⃣ Other Datasets
+         * ───────────────────────────────────────────── */
+        const { data: otherRows, error: e4 } = await supabase
           .from("dataset_metadata")
-          .select("count(*), sum(record_count), max(year)")
-          .eq("country_iso", countryIso)
-          .single();
+          .select("year, record_count")
+          .eq("country_iso", countryIso);
 
         if (e4) throw e4;
+
+        const totalDatasets = otherRows?.length || 0;
+        const totalRecords = otherRows?.reduce(
+          (sum, r) => sum + (r.record_count || 0),
+          0
+        );
+        const latestYear = Math.max(
+          ...((otherRows || []).map((r) => r.year || 0)),
+          0
+        );
+
         setOther({
-          total: Number(otherAgg?.count || 0),
-          records: Number(otherAgg?.sum || 0),
-          latest_year: Number(otherAgg?.max || 0),
+          total: totalDatasets,
+          records: totalRecords,
+          latest_year: latestYear,
         });
 
-        // --- 5️⃣ Derived Datasets (aggregated) ---
-        const { data: derivedAgg, error: e5 } = await supabase
+        /** ─────────────────────────────────────────────
+         * 5️⃣ Derived Datasets
+         * ───────────────────────────────────────────── */
+        const { data: derivedRows, error: e5 } = await supabase
           .from("view_derived_dataset_summary")
-          .select("count(*), sum(record_count), max(year)")
-          .eq("country_iso", countryIso)
-          .single();
+          .select("year, record_count")
+          .eq("country_iso", countryIso);
 
         if (e5) throw e5;
+
+        const derivedTotal = derivedRows?.length || 0;
+        const derivedRecords = derivedRows?.reduce(
+          (s, r) => s + (r.record_count || 0),
+          0
+        );
+        const derivedLatest = Math.max(
+          ...((derivedRows || []).map((r) => r.year || 0)),
+          0
+        );
+
         setDerived({
-          total: Number(derivedAgg?.count || 0),
-          records: Number(derivedAgg?.sum || 0),
-          latest_year: Number(derivedAgg?.max || 0),
+          total: derivedTotal,
+          records: derivedRecords,
+          latest_year: derivedLatest,
         });
 
         setError(null);
       } catch (err: any) {
-        console.error("Error loading summary:", err);
+        console.error("Error loading dataset summary:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -177,7 +219,10 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         description="Population records and total population coverage."
         stats={[
           { label: "Records", value: pop?.records?.toLocaleString() ?? "—" },
-          { label: "Total Population", value: pop?.total_population?.toLocaleString() ?? "—" },
+          {
+            label: "Total Population",
+            value: pop?.total_population?.toLocaleString() ?? "—",
+          },
         ]}
       />
 
@@ -226,7 +271,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 /**
  * Panel Component
  * ----------------
- * Reusable visual component for summary panels.
+ * Reusable, consistent layout for dataset summaries.
  */
 function Panel({
   title,
@@ -242,10 +287,16 @@ function Panel({
   return (
     <div
       className="rounded-xl border p-4 shadow-sm"
-      style={{ borderColor: "var(--gsc-light-gray)", background: "var(--gsc-beige)" }}
+      style={{
+        borderColor: "var(--gsc-light-gray)",
+        background: "var(--gsc-beige)",
+      }}
     >
       <div className="flex items-center justify-between mb-2">
-        <Link href={link} className="text-lg font-semibold text-[color:var(--gsc-red)] hover:underline">
+        <Link
+          href={link}
+          className="text-lg font-semibold text-[color:var(--gsc-red)] hover:underline"
+        >
           {title}
         </Link>
         <Database className="h-5 w-5 text-gray-500" />
@@ -259,8 +310,12 @@ function Panel({
             className="rounded-lg bg-white p-3 text-center border shadow-sm"
             style={{ borderColor: "var(--gsc-light-gray)" }}
           >
-            <div className="text-xs text-gray-500 uppercase tracking-wide">{s.label}</div>
-            <div className="text-base font-semibold text-gray-900">{s.value}</div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide">
+              {s.label}
+            </div>
+            <div className="text-base font-semibold text-gray-900">
+              {s.value}
+            </div>
           </div>
         ))}
       </div>
