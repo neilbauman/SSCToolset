@@ -22,7 +22,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
   const [method, setMethod] = useState<Method>("ratio");
-  const [target, setTarget] = useState("ADM4");
+  const [target] = useState("ADM4");
   const [useScalar, setUseScalar] = useState(false);
   const [scalar, setScalar] = useState<number | null>(5.1);
   const [rowsA, setRowsA] = useState<any[]>([]);
@@ -42,13 +42,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     return () => window.removeEventListener("keydown", esc);
   }, [onClose]);
 
+  // ---- Load dataset catalog ----
   useEffect(() => {
     (async () => {
       const merged: DatasetOption[] = [];
       if (core) {
         merged.push(
           { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core" as const, table_name: "admin_units" },
-          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core" as const, table_name: "population_data" },
+          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core" as const, table_name: "population_data" }
         );
         if (includeGis)
           merged.push({ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "core" as const, table_name: "gis_features" });
@@ -57,9 +58,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         const { data } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
         if (data)
           merged.push(...data.map((d: any) => ({
-            id: d.id,
-            title: d.title || "(Untitled)",
-            admin_level: d.admin_level,
+            id: d.id, title: d.title || "(Untitled)", admin_level: d.admin_level,
             source: "other" as const,
             table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
           })));
@@ -69,11 +68,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           .select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
         if (data)
           merged.push(...data.map((d: any) => ({
-            id: d.derived_dataset_id,
-            title: d.derived_title,
-            admin_level: d.admin_level,
-            source: "derived" as const,
-            table_name: `derived_${d.derived_dataset_id}`,
+            id: d.derived_dataset_id, title: d.derived_title, admin_level: d.admin_level,
+            source: "derived" as const, table_name: `derived_${d.derived_dataset_id}`,
           })));
       }
       setDatasets(merged);
@@ -143,6 +139,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <div className="p-4 max-h-[80vh] overflow-y-auto">
           {warn && <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center"><AlertTriangle className="w-4 h-4" />{warn}</div>}
 
+          {/* Toggle checkboxes */}
           <div className="flex flex-wrap gap-4 mb-3 text-sm">
             {([
               ["Include Core", core, setCore],
@@ -156,10 +153,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             ))}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {[["Dataset A", datasetA, setA, showA, setShowA, rowsA],
-              ["Dataset B", datasetB, setB, showB, setShowB, rowsB]].map(([label, ds, setDs, show, setShow, data], idx) => (
-              <div key={idx} className="border rounded p-3">
+          {/* Dataset A & B cards */}
+          {( [
+            ["Dataset A", datasetA, setA, showA, setShowA, rowsA],
+            ["Dataset B", datasetB, setB, showB, setShowB, rowsB],
+          ] as [string, DatasetOption | null, (v: DatasetOption | null) => void, boolean, (v: boolean) => void, any[]][]).map(
+            ([label, ds, setDs, show, setShow, data], idx) => (
+              <div key={idx} className="border rounded p-3 mb-3">
                 <label className="text-xs font-semibold">{label}</label>
                 {idx === 1 && (
                   <label className="text-xs flex items-center gap-1 float-right">
@@ -175,7 +175,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 ) : (
                   <>
                     <select className="w-full border rounded p-2 text-sm mt-1"
-                      value={(ds as DatasetOption | null)?.id || ""}
+                      value={ds?.id || ""}
                       onChange={(e) => setDs(datasets.find((d) => d.id === e.target.value) || null)}>
                       <option value="">Select dataset…</option>
                       {(["core", "other", "derived"] as const).map((k) => (
@@ -184,13 +184,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                         </optgroup>
                       ))}
                     </select>
-                    <button onClick={() => setShow(!show)} className="text-xs text-blue-600 underline mt-2" disabled={!ds}>{show ? "Hide preview" : "Show preview"}</button>
-                    {show && renderMini(data as any[])}
+                    <button onClick={() => setShow(!show)} className="text-xs text-blue-600 underline mt-2" disabled={!ds}>
+                      {show ? "Hide preview" : "Show preview"}
+                    </button>
+                    {show && renderMini(data)}
                   </>
                 )}
               </div>
-            ))}
-          </div>
+            )
+          )}
 
           <div className="flex items-center gap-3 my-3 text-sm text-gray-700 justify-center">
             <span className="font-medium">{datasetA?.title || "A"}</span>
@@ -202,9 +204,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
           <div className="flex flex-wrap gap-3 mb-3">
             {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
-              <button key={m} onClick={() => setMethod(m)} className={`px-3 py-1 rounded text-xs ${method===m?"bg-blue-600 text-white":"border hover:bg-gray-50"}`}>{m}</button>
+              <button key={m} onClick={() => setMethod(m)}
+                className={`px-3 py-1 rounded text-xs ${method===m?"bg-blue-600 text-white":"border hover:bg-gray-50"}`}>{m}</button>
             ))}
-            <button onClick={handlePreviewJoin} disabled={loading || !datasetA || (!datasetB && !useScalar)} className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50">
+            <button onClick={handlePreviewJoin} disabled={loading || !datasetA || (!datasetB && !useScalar)}
+              className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50">
               {loading ? (<><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Generating…</>) : "Preview join"}
             </button>
           </div>
@@ -215,14 +219,19 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 <thead className="bg-gray-50 text-gray-600">
                   <tr><th className="p-1 border">PCode</th><th className="p-1 border">Name</th><th className="p-1 border">A</th><th className="p-1 border">B</th><th className="p-1 border">Derived</th></tr>
                 </thead>
-                <tbody>{rows.slice(0,100).map((r,i)=>(<tr key={i} className="border-b hover:bg-gray-50"><td className="p-1">{r.pcode}</td><td className="p-1">{r.name}</td><td className="p-1 text-right">{r.a??"—"}</td><td className="p-1 text-right">{r.b??"—"}</td><td className="p-1 text-right">{r.derived??"—"}</td></tr>))}</tbody>
+                <tbody>{rows.slice(0,100).map((r,i)=>(<tr key={i} className="border-b hover:bg-gray-50">
+                  <td className="p-1">{r.pcode}</td><td className="p-1">{r.name}</td>
+                  <td className="p-1 text-right">{r.a??"—"}</td><td className="p-1 text-right">{r.b??"—"}</td>
+                  <td className="p-1 text-right">{r.derived??"—"}</td></tr>))}</tbody>
               </table>
             </div>
           )}
 
           <h3 className="text-sm font-semibold mt-5 mb-1">Result Metadata</h3>
-          <input className="border rounded px-3 py-2 text-sm w-full mb-2" placeholder="Title" value={title} onChange={(e)=>setTitle(e.target.value)} />
-          <textarea className="w-full border rounded px-3 py-2 text-sm mb-2" rows={2} placeholder="Notes" value={notes} onChange={(e)=>setNotes(e.target.value)} />
+          <input className="border rounded px-3 py-2 text-sm w-full mb-2" placeholder="Title"
+            value={title} onChange={(e)=>setTitle(e.target.value)} />
+          <textarea className="w-full border rounded px-3 py-2 text-sm mb-2" rows={2} placeholder="Notes"
+            value={notes} onChange={(e)=>setNotes(e.target.value)} />
         </div>
 
         <div className="px-4 py-3 border-t flex justify-end gap-2">
