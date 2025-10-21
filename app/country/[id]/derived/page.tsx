@@ -178,7 +178,7 @@ export default function CountryDerivedDatasetsPage() {
        <CreateDerivedDatasetWizard_JoinAware
   open={creating} // ✅ boolean state that controls modal visibility
   onClose={() => setCreating(false)}
-  countryIso={Iso}
+  countryIso={iso}
   onCreated={() => setRefreshKey((k) => k + 1)}
 />
       )}
