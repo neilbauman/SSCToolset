@@ -103,8 +103,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [loading, setLoading] = useState(false);
   const [aggregationNotice, setAggregationNotice] = useState<string | null>(null);
   const [previewRows, setPreviewRows] = useState<JoinPreviewRow[]>([]);
-  const [showPreviewA, setShowPreviewA] = useState(false);
-  const [showPreviewB, setShowPreviewB] = useState(false);
   const [showJoinPreview, setShowJoinPreview] = useState(false);
 
   const [includeCore, setIncludeCore] = useState(true);
@@ -293,17 +291,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <div className="px-4 py-4 max-h-[78vh] overflow-y-auto">
           {/* Source toggles */}
           <div className="flex flex-wrap gap-4 mb-4 text-sm">
-            {[
-              ["Include Core", includeCore, setIncludeCore],
-              ["Include Other", includeOther, setIncludeOther],
-              ["Include Derived", includeDerived, setIncludeDerived],
-              ["Include GIS", includeGIS, setIncludeGIS],
-            ].map(([label, checked, setter], i) => (
+            {([
+              { label: "Include Core", checked: includeCore, setter: setIncludeCore },
+              { label: "Include Other", checked: includeOther, setter: setIncludeOther },
+              { label: "Include Derived", checked: includeDerived, setter: setIncludeDerived },
+              { label: "Include GIS", checked: includeGIS, setter: setIncludeGIS },
+            ] as const).map(({ label, checked, setter }, i) => (
               <label key={i} className="flex items-center space-x-1">
                 <input
                   type="checkbox"
-                  checked={checked as boolean}
-                  onChange={(e) => (setter as any)(e.target.checked)}
+                  checked={checked}
+                  onChange={(e) => setter(e.target.checked)}
                 />
                 <span>{label}</span>
               </label>
