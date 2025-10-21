@@ -30,7 +30,7 @@ export default function DerivedDatasetsPage() {
   async function loadDerived() {
     setLoading(true);
     try {
-      const sb = supabaseBrowser; // ✅ fixed usage
+      const sb = supabaseBrowser;
       const { data, error } = await sb
         .from('view_derived_dataset_summary')
         .select('*')
@@ -53,7 +53,7 @@ export default function DerivedDatasetsPage() {
     <SidebarLayout
       headerProps={{
         title: 'Derived Datasets',
-        group: 'country-config', // ✅ correct group
+        group: 'country-config',
         description:
           'View and manage datasets derived from existing country-level data sources.',
       }}
@@ -72,13 +72,12 @@ export default function DerivedDatasetsPage() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-lg">
             <CreateDerivedDatasetWizard_JoinAware
-  countryIso={iso}
-  onClose={() => setCreating(false)}
-  onCreated={() => {  // <-- here
-    setCreating(false);
-    router.refresh();
-  }}
-/>
+              countryIso={iso}
+              onClose={() => {
+                setCreating(false);
+                router.refresh(); // ✅ Refresh the list after modal closes
+              }}
+            />
           </div>
         </div>
       )}
