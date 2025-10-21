@@ -33,11 +33,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
   const [categories, setCategories] = useState<Record<string, string[]>>({});
   const [targetLevel, setTargetLevel] = useState("ADM4");
 
-  // Load datasets
+  // ---- Load datasets ----
   useEffect(() => {
     const load = async () => {
       const all: Option[] = [];
       if (includeCore) {
+        all.push({ id: "core-admin", title: "Administrative Boundaries [core]", source: "core", table: "admin_units" });
         all.push({ id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" });
         if (includeGIS) all.push({ id: "core-gis", title: "GIS Features [core]", source: "core", table: "gis_features" });
       }
@@ -65,7 +66,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) load();
   }, [includeCore, includeOther, includeDerived, includeGIS, open, countryIso]);
 
-  // Load taxonomy
+  // ---- Taxonomy ----
   useEffect(() => {
     const loadTaxonomy = async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
@@ -80,11 +81,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) loadTaxonomy();
   }, [open]);
 
+  // ---- Peek datasets ----
   const peekDataset = async (table: string, side: "A" | "B") => {
     const { data } = await supabase.from(table).select("*").limit(5);
-    if (data) side === "A" ? setPreviewA(data) : setPreviewB(data);
+    if (data?.length) {
+      const numericKey = Object.keys(data[0]).find((k) => typeof data[0][k] === "number") || "";
+      const rows = data.map((r) => ({ pcode: r.pcode, name: r.name, value: r[numericKey] }));
+      side === "A" ? setPreviewA(rows) : setPreviewB(rows);
+    }
   };
 
+  // ---- Join preview ----
   const previewJoin = async () => {
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA?.table || "",
@@ -100,88 +107,122 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (!error && data) setPreview(data);
   };
 
+  // ---- Save derived ----
   const saveDerived = async () => {
-    const { error } = await supabase.from("derived_dataset_metadata").insert({
-      country_iso: countryIso,
-      title,
-      description: desc,
-      admin_level: targetLevel,
-      taxonomy_categories: Object.keys(taxonomy).join(","),
-      taxonomy_terms: Object.values(taxonomy).flat().join(","),
-      formula: `${colA} ${method} ${useScalarB ? scalarB : colB}`,
-    });
-    if (!error) onClose();
+    const { data, error } = await supabase
+      .from("derived_dataset_metadata")
+      .insert({
+        country_iso: countryIso,
+        title,
+        description: desc,
+        admin_level: targetLevel,
+        taxonomy_categories: Object.keys(taxonomy).join(","),
+        taxonomy_terms: Object.values(taxonomy).flat().join(","),
+        formula: `${colA} ${method} ${useScalarB ? scalarB : colB}`,
+      })
+      .select()
+      .single();
+
+    if (error) return alert("Save failed: " + error.message);
+    await supabase.rpc("create_derived_dataset", { p_derived_id: data.id }).catch(() => {});
+    alert("Derived dataset created successfully.");
+    onClose();
   };
 
   if (!open) return null;
 
+  // ---- UI ----
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white w-[90%] max-w-5xl rounded-lg p-5 shadow-lg overflow-y-auto max-h-[90vh]">
+      <div className="bg-white w-[90%] max-w-5xl rounded-lg p-5 shadow-lg overflow-y-auto max-h-[90vh] text-sm">
         <h2 className="text-lg font-semibold mb-2">Create Derived Dataset</h2>
 
         {/* Toggles */}
-        <div className="flex flex-wrap gap-4 text-sm mb-3">
-          {(
-            [
-              { label: "Include Core", value: includeCore, set: setIncludeCore },
-              { label: "Include Other", value: includeOther, set: setIncludeOther },
-              { label: "Include Derived", value: includeDerived, set: setIncludeDerived },
-              { label: "Include GIS", value: includeGIS, set: setIncludeGIS },
-            ] as const
-          ).map(({ label, value, set }) => (
+        <div className="flex flex-wrap gap-4 mb-3">
+          {[
+            ["Include Core", includeCore, setIncludeCore],
+            ["Include Other", includeOther, setIncludeOther],
+            ["Include Derived", includeDerived, setIncludeDerived],
+            ["Include GIS", includeGIS, setIncludeGIS],
+          ].map(([label, val, set]) => (
             <label key={label} className="flex items-center gap-1">
-              <input type="checkbox" checked={value} onChange={(e) => set(e.target.checked)} />
-              {label}
+              <input type="checkbox" checked={val as boolean} onChange={(e) => (set as any)(e.target.checked)} /> {label}
             </label>
           ))}
         </div>
 
-        {/* Title + Admin + Desc */}
-        <div className="flex gap-2 mb-3 text-sm">
+        {/* Title */}
+        <div className="flex gap-2 mb-3">
           <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
           <select className="border p-1 rounded" value={targetLevel} onChange={(e) => setTargetLevel(e.target.value)}>
-            {["ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => <option key={lvl}>{lvl}</option>)}
+            {["ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
+              <option key={lvl}>{lvl}</option>
+            ))}
           </select>
           <input className="border p-1 flex-1 rounded" placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
         </div>
 
         {/* Dataset selectors */}
-        <div className="flex gap-2 items-center mb-2 text-sm">
+        <div className="flex items-start gap-2 mb-2">
           <div className="flex-1">
             <select className="border p-1 rounded w-full" value={datasetA?.id || ""} onChange={(e) => setDatasetA(datasets.find((x) => x.id === e.target.value) || null)}>
               <option value="">Select Dataset A</option>
-              <optgroup label="Core">{datasets.filter(d => d.source === "core").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Other">{datasets.filter(d => d.source === "other").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Derived">{datasets.filter(d => d.source === "derived").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+              <optgroup label="Core">{datasets.filter((d) => d.source === "core").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+              <optgroup label="Other">{datasets.filter((d) => d.source === "other").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+              <optgroup label="Derived">{datasets.filter((d) => d.source === "derived").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
             </select>
             {datasetA && <button onClick={() => peekDataset(datasetA.table, "A")} className="mt-1 text-xs border px-2 py-1 rounded">peek</button>}
-            {previewA.length > 0 && <div className="max-h-16 overflow-y-auto text-xs border mt-1">{previewA.map((r, i) => <div key={i} className="border-b p-1">{r.name}</div>)}</div>}
+            {previewA.length > 0 && (
+              <div className="max-h-20 overflow-y-auto text-xs border mt-1">
+                {previewA.map((r, i) => (
+                  <div key={i} className="grid grid-cols-3 border-b p-1">
+                    <span>{r.pcode}</span>
+                    <span>{r.name}</span>
+                    <span className="text-right">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="flex-1">
-            <select className="border p-1 rounded w-full" value={datasetB?.id || ""} onChange={(e) => setDatasetB(datasets.find((x) => x.id === e.target.value) || null)}>
-              <option value="">Select Dataset B</option>
-              <optgroup label="Core">{datasets.filter(d => d.source === "core").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Other">{datasets.filter(d => d.source === "other").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-              <optgroup label="Derived">{datasets.filter(d => d.source === "derived").map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
-            </select>
-            {datasetB && <button onClick={() => peekDataset(datasetB.table, "B")} className="mt-1 text-xs border px-2 py-1 rounded">peek</button>}
-            {previewB.length > 0 && <div className="max-h-16 overflow-y-auto text-xs border mt-1">{previewB.map((r, i) => <div key={i} className="border-b p-1">{r.name}</div>)}</div>}
+          {!useScalarB && (
+            <div className="flex-1">
+              <select className="border p-1 rounded w-full" value={datasetB?.id || ""} onChange={(e) => setDatasetB(datasets.find((x) => x.id === e.target.value) || null)}>
+                <option value="">Select Dataset B</option>
+                <optgroup label="Core">{datasets.filter((d) => d.source === "core").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+                <optgroup label="Other">{datasets.filter((d) => d.source === "other").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+                <optgroup label="Derived">{datasets.filter((d) => d.source === "derived").map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+              </select>
+              {datasetB && <button onClick={() => peekDataset(datasetB.table, "B")} className="mt-1 text-xs border px-2 py-1 rounded">peek</button>}
+              {previewB.length > 0 && (
+                <div className="max-h-20 overflow-y-auto text-xs border mt-1">
+                  {previewB.map((r, i) => (
+                    <div key={i} className="grid grid-cols-3 border-b p-1">
+                      <span>{r.pcode}</span>
+                      <span>{r.name}</span>
+                      <span className="text-right">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-1 mt-5">
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={useScalarB} onChange={(e) => setUseScalarB(e.target.checked)} /> Use scalar
+            </label>
+            <input type="number" className="w-20 border p-1 rounded text-right" value={scalarB} onChange={(e) => setScalarB(parseFloat(e.target.value))} />
           </div>
         </div>
 
         {/* Method */}
-        <div className="flex items-center gap-2 mb-3 text-sm">
+        <div className="flex items-center gap-2 mb-3">
           <span>Method:</span>
           {["multiply", "ratio", "sum", "difference"].map((m) => (
             <button key={m} onClick={() => setMethod(m as any)} className={`px-2 py-1 border rounded ${method === m ? "bg-blue-600 text-white" : "bg-gray-100"}`}>{m}</button>
           ))}
-          <label className="ml-3 flex items-center gap-1">
-            <input type="checkbox" checked={useScalarB} onChange={(e) => setUseScalarB(e.target.checked)} />
-            Use scalar <input type="number" className="w-16 border p-1 rounded text-right" value={scalarB} onChange={(e) => setScalarB(parseFloat(e.target.value))} />
-          </label>
-          <button onClick={previewJoin} className="px-3 py-1 bg-blue-600 text-white rounded">Preview</button>
+          <button onClick={previewJoin} className="px-3 py-1 bg-blue-600 text-white rounded ml-auto">Preview</button>
         </div>
 
         <p className="text-xs italic mb-2">
@@ -189,8 +230,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           {useScalarB ? `scalar(${scalarB})` : `B.${colB}`} → {targetLevel}
         </p>
 
-        {/* Derived Preview */}
-        <div className="max-h-40 overflow-y-auto border rounded text-xs">
+        {/* Preview table */}
+        <div className="max-h-40 overflow-y-auto border rounded text-xs mb-3">
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr><th className="p-1">Pcode</th><th className="p-1">Name</th><th className="p-1">A</th><th className="p-1">B</th><th className="p-1">Derived</th></tr>
@@ -210,27 +251,38 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         </div>
 
         {/* Taxonomy */}
-        <h3 className="text-sm font-semibold mt-4 mb-1">Assign Taxonomy</h3>
+        <h3 className="text-sm font-semibold mb-1">Assign Taxonomy</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {Object.keys(categories).map((cat) => (
             <div key={cat}>
               <label className="flex items-center gap-1 font-medium text-sm">
-                <input type="checkbox" checked={!!taxonomy[cat]} onChange={(e) => {
-                  const newTax = { ...taxonomy };
-                  if (e.target.checked) newTax[cat] = []; else delete newTax[cat];
-                  setTaxonomy(newTax);
-                }} /> {cat}
+                <input
+                  type="checkbox"
+                  checked={!!taxonomy[cat]}
+                  onChange={(e) => {
+                    const t = { ...taxonomy };
+                    if (e.target.checked) t[cat] = [];
+                    else delete t[cat];
+                    setTaxonomy(t);
+                  }}
+                />{" "}
+                {cat}
               </label>
               {taxonomy[cat] && (
                 <div className="ml-4 mt-1 grid grid-cols-1">
                   {categories[cat].map((t) => (
                     <label key={t} className="flex items-center gap-1 text-xs">
-                      <input type="checkbox" checked={taxonomy[cat]?.includes(t)} onChange={(e) => {
-                        const newTax = { ...taxonomy };
-                        if (e.target.checked) newTax[cat] = [...(newTax[cat] || []), t];
-                        else newTax[cat] = newTax[cat].filter((x) => x !== t);
-                        setTaxonomy(newTax);
-                      }} /> {t}
+                      <input
+                        type="checkbox"
+                        checked={taxonomy[cat]?.includes(t)}
+                        onChange={(e) => {
+                          const nt = { ...taxonomy };
+                          if (e.target.checked) nt[cat] = [...(nt[cat] || []), t];
+                          else nt[cat] = nt[cat].filter((x) => x !== t);
+                          setTaxonomy(nt);
+                        }}
+                      />{" "}
+                      {t}
                     </label>
                   ))}
                 </div>
