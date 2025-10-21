@@ -1,72 +1,79 @@
-"use client";
+'use client';
+import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import CreateDerivedDatasetWizard_JoinAware from './CreateDerivedDatasetWizard_JoinAware';
 
-import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import DerivedDatasetTable from "./DerivedDatasetTable";
-import CreateDerivedDatasetWizard_JoinAware from "./CreateDerivedDatasetWizard_JoinAware";
-
-/**
- * DerivedDatasetsPanel
- * Displays current derived datasets and opens join-aware wizard.
- */
-export default function DerivedDatasetsPanel({ countryIso }: { countryIso: string }) {
-  const [rows, setRows] = useState<any[]>([]);
+export default function DerivedDatasetsPanel({
+  countryIso,
+  loading,
+  datasets,
+  onRefresh,
+}: {
+  countryIso: string;
+  loading: boolean;
+  datasets: any[];
+  onRefresh: () => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  async function load() {
-    const { data, error } = await supabase
-      .from("view_derived_dataset_summary")
-      .select("*")
-      .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-    if (!error && data) setRows(data);
-  }
-
-  useEffect(() => {
-    load();
-  }, [countryIso, refreshKey]);
 
   return (
-    <div className="bg-white rounded-lg shadow p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Derived Datasets</h2>
+    <div className="w-full">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold">Derived Datasets</h1>
         <button
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-blue-600 text-white"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg"
         >
-          <Plus className="h-4 w-4" /> New
+          <Plus size={16} /> Create Derived Dataset
         </button>
       </div>
 
-      {rows.length === 0 && (
-        <div className="text-gray-500 text-sm">No derived datasets yet.</div>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow p-6">
+            <CreateDerivedDatasetWizard_JoinAware
+              countryIso={countryIso}
+              onClose={() => {
+                setOpen(false);
+                onRefresh();
+              }}
+            />
+          </div>
+        </div>
       )}
 
-      {rows.map((r) => (
-        <div
-          key={r.derived_dataset_id}
-          className="border-t py-2 text-sm flex justify-between"
-        >
-          <div>
-            <div className="font-medium">{r.derived_title}</div>
-            <div className="text-gray-500">
-              ADM: {r.admin_level} | Records: {r.record_count ?? "?"}
-            </div>
-          </div>
-          <div className="text-gray-500">{r.year}</div>
+      {loading ? (
+        <p className="text-gray-500">Loading...</p>
+      ) : datasets.length === 0 ? (
+        <p className="text-gray-500 text-sm">No derived datasets found.</p>
+      ) : (
+        <div className="overflow-x-auto border rounded-2xl">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-left">
+              <tr><Th>Title</Th><Th>Year</Th><Th>Admin</Th><Th>Records</Th><Th>Health</Th><Th>Created</Th></tr>
+            </thead>
+            <tbody>
+              {datasets.map((d) => (
+                <tr key={d.derived_dataset_id} className="border-b hover:bg-gray-50">
+                  <Td>{d.derived_title}</Td>
+                  <Td>{d.year ?? ''}</Td>
+                  <Td>{d.admin_level ?? ''}</Td>
+                  <Td>{d.record_count ?? 0}</Td>
+                  <Td>{d.data_health ?? ''}</Td>
+                  <Td>{d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ))}
-
-      <CreateDerivedDatasetWizard_JoinAware
-  open={open}
-  onClose={() => {
-    setOpen(false);
-    setRefreshKey((k) => k + 1);  // refresh after close
-  }}
-  countryIso={countryIso}
-/>
+      )}
     </div>
   );
+}
+
+function Th({ children }: { children: any }) {
+  return <th className="px-3 py-2 text-xs font-semibold text-gray-600">{children}</th>;
+}
+function Td({ children }: { children: any }) {
+  return <td className="px-3 py-2">{children}</td>;
 }
