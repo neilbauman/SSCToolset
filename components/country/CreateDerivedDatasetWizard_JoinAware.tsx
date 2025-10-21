@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, countryIso }: { open: boolean; onClose: () => void; countryIso: string }) {
+export default function CreateDerivedDatasetWizard_JoinAware({
+  open, onClose, countryIso
+}: { open: boolean; onClose: () => void; countryIso: string }) {
   const [datasets, setDatasets] = useState<any[]>([]);
   const [datasetA, setA] = useState<any | null>(null);
   const [datasetB, setB] = useState<any | null>(null);
@@ -23,17 +25,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     (async () => {
       const all: any[] = [];
       const push = (src: string, title: string, table: string) => all.push({ src, title, table });
-      // core datasets
       push("core", "Administrative Boundaries", "admin_units");
       push("core", "Population Data", "population_data");
       push("core", "GIS Features", "gis_features");
-      // other + derived
       const { data } = await supabase.from("dataset_metadata").select("title,table_name,source").eq("country_iso", countryIso);
       const { data: derived } = await supabase.from("derived_datasets").select("title,id").eq("country_iso", countryIso);
       data?.forEach((d) => all.push({ src: d.source || "other", title: d.title, table: d.table_name }));
       derived?.forEach((d) => all.push({ src: "derived", title: d.title, table: d.id }));
       setDatasets(all);
-      // taxonomy
       const { data: tax } = await supabase.from("taxonomy_terms").select("category,name");
       const grouped = (tax || []).reduce((acc: any, t: any) => {
         acc[t.category] = acc[t.category] || [];
@@ -69,7 +68,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
   const toggleCat = (cat: string) =>
     setSelectedCats((p) => (p.includes(cat) ? p.filter((c) => c !== cat) : [...p, cat]));
-
   const toggleTerm = (term: string) =>
     setSelectedTerms((p) => (p.includes(term) ? p.filter((t) => t !== term) : [...p, term]));
 
@@ -79,20 +77,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
       <div className="bg-white w-full max-w-4xl rounded-lg shadow-lg p-4 max-h-[90vh] overflow-y-auto text-sm">
         <h2 className="text-lg font-semibold mb-2">Create Derived Dataset</h2>
-
-        {/* Toggles */}
         <div className="flex flex-wrap gap-3 mb-4">
           <button onClick={() => setShowPreview(!showPreview)} className="border rounded px-2 py-1">{showPreview ? "Hide Preview" : "Show Preview"}</button>
           <button onClick={() => setShowTax(!showTax)} className="border rounded px-2 py-1">{showTax ? "Hide Taxonomy" : "Show Taxonomy"}</button>
         </div>
 
-        {/* Dataset selection */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
           {[["Dataset A", datasetA, setA, peekA], ["Dataset B", datasetB, setB, peekB]].map(
             ([label, ds, setDs, rows]: any, i) =>
               (i === 0 || !useScalar) && (
-                <div key={label} className="border rounded p-2">
-                  <label className="font-medium text-xs">{label}</label>
+                <div key={label as string} className="border rounded p-2">
+                  <label className="font-medium text-xs">{label as string}</label>
                   <select
                     className="w-full border rounded mt-1 p-1 text-xs"
                     value={ds?.table || ""}
@@ -104,13 +99,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                     <option value="">Select dataset...</option>
                     {["core", "other", "derived"].map((cat) => (
                       <optgroup key={cat} label={cat.toUpperCase()}>
-                        {datasets
-                          .filter((d) => d.src === cat)
-                          .map((d) => (
-                            <option key={d.table} value={d.table}>
-                              {d.title}
-                            </option>
-                          ))}
+                        {datasets.filter((d) => d.src === cat).map((d) => (
+                          <option key={d.table} value={d.table}>{d.title}</option>
+                        ))}
                       </optgroup>
                     ))}
                   </select>
@@ -128,7 +119,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                   )}
                   {rows.length > 0 && showPreview && (
                     <div className="border mt-1 max-h-24 overflow-y-auto text-[11px]">
-                      {rows.map((r, j) => (
+                      {rows.map((r: any, j: number) => (
                         <div key={j} className="grid grid-cols-3 px-2 py-0.5 border-b">
                           <span>{r.pcode}</span><span>{r.name}</span><span>{r.population}</span>
                         </div>
@@ -140,9 +131,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           )}
         </div>
 
-        {/* Method + decimals */}
         <div className="flex items-center gap-3 mb-3">
-          <label className="text-xs">Math Method:</label>
+          <label className="text-xs">Math:</label>
           <select className="border rounded p-1 text-xs" value={method} onChange={(e) => setMethod(e.target.value)}>
             <option value="multiply">Multiply</option>
             <option value="ratio">Ratio</option>
@@ -153,7 +143,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           <input type="number" className="w-16 border rounded p-1 text-xs" value={decimals} onChange={(e) => setDecimals(parseInt(e.target.value))} />
         </div>
 
-        {/* Taxonomy */}
         {showTax && (
           <div className="border rounded p-2 max-h-48 overflow-y-auto">
             {Object.entries(taxonomy).map(([cat, terms]) => (
@@ -164,7 +153,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                 </label>
                 {selectedCats.includes(cat) && (
                   <div className="ml-4 mt-1 grid grid-cols-2 gap-1">
-                    {terms.map((term) => (
+                    {terms.map((term: string) => (
                       <label key={term} className="text-xs flex items-center gap-1">
                         <input type="checkbox" checked={selectedTerms.includes(term)} onChange={() => toggleTerm(term)} />
                         {term}
@@ -177,7 +166,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex justify-end gap-3 mt-4">
           <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
           <button onClick={handleSave} className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
