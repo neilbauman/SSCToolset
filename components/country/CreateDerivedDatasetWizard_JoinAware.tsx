@@ -62,9 +62,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       const merged: DatasetOption[] = [];
       if (core)
         merged.push(
-          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
-          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
-          ...(gis ? [{ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "gis", table_name: "gis_features" }] : [])
+          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core" as const, table_name: "admin_units" },
+          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core" as const, table_name: "population_data" },
+          ...(gis ? [{ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "gis" as const, table_name: "gis_features" }] : [])
         );
       if (other) {
         const { data } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
@@ -74,7 +74,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               id: d.id,
               title: d.title || "(Untitled)",
               admin_level: d.admin_level,
-              source: "other" as Source,
+              source: "other" as const,
               table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
             }))
           );
@@ -87,7 +87,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               id: d.derived_dataset_id,
               title: d.derived_title,
               admin_level: d.admin_level,
-              source: "derived" as Source,
+              source: "derived" as const,
               table_name: `derived_${d.derived_dataset_id}`,
             }))
           );
@@ -129,12 +129,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setLoading(false);
   };
 
-  const grouped = useMemo(() => ({
-    core: datasets.filter((d) => d.source === "core"),
-    other: datasets.filter((d) => d.source === "other"),
-    derived: datasets.filter((d) => d.source === "derived"),
-    gis: datasets.filter((d) => d.source === "gis"),
-  }), [datasets]);
+  const grouped = useMemo(
+    () => ({
+      core: datasets.filter((d) => d.source === "core"),
+      other: datasets.filter((d) => d.source === "other"),
+      derived: datasets.filter((d) => d.source === "derived"),
+      gis: datasets.filter((d) => d.source === "gis"),
+    }),
+    [datasets]
+  );
 
   const renderMini = (rows: any[]) =>
     rows.length === 0 ? (
@@ -169,7 +172,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <div className="p-4 max-h-[80vh] overflow-y-auto">
           {warn && <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center"><AlertTriangle className="w-4 h-4" /> {warn}</div>}
 
-          {/* Dataset toggles */}
           <div className="flex flex-wrap gap-4 mb-3 text-sm">
             {[["Include Core", core, setCore], ["Include Other", other, setOther], ["Include Derived", derived, setDerived], ["Include GIS", gis, setGis]].map(([label, val, fn], i) => (
               <label key={i} className="flex items-center gap-1"><input type="checkbox" checked={val as boolean} onChange={(e) => (fn as any)(e.target.checked)} />{label}</label>
@@ -177,7 +179,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            {/* Dataset A */}
             <div className="border rounded p-3">
               <label className="text-xs font-semibold">Dataset A</label>
               <select className="w-full border rounded p-2 text-sm mt-1" value={datasetA?.id || ""} onChange={(e) => setA(datasets.find((d) => d.id === e.target.value) || null)}>
@@ -192,7 +193,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               {showA && renderMini(rowsA)}
             </div>
 
-            {/* Dataset B */}
             <div className="border rounded p-3">
               <label className="text-xs font-semibold">Dataset B</label>
               <label className="text-xs flex items-center gap-1 float-right"><input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />Use scalar for B</label>
@@ -218,7 +218,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             </div>
           </div>
 
-          {/* Formula visualization */}
           <div className="flex items-center gap-3 my-3 text-sm text-gray-700 justify-center">
             <span className="font-medium">{datasetA?.title || "A"}</span>
             {icons[method]}
