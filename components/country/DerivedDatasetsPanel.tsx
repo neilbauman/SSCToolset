@@ -60,11 +60,13 @@ export default function DerivedDatasetsPanel({ countryIso }: { countryIso: strin
       ))}
 
       <CreateDerivedDatasetWizard_JoinAware
-        open={open}
-        onClose={() => setOpen(false)}
-        countryIso={countryIso}
-        onCreated={() => setRefreshKey((k) => k + 1)}
-      />
+  open={open}
+  onClose={() => {
+    setOpen(false);
+    setRefreshKey((k) => k + 1);  // refresh after close
+  }}
+  countryIso={countryIso}
+/>
     </div>
   );
 }
