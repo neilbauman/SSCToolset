@@ -72,13 +72,13 @@ export default function DerivedDatasetsPage() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-lg">
             <CreateDerivedDatasetWizard_JoinAware
-              countryIso={iso}
-              onClose={() => setCreating(false)}
-              onCreated={() => {
-                setCreating(false);
-                router.refresh(); // ✅ refresh after save
-              }}
-            />
+  countryIso={iso}
+  onClose={() => setCreating(false)}
+  onCreated={() => {  // <-- here
+    setCreating(false);
+    router.refresh();
+  }}
+/>
           </div>
         </div>
       )}
