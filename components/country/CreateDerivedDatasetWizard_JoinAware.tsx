@@ -13,7 +13,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 }: { open: boolean; countryIso: string; onClose: () => void; onCreated?: () => void }) {
   if (!open) return null;
   const ref = useRef<HTMLDivElement | null>(null);
-  const [datasets, setDatasets] = useState<DatasetOption[]>([]);
+  const [datasets, setDatasets] = useState<{ core: DatasetOption[]; other: DatasetOption[]; derived: DatasetOption[] }>({ core: [], other: [], derived: [] });
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
   const [method, setMethod] = useState<Method>("multiply");
@@ -23,6 +23,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [previewB, setPreviewB] = useState<any[]>([]);
   const [joinRows, setJoinRows] = useState<JoinRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
     let stop = false;
@@ -42,25 +43,20 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         id: d.derived_dataset_id, title: d.derived_title, admin_level: d.admin_level || "ADM4",
         source: "derived" as const, table_name: `derived_${d.derived_dataset_id}`,
       }));
-      if (!stop) setDatasets([...core, ...other, ...derived]);
+      if (!stop) setDatasets({ core, other, derived });
     })();
     return () => { stop = true; };
   }, [countryIso]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const symbol = { multiply: "×", ratio: "/", sum: "+", difference: "−" }[method];
   async function fetchPreview(ds: DatasetOption, setter: (v: any[]) => void) {
     const { data } = await supabase.from(ds.table_name).select("*").eq("country_iso", countryIso).limit(10);
     setter(data || []);
   }
+
   async function previewJoin() {
     if (!datasetA) return;
     setLoading(true);
+    setJoinError(null);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table_name,
       p_table_b: datasetB ? datasetB.table_name : "__scalar__",
@@ -72,12 +68,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_use_scalar_b: useScalar,
       p_scalar_b_val: Number(scalarVal),
     });
-    if (!error && data) setJoinRows(data as JoinRow[]);
+    if (error) setJoinError(error.message);
+    else setJoinRows(data || []);
     setLoading(false);
   }
+
   const TablePreview = ({ rows }: { rows: any[] }) => {
     if (!rows?.length) return <p className="text-xs text-gray-500 italic">No preview.</p>;
-    const cols = Object.keys(rows[0]).slice(0, 4);
+    const cols = Object.keys(rows[0]).filter((c) => !["id", "country_iso"].includes(c)).slice(0, 4);
     return (
       <div className="overflow-auto max-h-40 border rounded text-xs">
         <table className="min-w-full border-collapse">
@@ -87,6 +85,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       </div>
     );
   };
+
+  const groupedOptions = [
+    ["Core Datasets", datasets.core],
+    ["Other Datasets", datasets.other],
+    ["Derived Datasets", datasets.derived],
+  ] as const;
 
   return (
     <div ref={ref} className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={(e) => e.target === ref.current && onClose()}>
@@ -107,12 +111,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                   <select className="w-full border rounded p-1 text-xs mt-1"
                     value={ds?.id || ""}
                     onChange={(e) => {
-                      const sel = datasets.find((d) => d.id === e.target.value) || null;
+                      const sel = [...datasets.core, ...datasets.other, ...datasets.derived].find((d) => d.id === e.target.value) || null;
                       setDs(sel);
                       if (sel) fetchPreview(sel, setRows);
                     }}>
                     <option value="">Select dataset…</option>
-                    {datasets.map((d) => (<option key={d.id} value={d.id}>{d.title} ({d.source})</option>))}
+                    {groupedOptions.map(([grp, list]) => (
+                      <optgroup key={grp} label={grp}>{list.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>
+                    ))}
                   </select>
                   {idx === 1 && (
                     <label className="flex items-center gap-1 text-xs mt-1">
@@ -125,6 +131,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               )
             )}
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs">Method:</span>
             {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
@@ -134,7 +141,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Preview Join"}
             </button>
           </div>
-          <p className="text-xs italic text-gray-600">Derived = A.population {symbol} {useScalar ? scalarVal : "B.population"}</p>
+          <p className="text-xs italic text-gray-600">Derived = A.population {method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "−"} {useScalar ? scalarVal : "B.population"}</p>
+          {joinError && <p className="text-xs text-red-600">Join preview failed: {joinError}</p>}
           <div><label className="text-xs font-semibold">Derived Preview</label><div className="mt-1"><TablePreview rows={joinRows} /></div></div>
         </div>
         <div className="flex justify-end gap-2 border-t p-3">
