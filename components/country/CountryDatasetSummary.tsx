@@ -134,9 +134,10 @@ export default function CountryDatasetSummary({
     })();
   }, [countryIso]);
 
- // --- Other Datasets -----------------------------------------------------
+// --- Other Datasets -----------------------------------------------------
 useEffect(() => {
   (async () => {
+    // Step 1: try view_dataset_with_indicator
     let { data: vdata, error: vErr } = await supabase
       .from("view_dataset_with_indicator")
       .select(
@@ -147,8 +148,8 @@ useEffect(() => {
 
     let rows: any[] = vdata || [];
 
-    // Fallback: if view returns 0 or error, use dataset_metadata
-    if ((!rows.length || vErr) && !vErr) {
+    // Step 2: if view is empty OR errored, fallback to dataset_metadata
+    if (!rows.length || vErr) {
       const { data: md } = await supabase
         .from("dataset_metadata")
         .select(
@@ -172,6 +173,7 @@ useEffect(() => {
         })) || [];
     }
 
+    // Step 3: filter to non-core datasets
     const filtered = rows.filter(
       (d) =>
         !["admin", "population", "gis", "derived"].includes(
@@ -179,10 +181,21 @@ useEffect(() => {
         )
     );
 
-    setOtherDatasets(filtered);
+    // Step 4: enrich health and set state
+    const enriched = filtered.map((d) => ({
+      ...d,
+      data_health:
+        d.record_count && d.record_count > 0
+          ? "good"
+          : d.record_count === 0
+          ? "fair"
+          : "missing",
+    }));
+
+    setOtherDatasets(enriched);
   })();
 }, [countryIso]);
-
+  
   // ─────────────────────────────────────────────────────────────
   // Derived Datasets
   // ─────────────────────────────────────────────────────────────
