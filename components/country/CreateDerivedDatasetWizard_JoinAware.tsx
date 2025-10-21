@@ -1,248 +1,220 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useEffect, useState, useRef, useMemo } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, AlertTriangle, X, Divide, Plus, Minus, Asterisk } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 type Method = "multiply" | "ratio" | "sum" | "difference";
 type Source = "core" | "other" | "derived";
-type DatasetOption = { id: string; title: string; admin_level?: string | null; source: Source; table_name: string };
-type JoinRow = { pcode: string; name: string; a?: number; b?: number; derived?: number };
+
+type DatasetOption = {
+  id: string;
+  title: string;
+  admin_level: string;
+  source: Source;
+  table_name: string;
+};
+
+type JoinRow = {
+  out_pcode: string;
+  place_name: string;
+  parent_pcode: string | null;
+  parent_name: string | null;
+  a: number | null;
+  b: number | null;
+  derived: number | null;
+  col_a_used: string | null;
+  col_b_used: string | null;
+};
 
 export default function CreateDerivedDatasetWizard_JoinAware({
-  open, countryIso, onClose, onCreated,
-}: { open: boolean; countryIso: string; onClose: () => void; onCreated?: () => void }) {
+  open,
+  countryIso,
+  onClose,
+}: {
+  open: boolean;
+  countryIso: string;
+  onClose: () => void;
+}) {
   if (!open) return null;
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
 
-  const [core, setCore] = useState(true);
-  const [includeGis, setIncludeGis] = useState(true);
-  const [other, setOther] = useState(true);
-  const [derived, setDerived] = useState(true);
+  // --- State ---
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setA] = useState<DatasetOption | null>(null);
   const [datasetB, setB] = useState<DatasetOption | null>(null);
-  const [method, setMethod] = useState<Method>("ratio");
-  const [target] = useState("ADM4");
+  const [method, setMethod] = useState<Method>("multiply");
   const [useScalar, setUseScalar] = useState(false);
-  const [scalar, setScalar] = useState<number | null>(5.1);
-  const [rowsA, setRowsA] = useState<any[]>([]);
-  const [rowsB, setRowsB] = useState<any[]>([]);
-  const [rows, setRows] = useState<JoinRow[]>([]);
-  const [warn, setWarn] = useState<string | null>(null);
+  const [scalarVal, setScalarVal] = useState("5.1");
+  const [previewA, setPreviewA] = useState<any[]>([]);
+  const [previewB, setPreviewB] = useState<any[]>([]);
+  const [joinRows, setJoinRows] = useState<JoinRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showA, setShowA] = useState(false);
-  const [showB, setShowB] = useState(false);
-  const [showJoin, setShowJoin] = useState(false);
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
 
+  // --- Load dataset options ---
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
+    let stop = false;
+    (async () => {
+      const core: DatasetOption[] = [
+        { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core", table_name: "admin_units" },
+        { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core", table_name: "population_data" },
+        { id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "core", table_name: "gis_features" },
+      ];
+      const { data: md } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
+      const other: DatasetOption[] =
+        (md || []).map((d: any) => ({
+          id: d.id,
+          title: d.title || "(Untitled)",
+          admin_level: d.admin_level || "ADM4",
+          source: "other" as const,
+          table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
+        })) || [];
+      const { data: dv } = await supabase.from("view_derived_dataset_summary").select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
+      const derived: DatasetOption[] =
+        (dv || []).map((d: any) => ({
+          id: d.derived_dataset_id,
+          title: d.derived_title,
+          admin_level: d.admin_level || "ADM4",
+          source: "derived" as const,
+          table_name: `derived_${d.derived_dataset_id}`,
+        })) || [];
+      if (!stop) setDatasets([...core, ...other, ...derived]);
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [countryIso]);
+
+  // --- Close on ESC ---
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  useEffect(() => {
-    (async () => {
-      const merged: DatasetOption[] = [];
-      if (core) {
-        merged.push(
-          { id: "core-admin", title: "Administrative Boundaries", admin_level: "ADM4", source: "core" as const, table_name: "admin_units" },
-          { id: "core-pop", title: "Population Data", admin_level: "ADM4", source: "core" as const, table_name: "population_data" }
-        );
-        if (includeGis)
-          merged.push({ id: "core-gis", title: "GIS Features", admin_level: "ADM4", source: "core" as const, table_name: "gis_features" });
-      }
-      if (other) {
-        const { data } = await supabase.from("dataset_metadata").select("id,title,admin_level").eq("country_iso", countryIso);
-        if (data)
-          merged.push(...data.map((d: any) => ({
-            id: d.id,
-            title: d.title || "(Untitled)",
-            admin_level: d.admin_level,
-            source: "other" as const,
-            table_name: (d.title || `dataset_${d.id}`).replace(/\s+/g, "_").toLowerCase(),
-          })));
-      }
-      if (derived) {
-        const { data } = await supabase.from("view_derived_dataset_summary")
-          .select("derived_dataset_id,derived_title,admin_level").eq("country_iso", countryIso);
-        if (data)
-          merged.push(...data.map((d: any) => ({
-            id: d.derived_dataset_id,
-            title: d.derived_title,
-            admin_level: d.admin_level,
-            source: "derived" as const,
-            table_name: `derived_${d.derived_dataset_id}`,
-          })));
-      }
-      setDatasets(merged);
-    })();
-  }, [countryIso, core, other, derived, includeGis]);
+  // --- Helpers ---
+  const symbol = { multiply: "×", ratio: "/", sum: "+", difference: "−" }[method];
 
-  const previewMini = async (tbl: string, setter: (r: any[]) => void) => {
-    const { data, error } = await supabase.from(tbl).select("pcode,name,population,value").limit(5);
-    setter(error ? [] : data || []);
-  };
-  useEffect(() => { if (showA && datasetA) previewMini(datasetA.table_name, setRowsA); }, [showA, datasetA]);
-  useEffect(() => { if (showB && datasetB && !useScalar) previewMini(datasetB.table_name, setRowsB); }, [showB, datasetB, useScalar]);
+  async function fetchPreview(ds: DatasetOption, setter: (v: any[]) => void) {
+    const { data } = await supabase.from(ds.table_name).select("*").eq("country_iso", countryIso).limit(10);
+    setter(data || []);
+  }
 
-  const handlePreviewJoin = async () => {
-    if (!datasetA || (!datasetB && !useScalar)) return;
-    setLoading(true); setWarn(null);
+  async function previewJoin() {
+    if (!datasetA) return;
+    setLoading(true);
+    setJoinRows([]);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table_name,
-      p_table_b: useScalar ? "__scalar__" : datasetB?.table_name ?? null,
+      p_table_b: datasetB ? datasetB.table_name : "__scalar__",
       p_country: countryIso,
-      p_target_level: target,
+      p_target_level: "ADM4",
       p_method: method,
       p_col_a: "population",
       p_col_b: "population",
       p_use_scalar_b: useScalar,
-      p_scalar_b_val: scalar,
+      p_scalar_b_val: Number(scalarVal),
     });
-    if (error || !data?.length) setWarn("Join preview failed. Check Supabase function or dataset alignment.");
-    else setRows(data);
-    setShowJoin(true);
+    if (!error && data) setJoinRows(data as JoinRow[]);
     setLoading(false);
-  };
+  }
 
-  const grouped = useMemo(() => ({
-    core: datasets.filter((d) => d.source === "core"),
-    other: datasets.filter((d) => d.source === "other"),
-    derived: datasets.filter((d) => d.source === "derived"),
-  }), [datasets]);
-
-  const renderMini = (rows: any[]) =>
-    rows.length === 0 ? (
-      <div className="italic text-gray-500 text-xs mt-1">[dataset preview]</div>
-    ) : (
-      <table className="w-full border text-xs mt-2">
-        <thead className="bg-gray-50 text-gray-600">
-          <tr>{Object.keys(rows[0]).slice(0, 3).map((k) => <th key={k} className="border p-1 text-left">{k}</th>)}</tr>
-        </thead>
-        <tbody>{rows.map((r, i) => (
-          <tr key={i}>{Object.keys(r).slice(0, 3).map((k) => <td key={k} className="border p-1">{String(r[k] ?? "")}</td>)}</tr>
-        ))}</tbody>
-      </table>
+  function TablePreview({ rows }: { rows: any[] }) {
+    if (!rows?.length) return <p className="text-xs text-gray-500 italic">No preview.</p>;
+    const cols = Object.keys(rows[0]).slice(0, 4);
+    return (
+      <div className="overflow-auto max-h-40 border rounded text-xs">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50">{cols.map((c) => <th key={c} className="p-1 border text-left">{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t">{cols.map((c) => <td key={c} className="p-1 border">{String(r[c])}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
+  }
 
-  const icons: Record<Method, JSX.Element> = {
-    multiply: <Asterisk className="w-4 h-4" />, ratio: <Divide className="w-4 h-4" />,
-    sum: <Plus className="w-4 h-4" />, difference: <Minus className="w-4 h-4" />,
-  };
-
+  // --- Render ---
   return (
-    <div ref={ref} onClick={(e) => e.target === ref.current && onClose()} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[9999]">
-      <div className="w-full max-w-6xl bg-white rounded-lg shadow-lg overflow-hidden">
-        <div className="flex justify-between items-center border-b px-4 py-2">
-          <div><h2 className="text-lg font-semibold">Create Derived Dataset</h2><p className="text-xs text-gray-600">Step 1 Join → Step 2 Derivation</p></div>
+    <div ref={ref} className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={(e) => e.target === ref.current && onClose()}>
+      <div className="bg-white w-full max-w-6xl rounded-lg shadow-lg overflow-hidden">
+        <div className="flex justify-between items-center border-b p-3">
+          <h2 className="text-lg font-semibold">Create Derived Dataset</h2>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-700" /></button>
         </div>
 
-        <div className="p-4 max-h-[80vh] overflow-y-auto">
-          {warn && <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 text-xs p-2 mb-3 rounded flex gap-2 items-center"><AlertTriangle className="w-4 h-4" />{warn}</div>}
-
-          {/* Source Toggles */}
-          <div className="flex flex-wrap gap-4 mb-3 text-sm">
-            {([
-              ["Include Core", core, setCore],
-              ["Include GIS", includeGis, setIncludeGis],
-              ["Include Other", other, setOther],
-              ["Include Derived", derived, setDerived],
-            ] as [string, boolean, (v: boolean) => void][]).map(([label, val, fn], i) => (
-              <label key={i} className="flex items-center gap-1"><input type="checkbox" checked={val} onChange={(e) => fn(e.target.checked)} />{label}</label>
-            ))}
-          </div>
-
-          {/* Dataset A and B */}
-          {( [
-            ["Dataset A", datasetA, setA, showA, setShowA, rowsA],
-            ["Dataset B", datasetB, setB, showB, setShowB, rowsB],
-          ] as [string, DatasetOption | null, (v: DatasetOption | null) => void, boolean, (v: boolean) => void, any[]][]).map(
-            ([label, ds, setDs, show, setShow, data], idx) => (
-              <div key={idx} className="border rounded p-3 mb-3">
+        <div className="p-4 space-y-3 text-sm max-h-[80vh] overflow-y-auto">
+          {/* Dataset Selectors */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[["Dataset A", datasetA, setA, previewA, setPreviewA],
+              ["Dataset B", datasetB, setB, previewB, setPreviewB]].map(([label, ds, setDs, rows, setRows], idx) => (
+              <div key={label as string} className="border rounded p-2">
                 <label className="text-xs font-semibold">{label}</label>
+                <select
+                  className="w-full border rounded p-1 text-xs mt-1"
+                  value={(ds as DatasetOption)?.id || ""}
+                  onChange={(e) => {
+                    const sel = datasets.find((d) => d.id === e.target.value) || null;
+                    setDs(sel);
+                    if (sel) fetchPreview(sel, setRows as any);
+                  }}
+                >
+                  <option value="">Select dataset…</option>
+                  {datasets.map((d) => (
+                    <option key={d.id} value={d.id}>{d.title} ({d.source})</option>
+                  ))}
+                </select>
                 {idx === 1 && (
-                  <label className="text-xs flex items-center gap-1 float-right">
-                    <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />Use scalar for B
+                  <label className="flex items-center gap-1 text-xs mt-1">
+                    <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />
+                    Use scalar
+                    {useScalar && <input value={scalarVal} onChange={(e) => setScalarVal(e.target.value)} className="border rounded px-1 w-16 text-xs" />}
                   </label>
                 )}
-                {idx === 1 && useScalar ? (
-                  <div className="mt-2 flex items-center gap-2">
-                    <input type="number" step="any" className="border rounded px-2 py-1 text-sm w-24"
-                      value={scalar ?? ""} onChange={(e) => setScalar(e.target.value === "" ? null : Number(e.target.value))} />
-                    <span className="text-xs text-gray-500">Example: Avg HH Size</span>
-                  </div>
-                ) : (
-                  <>
-                    <select className="w-full border rounded p-2 text-sm mt-1"
-                      value={ds?.id || ""}
-                      onChange={(e) => setDs(datasets.find((d) => d.id === e.target.value) || null)}>
-                      <option value="">Select dataset…</option>
-                      {(["core", "other", "derived"] as const).map((k) => (
-                        <optgroup key={k} label={`${k[0].toUpperCase()}${k.slice(1)} Datasets`}>
-                          {grouped[k].map((d) => <option key={d.id} value={d.id}>{d.title}{d.admin_level ? ` (${d.admin_level})` : ""}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <button onClick={() => setShow(!show)} className="text-xs text-blue-600 underline mt-2" disabled={!ds}>
-                      {show ? "Hide preview" : "Show preview"}
-                    </button>
-                    {show && renderMini(data)}
-                  </>
-                )}
+                <div className="mt-2"><TablePreview rows={rows as any[]} /></div>
               </div>
-            )
-          )}
-
-          {/* Math visualization */}
-          <div className="flex items-center gap-3 my-3 text-sm text-gray-700 justify-center">
-            <span className="font-medium">{datasetA?.title || "A"}</span>
-            {icons[method]}
-            <span className="font-medium">{useScalar ? `scalar(${scalar ?? "?"})` : datasetB?.title || "B"}</span>
-            <span className="text-gray-500">→</span>
-            <span className="font-medium">{target}</span>
+            ))}
           </div>
 
-          {/* Method Buttons */}
-          <div className="flex flex-wrap gap-3 mb-3">
+          {/* Formula + Join */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs">Method:</span>
             {(["multiply", "ratio", "sum", "difference"] as Method[]).map((m) => (
-              <button key={m} onClick={() => setMethod(m)}
-                className={`px-3 py-1 rounded text-xs ${method===m?"bg-blue-600 text-white":"border hover:bg-gray-50"}`}>{m}</button>
+              <button
+                key={m}
+                onClick={() => setMethod(m)}
+                className={`px-2 py-0.5 rounded text-xs border ${m === method ? "bg-blue-600 text-white" : "bg-white"}`}
+              >
+                {m}
+              </button>
             ))}
-            <button onClick={handlePreviewJoin} disabled={loading || !datasetA || (!datasetB && !useScalar)}
-              className="ml-auto border rounded px-3 py-1 text-xs hover:bg-gray-50">
-              {loading ? (<><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Generating…</>) : "Preview join"}
+            <button
+              onClick={previewJoin}
+              disabled={loading || !datasetA}
+              className="ml-auto text-xs px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200 flex items-center gap-1"
+            >
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Preview Join"}
             </button>
           </div>
 
-          {/* Result Table (A/B side-by-side) */}
-          {showJoin && (
-            <div className="border rounded p-2 text-xs overflow-auto max-h-80">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-gray-50 text-gray-600">
-                  <tr><th className="p-1 border">PCode</th><th className="p-1 border">Name</th><th className="p-1 border text-right">A</th><th className="p-1 border text-right">B</th><th className="p-1 border text-right">Derived</th></tr>
-                </thead>
-                <tbody>{rows.slice(0,100).map((r,i)=>(<tr key={i} className="border-b hover:bg-gray-50">
-                  <td className="p-1">{r.pcode}</td><td className="p-1">{r.name}</td>
-                  <td className="p-1 text-right">{r.a??"—"}</td><td className="p-1 text-right">{r.b??"—"}</td>
-                  <td className="p-1 text-right font-medium">{r.derived??"—"}</td></tr>))}</tbody>
-              </table>
-            </div>
-          )}
+          <p className="text-xs italic text-gray-600">
+            Derived = A.population {symbol} {useScalar ? scalarVal : "B.population"}
+          </p>
 
-          {/* Metadata */}
-          <h3 className="text-sm font-semibold mt-5 mb-1">Result Metadata</h3>
-          <input className="border rounded px-3 py-2 text-sm w-full mb-2" placeholder="Title"
-            value={title} onChange={(e)=>setTitle(e.target.value)} />
-          <textarea className="w-full border rounded px-3 py-2 text-sm mb-2" rows={2} placeholder="Notes"
-            value={notes} onChange={(e)=>setNotes(e.target.value)} />
+          {/* Derived preview */}
+          <div>
+            <label className="text-xs font-semibold">Derived Preview</label>
+            <div className="mt-1"><TablePreview rows={joinRows} /></div>
+          </div>
         </div>
 
-        <div className="px-4 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="border rounded px-3 py-1 text-sm hover:bg-gray-50">Cancel</button>
-          <button onClick={onCreated} disabled={!title.trim()} className="bg-blue-600 text-white rounded px-3 py-1 text-sm">Create</button>
+        <div className="flex justify-end gap-2 border-t p-3">
+          <button onClick={onClose} className="border px-3 py-1 rounded text-sm">Cancel</button>
+          <button className="bg-blue-600 text-white px-3 py-1 rounded text-sm">Create</button>
         </div>
       </div>
     </div>
