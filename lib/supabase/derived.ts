@@ -1,5 +1,11 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Method, PreviewRow, CreateDerivedPayload, DatasetOption, TaxonomyTerm } from './types';
+import type {
+  Method,
+  PreviewRow,
+  CreateDerivedPayload,
+  DatasetOption,
+  TaxonomyTerm,
+} from './types';
 
 export async function simulateJoinPreview(
   supabase: SupabaseClient,
@@ -24,7 +30,7 @@ export async function simulateJoinPreview(
     p_col_a: args.p_col_a,
     p_col_b: args.p_col_b,
     p_use_scalar_b: args.p_use_scalar_b,
-    p_scalar_b_val: args.p_scalar_b_val ?? 0
+    p_scalar_b_val: args.p_scalar_b_val ?? 0,
   });
   if (error) throw error;
   return (data ?? []) as PreviewRow[];
@@ -39,7 +45,10 @@ export async function createDerivedDataset(
   return data as string;
 }
 
-export async function loadDatasetOptions(supabase: SupabaseClient, countryIso: string): Promise<DatasetOption[]> {
+export async function loadDatasetOptions(
+  supabase: SupabaseClient,
+  countryIso: string
+): Promise<DatasetOption[]> {
   const { data, error } = await supabase
     .from('view_country_datasets')
     .select('*')
@@ -53,11 +62,13 @@ export async function loadDatasetOptions(supabase: SupabaseClient, countryIso: s
     label: row.title ?? row.name ?? row.id,
     type: row.type ?? 'Other',
     admin_level: row.admin_level,
-    year: row.year
+    year: row.year,
   }));
 }
 
-export async function loadTaxonomyTerms(supabase: SupabaseClient): Promise<TaxonomyTerm[]> {
+export async function loadTaxonomyTerms(
+  supabase: SupabaseClient
+): Promise<TaxonomyTerm[]> {
   const { data, error } = await supabase
     .from('taxonomy_terms')
     .select('id, name, category, parent_id')
