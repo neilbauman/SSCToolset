@@ -10,7 +10,6 @@ type DatasetSummary = {
   admin_level: string | null;
   year: number | null;
   record_count: number | null;
-  data_health?: string | null;
 };
 
 type DerivedSummary = {
@@ -46,7 +45,7 @@ export default function CountryDatasetSummary({
             supabase
               .from("dataset_metadata")
               .select(
-                "title, dataset_type, admin_level, year, record_count, data_health"
+                "title, dataset_type, admin_level, year, record_count"
               )
               .eq("country_iso", countryIso)
               .order("title", { ascending: true }),
