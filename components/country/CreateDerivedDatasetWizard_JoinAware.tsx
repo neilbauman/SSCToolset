@@ -275,7 +275,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           <div>
             <h2 className="text-lg font-semibold">Create Derived Dataset</h2>
             <p className="text-xs text-gray-600">
-              Step 1: Join alignment → Step 2: Derivation
+              Step 1 : Join alignment → Step 2 : Derivation
             </p>
           </div>
           <button
@@ -317,59 +317,57 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
           {/* Dataset Selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            {[["Dataset A", datasetA, setDatasetA, joinFieldA, setJoinFieldA],
-              ["Dataset B", datasetB, setDatasetB, joinFieldB, setJoinFieldB]].map(
-              ([label, dataset, setDataset, joinField, setJoinField], i) => (
-                <div key={i} className="border rounded-lg p-3">
-                  <label className="text-xs font-semibold">{label}</label>
-                  <select
-                    className="w-full border rounded p-2 text-sm mt-1"
-                    value={(dataset as DatasetOption | null)?.id || ""}
-                    onChange={(e) =>
-                      (setDataset as any)(
-                        datasets.find((d) => d.id === e.target.value) || null
-                      )
-                    }
-                  >
-                    <option value="">Select dataset...</option>
-                    <optgroup label="Core Datasets">
-                      {groupDatasets.core.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Other Datasets">
-                      {groupDatasets.other.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Derived Datasets">
-                      {groupDatasets.derived.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
+            {([
+              { label: "Dataset A", dataset: datasetA, setDataset: setDatasetA, joinField: joinFieldA, setJoinField: setJoinFieldA },
+              { label: "Dataset B", dataset: datasetB, setDataset: setDatasetB, joinField: joinFieldB, setJoinField: setJoinFieldB },
+            ] as const).map(({ label, dataset, setDataset, joinField, setJoinField }, i) => (
+              <div key={i} className="border rounded-lg p-3">
+                <label className="text-xs font-semibold">{label}</label>
+                <select
+                  className="w-full border rounded p-2 text-sm mt-1"
+                  value={dataset?.id || ""}
+                  onChange={(e) =>
+                    setDataset(datasets.find((d) => d.id === e.target.value) || null)
+                  }
+                >
+                  <option value="">Select dataset…</option>
+                  <optgroup label="Core Datasets">
+                    {groupDatasets.core.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Other Datasets">
+                    {groupDatasets.other.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Derived Datasets">
+                    {groupDatasets.derived.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title} {d.admin_level ? `(${d.admin_level})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
 
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs">Join Field</span>
-                    <select
-                      value={joinField as string}
-                      onChange={(e) => (setJoinField as any)(e.target.value)}
-                      className="border rounded px-2 py-1 text-xs"
-                    >
-                      <option value="pcode">pcode</option>
-                      <option value="admin_pcode">admin_pcode</option>
-                      <option value="id">id</option>
-                    </select>
-                  </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs">Join Field</span>
+                  <select
+                    value={joinField}
+                    onChange={(e) => setJoinField(e.target.value)}
+                    className="border rounded px-2 py-1 text-xs"
+                  >
+                    <option value="pcode">pcode</option>
+                    <option value="admin_pcode">admin_pcode</option>
+                    <option value="id">id</option>
+                  </select>
                 </div>
-              )
-            )}
+              </div>
+            ))}
           </div>
 
           {/* Join Preview */}
@@ -430,12 +428,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
           {/* Step 2 */}
           <h3 className="text-sm font-semibold mt-4 mb-2">
-            Step 2: Derivation / Aggregation
+            Step 2 : Derivation / Aggregation
           </h3>
           <div className="text-xs mb-2">
-            Formula:{" "}
+            Formula: 
             <strong>
-              {datasetA?.title || "A"} {method} {datasetB?.title || "B"} → target{" "}
+              {datasetA?.title || "A"} {method} {datasetB?.title || "B"} → target 
               {targetLevel}
             </strong>
           </div>
