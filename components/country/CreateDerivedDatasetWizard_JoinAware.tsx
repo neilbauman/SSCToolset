@@ -33,7 +33,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
   const [categories, setCategories] = useState<Record<string, string[]>>({});
   const [targetLevel, setTargetLevel] = useState("ADM4");
 
-  // ---- Load datasets ----
+  // Load datasets
   useEffect(() => {
     const load = async () => {
       const all: Option[] = [];
@@ -67,7 +67,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) load();
   }, [includeCore, includeOther, includeDerived, includeGIS, open, countryIso]);
 
-  // ---- Load taxonomy ----
+  // Load taxonomy
   useEffect(() => {
     const loadTaxonomy = async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
@@ -82,7 +82,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (open) loadTaxonomy();
   }, [open]);
 
-  // ---- Peek datasets ----
+  // Peek dataset
   const peekDataset = async (table: string, side: "A" | "B") => {
     const { data } = await supabase.from(table).select("*").limit(5);
     if (data?.length) {
@@ -92,7 +92,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     }
   };
 
-  // ---- Join preview ----
+  // Preview join
   const previewJoin = async () => {
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA?.table || "",
@@ -108,7 +108,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (!error && data) setPreview(data);
   };
 
-  // ---- Save derived ----
+  // Save derived
   const saveDerived = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -138,27 +138,31 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
   if (!open) return null;
 
-  // ---- UI ----
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white w-[90%] max-w-5xl rounded-lg p-5 shadow-lg overflow-y-auto max-h-[90vh] text-sm">
         <h2 className="text-lg font-semibold mb-2">Create Derived Dataset</h2>
 
-        {/* Toggles */}
+        {/* Toggles (type-safe map fix) */}
         <div className="flex flex-wrap gap-4 mb-3">
           {[
-            ["Include Core", includeCore, setIncludeCore],
-            ["Include Other", includeOther, setIncludeOther],
-            ["Include Derived", includeDerived, setIncludeDerived],
-            ["Include GIS", includeGIS, setIncludeGIS],
-          ].map(([label, val, set]) => (
-            <label key={label} className="flex items-center gap-1">
-              <input type="checkbox" checked={val as boolean} onChange={(e) => (set as any)(e.target.checked)} /> {label}
+            { label: "Include Core", val: includeCore, set: setIncludeCore },
+            { label: "Include Other", val: includeOther, set: setIncludeOther },
+            { label: "Include Derived", val: includeDerived, set: setIncludeDerived },
+            { label: "Include GIS", val: includeGIS, set: setIncludeGIS },
+          ].map((t) => (
+            <label key={t.label} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={t.val}
+                onChange={(e) => t.set(e.target.checked)}
+              />{" "}
+              {t.label}
             </label>
           ))}
         </div>
 
-        {/* Title */}
+        {/* Title + Level + Description */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -185,6 +189,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
         {/* Dataset selectors */}
         <div className="flex items-start gap-2 mb-2">
+          {/* Dataset A */}
           <div className="flex-1">
             <select
               className="border p-1 rounded w-full"
@@ -192,33 +197,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
               onChange={(e) => setDatasetA(datasets.find((x) => x.id === e.target.value) || null)}
             >
               <option value="">Select Dataset A</option>
-              <optgroup label="Core">
-                {datasets
-                  .filter((d) => d.source === "core")
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.title}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="Other">
-                {datasets
-                  .filter((d) => d.source === "other")
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.title}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="Derived">
-                {datasets
-                  .filter((d) => d.source === "derived")
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.title}
-                    </option>
-                  ))}
-              </optgroup>
+              {["core", "other", "derived"].map((group) => (
+                <optgroup key={group} label={group}>
+                  {datasets
+                    .filter((d) => d.source === group)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
             </select>
             {datasetA && (
               <button
@@ -241,6 +230,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
             )}
           </div>
 
+          {/* Dataset B or scalar */}
           {!useScalarB && (
             <div className="flex-1">
               <select
@@ -308,34 +298,23 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
             <button
               key={m}
               onClick={() => setMethod(m as any)}
-              className={`px-2 py-1 border rounded ${
-                method === m ? "bg-blue-600 text-white" : "bg-gray-100"
-              }`}
+              className={`px-2 py-1 border rounded ${method === m ? "bg-blue-600 text-white" : "bg-gray-100"}`}
             >
               {m}
             </button>
           ))}
-          <button
-            onClick={previewJoin}
-            className="px-3 py-1 bg-blue-600 text-white rounded ml-auto"
-          >
+          <button onClick={previewJoin} className="px-3 py-1 bg-blue-600 text-white rounded ml-auto">
             Preview
           </button>
         </div>
 
         <p className="text-xs italic mb-2">
           Derived = A.{colA}{" "}
-          {method === "ratio"
-            ? "÷"
-            : method === "multiply"
-            ? "×"
-            : method === "sum"
-            ? "+"
-            : "-"}{" "}
+          {method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"}{" "}
           {useScalarB ? `scalar(${scalarB})` : `B.${colB}`} → {targetLevel}
         </p>
 
-        {/* Preview table */}
+        {/* Preview Table */}
         <div className="max-h-40 overflow-y-auto border rounded text-xs mb-3">
           <table className="w-full">
             <thead className="bg-gray-100">
@@ -388,8 +367,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                         checked={taxonomy[cat]?.includes(t)}
                         onChange={(e) => {
                           const nt = { ...taxonomy };
-                          if (e.target.checked)
-                            nt[cat] = [...(nt[cat] || []), t];
+                          if (e.target.checked) nt[cat] = [...(nt[cat] || []), t];
                           else nt[cat] = nt[cat].filter((x) => x !== t);
                           setTaxonomy(nt);
                         }}
