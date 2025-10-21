@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, PlusCircle } from "lucide-react";
-import DerivedDatasetTable, {
-  DerivedRow,
-  SortKey,
-} from "@/components/country/DerivedDatasetTable";
+import { Loader2, PlusCircle, Trash2, RefreshCcw } from "lucide-react";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
+
+type DerivedRow = {
+  derived_dataset_id: string;
+  derived_title: string;
+  admin_level: string | null;
+  year: number | null;
+  record_count: number | null;
+  data_health: string | null;
+  created_at: string;
+};
 
 export default function CountryDerivedDatasetsPage() {
   const raw = (useParams()?.id ?? "") as string | string[];
@@ -19,12 +25,12 @@ export default function CountryDerivedDatasetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<DerivedRow[]>([]);
-  const [sortBy, setSortBy] = useState<SortKey>("created_at");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  async function load() {
+  // -----------------------------
+  // Load derived datasets
+  // -----------------------------
+  async function reloadDerived() {
     if (!iso) return;
     setLoading(true);
     const { data, error } = await supabase
@@ -42,78 +48,32 @@ export default function CountryDerivedDatasetsPage() {
   }
 
   useEffect(() => {
-    load();
+    reloadDerived();
   }, [iso]);
 
-  const sortedRows = useMemo(() => {
-    const sorted = [...rows].sort((a, b) => {
-      const A = (a as any)[sortBy];
-      const B = (b as any)[sortBy];
-      if (A === B) return 0;
-      if (A == null) return 1;
-      if (B == null) return -1;
-      if (typeof A === "number" && typeof B === "number") {
-        return sortDir === "asc" ? A - B : B - A;
-      }
-      const as = String(A).toLowerCase();
-      const bs = String(B).toLowerCase();
-      return sortDir === "asc" ? (as > bs ? 1 : -1) : (as < bs ? 1 : -1);
-    });
-    return sorted;
-  }, [rows, sortBy, sortDir]);
-
-  function toggleSort(k: SortKey) {
-    if (sortBy === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortBy(k);
-      setSortDir("asc");
-    }
+  // -----------------------------
+  // Delete derived dataset
+  // -----------------------------
+  async function deleteDerived(row: DerivedRow) {
+    if (!confirm(`Delete derived dataset "${row.derived_title}"?`)) return;
+    await supabase
+      .from("derived_datasets")
+      .delete()
+      .eq("id", row.derived_dataset_id);
+    reloadDerived();
   }
 
-  async function handleDelete(row: DerivedRow) {
-    await supabase.from("derived_datasets").delete().eq("id", row.derived_dataset_id);
-    setRows((prev) => prev.filter((r) => r.derived_dataset_id !== row.derived_dataset_id));
-  }
-
-  async function handleRegenerate(row: DerivedRow) {
-    console.log("Regenerate derived dataset", row.derived_dataset_id);
-    // Future: trigger RPC to rebuild derived dataset
-  }
-
-  if (!iso) {
-    return (
-      <SidebarLayout
-        headerProps={{
-          title: "Loading country…",
-          group: "country-config",
-          description: "Waiting for route params.",
-          tool: "Derived Datasets",
-          breadcrumbs: (
-            <Breadcrumbs
-              items={[
-                { label: "Dashboard", href: "/dashboard" },
-                { label: "Country Configuration", href: "/country" },
-                { label: "Derived Datasets" },
-              ]}
-            />
-          ),
-        }}
-      >
-        <div className="rounded-xl border p-3 text-sm text-gray-600">
-          Country ID missing in route.
-        </div>
-      </SidebarLayout>
-    );
-  }
-
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <SidebarLayout
       headerProps={{
         title: `${iso} – Derived Datasets`,
         group: "country-config",
         description:
-          "View, manage, and create analytical datasets derived from joins of population, admin, GIS, and other data.",
-        tool: "Derived Dataset Manager",
+          "Manage derived and analytical datasets generated through joins or formulas.",
+        tool: "Derived Datasets",
         breadcrumbs: (
           <Breadcrumbs
             items={[
@@ -126,9 +86,8 @@ export default function CountryDerivedDatasetsPage() {
         ),
       }}
     >
-      {/* Header and create button */}
-      <div className="flex items-center justify-between mb-3 mt-4">
-        <h2 className="text-xl font-bold text-[color:var(--gsc-red)]">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-[color:var(--gsc-red)]">
           Derived Datasets
         </h2>
         <button
@@ -141,36 +100,88 @@ export default function CountryDerivedDatasetsPage() {
         </button>
       </div>
 
-      {loading ? (
-        <div className="p-3 text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-          Loading derived datasets…
+      <div className="rounded-xl border p-3 bg-[var(--gsc-beige)]">
+        <div className="flex justify-between items-center mb-2">
+          <div className="text-sm text-gray-700">
+            <span className="font-semibold">{rows.length}</span> derived datasets
+          </div>
+          <button
+            onClick={reloadDerived}
+            className="flex items-center gap-1 text-sm text-[color:var(--gsc-gray)] hover:text-[color:var(--gsc-red)]"
+          >
+            <RefreshCcw className="w-4 h-4" /> Refresh
+          </button>
         </div>
-      ) : error ? (
-        <div className="p-3 text-red-700">{error}</div>
-      ) : (
-        <DerivedDatasetTable
-          rows={sortedRows}
-          loading={loading}
-          error={error}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={toggleSort}
-          onSelect={setSelectedId}
-          selectedId={selectedId}
-          onDelete={handleDelete}
-          onRegenerate={handleRegenerate}
-          countryIso={iso}
-        />
-      )}
 
+        <div className="overflow-auto rounded-lg border bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+              <tr>
+                <th className="px-3 py-2 text-left">Title</th>
+                <th className="px-3 py-2 text-left">Admin Level</th>
+                <th className="px-3 py-2 text-left">Year</th>
+                <th className="px-3 py-2 text-right">Records</th>
+                <th className="px-3 py-2 text-left">Health</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                    Loading derived datasets…
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td className="px-3 py-3 text-red-700" colSpan={6}>
+                    {error}
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                    No derived datasets found.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.derived_dataset_id} className="border-t">
+                    <td className="px-3 py-2">{r.derived_title}</td>
+                    <td className="px-3 py-2">{r.admin_level ?? "—"}</td>
+                    <td className="px-3 py-2">{r.year ?? "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.record_count ?? "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.data_health ?? "unknown"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        className="text-red-600 hover:text-red-800"
+                        onClick={() => deleteDerived(r)}
+                      >
+                        <Trash2 className="w-4 h-4 inline" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Create Derived Dataset Wizard */}
       {creating && (
         <CreateDerivedDatasetWizard_JoinAware
           open={creating}
           countryIso={iso}
-          onClose={() => {
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            reloadDerived(); // ✅ refresh table after creation
             setCreating(false);
-            load();
           }}
         />
       )}
