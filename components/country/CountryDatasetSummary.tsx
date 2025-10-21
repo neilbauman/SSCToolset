@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2 } from "lucide-react";
 
-type SimpleDataset = {
+type BasicDataset = {
   id: string;
   title: string;
-  admin_level: string | null;
   year: number | null;
   record_count: number | null;
 };
@@ -28,10 +27,10 @@ export default function CountryDatasetSummary({
   countryIso: string;
   showDerived?: boolean;
 }) {
-  const [adminDatasets, setAdminDatasets] = useState<SimpleDataset[]>([]);
-  const [populationDatasets, setPopulationDatasets] = useState<SimpleDataset[]>([]);
-  const [gisDatasets, setGisDatasets] = useState<SimpleDataset[]>([]);
-  const [otherDatasets, setOtherDatasets] = useState<SimpleDataset[]>([]);
+  const [adminDatasets, setAdminDatasets] = useState<BasicDataset[]>([]);
+  const [populationDatasets, setPopulationDatasets] = useState<BasicDataset[]>([]);
+  const [gisDatasets, setGisDatasets] = useState<BasicDataset[]>([]);
+  const [otherDatasets, setOtherDatasets] = useState<BasicDataset[]>([]);
   const [derivedDatasets, setDerivedDatasets] = useState<DerivedSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,22 +51,22 @@ export default function CountryDatasetSummary({
         ] = await Promise.all([
           supabase
             .from("admin_datasets")
-            .select("id, title, admin_level, year, record_count")
+            .select("id, title, year, record_count")
             .eq("country_iso", countryIso)
             .order("created_at", { ascending: false }),
           supabase
             .from("population_datasets")
-            .select("id, title, admin_level, year, record_count")
+            .select("id, title, year, record_count")
             .eq("country_iso", countryIso)
             .order("created_at", { ascending: false }),
           supabase
             .from("gis_datasets")
-            .select("id, title, admin_level, year, record_count")
+            .select("id, title, year, record_count")
             .eq("country_iso", countryIso)
             .order("created_at", { ascending: false }),
           supabase
             .from("dataset_metadata")
-            .select("id, title, admin_level, year, record_count")
+            .select("id, title, year, record_count")
             .eq("country_iso", countryIso)
             .order("title", { ascending: true }),
           supabase
@@ -119,25 +118,25 @@ export default function CountryDatasetSummary({
 
   return (
     <div className="space-y-6">
-      {/* Admin Datasets */}
+      {/* Administrative Boundaries */}
       <DatasetPanel
         title="Administrative Boundaries"
         datasets={adminDatasets}
-        emptyMsg="No administrative datasets uploaded yet."
+        emptyMsg="No administrative boundary datasets found."
       />
 
       {/* Population Datasets */}
       <DatasetPanel
         title="Population Datasets"
         datasets={populationDatasets}
-        emptyMsg="No population datasets uploaded yet."
+        emptyMsg="No population datasets found."
       />
 
       {/* GIS Datasets */}
       <DatasetPanel
         title="GIS Datasets"
         datasets={gisDatasets}
-        emptyMsg="No GIS datasets uploaded yet."
+        emptyMsg="No GIS datasets found."
       />
 
       {/* Other Datasets */}
@@ -154,7 +153,6 @@ export default function CountryDatasetSummary({
           datasets={derivedDatasets.map((d) => ({
             id: d.derived_dataset_id,
             title: d.derived_title,
-            admin_level: d.admin_level,
             year: d.year,
             record_count: d.record_count,
           }))}
@@ -171,7 +169,7 @@ function DatasetPanel({
   emptyMsg,
 }: {
   title: string;
-  datasets: SimpleDataset[];
+  datasets: BasicDataset[];
   emptyMsg: string;
 }) {
   return (
@@ -187,7 +185,6 @@ function DatasetPanel({
             <thead className="bg-[var(--gsc-beige)] text-[var(--gsc-gray)] text-xs uppercase">
               <tr>
                 <th className="px-2 py-1 text-left">Title</th>
-                <th className="px-2 py-1 text-left">Admin Level</th>
                 <th className="px-2 py-1 text-left">Year</th>
                 <th className="px-2 py-1 text-right">Records</th>
               </tr>
@@ -199,7 +196,6 @@ function DatasetPanel({
                   className="border-t border-[var(--gsc-light-gray)]"
                 >
                   <td className="px-2 py-1">{d.title}</td>
-                  <td className="px-2 py-1">{d.admin_level ?? "—"}</td>
                   <td className="px-2 py-1">{d.year ?? "—"}</td>
                   <td className="px-2 py-1 text-right">
                     {d.record_count ?? "—"}
