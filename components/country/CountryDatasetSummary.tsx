@@ -6,16 +6,16 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { Loader2, Database } from "lucide-react";
 
 /**
- * CountryDatasetSummary
- * ---------------------
- * Summarized dashboard of all dataset families for a given country:
- *  - Administrative Boundaries
- *  - Population Data
- *  - GIS Data
- *  - Other Datasets
- *  - Derived Datasets
+ * CountryDatasetSummary.tsx
+ * --------------------------
+ * Accurate, aggregated summaries of each core dataset family:
+ *  - Administrative Areas (ADM1–ADM4)
+ *  - Population
+ *  - GIS
+ *  - Other datasets
+ *  - Derived datasets
  *
- *  Uses Supabase aggregate queries matched to verified DB schema.
+ * Uses server-side aggregate SQL to avoid Supabase row limits.
  */
 
 type Props = {
@@ -24,7 +24,7 @@ type Props = {
 
 type AdminSummary = { level: string; count: number };
 type PopSummary = { records: number; total_population: number };
-type GisSummary = { features: number; levels: number };
+type GisSummary = { admin_level: string; features: number };
 type OtherSummary = { total: number; records: number; latest_year: number };
 type DerivedSummary = { total: number; records: number; latest_year: number };
 
@@ -34,7 +34,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 
   const [admin, setAdmin] = useState<AdminSummary[]>([]);
   const [pop, setPop] = useState<PopSummary | null>(null);
-  const [gis, setGis] = useState<GisSummary | null>(null);
+  const [gis, setGis] = useState<GisSummary[]>([]);
   const [other, setOther] = useState<OtherSummary | null>(null);
   const [derived, setDerived] = useState<DerivedSummary | null>(null);
 
@@ -43,62 +43,70 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
       try {
         setLoading(true);
 
-        // --- 1️⃣ Administrative Boundaries ---
-        const { data: adminRows, error: e1 } = await supabase
+        // --- 1️⃣ Administrative Areas (Aggregated) ---
+        const { data: adminAgg, error: e1 } = await supabase
           .from("admin_units")
-          .select("level, pcode")
-          .eq("country_iso", countryIso);
+          .select("level, COUNT(DISTINCT pcode) AS count")
+          .eq("country_iso", countryIso)
+          .group("level")
+          .order("level");
 
         if (e1) throw e1;
-        const adminCounts: Record<string, number> = {};
-        adminRows?.forEach((r: any) => {
-          adminCounts[r.level] = (adminCounts[r.level] || 0) + 1;
-        });
-        const adminSummary = Object.entries(adminCounts).map(([level, count]) => ({
-          level,
-          count,
-        }));
-        setAdmin(adminSummary);
+        setAdmin((adminAgg || []).map((r: any) => ({
+          level: r.level,
+          count: Number(r.count),
+        })));
 
-        // --- 2️⃣ Population ---
-        const { data: popRows, error: e2 } = await supabase
+        // --- 2️⃣ Population (Aggregated) ---
+        const { data: popAgg, error: e2 } = await supabase
           .from("population_data")
-          .select("population")
-          .eq("country_iso", countryIso);
+          .select("COUNT(*) AS records, SUM(population)::bigint AS total_population")
+          .eq("country_iso", countryIso)
+          .single();
         if (e2) throw e2;
-        const popTotal = popRows?.reduce((sum: number, r: any) => sum + Number(r.population || 0), 0);
-        setPop({ records: popRows?.length || 0, total_population: popTotal || 0 });
+        setPop({
+          records: Number(popAgg.records || 0),
+          total_population: Number(popAgg.total_population || 0),
+        });
 
-        // --- 3️⃣ GIS ---
-        const { data: gisRows, error: e3 } = await supabase
+        // --- 3️⃣ GIS (Features per Admin Level) ---
+        const { data: gisAgg, error: e3 } = await supabase
           .from("gis_features")
-          .select("admin_level")
-          .eq("country_iso", countryIso);
+          .select("admin_level, COUNT(*) AS features")
+          .eq("country_iso", countryIso)
+          .group("admin_level")
+          .order("admin_level");
         if (e3) throw e3;
-        const gisLevels = new Set(gisRows?.map((r: any) => r.admin_level).filter(Boolean));
-        setGis({ features: gisRows?.length || 0, levels: gisLevels.size });
+        setGis((gisAgg || []).map((r: any) => ({
+          admin_level: r.admin_level,
+          features: Number(r.features),
+        })));
 
         // --- 4️⃣ Other Datasets ---
-        const { data: meta, error: e4 } = await supabase
+        const { data: otherAgg, error: e4 } = await supabase
           .from("dataset_metadata")
-          .select("year, record_count")
-          .eq("country_iso", countryIso);
+          .select("COUNT(*) AS total, SUM(record_count) AS records, MAX(year) AS latest_year")
+          .eq("country_iso", countryIso)
+          .single();
         if (e4) throw e4;
-        const totalDatasets = meta?.length || 0;
-        const records = meta?.reduce((s: number, r: any) => s + (r.record_count || 0), 0);
-        const latestYear = Math.max(...(meta?.map((r: any) => r.year || 0) || [0]));
-        setOther({ total: totalDatasets, records: records || 0, latest_year: latestYear || 0 });
+        setOther({
+          total: Number(otherAgg.total || 0),
+          records: Number(otherAgg.records || 0),
+          latest_year: Number(otherAgg.latest_year || 0),
+        });
 
         // --- 5️⃣ Derived Datasets ---
-        const { data: deriv, error: e5 } = await supabase
+        const { data: derivedAgg, error: e5 } = await supabase
           .from("view_derived_dataset_summary")
-          .select("year, record_count")
-          .eq("country_iso", countryIso);
+          .select("COUNT(*) AS total, SUM(record_count) AS records, MAX(year) AS latest_year")
+          .eq("country_iso", countryIso)
+          .single();
         if (e5) throw e5;
-        const derivedTotal = deriv?.length || 0;
-        const derivedRecords = deriv?.reduce((s: number, r: any) => s + (r.record_count || 0), 0);
-        const derivedLatest = Math.max(...(deriv?.map((r: any) => r.year || 0) || [0]));
-        setDerived({ total: derivedTotal, records: derivedRecords || 0, latest_year: derivedLatest || 0 });
+        setDerived({
+          total: Number(derivedAgg.total || 0),
+          records: Number(derivedAgg.records || 0),
+          latest_year: Number(derivedAgg.latest_year || 0),
+        });
 
         setError(null);
       } catch (err: any) {
@@ -130,11 +138,11 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* 1️⃣ Administrative Boundaries */}
+      {/* 1️⃣ Administrative Areas */}
       <Panel
-        title="Administrative Boundaries"
+        title="Administrative Areas"
         link={`/country/${countryIso}/admins`}
-        description="Administrative hierarchy and completeness of boundary data."
+        description="Administrative hierarchy completeness by level."
         stats={
           admin.length
             ? admin.map((a) => ({
@@ -145,9 +153,9 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         }
       />
 
-      {/* 2️⃣ Population Datasets */}
+      {/* 2️⃣ Population */}
       <Panel
-        title="Population Datasets"
+        title="Population"
         link={`/country/${countryIso}/population`}
         description="Population records and total population coverage."
         stats={[
@@ -156,15 +164,19 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
         ]}
       />
 
-      {/* 3️⃣ GIS Datasets */}
+      {/* 3️⃣ GIS */}
       <Panel
-        title="GIS Datasets"
+        title="GIS Data"
         link={`/country/${countryIso}/gis`}
-        description="GIS layers and spatial feature coverage."
-        stats={[
-          { label: "Features", value: gis?.features?.toLocaleString() ?? "—" },
-          { label: "Admin Levels", value: gis?.levels?.toString() ?? "—" },
-        ]}
+        description="GIS layers and spatial feature counts by administrative level."
+        stats={
+          gis.length
+            ? gis.map((g) => ({
+                label: g.admin_level || "N/A",
+                value: g.features.toLocaleString(),
+              }))
+            : [{ label: "Features", value: "—" }]
+        }
       />
 
       {/* 4️⃣ Other Datasets */}
@@ -183,7 +195,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
       <Panel
         title="Derived Datasets"
         link={`/country/${countryIso}/derived`}
-        description="Analytical datasets derived from population, administrative, GIS, and other datasets."
+        description="Analytical datasets derived from population, administrative, GIS, and other data sources."
         stats={[
           { label: "Derived Sets", value: derived?.total?.toLocaleString() ?? "—" },
           { label: "Records", value: derived?.records?.toLocaleString() ?? "—" },
@@ -197,7 +209,7 @@ export default function CountryDatasetSummary({ countryIso }: Props) {
 /**
  * Panel Component
  * ----------------
- * Small stat-card section used for each dataset category.
+ * Reusable card panel showing linked header and stats grid.
  */
 function Panel({
   title,
