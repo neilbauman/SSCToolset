@@ -134,30 +134,54 @@ export default function CountryDatasetSummary({
     })();
   }, [countryIso]);
 
-  // ─────────────────────────────────────────────────────────────
-  // Other Datasets
-  // ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      const { data: vdata } = await supabase
-        .from("view_dataset_with_indicator")
+ // --- Other Datasets -----------------------------------------------------
+useEffect(() => {
+  (async () => {
+    let { data: vdata, error: vErr } = await supabase
+      .from("view_dataset_with_indicator")
+      .select(
+        "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name, year"
+      )
+      .eq("country_iso", countryIso)
+      .order("year", { ascending: false });
+
+    let rows: any[] = vdata || [];
+
+    // Fallback: if view returns 0 or error, use dataset_metadata
+    if ((!rows.length || vErr) && !vErr) {
+      const { data: md } = await supabase
+        .from("dataset_metadata")
         .select(
-          "id, title, indicator_title, taxonomy_category, taxonomy_term, admin_level, record_count, dataset_type, source_name, year"
+          "id, title, admin_level, record_count, dataset_type, source_name, year"
         )
         .eq("country_iso", countryIso)
-        .order("year", { ascending: false });
+        .order("created_at", { ascending: false });
 
-      if (vdata) {
-        const filtered = vdata.filter(
-          (d) =>
-            !["admin", "population", "gis", "derived"].includes(
-              (d.dataset_type || "").toLowerCase()
-            )
-        );
-        setOtherDatasets(filtered);
-      }
-    })();
-  }, [countryIso]);
+      rows =
+        (md || []).map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          indicator_title: null,
+          taxonomy_category: null,
+          taxonomy_term: null,
+          admin_level: d.admin_level ?? "—",
+          record_count: d.record_count ?? 0,
+          dataset_type: d.dataset_type ?? null,
+          source_name: d.source_name ?? null,
+          year: d.year ?? null,
+        })) || [];
+    }
+
+    const filtered = rows.filter(
+      (d) =>
+        !["admin", "population", "gis", "derived"].includes(
+          (d.dataset_type || "").toLowerCase()
+        )
+    );
+
+    setOtherDatasets(filtered);
+  })();
+}, [countryIso]);
 
   // ─────────────────────────────────────────────────────────────
   // Derived Datasets
