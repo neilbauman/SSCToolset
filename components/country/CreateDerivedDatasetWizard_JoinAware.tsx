@@ -75,7 +75,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (!error && data) setJoinRows(data as JoinRow[]);
     setLoading(false);
   }
-  function TablePreview({ rows }: { rows: any[] }) {
+  const TablePreview = ({ rows }: { rows: any[] }) => {
     if (!rows?.length) return <p className="text-xs text-gray-500 italic">No preview.</p>;
     const cols = Object.keys(rows[0]).slice(0, 4);
     return (
@@ -86,7 +86,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </table>
       </div>
     );
-  }
+  };
 
   return (
     <div ref={ref} className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={(e) => e.target === ref.current && onClose()}>
@@ -97,29 +97,33 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </div>
         <div className="p-4 space-y-3 text-sm max-h-[80vh] overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {[["Dataset A", datasetA, setA, previewA, setPreviewA],
-              ["Dataset B", datasetB, setB, previewB, setPreviewB]].map(([label, ds, setDs, rows, setRows], idx) => (
-              <div key={label as string} className="border rounded p-2">
-                <label className="text-xs font-semibold">{label}</label>
-                <select className="w-full border rounded p-1 text-xs mt-1"
-                  value={(ds as DatasetOption)?.id || ""}
-                  onChange={(e) => {
-                    const sel = datasets.find((d) => d.id === e.target.value) || null;
-                    setDs(sel);
-                    if (sel) fetchPreview(sel, setRows as any);
-                  }}>
-                  <option value="">Select dataset…</option>
-                  {datasets.map((d) => (<option key={d.id} value={d.id}>{d.title} ({d.source})</option>))}
-                </select>
-                {idx === 1 && (
-                  <label className="flex items-center gap-1 text-xs mt-1">
-                    <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />
-                    Use scalar {useScalar && <input value={scalarVal} onChange={(e) => setScalarVal(e.target.value)} className="border rounded px-1 w-16 text-xs" />}
-                  </label>
-                )}
-                <div className="mt-2"><TablePreview rows={rows as any[]} /></div>
-              </div>
-            ))}
+            {([
+              ["Dataset A", datasetA, setA, previewA, setPreviewA],
+              ["Dataset B", datasetB, setB, previewB, setPreviewB],
+            ] as [string, DatasetOption | null, (d: DatasetOption | null) => void, any[], (v: any[]) => void][]).map(
+              ([label, ds, setDs, rows, setRows], idx) => (
+                <div key={label} className="border rounded p-2">
+                  <label className="text-xs font-semibold">{label}</label>
+                  <select className="w-full border rounded p-1 text-xs mt-1"
+                    value={ds?.id || ""}
+                    onChange={(e) => {
+                      const sel = datasets.find((d) => d.id === e.target.value) || null;
+                      setDs(sel);
+                      if (sel) fetchPreview(sel, setRows);
+                    }}>
+                    <option value="">Select dataset…</option>
+                    {datasets.map((d) => (<option key={d.id} value={d.id}>{d.title} ({d.source})</option>))}
+                  </select>
+                  {idx === 1 && (
+                    <label className="flex items-center gap-1 text-xs mt-1">
+                      <input type="checkbox" checked={useScalar} onChange={(e) => setUseScalar(e.target.checked)} />
+                      Use scalar {useScalar && <input value={scalarVal} onChange={(e) => setScalarVal(e.target.value)} className="border rounded px-1 w-16 text-xs" />}
+                    </label>
+                  )}
+                  <div className="mt-2"><TablePreview rows={rows} /></div>
+                </div>
+              )
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs">Method:</span>
