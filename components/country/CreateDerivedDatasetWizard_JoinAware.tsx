@@ -5,11 +5,13 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
   countryIso,
-  onClose
+  onClose,
+  onCreated
 }: {
   open: boolean;
   countryIso: string;
   onClose: () => void;
+  onCreated?: () => void;
 }) {
   const [datasets, setDatasets] = useState<any[]>([]);
   const [a, setA] = useState<any>(null);
@@ -19,23 +21,21 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [scalarVal, setScalarVal] = useState<number | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [metadata, setMetadata] = useState({ title: "", description: "", admin: "ADM4" });
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
 
-  // taxonomy categories and terms
   const taxoDefs = {
     Vulnerability: ["Poverty", "Disability", "HH Size"],
     Exposure: ["Flood", "Earthquake", "Conflict"],
-    Capacity: ["Health", "Education", "Infrastructure"],
+    Capacity: ["Health", "Education", "Infrastructure"]
   };
 
-  // load datasets
   useEffect(() => {
     if (!open) return;
-    const list = [
+    setDatasets([
       { id: "core-pop", title: "Population Data", source: "core", table_name: "population_data" },
       { id: "other-hh", title: "Avg HH Size", source: "other", table_name: "avg_hh_size" },
-    ];
-    setDatasets(list);
+    ]);
   }, [open]);
 
   async function previewJoin() {
@@ -58,7 +58,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }
 
   function toggleTerm(cat: string, term: string) {
-    setTaxonomy((prev) => {
+    setTaxonomy(prev => {
       const curr = new Set(prev[cat] || []);
       curr.has(term) ? curr.delete(term) : curr.add(term);
       return { ...prev, [cat]: [...curr] };
@@ -68,50 +68,65 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   if (!open) return null;
 
   return (
-    <div className="p-4 border rounded-lg bg-white text-sm space-y-4">
+    <div className="p-4 border rounded bg-white text-sm space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="font-semibold text-base">Create Derived Dataset</h2>
-        <button onClick={onClose} className="text-gray-500 hover:text-black text-xs">✕ Close</button>
+        <button onClick={onClose} className="text-gray-500 hover:text-black text-xs">✕</button>
+      </div>
+
+      {/* Metadata */}
+      <div className="grid grid-cols-3 gap-2">
+        <input placeholder="Title" value={metadata.title}
+          onChange={e => setMetadata({ ...metadata, title: e.target.value })}
+          className="border p-1 rounded text-xs col-span-1" />
+        <select value={metadata.admin}
+          onChange={e => setMetadata({ ...metadata, admin: e.target.value })}
+          className="border p-1 rounded text-xs col-span-1">
+          <option value="ADM4">ADM4</option>
+          <option value="ADM3">ADM3</option>
+          <option value="ADM2">ADM2</option>
+        </select>
+        <input placeholder="Description" value={metadata.description}
+          onChange={e => setMetadata({ ...metadata, description: e.target.value })}
+          className="border p-1 rounded text-xs col-span-1" />
       </div>
 
       {/* Dataset Selection */}
       <div className="flex gap-2">
-        <select onChange={(e) => setA(datasets.find((d) => d.id === e.target.value))}
-          className="border p-1 rounded w-1/2">
+        <select onChange={e => setA(datasets.find(d => d.id === e.target.value))}
+          className="border p-1 rounded w-1/2 text-xs">
           <option value="">Select Dataset A</option>
-          {datasets.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+          {datasets.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
         </select>
-
-        <select onChange={(e) => setB(datasets.find((d) => d.id === e.target.value))}
-          className="border p-1 rounded w-1/2">
+        <select onChange={e => setB(datasets.find(d => d.id === e.target.value))}
+          className="border p-1 rounded w-1/2 text-xs">
           <option value="">Select Dataset B</option>
-          {datasets.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+          {datasets.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
         </select>
       </div>
 
       {/* Join Options */}
       <div className="flex flex-wrap gap-2 items-center">
         <label className="text-xs">Method:</label>
-        <select value={method} onChange={(e) => setMethod(e.target.value)}
+        <select value={method} onChange={e => setMethod(e.target.value)}
           className="border p-1 rounded text-xs">
           <option value="sum">Sum</option>
           <option value="multiply">Multiply</option>
           <option value="ratio">Ratio</option>
           <option value="difference">Difference</option>
         </select>
-
         <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" checked={useScalar}
-            onChange={(e) => setUseScalar(e.target.checked)} /> Use scalar
+            onChange={e => setUseScalar(e.target.checked)} /> Use scalar
         </label>
         {useScalar && (
-          <input type="number" placeholder="Scalar value"
-            value={scalarVal ?? ""} onChange={(e) => setScalarVal(Number(e.target.value))}
-            className="border p-1 rounded w-24 text-xs" />
+          <input type="number" placeholder="Scalar" value={scalarVal ?? ""}
+            onChange={e => setScalarVal(Number(e.target.value))}
+            className="border p-1 rounded w-20 text-xs" />
         )}
         <button onClick={previewJoin}
           className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">
-          {loading ? "Loading..." : "Preview Join"}
+          {loading ? "Loading..." : "Preview"}
         </button>
       </div>
 
@@ -143,14 +158,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </div>
       )}
 
-      {/* Taxonomy Panel */}
+      {/* Taxonomy */}
       <div className="border rounded p-2">
-        <div className="font-semibold text-xs mb-2">Assign Taxonomy</div>
+        <div className="font-semibold text-xs mb-1">Assign Taxonomy</div>
         <div className="grid grid-cols-3 gap-2">
           {Object.entries(taxoDefs).map(([cat, terms]) => (
             <div key={cat}>
               <div className="font-medium text-xs mb-1">{cat}</div>
-              {terms.map((t) => (
+              {terms.map(t => (
                 <label key={t} className="flex items-center gap-1 text-xs">
                   <input type="checkbox"
                     checked={taxonomy[cat]?.includes(t)}
