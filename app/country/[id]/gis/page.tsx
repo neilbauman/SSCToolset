@@ -31,6 +31,7 @@ export default function CountryGISDevPage({ params }: { params: { id: string } }
   const [layers, setLayers] = useState<Layer[]>([]);
   const [geojsonById, setGeojsonById] = useState<Record<string, any>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [openUpload, setOpenUpload] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<any>(null);
