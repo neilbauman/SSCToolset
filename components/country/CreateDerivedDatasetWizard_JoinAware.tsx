@@ -108,15 +108,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       dest === "A" ? setPeekA([]) : setPeekB([]);
       return;
     }
-    const mapped = data.map((r: any) => ({
-      pcode: r.pcode ?? "",
-      name: r.name ?? "",
-      value:
-        Object.entries(r).find(([k, v]) => k !== "pcode" && k !== "name" && typeof v === "number")?.[1] ??
-        Object.entries(r).find(([k, v]) => k !== "pcode" && k !== "name" && typeof v === "string")?.[1] ??
-        null,
-    }));
-    dest === "A" ? setPeekA(mapped) : setPeekB(mapped);
+    const mapped = data.map((r: any) => {
+  const valEntry =
+    Object.entries(r).find(([k, v]) => k !== "pcode" && k !== "name" && typeof v === "number") ??
+    Object.entries(r).find(([k, v]) => k !== "pcode" && k !== "name" && typeof v === "string");
+  const value = valEntry ? (valEntry[1] as string | number | null) : null;
+  return { pcode: String(r.pcode ?? ""), name: String(r.name ?? ""), value };
+});
+dest === "A" ? setPeekA(mapped) : setPeekB(mapped);
   }
 
   async function runPreview() {
