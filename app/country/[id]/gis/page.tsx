@@ -117,75 +117,111 @@ export default function CountryGISDevPage({ params }: { params: { id: string } }
         ),
       }}
     >
-      <section className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-semibold">GIS Layers</h3>
-          <button
-            onClick={refreshMetrics}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-            />
-            Refresh Metrics
-          </button>
-        </div>
+      {/* GIS Layers Section */}
+<section className="mb-4">
+  <div className="flex items-center justify-between mb-2">
+    <h3 className="text-base font-semibold">GIS Layers</h3>
 
-        {loading ? (
-          <div className="flex justify-center py-8 text-gray-500">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Loading GIS layers...
-          </div>
-        ) : layers.length === 0 ? (
-          <div className="text-gray-500 italic">No GIS layers found for {iso}.</div>
-        ) : (
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 text-left">
-                <tr>
-                  <th className="px-3 py-2">Admin Level</th>
-                  <th className="px-3 py-2">Layer Name</th>
-                  <th className="px-3 py-2">Format</th>
-                  <th className="px-3 py-2">Created</th>
-                  <th className="px-3 py-2">Visible</th>
-                </tr>
-              </thead>
-              <tbody>
-                {layers.map((l) => (
-                  <tr key={l.id} className="border-t">
-                    <td className="px-3 py-2">{l.admin_level || "—"}</td>
-                    <td className="px-3 py-2">
-                      <a
-                        href={l._publicUrl || resolvePublicUrl(l) || "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-700 hover:underline"
-                      >
-                        {l.layer_name}
-                      </a>
-                    </td>
-                    <td className="px-3 py-2">{l.format || "—"}</td>
-                    <td className="px-3 py-2">
-                      {new Date(l.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={!!visible[l.id]}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setVisible((m) => ({ ...m, [l.id]: next }));
-                          if (next && !geojsonById[l.id]) fetchGeo(l);
-                        }}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+    <div className="flex gap-2">
+      {/* Refresh Metrics */}
+      <button
+        onClick={refreshMetrics}
+        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
+      >
+        <RefreshCw
+          className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+        />
+        Refresh Metrics
+      </button>
+
+      {/* Add GIS Layer */}
+      <button
+        onClick={() => setOpenUpload(true)}
+        className="px-3 py-1.5 rounded bg-[#640811] text-white text-sm hover:opacity-90"
+      >
+        + Add GIS Layer
+      </button>
+    </div>
+  </div>
+
+  <div className="overflow-x-auto border rounded-lg">
+    <table className="w-full text-sm">
+      <thead className="bg-gray-100 text-left">
+        <tr>
+          <th className="px-3 py-2 w-[10%]">Level</th>
+          <th className="px-3 py-2">Layer Name</th>
+          <th className="px-3 py-2 w-[12%]">Format</th>
+          <th className="px-3 py-2 w-[12%]">CRS</th>
+          <th className="px-3 py-2 w-[12%]">Features</th>
+          <th className="px-3 py-2 w-[10%]">Visible</th>
+          <th className="px-3 py-2 w-[14%] text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {layers.map((l) => {
+          const pub = l._publicUrl ?? resolvePublicUrl(l);
+          const count =
+            typeof l.feature_count === "number"
+              ? l.feature_count
+              : geojsonById[l.id]?.features?.length ?? 0;
+          return (
+            <tr key={l.id} className="border-t">
+              <td className="px-3 py-2">{l.admin_level || "—"}</td>
+              <td className="px-3 py-2">
+                {pub ? (
+                  <a
+                    href={pub}
+                    className="text-blue-700 hover:underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {l.layer_name}
+                  </a>
+                ) : (
+                  l.layer_name
+                )}
+              </td>
+              <td className="px-3 py-2">{l.format || "—"}</td>
+              <td className="px-3 py-2">{l.crs || "—"}</td>
+              <td className="px-3 py-2">{count || "—"}</td>
+              <td className="px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={!!visible[l.id]}
+                  onChange={(e) => toggleVisible(l, e.target.checked)}
+                />
+              </td>
+              <td className="px-3 py-2 text-right">
+                <button
+                  className="text-blue-600 hover:underline mr-3"
+                  onClick={() => setEditingLayer(l)}
+                >
+                  Edit
+                </button>
+              </td>
+            </tr>
+          );
+        })}
+        {layers.length === 0 && (
+          <tr>
+            <td
+              colSpan={7}
+              className="px-3 py-4 text-center text-gray-500 italic"
+            >
+              No layers currently uploaded.
+              <button
+                className="ml-2 px-2 py-1 rounded bg-[#640811] text-white text-xs"
+                onClick={() => setOpenUpload(true)}
+              >
+                + Add GIS Layer
+              </button>
+            </td>
+          </tr>
         )}
-      </section>
+      </tbody>
+    </table>
+  </div>
+</section>
 
       <section className="mt-6 border rounded-lg overflow-hidden">
         <MapContainer
