@@ -24,7 +24,6 @@ export default function DerivedDatasetsPanel({ countryIso }: Props) {
   const [open, setOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // ---------- Load derived datasets ----------
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -40,12 +39,15 @@ export default function DerivedDatasetsPanel({ countryIso }: Props) {
   }, [countryIso, refreshKey]);
 
   return (
-    <div className="p-3 text-[13px]">
+    <div className="p-4 text-[13px]">
       <div className="flex justify-between items-center mb-3">
-        <h2 className="text-sm font-semibold">Derived Datasets</h2>
+        <h2 className="text-sm font-semibold text-[#640811] flex items-center gap-2">
+          <span className="inline-block w-4 h-4 bg-[#640811]/80 rounded-sm" />
+          Derived Datasets
+        </h2>
         <button
           onClick={() => setOpen(true)}
-          className="bg-blue-600 text-white text-xs px-3 py-1 rounded"
+          className="bg-[#640811] hover:bg-[#51060d] text-white text-xs px-3 py-1.5 rounded transition"
         >
           + Create Derived
         </button>
@@ -58,7 +60,7 @@ export default function DerivedDatasetsPanel({ countryIso }: Props) {
           No derived datasets found.
         </p>
       ) : (
-        <div className="border rounded overflow-hidden">
+        <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
           <table className="w-full text-[12px]">
             <thead className="bg-gray-100 text-gray-700">
               <tr>
@@ -71,7 +73,7 @@ export default function DerivedDatasetsPanel({ countryIso }: Props) {
             </thead>
             <tbody>
               {derivedDatasets.map((d) => (
-                <tr key={d.derived_dataset_id} className="border-t">
+                <tr key={d.derived_dataset_id} className="border-t hover:bg-gray-50">
                   <td className="p-2">{d.derived_title}</td>
                   <td className="p-2">{d.admin_level}</td>
                   <td className="p-2">{d.year ?? "—"}</td>
@@ -84,7 +86,6 @@ export default function DerivedDatasetsPanel({ countryIso }: Props) {
         </div>
       )}
 
-      {/* ---------- Wizard Modal ---------- */}
       {open && (
         <CreateDerivedDatasetWizard_JoinAware
           open={open}
