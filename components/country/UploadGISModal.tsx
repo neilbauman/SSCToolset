@@ -1,163 +1,152 @@
+// components/country/UploadGISModal.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Modal from "@/components/ui/Modal";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type Props = {
+export default function UploadGISModal({ open, onClose, countryIso }: {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  datasetVersionId: string;
-  onUploaded?: () => void;
-};
-
-const LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"] as const;
-
-export default function UploadGISModal({
-  open,
-  onClose,
-  countryIso,
-  datasetVersionId,
-  onUploaded,
-}: Props) {
-  const [adminLevel, setAdminLevel] = useState<(typeof LEVELS)[number]>("ADM1");
-  const [layerName, setLayerName] = useState("");
+}) {
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setAdminLevel("ADM1");
-      setLayerName("");
-      setFile(null);
-      setBusy(false);
-      setError(null);
-    }
-  }, [open]);
-
-  const disabled = useMemo(() => !layerName || !file || busy, [layerName, file, busy]);
-
-  const handleSubmit = async () => {
-    try {
-      setBusy(true);
-      setError(null);
-      if (!file) throw new Error("Please choose a file.");
-
-      // Generate structured path: <ISO>/<UUID>/<filename>
-      const fullKey = `${countryIso}/${crypto.randomUUID()}/${file.name}`;
-
-      // Upload file
-      const { data: uploadData, error: upErr } = await supabase.storage
-        .from("gis_raw")
-        .upload(fullKey, file, { upsert: true });
-
-      if (upErr) throw upErr;
-
-      // Get actual returned path from Supabase
-      const fullPath = uploadData?.path;
-      if (!fullPath) throw new Error("Upload succeeded but no path returned from Supabase.");
-
-      // Build metadata payload for DB
-      const format = file.name.endsWith(".zip")
-        ? "shapefile"
-        : file.name.endsWith(".gpkg")
-        ? "gpkg"
-        : "geojson";
-
-      const payload = {
-        dataset_version_id: datasetVersionId,
-        country_iso: countryIso,
-        admin_level: adminLevel,
-        layer_name: file.name,
-        storage_path: fullPath,
-        format,
-        crs: "EPSG:4326", // default CRS
-        source: {
-          bucket: "gis_raw",
-          path: fullPath,
-          name: layerName,
-          originalFilename: file.name,
-          mimeType: file.type,
-          size: file.size,
-        },
-      };
-
-      const { error: insErr } = await supabase.from("gis_layers").insert(payload);
-      if (insErr) throw insErr;
-
-      onUploaded?.();
-      onClose();
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Failed to upload layer.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const [versionId, setVersionId] = useState<string>("");
 
   if (!open) return null;
 
+  async function handleUpload() {
+    try {
+      if (!file) return alert("Please select a file");
+      if (!countryIso) return alert("Missing country ISO");
+
+      setUploading(true);
+      setMessage("Requesting upload URL...");
+
+      // Step 1: Request presigned upload URL
+      const res1 = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL}/upload-gis-large`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "gis_raw",
+          country_iso: countryIso,
+          filename: file.name,
+        }),
+      });
+      const data1 = await res1.json();
+      if (!data1.ok) throw new Error(data1.error || "Failed to create upload URL");
+
+      // Step 2: Upload file directly to Storage
+      setMessage("Uploading file...");
+      const upload = await fetch(data1.uploadUrl, {
+        method: "PUT",
+        body: file,
+      });
+
+      if (!upload.ok) throw new Error("Upload failed");
+
+      setProgress(100);
+      setMessage("Registering GIS dataset...");
+
+      // Step 3: Register GIS layer metadata and trigger compute-gis-metrics
+      const res2 = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL}/convert-gis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "gis_raw",
+          path: data1.path,
+          country_iso: countryIso,
+          version_id: versionId || crypto.randomUUID(),
+        }),
+      });
+      const data2 = await res2.json();
+      if (!data2.ok) throw new Error(data2.error || "convert-gis failed");
+
+      setMessage("✅ GIS dataset uploaded and registered successfully!");
+    } catch (err: any) {
+      console.error(err);
+      setMessage(`❌ ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Add GIS Layer</h3>
-        {error && (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 p-2 rounded">
-            {error}
-          </div>
-        )}
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+      <div className="bg-white w-full max-w-lg rounded-xl shadow-lg p-5 text-sm">
+        <h2 className="text-lg font-semibold text-[#640811] mb-3">
+          Upload GIS Dataset
+        </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm">
-            <span className="block mb-1 font-medium">Admin Level</span>
-            <select
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={adminLevel}
-              onChange={(e) => setAdminLevel(e.target.value as any)}
-            >
-              {LEVELS.map((lvl) => (
-                <option key={lvl} value={lvl}>
-                  {lvl}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="block mb-1 font-medium">Layer Name *</span>
+        <div className="space-y-3">
+          <div>
+            <label className="block font-medium mb-1">Country ISO</label>
             <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={layerName}
-              onChange={(e) => setLayerName(e.target.value)}
-              placeholder="e.g., National Boundaries 2025"
+              value={countryIso}
+              readOnly
+              className="border rounded w-full p-2 bg-gray-50 text-gray-700"
             />
-          </label>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Dataset Version ID (optional)</label>
+            <input
+              placeholder="Auto-generated if empty"
+              value={versionId}
+              onChange={(e) => setVersionId(e.target.value)}
+              className="border rounded w-full p-2"
+            />
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Select GIS File (.zip or .geojson)</label>
+            <input
+              type="file"
+              accept=".zip,.geojson"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="block w-full border rounded p-2"
+            />
+          </div>
+
+          {uploading && (
+            <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-[#640811] h-2 transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          )}
+
+          {message && (
+            <div
+              className={`text-xs mt-2 ${
+                message.startsWith("✅") ? "text-green-700" : message.startsWith("❌") ? "text-red-700" : "text-gray-700"
+              }`}
+            >
+              {message}
+            </div>
+          )}
         </div>
 
-        <label className="text-sm block">
-          <span className="block mb-1 font-medium">File *</span>
-          <input
-            type="file"
-            accept=".geojson,.json,.zip,.gpkg"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-
-        <div className="flex justify-end gap-2 pt-4">
-          <button className="border rounded px-3 py-1 text-sm" onClick={onClose} disabled={busy}>
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            disabled={uploading}
+            className="border rounded px-3 py-1 text-gray-700 hover:bg-gray-100"
+          >
             Cancel
           </button>
           <button
-            className="bg-[color:var(--gsc-red)] text-white rounded px-3 py-1 text-sm disabled:opacity-60"
-            onClick={handleSubmit}
-            disabled={disabled}
+            onClick={handleUpload}
+            disabled={uploading}
+            className="bg-[#640811] text-white rounded px-4 py-1 hover:opacity-90"
           >
-            {busy ? "Uploading…" : "Upload"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
