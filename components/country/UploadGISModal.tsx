@@ -8,10 +8,17 @@ type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
+  datasetVersionId?: string | null;
   onUploaded?: () => void;
 };
 
-export default function UploadGISModal({ open, onClose, countryIso, onUploaded }: Props) {
+export default function UploadGISModal({
+  open,
+  onClose,
+  countryIso,
+  datasetVersionId,
+  onUploaded,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
@@ -27,42 +34,46 @@ export default function UploadGISModal({ open, onClose, countryIso, onUploaded }
   const handleUpload = async () => {
     if (!file) return alert("Please select a GeoJSON or ZIP file.");
     setUploading(true);
-    setProgressMsg("Uploading to storage...");
+    setProgressMsg("Uploading file to storage...");
 
     try {
-      // 🧭 Define upload path
       const bucket = "gis_raw";
       const path = `${countryIso}/${file.name}`;
 
-      // 📤 Upload file
+      // 📤 Upload file to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from(bucket)
         .upload(path, file, {
           upsert: true,
           contentType: file.type || "application/json",
         });
-      if (uploadError) throw uploadError;
 
+      if (uploadError) throw uploadError;
       setProgressMsg("Registering GIS layer via Edge Function...");
 
-      // 🚀 Call convert-gis (no version id in DEV mode)
+      // 🚀 Call convert-gis with service role context
+      const version_id = datasetVersionId ?? null;
+
       const { data, error } = await supabase.functions.invoke("convert-gis", {
         body: {
           bucket,
           path,
           country_iso: countryIso,
-          version_id: "dev-mode", // ignored by Edge Function in DEV_MODE
+          version_id: version_id || null,
         },
       });
-      if (error) throw error;
-      console.log("✅ convert-gis response:", data);
+
+      if (error || !data?.ok) {
+        console.error("❌ Edge function failed:", error || data);
+        throw new Error(data?.error || error?.message || "Edge function failed");
+      }
 
       alert("✅ GIS dataset uploaded and registered successfully!");
       onUploaded?.();
       onClose();
     } catch (err: any) {
       console.error("❌ Upload failed:", err);
-      alert("Upload failed: " + err.message);
+      alert("Upload failed: " + (err.message || "Unknown error"));
     } finally {
       setUploading(false);
       setProgressMsg("");
@@ -74,11 +85,11 @@ export default function UploadGISModal({ open, onClose, countryIso, onUploaded }
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white w-[90%] max-w-md rounded-lg p-6 shadow-lg text-sm relative">
         <h2 className="text-lg font-semibold mb-2 text-[#640811]">
-          Upload GIS Dataset (DEV Mode)
+          Upload GIS Dataset
         </h2>
         <p className="text-gray-600 mb-4">
-          Upload a <strong>.geojson</strong> or <strong>.zip</strong> file to
-          the <code>gis_raw</code> bucket for <strong>{countryIso}</strong>.
+          Upload a <strong>.geojson</strong> or <strong>.zip</strong> file to the{" "}
+          <code>gis_raw</code> bucket for <strong>{countryIso}</strong>.
         </p>
 
         <div className="border border-dashed border-gray-300 p-4 rounded-lg mb-3 text-center">
