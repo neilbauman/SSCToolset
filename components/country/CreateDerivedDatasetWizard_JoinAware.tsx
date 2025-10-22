@@ -48,7 +48,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
     if (include.derived) {
       const { data } = await sb
         .from("view_derived_dataset_summary")
-        .select("derived_dataset_id,derived_title,country_iso,admin_level")
+        .select("derived_dataset_id,derived_title,admin_level")
         .eq("country_iso", countryIso);
       if (data)
         data.forEach((d) =>
@@ -133,13 +133,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
       col_b_used: colB,
     }));
 
+    // ✅ Fixed RPC call — removed non-existent "sources" argument
     const { error } = await sb.rpc("create_derived_dataset", {
       p_country: countryIso,
       p_title: title,
       p_admin_level: targetLevel,
       p_year: new Date().getFullYear(),
       p_method: method,
-      p_sources: JSON.stringify({ a: datasetA?.title, b: datasetB?.title }),
       p_scalar_b: useScalarB ? scalarB : null,
       p_rows: rows,
     });
@@ -212,7 +212,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
               ))}
             </select>
             {previewA.length > 0 && (
-              <div className="max-h-24 overflow-y-auto text-xs border rounded mt-1">
+              <div className="max-h-20 overflow-y-auto text-xs border rounded mt-1">
                 {previewA.map((r, i) => (
                   <div key={i} className="grid grid-cols-3 border-b p-1">
                     <span>{r.pcode}</span><span>{r.name}</span>
@@ -243,7 +243,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
                 ))}
               </select>
               {previewB.length > 0 && (
-                <div className="max-h-24 overflow-y-auto text-xs border rounded mt-1">
+                <div className="max-h-20 overflow-y-auto text-xs border rounded mt-1">
                   {previewB.map((r, i) => (
                     <div key={i} className="grid grid-cols-3 border-b p-1">
                       <span>{r.pcode}</span><span>{r.name}</span>
@@ -281,9 +281,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
 
         <p className="text-xs italic mb-2 text-gray-600">{formula}</p>
 
-        {/* Preview */}
+        {/* Preview — shorter */}
         {preview.length > 0 && (
-          <div className="max-h-60 overflow-y-auto border rounded mb-4 text-xs">
+          <div className="max-h-40 overflow-y-auto border rounded mb-4 text-xs">
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr><th>Pcode</th><th>Name</th><th>A</th><th>B</th><th>Derived</th></tr>
