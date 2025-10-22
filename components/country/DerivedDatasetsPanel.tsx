@@ -1,107 +1,122 @@
 "use client";
-import { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/supabaseBrowser";
 import CreateDerivedDatasetWizard_JoinAware from "./CreateDerivedDatasetWizard_JoinAware";
 
+type ViewRow = {
+  derived_dataset_id: string;
+  country_iso: string;
+  derived_title: string;
+  description: string | null;
+  admin_level: string | null;
+  method: string | null;
+  record_count: number | null;
+  data_health: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  taxonomy_terms: string | null;
+  formula: string | null;
+  dataset_status: string | null;
+};
+
 export default function DerivedDatasetsPanel({ countryIso }: { countryIso: string }) {
   const sb = supabaseBrowser;
-  const [datasets, setDatasets] = useState<any[]>([]);
+  const router = useRouter();
+  const [rows, setRows] = useState<ViewRow[]>([]);
   const [open, setOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { loadData(); }, [refreshKey]);
-
-  async function loadData() {
+  async function load() {
     setLoading(true);
     const { data, error } = await sb
       .from("view_derived_dataset_summary")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-    if (!error && data) setDatasets(data);
     setLoading(false);
+    if (!error && data) setRows(data as ViewRow[]);
   }
 
-  async function deleteDerived(id: string, title: string) {
-    if (!confirm(`Delete derived dataset "${title}"?\n\nThis will cascade remove all associated records.`)) return;
-    const { error } = await sb.rpc("cascade_delete_derived_dataset", { p_derived_id: id });
-    if (error) return alert("Delete failed: " + error.message);
-    alert("Deleted successfully.");
-    setRefreshKey(k => k + 1);
+  useEffect(() => {
+    load();
+  }, [countryIso]);
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this derived dataset?")) return;
+    await sb.rpc("delete_derived_dataset", { p_derived_id: id });
+    await load();
+    router.refresh();
   }
 
   return (
-    <div className="mt-6 border rounded-2xl bg-white shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-[#f9f9f9]">
-        <h3 className="text-[15px] font-semibold text-[#640811] flex items-center gap-2">
-          <span className="w-3 h-3 rounded-sm bg-[#640811] inline-block"></span>
-          Derived Datasets
-        </h3>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Derived Datasets</h3>
         <button
+          className="px-3 py-1 rounded text-xs text-white bg-[#640811] hover:opacity-90"
           onClick={() => setOpen(true)}
-          className="bg-[#640811] text-white px-3 py-1 rounded text-sm hover:bg-[#50060d]"
         >
-          + Create Derived
+          + New
         </button>
       </div>
 
-      {loading ? (
-        <div className="p-4 text-sm text-gray-500">Loading…</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-700">
-              <tr>
-                <th className="text-left p-2 font-medium">Title</th>
-                <th className="text-left p-2 font-medium">Level</th>
-                <th className="text-left p-2 font-medium">Year</th>
-                <th className="text-left p-2 font-medium">Method</th>
-                <th className="text-right p-2 font-medium">Records</th>
-                <th className="text-left p-2 font-medium">Taxonomy</th>
-                <th className="text-center p-2 font-medium">Actions</th>
+      <div className="border rounded">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-left">
+            <tr>
+              <th className="p-2">Title</th>
+              <th className="p-2">Method</th>
+              <th className="p-2">Records</th>
+              <th className="p-2">Taxonomy</th>
+              <th className="p-2">Formula</th>
+              <th className="p-2 w-16 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.derived_dataset_id} className="border-t">
+                <td className="p-2">{r.derived_title}</td>
+                <td className="p-2">{r.method ?? ""}</td>
+                <td className="p-2">{r.record_count ?? 0}</td>
+                <td className="p-2">{r.taxonomy_terms ?? ""}</td>
+                <td className="p-2">{r.formula ?? ""}</td>
+                <td className="p-2 text-right">
+                  <button
+                    onClick={() => handleDelete(r.derived_dataset_id)}
+                    title="Delete"
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    🗑️
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {datasets.map((d) => (
-                <tr key={d.derived_dataset_id} className="border-t hover:bg-gray-50">
-                  <td className="p-2">{d.derived_title}</td>
-                  <td className="p-2">{d.admin_level}</td>
-                  <td className="p-2">{d.year || "—"}</td>
-                  <td className="p-2">{d.method || "—"}</td>
-                  <td className="p-2 text-right">{d.record_count ?? "—"}</td>
-                  <td className="p-2 text-xs text-gray-600 max-w-[220px] truncate" title={d.domains || ""}>
-                    {d.domains || "—"}
-                  </td>
-                  <td className="p-2 text-center">
-                    <button
-                      onClick={() => deleteDerived(d.derived_dataset_id, d.derived_title)}
-                      className="text-gray-500 hover:text-red-600 text-lg"
-                      title="Delete derived dataset"
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {datasets.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-sm text-gray-500">
-                    No derived datasets found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+            {rows.length === 0 && !loading && (
+              <tr>
+                <td className="p-3 text-sm text-gray-500" colSpan={6}>
+                  No derived datasets yet.
+                </td>
+              </tr>
+            )}
+            {loading && (
+              <tr>
+                <td className="p-3 text-sm text-gray-500" colSpan={6}>
+                  Loading…
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {open && (
         <CreateDerivedDatasetWizard_JoinAware
           open={open}
-          onClose={() => {
+          onClose={async () => {
             setOpen(false);
-            setRefreshKey(k => k + 1);
+            await load();
+            router.refresh();
           }}
           countryIso={countryIso}
         />
