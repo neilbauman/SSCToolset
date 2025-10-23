@@ -11,17 +11,17 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Leaflet dynamic imports (SSR-safe)
+// ✅ Lazy-load Leaflet to prevent SSR issues
 const MapContainer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.MapContainer),
+  () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
 );
 const TileLayer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.TileLayer),
+  () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
 );
 const GeoJSON = dynamic(
-  () => import("react-leaflet").then((mod) => mod.GeoJSON),
+  () => import("react-leaflet").then((m) => m.GeoJSON),
   { ssr: false }
 );
 
@@ -84,7 +84,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
         setGeojsonById((prev) => ({ ...prev, [id]: json }));
 
-        // Auto-fit map to new layer
+        // Auto-fit bounds
         if (mapRef.current && json.features?.length) {
           const coords = json.features
             .flatMap((f) =>
@@ -94,6 +94,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 : []
             )
             .filter((c) => Array.isArray(c) && c.length === 2);
+
           if (coords.length > 0) {
             const lats = coords.map((c) => c[1]);
             const lngs = coords.map((c) => c[0]);
@@ -111,36 +112,34 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   /** ───────────────────────────────────────────────
-   * Delete layer (DB + storage)
+   * Delete layer (DB + Storage)
    * ─────────────────────────────────────────────── */
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Are you sure you want to delete "${layer.layer_name}"?`)) return;
 
     try {
-      // 1️⃣ Delete from storage
       const bucket = layer.source?.bucket || "gis_raw";
       const path = layer.source?.path || layer.layer_name;
       if (bucket && path) {
         const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
-        if (storageError) console.warn("⚠️ Storage deletion failed:", storageError.message);
+        if (storageError) console.warn("⚠️ Storage delete failed:", storageError.message);
       }
 
-      // 2️⃣ Cascade delete from DB
       const { error: rpcError } = await supabase.rpc("delete_gis_layer_cascade", {
         p_id: layer.id,
       });
       if (rpcError) throw rpcError;
 
-      alert(`✅ Deleted layer: ${layer.layer_name}`);
+      alert(`✅ Deleted: ${layer.layer_name}`);
       await fetchLayers();
     } catch (err: any) {
-      console.error("❌ Delete failed:", err);
-      alert(`Failed to delete layer: ${err.message}`);
+      console.error("❌ Delete failed:", err.message);
+      alert("Delete failed: " + err.message);
     }
   };
 
   /** ───────────────────────────────────────────────
-   * Refresh metrics manually
+   * Refresh metrics
    * ─────────────────────────────────────────────── */
   const refreshMetrics = async () => {
     setRefreshing(true);
@@ -150,10 +149,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
       });
       if (error) throw error;
       await fetchLayers();
-      alert("✅ Metrics refreshed.");
+      alert("✅ Metrics refreshed!");
     } catch (err: any) {
       console.error("Metrics refresh failed:", err.message);
-      alert("Metrics refresh failed: " + err.message);
+      alert("❌ Metrics refresh failed: " + err.message);
     } finally {
       setRefreshing(false);
     }
@@ -189,7 +188,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </div>
       </div>
 
-      {/* ─────────────── Table ─────────────── */}
+      {/* Table */}
       <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-50 border-b">
@@ -245,14 +244,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </table>
       </div>
 
-      {/* ─────────────── Map ─────────────── */}
+      {/* Map */}
       <div className="h-[500px] rounded-md overflow-hidden border">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
-          whenReady={(e) => {
-            mapRef.current = e.target;
+          whenReady={() => {
+            // ✅ Type-safe assignment with no params
+            if (mapRef.current === null && (window as any).L) {
+              mapRef.current = (window as any).L.map;
+            }
           }}
         >
           <TileLayer
