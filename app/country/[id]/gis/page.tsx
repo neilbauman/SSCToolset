@@ -124,7 +124,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                 <th className="px-3 py-2">Admin</th>
                 <th className="px-3 py-2 text-right">Features</th>
                 <th className="px-3 py-2 text-right">Avg Area (km²)</th>
-                <th className="px-3 py-2 text-right">Centroid</th>
                 <th className="px-3 py-2 text-right">Unique Pcodes</th>
                 <th className="px-3 py-2 text-right">Missing Names</th>
                 <th className="px-3 py-2 text-center">Visible</th>
@@ -139,11 +138,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                   <td className="px-3 py-2 text-right">{l.feature_count ?? "—"}</td>
                   <td className="px-3 py-2 text-right">
                     {l.avg_area_sqkm ? l.avg_area_sqkm.toLocaleString() : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {l.centroid_lat && l.centroid_lon
-                      ? `${l.centroid_lat.toFixed(2)}, ${l.centroid_lon.toFixed(2)}`
-                      : "—"}
                   </td>
                   <td className="px-3 py-2 text-right">{l.unique_pcodes ?? "—"}</td>
                   <td className="px-3 py-2 text-right">{l.missing_names ?? "—"}</td>
@@ -171,7 +165,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               {layers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={8}
                     className="px-3 py-4 text-center text-gray-500 italic"
                   >
                     No GIS layers yet. Click “Upload Layer” to add one.
