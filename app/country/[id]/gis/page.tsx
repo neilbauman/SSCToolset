@@ -37,20 +37,36 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
+  // ---------- Load data ----------
   const loadData = async () => {
     const { data, error } = await supabase
       .from("gis_layers")
-      .select("*")
+      .select(
+        "id, country_iso, layer_name, admin_level, format, source, storage_path, feature_count, avg_area_sqkm, centroid_lat, centroid_lon, created_at"
+      )
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
     if (error) {
-      console.error("Failed to load GIS layers:", error);
+      console.error("❌ Failed to load GIS layers:", error);
       return;
     }
-    setLayers(data || {});
+
+    const arr = (data || []).map((l) => {
+      const bucket = (l.source as any)?.bucket || "gis_raw";
+      const path =
+        (l.source as any)?.path ||
+        (l as any).storage_path ||
+        (l as any).layer_name ||
+        null;
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
+      const _publicUrl = pub?.publicUrl || null;
+      return { ...l, _publicUrl };
+    });
+
+    setLayers(arr);
     const defaults: Record<string, boolean> = {};
-    for (const l of data || []) defaults[l.id] = (l.admin_level || "") === "ADM0";
+    for (const l of arr) defaults[l.id] = (l.admin_level || "") === "ADM0";
     setVisible(defaults);
   };
 
@@ -58,8 +74,8 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     const bucket = (l.source as any)?.bucket || "gis_raw";
     const path =
       (l.source as any)?.path ||
-      (l as any).path ||
       (l as any).storage_path ||
+      (l as any).layer_name ||
       null;
     if (!path) return null;
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
@@ -88,7 +104,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     if (!confirm("Delete this GIS layer and all its data?")) return;
     try {
       await supabase.from("gis_layers").delete().eq("id", id);
-      console.log("Deleted layer:", id);
+      console.log("🗑️ Deleted layer:", id);
       await loadData();
     } catch (err) {
       console.error("Delete failed:", err);
@@ -117,7 +133,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
           .update({
             feature_count: m.feature_count,
             avg_area_sqkm: m.avg_area_sqkm,
-            avg_perimeter_km: m.avg_perimeter_km,
             centroid_lat: m.avg_centroid_lat,
             centroid_lon: m.avg_centroid_lon,
             bounding_box: m.bounding_box,
@@ -126,7 +141,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
           .eq("id", l.id);
       }
 
-      alert("GIS metrics refreshed successfully!");
+      alert("✅ GIS metrics refreshed successfully!");
       await loadData();
     } catch (err) {
       console.error("Failed to refresh metrics:", err);
@@ -184,22 +199,30 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               <tr>
                 <th className="px-3 py-2 w-[8%]">Level</th>
                 <th className="px-3 py-2">Layer</th>
-                <th className="px-3 py-2 w-[12%]">Features</th>
-                <th className="px-3 py-2 w-[10%]">Visible</th>
-                <th className="px-3 py-2 w-[14%] text-right">Actions</th>
+                <th className="px-3 py-2 w-[10%] text-right">Features</th>
+                <th className="px-3 py-2 w-[12%] text-right">Avg Area (km²)</th>
+                <th className="px-3 py-2 w-[14%] text-right">Centroid (Lat, Lon)</th>
+                <th className="px-3 py-2 w-[8%]">Visible</th>
+                <th className="px-3 py-2 w-[10%] text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {layers.map((l) => (
                 <tr key={l.id} className="border-t">
                   <td className="px-3 py-2">{l.admin_level || "—"}</td>
-                  <td className="px-3 py-2">
-                    <span className="font-medium">{l.layer_name}</span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-700">
+                  <td className="px-3 py-2 font-medium text-[#640811]">{l.layer_name}</td>
+                  <td className="px-3 py-2 text-right">
                     {l.feature_count ?? "—"}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-right">
+                    {l.avg_area_sqkm ? l.avg_area_sqkm.toLocaleString() : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {l.centroid_lat && l.centroid_lon
+                      ? `${l.centroid_lat.toFixed(3)}, ${l.centroid_lon.toFixed(3)}`
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
                       checked={!!visible[l.id]}
@@ -219,7 +242,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               {layers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={7}
                     className="px-3 py-4 text-center text-gray-500 italic"
                   >
                     No GIS layers found. Upload one to get started.
@@ -231,6 +254,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
         </div>
       </section>
 
+      {/* Map */}
       <section className="mt-4">
         <MapContainer
           center={[12.8797, 121.774]}
@@ -246,7 +270,10 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
 
           {visibleLayers.map((l) => {
             const data = geojsonById[l.id];
-            if (!data) return null;
+            if (!data) {
+              fetchGeo(l);
+              return null;
+            }
 
             const colors: Record<string, string> = {
               ADM0: "#044389",
@@ -261,22 +288,20 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                 key={l.id}
                 data={data}
                 style={{
-                  color: colors[l.admin_level || ""] || "#630710",
+                  color: colors[l.admin_level || ""] || "#640811",
                   weight: 1.2,
                 }}
                 onEachFeature={(f, layer) => {
+                  const props = f.properties || {};
                   const name =
-                    (f.properties as any)?.NAME ||
-                    (f.properties as any)?.name ||
-                    "Unnamed";
-                  const pcode =
-                    (f.properties as any)?.PCODE ||
-                    (f.properties as any)?.pcode ||
-                    "";
+                    props.NAME_3 || props.NAME_2 || props.name || "Unnamed";
+                  const pcode = props.PCODE || props.pcode || "";
                   layer.bindPopup(
-                    `<div style="font-size:12px"><strong>${name}</strong>${
+                    `<div style="font-size:12px">
+                      <strong>${name}</strong>${
                       pcode ? ` <span style="color:#666">(${pcode})</span>` : ""
-                    }</div>`
+                    }
+                    </div>`
                   );
                 }}
               />
