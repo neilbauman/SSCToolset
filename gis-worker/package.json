@@ -1,0 +1,14 @@
+{
+  "name": "gis-worker",
+  "version": "1.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.46.1",
+    "mapshaper": "^0.6.114",
+    "adm-zip": "^0.5.10",
+    "node-fetch": "^3.3.2"
+  }
+}
