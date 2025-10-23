@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css"; // ✅ required for map tiles to display
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -13,7 +14,7 @@ import type { GISLayer } from "@/types/gis";
 import type { FeatureCollection } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 
-// Leaflet dynamic imports
+// ✅ dynamic imports for react-leaflet
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -34,6 +35,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [openUpload, setOpenUpload] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
   // ---------- Load GIS layers ----------
   const fetchLayers = async () => {
@@ -55,11 +57,14 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     if (!data?.publicUrl) return;
 
     try {
+      console.log("🔹 Fetching GeoJSON:", data.publicUrl);
       const res = await fetch(data.publicUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as FeatureCollection;
       setGeojsonById((m) => ({ ...m, [layer.id]: json }));
+      console.log("✅ Loaded GeoJSON:", layer.layer_name, json.features?.length);
     } catch (err) {
-      console.error("Failed to load GeoJSON:", err);
+      console.error("❌ Failed to load GeoJSON:", layer.layer_name, err);
     }
   };
 
@@ -73,6 +78,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
 
   // ---------- Lifecycle ----------
   useEffect(() => {
+    setIsClient(true); // ✅ allow map render only client-side
     fetchLayers();
   }, [countryIso]);
 
@@ -178,36 +184,38 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
       </section>
 
       {/* -------- Map -------- */}
-      <section className="mt-4">
-        <div className="border rounded-lg overflow-hidden">
-          <MapContainer
-            center={[12.8797, 121.774]}
-            zoom={5}
-            style={{ height: "600px", width: "100%" }}
-            ref={mapRef as any}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org">OSM</a>'
-            />
-            {layers.map(
-              (l) =>
-                visible[l.id] &&
-                geojsonById[l.id] && (
-                  <GeoJSON
-                    key={l.id}
-                    data={geojsonById[l.id]}
-                    style={{
-                      color: layerColors[l.admin_level || ""] || "#640811",
-                      weight: 1,
-                      opacity: 0.9,
-                    }}
-                  />
-                )
-            )}
-          </MapContainer>
-        </div>
-      </section>
+      {isClient && (
+        <section className="mt-4">
+          <div className="border rounded-lg overflow-hidden">
+            <MapContainer
+              center={[12.8797, 121.774]}
+              zoom={5}
+              style={{ height: "600px", width: "100%" }}
+              ref={mapRef as any}
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>'
+              />
+              {layers.map(
+                (l) =>
+                  visible[l.id] &&
+                  geojsonById[l.id] && (
+                    <GeoJSON
+                      key={l.id}
+                      data={geojsonById[l.id]}
+                      style={{
+                        color: layerColors[l.admin_level || ""] || "#640811",
+                        weight: 1,
+                        opacity: 0.9,
+                      }}
+                    />
+                  )
+              )}
+            </MapContainer>
+          </div>
+        </section>
+      )}
 
       {/* -------- Upload Modal -------- */}
       {openUpload && (
