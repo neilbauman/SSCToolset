@@ -76,6 +76,16 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     fetchLayers();
   }, [countryIso]);
 
+  // ---------- Map color scheme ----------
+  const layerColors: Record<string, string> = {
+    ADM0: "#800026",
+    ADM1: "#BD0026",
+    ADM2: "#E31A1C",
+    ADM3: "#FC4E2A",
+    ADM4: "#FD8D3C",
+    ADM5: "#FEB24C",
+  };
+
   // ---------- Render ----------
   return (
     <SidebarLayout
@@ -135,12 +145,8 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                       ? `${l.centroid_lat.toFixed(2)}, ${l.centroid_lon.toFixed(2)}`
                       : "—"}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {l.unique_pcodes ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {l.missing_names ?? "—"}
-                  </td>
+                  <td className="px-3 py-2 text-right">{l.unique_pcodes ?? "—"}</td>
+                  <td className="px-3 py-2 text-right">{l.missing_names ?? "—"}</td>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -198,9 +204,9 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                     key={l.id}
                     data={geojsonById[l.id]}
                     style={{
-                      color: "#640811",
+                      color: layerColors[l.admin_level || ""] || "#640811",
                       weight: 1,
-                      opacity: 0.8,
+                      opacity: 0.9,
                     }}
                   />
                 )
