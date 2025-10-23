@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { X, Upload, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { toast } from "sonner";
 
 interface UploadGISModalProps {
   open: boolean;
@@ -10,11 +12,6 @@ interface UploadGISModalProps {
   onUploaded: () => void;
 }
 
-/**
- * UploadGISModal
- * - Streams large files (>1 GB) via /api/proxy-upload using multipart/form-data
- * - Shows upload progress and handles backend responses cleanly
- */
 export default function UploadGISModal({
   open,
   onClose,
@@ -24,150 +21,138 @@ export default function UploadGISModal({
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] || null);
+  };
 
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a file to upload.");
-      return;
-    }
-
+    if (!file) return toast.error("Please choose a file first.");
     setUploading(true);
-    setError(null);
-    setMessage(null);
     setProgress(0);
 
     try {
-      // Build multipart form payload
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("country_iso", countryIso);
-
-      // Use XMLHttpRequest for progress tracking (Fetch lacks it)
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/proxy-upload", true);
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            setProgress(percent);
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            const res = JSON.parse(xhr.responseText);
-            setMessage(res.message || "Upload completed.");
-            resolve();
-          } else {
-            const err = JSON.parse(xhr.responseText);
-            reject(new Error(err.error || "Upload failed"));
-          }
-        };
-
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.send(formData);
+      // 1️⃣ Request signed upload URL from the backend
+      const signRes = await fetch("/api/sign-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
       });
 
-      setTimeout(() => {
-        onUploaded();
-        onClose();
-      }, 1500);
+      if (!signRes.ok) throw new Error("Failed to get signed upload URL.");
+      const { url, path } = await signRes.json();
+      if (!url) throw new Error("Signed URL missing from response.");
+
+      // 2️⃣ Upload file directly to Supabase Storage
+      await uploadFileStream(file, url, (percent) => setProgress(percent));
+
+      // 3️⃣ Notify backend to register + queue
+      const regRes = await fetch("/api/register-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          country_iso: countryIso,
+          filename: file.name,
+          path,
+        }),
+      });
+
+      if (!regRes.ok) throw new Error("Failed to register uploaded dataset.");
+
+      toast.success("✅ Upload complete and queued for processing!");
+      onUploaded();
+      onClose();
     } catch (err: any) {
-      console.error("❌ Upload failed:", err);
-      setError(err.message || "Upload failed.");
+      console.error("❌ Upload error:", err);
+      toast.error(err.message || "Upload failed");
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
+  // ✅ Helper to stream upload with progress feedback
+  const uploadFileStream = async (
+    file: File,
+    signedUrl: string,
+    onProgress: (percent: number) => void
+  ) => {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", signedUrl, true);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable) {
+          const percent = Math.round((evt.loaded / evt.total) * 100);
+          onProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Upload failed with status ${xhr.status}`));
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(file);
+    });
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-[420px] relative">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Upload GIS Dataset</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Upload GIS Dataset</DialogTitle>
+        </DialogHeader>
 
-        {/* File Input */}
-        <input
-          type="file"
-          accept=".zip,.geojson,.json,.gpkg,.gdb"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-          disabled={uploading}
-        />
-
-        {file && (
-          <p className="text-xs text-gray-600 mt-2 truncate">
-            {file.name} ({(file.size / 1024 / 1024).toFixed(1)} MB)
-          </p>
-        )}
-
-        {/* Progress */}
-        {uploading && (
-          <div className="mt-4">
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-[#640811] h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>Uploading...</span>
-              <span>{progress}%</span>
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        {message && (
-          <p className="mt-3 text-green-700 bg-green-100 px-2 py-1 rounded text-sm">
-            {message}
-          </p>
-        )}
-        {error && (
-          <p className="mt-3 text-red-700 bg-red-100 px-2 py-1 rounded text-sm">
-            {error}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+        <div className="space-y-4">
+          <input
+            type="file"
+            accept=".zip,.shp,.gdb,.geojson"
+            onChange={handleFileChange}
             disabled={uploading}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={!file || uploading}
-            className="flex items-center gap-2 px-4 py-2 text-sm rounded bg-[#640811] text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Uploading
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4" /> Upload
-              </>
-            )}
-          </button>
+            className="block w-full text-sm text-gray-700 border rounded-md p-2"
+          />
+
+          {file && (
+            <div className="text-sm text-gray-600 break-words">
+              {file.name} ({(file.size / 1024 / 1024).toFixed(1)} MB)
+            </div>
+          )}
+
+          {uploading && (
+            <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+              <div
+                className="bg-[#640811] h-2.5 rounded-full transition-all"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 rounded-md border text-gray-600 hover:bg-gray-50"
+              disabled={uploading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={!file || uploading}
+              className={`px-4 py-1.5 rounded-md text-white ${
+                uploading ? "bg-gray-400" : "bg-[#640811] hover:bg-[#8b0f1c]"
+              }`}
+            >
+              {uploading ? `Uploading ${progress}%` : "Upload"}
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
