@@ -13,10 +13,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing filename" }, { status: 400 });
     }
 
-    // Generate signed upload URL
+    // ✅ Old syntax: second argument is a number (seconds to expire)
     const { data, error } = await supabase.storage
       .from("gis_raw")
-      .createSignedUploadUrl(filename, { expiresIn: 3600 }); // ✅ 1 hour expiration
+      .createSignedUploadUrl(filename, 3600); // 1 hour expiry
 
     if (error) throw error;
 
