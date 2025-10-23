@@ -23,7 +23,7 @@ type VisibleMap = Record<string, boolean>;
 type GeoStore   = Record<string, FeatureCollection<Geometry>>;
 
 function MapController({ bounds, onMount }: { bounds: [number, number][]; onMount?: (map: any) => void }) {
-  // @ts-expect-error loaded dynamically
+
   const map = useMap();
 
   useEffect(() => {
