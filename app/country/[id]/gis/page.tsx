@@ -246,7 +246,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
             />
             {Object.entries(geojsonById).map(([id, gj]) =>
               visible[id] ? (
-                // @ts-expect-error react-leaflet accepts FeatureCollection
+
                 <GeoJSON key={id} data={gj} style={{ color: "#640811", weight: 1 }} />
               ) : null
             )}
