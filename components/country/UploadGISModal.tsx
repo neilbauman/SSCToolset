@@ -1,136 +1,170 @@
 "use client";
 
 import { useState } from "react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, UploadCloud } from "lucide-react";
+import { X, Upload, Loader2 } from "lucide-react";
 
-type Props = {
+interface UploadGISModalProps {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  onUploaded?: () => void;
-};
+  onUploaded: () => void;
+}
 
-export default function UploadGISModal({ open, onClose, countryIso, onUploaded }: Props) {
+/**
+ * UploadGISModal
+ * - Streams large files (>1 GB) via /api/proxy-upload using multipart/form-data
+ * - Shows upload progress and handles backend responses cleanly
+ */
+export default function UploadGISModal({
+  open,
+  onClose,
+  countryIso,
+  onUploaded,
+}: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [progressMsg, setProgressMsg] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
-  };
-
   const handleUpload = async () => {
-    if (!file) return alert("Please select a GeoJSON or ZIP file.");
+    if (!file) {
+      setError("Please select a file to upload.");
+      return;
+    }
 
     setUploading(true);
-    setProgressMsg("Uploading file to storage...");
+    setError(null);
+    setMessage(null);
+    setProgress(0);
 
     try {
-      const bucket = "uploads";
-      const path = `${countryIso}/${file.name}`;
+      // Build multipart form payload
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("country_iso", countryIso);
 
-      // 🧩 Upload file to temporary uploads bucket
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(path, file, {
-          upsert: true,
-          contentType: file.type || "application/octet-stream",
-        });
-      if (uploadError) throw uploadError;
+      // Use XMLHttpRequest for progress tracking (Fetch lacks it)
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/proxy-upload", true);
 
-      // Determine whether file is zip or geojson
-      const isZip = file.name.toLowerCase().endsWith(".zip");
-      const functionName = isZip ? "process-zip" : "convert-gis";
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setProgress(percent);
+          }
+        };
 
-      setProgressMsg(
-        isZip
-          ? "Extracting and processing multiple GIS layers..."
-          : "Registering single GIS layer..."
-      );
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const res = JSON.parse(xhr.responseText);
+            setMessage(res.message || "Upload completed.");
+            resolve();
+          } else {
+            const err = JSON.parse(xhr.responseText);
+            reject(new Error(err.error || "Upload failed"));
+          }
+        };
 
-      // 🚀 Invoke appropriate Edge Function
-      const { data, error } = await supabase.functions.invoke(functionName, {
-        body: {
-          bucket,
-          path,
-          country_iso: countryIso,
-        },
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.send(formData);
       });
 
-      if (error) throw error;
-      console.log(`✅ ${functionName} response:`, data);
-
-      alert(
-        isZip
-          ? "✅ ZIP uploaded, layers processed and registered successfully!"
-          : "✅ GIS layer uploaded and registered successfully!"
-      );
-
-      // Refresh parent list
-      onUploaded?.();
-      onClose();
+      setTimeout(() => {
+        onUploaded();
+        onClose();
+      }, 1500);
     } catch (err: any) {
       console.error("❌ Upload failed:", err);
-      alert("Upload failed: " + err.message);
+      setError(err.message || "Upload failed.");
     } finally {
       setUploading(false);
-      setProgressMsg("");
-      setFile(null);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white w-[90%] max-w-md rounded-lg p-6 shadow-lg text-sm relative">
-        <h2 className="text-lg font-semibold mb-2 text-[#640811]">Upload GIS Dataset</h2>
-        <p className="text-gray-600 mb-4">
-          Upload a <strong>.geojson</strong> (single layer) or <strong>.zip</strong> (multiple layers)
-          file for <strong>{countryIso}</strong>.
-        </p>
-
-        <div className="border border-dashed border-gray-300 p-4 rounded-lg mb-3 text-center">
-          <input
-            type="file"
-            accept=".geojson,.json,.zip"
-            onChange={handleFileChange}
-            className="hidden"
-            id="gis-upload-file"
-          />
-          <label
-            htmlFor="gis-upload-file"
-            className="cursor-pointer text-[#640811] hover:underline flex flex-col items-center gap-2"
-          >
-            <UploadCloud className="w-6 h-6" />
-            {file ? (
-              <span className="text-sm text-gray-700">{file.name}</span>
-            ) : (
-              <span>Select file...</span>
-            )}
-          </label>
-        </div>
-
-        {progressMsg && (
-          <div className="text-xs text-gray-600 mb-2">{progressMsg}</div>
-        )}
-
-        <div className="flex justify-end gap-2 mt-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-[420px] relative">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Upload GIS Dataset</h2>
           <button
             onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* File Input */}
+        <input
+          type="file"
+          accept=".zip,.geojson,.json,.gpkg,.gdb"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+          disabled={uploading}
+        />
+
+        {file && (
+          <p className="text-xs text-gray-600 mt-2 truncate">
+            {file.name} ({(file.size / 1024 / 1024).toFixed(1)} MB)
+          </p>
+        )}
+
+        {/* Progress */}
+        {uploading && (
+          <div className="mt-4">
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-[#640811] h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>Uploading...</span>
+              <span>{progress}%</span>
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        {message && (
+          <p className="mt-3 text-green-700 bg-green-100 px-2 py-1 rounded text-sm">
+            {message}
+          </p>
+        )}
+        {error && (
+          <p className="mt-3 text-red-700 bg-red-100 px-2 py-1 rounded text-sm">
+            {error}
+          </p>
+        )}
+
+        {/* Actions */}
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
             disabled={uploading}
-            className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
-            disabled={uploading || !file}
-            className="px-3 py-1.5 rounded bg-[#640811] text-white text-sm flex items-center gap-2 disabled:opacity-50"
+            disabled={!file || uploading}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded bg-[#640811] text-white hover:opacity-90 disabled:opacity-50"
           >
-            {uploading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {uploading ? "Uploading..." : "Upload"}
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Uploading
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" /> Upload
+              </>
+            )}
           </button>
         </div>
       </div>
