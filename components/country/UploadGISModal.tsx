@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { Loader2, UploadCloud } from "lucide-react";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
+  // Pass the active version id if you have one; omit/undefined for dev mode
+  datasetVersionId?: string;
   onUploaded?: () => void;
 };
 
@@ -15,6 +16,7 @@ export default function UploadGISModal({
   open,
   onClose,
   countryIso,
+  datasetVersionId,
   onUploaded,
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
@@ -23,42 +25,60 @@ export default function UploadGISModal({
 
   if (!open) return null;
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
   };
 
   const handleUpload = async () => {
-    if (!file) return alert("Please select a GeoJSON or ZIP file first.");
-    setUploading(true);
-    setProgressMsg("Uploading via Edge Function...");
+    if (!file) return alert("Please select a GeoJSON or ZIP file.");
 
     try {
-      // 🚀 Step 1: Create a FormData payload
-      const form = new FormData();
-      form.append("file", file);
-      form.append("country_iso", countryIso);
+      setUploading(true);
+      setProgressMsg("Uploading via Edge Function…");
 
-      // 🚀 Step 2: Call Edge Function “convert-gis” (runs with service role key)
-      const { data, error } = await supabase.functions.invoke("convert-gis", {
-        body: {
-          bucket: "gis_raw",
-          path: `${countryIso}/${file.name}`,
-          country_iso: countryIso,
-          version_id: "dev-mode",
+      // Build storage path: e.g. PHL/filename.geojson
+      const path = `${countryIso}/${file.name}`;
+
+      // IMPORTANT: Use fetch directly for FormData (supabase-js invokes JSON)
+      const url = `${supabaseUrl}/functions/v1/convert-gis`;
+
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("country_iso", countryIso);
+      // forward version id only if you have a real UUID; otherwise omit (edge handles dev-mode)
+      if (datasetVersionId) fd.append("version_id", datasetVersionId);
+      fd.append("path", path);
+
+      const res = await fetch(url, {
+        method: "POST",
+        body: fd,
+        // DO NOT set Content-Type manually; the browser sets the multipart boundary.
+        headers: {
+          // Supabase Functions require auth headers from the browser
+          apikey: supabaseAnon,
+          Authorization: `Bearer ${supabaseAnon}`,
         },
       });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(
+          `Edge Function returned ${res.status}. ${t || "No body"}`
+        );
+      }
 
-      console.log("✅ convert-gis response:", data);
+      const json = (await res.json()) as { ok: boolean; message?: string };
+      setProgressMsg(json.message || "Uploaded.");
       alert("✅ GIS dataset uploaded successfully via Edge Function!");
+
       onUploaded?.();
       onClose();
     } catch (err: any) {
-      console.error("❌ Upload failed:", err);
-      alert("Upload failed: " + (err.message || err.error_description || err));
+      console.error("Upload failed:", err);
+      alert(`Upload failed: ${err.message || err}`);
     } finally {
       setUploading(false);
       setProgressMsg("");
@@ -67,15 +87,15 @@ export default function UploadGISModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white w-[90%] max-w-md rounded-lg p-6 shadow-lg text-sm relative">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white w-[90%] max-w-md rounded-lg p-6 shadow-lg text-sm">
         <h2 className="text-lg font-semibold mb-2 text-[#640811]">
           Upload GIS Dataset
         </h2>
         <p className="text-gray-600 mb-4">
-          Files are uploaded securely through the <strong>convert-gis</strong>{" "}
-          Edge Function, which registers them with proper permissions in Supabase
-          Storage.
+          Upload a <strong>.geojson</strong> or <strong>.zip</strong> for{" "}
+          <strong>{countryIso}</strong>. We’ll store it in{" "}
+          <code>gis_raw</code> and auto-compute feature count.
         </p>
 
         <div className="border border-dashed border-gray-300 p-4 rounded-lg mb-3 text-center">
@@ -94,7 +114,7 @@ export default function UploadGISModal({
             {file ? (
               <span className="text-sm text-gray-700">{file.name}</span>
             ) : (
-              <span>Select file...</span>
+              <span>Select file…</span>
             )}
           </label>
         </div>
@@ -117,7 +137,7 @@ export default function UploadGISModal({
             className="px-3 py-1.5 rounded bg-[#640811] text-white text-sm flex items-center gap-2 disabled:opacity-50"
           >
             {uploading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {uploading ? "Uploading..." : "Upload"}
+            {uploading ? "Uploading…" : "Upload"}
           </button>
         </div>
       </div>
