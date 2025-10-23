@@ -1,6 +1,3 @@
-
-
-// app/api/proxy-upload/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -58,7 +55,8 @@ export async function POST(req: Request) {
     console.log(`⬆️ Starting stream upload of ${fileName}...`);
 
     // ✅ Convert the web ReadableStream to Node.js stream (no buffering)
-    const nodeStream = Readable.fromWeb(file.stream());
+    // @ts-expect-error -- explicit cast from browser ReadableStream to Node Readable
+    const nodeStream = Readable.fromWeb(file.stream() as unknown as ReadableStream<any>);
 
     // ✅ Stream upload to Supabase Storage
     const { data, error } = await supabase.storage
