@@ -7,12 +7,14 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 
+import { useMap } from "react-leaflet"; // ✅ <-- FIXED: hooks must be statically imported
 import type { FeatureCollection, Geometry } from "geojson";
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types/gis";
 
 import "leaflet/dist/leaflet.css";
 
+// ✅ only components stay dynamic
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer     = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON       = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
