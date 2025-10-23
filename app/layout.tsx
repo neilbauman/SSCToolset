@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import "leaflet/dist/leaflet.css";
 
 export const metadata: Metadata = {
   title: "SSC Toolset",
