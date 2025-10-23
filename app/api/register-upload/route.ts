@@ -18,9 +18,15 @@ export async function POST(request: Request) {
 
     const fileExt = filename.split(".").pop()?.toLowerCase() || "zip";
     const format =
-      fileExt === "zip" ? "shapefile" : fileExt === "geojson" ? "geojson" : "unknown";
+      fileExt === "zip"
+        ? "shapefile"
+        : fileExt === "geojson"
+        ? "geojson"
+        : fileExt === "gdb"
+        ? "filegdb"
+        : "unknown";
 
-    // Insert layer
+    // ✅ Insert new GIS layer
     const { data: layer, error: insertError } = await supabase
       .from("gis_layers")
       .insert({
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError;
 
-    // Add to queue
+    // ✅ Add to processing queue
     const { error: queueError } = await supabase.from("gis_processing_queue").insert({
       layer_id: layer.id,
       status: "pending",
