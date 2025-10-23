@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Trash2, Plus, RefreshCw } from "lucide-react";
+import { Trash2, Plus, RefreshCw, X } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import type { CountryParams } from "@/app/country/types";
@@ -27,6 +27,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const [mapKey, setMapKey] = useState(0);
+
+  // Toasts
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+  const showToast = (msg: string) => {
+    const id = Date.now();
+    setToasts(t => [...t, { id, msg }]);
+    setTimeout(() => {
+      setToasts(t => t.filter(toast => toast.id !== id));
+    }, 4000);
+  };
 
   // ────────────────────────────────
   // Load GIS layers
@@ -109,9 +119,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
       await supabase.storage.from(bucket).remove([path]);
       await supabase.rpc("delete_gis_layer_cascade", { p_id: layer.id });
       await fetchLayers();
-      alert(`✅ Deleted ${layer.layer_name}`);
+      showToast(`🗑️ Deleted ${layer.layer_name}`);
     } catch (err: any) {
-      alert("Delete failed: " + err.message);
+      showToast("❌ Delete failed: " + err.message);
     }
   };
 
@@ -126,9 +136,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
       });
       if (error) throw error;
       await fetchLayers();
-      alert("✅ Metrics refreshed");
+      showToast("📊 Metrics refreshed");
     } catch (err: any) {
-      alert("❌ Metrics refresh failed: " + err.message);
+      showToast("❌ Metrics refresh failed: " + err.message);
     } finally {
       setRefreshing(false);
     }
@@ -140,9 +150,16 @@ export default function GISPage({ params }: { params: CountryParams }) {
   useEffect(() => {
     const channel = supabase
       .channel("gis_layers_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, payload => {
         console.log("🔄 GIS layer changed — refreshing...");
         fetchLayers();
+
+        if (payload.eventType === "INSERT")
+          showToast(`🆕 Added layer: ${(payload.new as any).layer_name}`);
+        else if (payload.eventType === "DELETE")
+          showToast(`🗑️ Removed layer: ${(payload.old as any).layer_name}`);
+        else if (payload.eventType === "UPDATE")
+          showToast(`✏️ Updated layer: ${(payload.new as any).layer_name}`);
       })
       .subscribe();
 
@@ -159,7 +176,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, [fetchLayers]);
 
   // ────────────────────────────────
-  // Re-render map after hydration
+  // Force map re-render
   // ────────────────────────────────
   useEffect(() => {
     const timer = setTimeout(() => setMapKey(k => k + 1), 200);
@@ -207,7 +224,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </div>
         </div>
 
-        {/* Layer list */}
+        {/* Layer table */}
         <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -263,7 +280,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </table>
         </div>
 
-        {/* Map display */}
+        {/* Map */}
         <div className="h-[500px] w-full rounded-md overflow-hidden border relative">
           <MapContainer
             key={mapKey}
@@ -284,7 +301,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </MapContainer>
         </div>
 
-        {/* Upload modal */}
+        {/* Upload Modal */}
         {openUpload && (
           <UploadGISModal
             open={openUpload}
@@ -293,6 +310,21 @@ export default function GISPage({ params }: { params: CountryParams }) {
             onUploaded={fetchLayers}
           />
         )}
+
+        {/* Toast notifications */}
+        <div className="fixed bottom-4 right-4 space-y-2 z-50">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md animate-fadeIn"
+            >
+              <span>{t.msg}</span>
+              <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </SidebarLayout>
   );
