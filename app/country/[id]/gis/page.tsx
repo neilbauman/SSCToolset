@@ -41,7 +41,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     const { data, error } = await supabase
       .from("gis_layers")
       .select(
-        "id, layer_name, admin_level, feature_count, avg_area_sqkm, centroid_lat, centroid_lon, source"
+        "id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, centroid_lat, centroid_lon, source"
       )
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
@@ -50,7 +50,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
       console.error("❌ Error loading layers:", error.message);
       return;
     }
-    setLayers(data || {});
+
+    const typed = (data || []).map((l) => ({
+      id: l.id,
+      country_iso: countryIso,
+      layer_name: l.layer_name,
+      admin_level: l.admin_level,
+      feature_count: l.feature_count ?? null,
+      avg_area_sqkm: l.avg_area_sqkm ?? null,
+      centroid_lat: l.centroid_lat ?? null,
+      centroid_lon: l.centroid_lon ?? null,
+      source: l.source ?? null,
+    })) as GISLayer[];
+
+    setLayers(typed);
   };
 
   /** ───────────────────────────────────────────────
@@ -199,10 +212,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
               layers.map((l) => (
                 <tr key={l.id} className="border-b hover:bg-gray-50">
                   <td className="px-3 py-2">
-                    <Link
-                      href="#"
-                      className="text-[#640811] hover:underline break-words"
-                    >
+                    <Link href="#" className="text-[#640811] hover:underline break-words">
                       {l.layer_name}
                     </Link>
                   </td>
