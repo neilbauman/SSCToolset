@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
-import "leaflet/dist/leaflet.css"; // ✅ required for map tiles to display
+import "leaflet/dist/leaflet.css";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -11,10 +11,10 @@ import { Trash2 } from "lucide-react";
 
 import type { CountryParams } from "@/app/country/types";
 import type { GISLayer } from "@/types/gis";
-import type { FeatureCollection } from "geojson";
-import type { Map as LeafletMap } from "leaflet";
+import type { FeatureCollection, Geometry } from "geojson";
+import type { Map as LeafletMap, LatLngBoundsExpression } from "leaflet";
 
-// ✅ dynamic imports for react-leaflet
+// Lazy load map components
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -49,7 +49,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     setLayers(data || []);
   };
 
-  // ---------- Load GeoJSON from Supabase storage ----------
+  // ---------- Load GeoJSON ----------
   const fetchGeoJSON = async (layer: GISLayer) => {
     if (!layer.source?.path) return;
     const bucket = layer.source?.bucket || "gis_raw";
@@ -57,32 +57,60 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     if (!data?.publicUrl) return;
 
     try {
-      console.log("🔹 Fetching GeoJSON:", data.publicUrl);
       const res = await fetch(data.publicUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as FeatureCollection;
       setGeojsonById((m) => ({ ...m, [layer.id]: json }));
-      console.log("✅ Loaded GeoJSON:", layer.layer_name, json.features?.length);
+      console.log(`✅ Loaded ${layer.layer_name}: ${json.features?.length} features`);
     } catch (err) {
       console.error("❌ Failed to load GeoJSON:", layer.layer_name, err);
     }
   };
 
-  // ---------- Delete GIS layer (cascade) ----------
+  // ---------- Delete GIS layer ----------
   const deleteLayer = async (id: string) => {
     if (!confirm("Delete this layer and its related data?")) return;
-    const { error } = await supabase.rpc("delete_gis_layer_cascade", { p_layer_id: id });
+    const { error } = await supabase.rpc("delete_gis_layer_cascade", { p_id: id });
     if (error) alert("Failed to delete layer: " + error.message);
     await fetchLayers();
   };
 
-  // ---------- Lifecycle ----------
+  // ---------- Fit map to visible layers ----------
+  const fitVisibleLayers = () => {
+    if (!mapRef.current) return;
+    const allBounds: LatLngBoundsExpression[] = [];
+
+    Object.entries(geojsonById).forEach(([id, fc]) => {
+      if (!visible[id]) return;
+      const coords = fc.features
+        .flatMap((f) => (f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon" ? f.geometry.coordinates : []))
+        .flat(2)
+        .filter((c: any) => Array.isArray(c) && c.length === 2);
+      if (coords.length) allBounds.push(coords as any);
+    });
+
+    if (allBounds.length) {
+      try {
+        const L = require("leaflet");
+        const bounds = L.latLngBounds(allBounds.flat());
+        mapRef.current.fitBounds(bounds, { padding: [40, 40] });
+      } catch (err) {
+        console.error("fitBounds failed:", err);
+      }
+    }
+  };
+
   useEffect(() => {
-    setIsClient(true); // ✅ allow map render only client-side
+    setIsClient(true);
     fetchLayers();
   }, [countryIso]);
 
-  // ---------- Map color scheme ----------
+  // Recenter map whenever visible layers change
+  useEffect(() => {
+    fitVisibleLayers();
+  }, [visible, geojsonById]);
+
+  // ---------- Map colors ----------
   const layerColors: Record<string, string> = {
     ADM0: "#800026",
     ADM1: "#BD0026",
@@ -92,7 +120,6 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     ADM5: "#FEB24C",
   };
 
-  // ---------- Render ----------
   return (
     <SidebarLayout
       headerProps={{
@@ -110,7 +137,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
         ),
       }}
     >
-      {/* -------- Layers Table -------- */}
+      {/* -------- Table -------- */}
       <section className="mb-4">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-base font-semibold">Layers</h3>
@@ -170,10 +197,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               ))}
               {layers.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="px-3 py-4 text-center text-gray-500 italic"
-                  >
+                  <td colSpan={8} className="px-3 py-4 text-center text-gray-500 italic">
                     No GIS layers yet. Click “Upload Layer” to add one.
                   </td>
                 </tr>
@@ -195,7 +219,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>'
+                attribution='&copy; <a href="https://www.openstreetmap.org">OSM</a>'
               />
               {layers.map(
                 (l) =>
