@@ -1,121 +1,115 @@
-// app/api/proxy-upload/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 
-// Environment config
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// ─────────────────────────────────────────────────────────────
+// ✅ 1. Environment safety checks
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// This endpoint allows large local ZIP uploads to be streamed to Supabase storage.
-// Browser → Next.js API Route (Node.js Stream) → Supabase Storage
-export const maxDuration = 300; // 5 minutes runtime (Vercel max)
-export const dynamic = "force-dynamic";
+// Guard against missing configuration during build or runtime
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn("⚠️ Missing Supabase environment variables. Proxy upload may be disabled.");
+}
 
-export async function POST(req: Request) {
+// Initialize client only if keys exist
+const supabase =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    : null;
+
+// ─────────────────────────────────────────────────────────────
+// ✅ 2. POST handler for large uploads
+// ─────────────────────────────────────────────────────────────
+export async function POST(request: Request) {
   try {
-    const contentType = req.headers.get("content-type") || "";
-    if (!contentType.includes("multipart/form-data")) {
+    if (!supabase) {
       return NextResponse.json(
-        { error: "Expected multipart/form-data upload" },
+        {
+          error: "Supabase not configured. Missing environment variables.",
+          hint: "Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel settings.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Parse multipart form data
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const countryIso = formData.get("country_iso") as string | null;
+
+    if (!file || !countryIso) {
+      return NextResponse.json(
+        { error: "Missing file or country_iso field." },
         { status: 400 }
       );
     }
 
-    // Parse form data
-    const form = await req.formData();
-    const file = form.get("file") as File | null;
-    const country_iso = (form.get("country_iso") as string)?.toUpperCase();
-    if (!file || !country_iso) {
-      return NextResponse.json(
-        { error: "Missing required fields (file, country_iso)" },
-        { status: 400 }
-      );
-    }
-
-    const fileType = file.name.split(".").pop()?.toLowerCase() || "zip";
-    const format =
-      fileType === "zip"
-        ? "shapefile"
-        : fileType === "gdb"
-        ? "geodatabase"
-        : "unknown";
-
-    // Create unique filename and path
-    const layer_id = randomUUID();
+    // Define upload target
     const bucket = "gis_raw";
-    const objectPath = `${country_iso}/${layer_id}_${file.name}`;
+    const fileExt = file.name.split(".").pop()?.toLowerCase() || "zip";
+    const fileName = `${countryIso.toLowerCase()}_${randomUUID()}.${fileExt}`;
+    const arrayBuffer = await file.arrayBuffer();
 
-    console.log(`📦 Uploading ${file.name} (${file.size} bytes) to ${objectPath}`);
+    console.log(`⬆️ Uploading file ${fileName} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
 
-    // Upload file as a binary stream to Supabase Storage
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const { error: uploadError } = await supabase.storage
+    // Upload file to Supabase Storage
+    const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(objectPath, buffer, {
-        contentType: "application/zip",
-        upsert: true,
+      .upload(fileName, arrayBuffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
       });
 
-    if (uploadError)
-      throw new Error(`Supabase upload failed: ${uploadError.message}`);
+    if (error) {
+      console.error("❌ Storage upload failed:", error);
+      return NextResponse.json({ error: "Upload failed: " + error.message }, { status: 500 });
+    }
 
-    // Register GIS layer in DB
-    const { data: layer, error: insertError } = await supabase
+    const storagePath = data.path;
+    const storageUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${storagePath}`;
+
+    // Register layer in the database
+    const { data: insert, error: insertError } = await supabase
       .from("gis_layers")
-      .insert([
-        {
-          id: layer_id,
-          country_iso,
-          layer_name: file.name,
-          format,
-          source: { bucket, path: objectPath },
-        },
-      ])
-      .select()
+      .insert({
+        country_iso: countryIso,
+        layer_name: file.name,
+        source: { bucket, path: storagePath, url: storageUrl },
+        format: fileExt === "zip" ? "shapefile" : fileExt,
+        is_active: true,
+      })
+      .select("id")
       .single();
 
-    if (insertError)
-      throw new Error(`Failed to register layer: ${insertError.message}`);
+    if (insertError) {
+      console.error("❌ Database insert failed:", insertError);
+      return NextResponse.json(
+        { error: "Database insert failed: " + insertError.message },
+        { status: 500 }
+      );
+    }
 
-    // Queue for processing
-    const { error: queueError } = await supabase
-      .from("gis_processing_queue")
-      .insert([
-        {
-          layer_id,
-          status: "pending",
-          payload: {
-            bucket,
-            path: objectPath,
-            country_iso,
-            format,
-            file_type: fileType,
-          },
-        },
-      ]);
+    // Add to processing queue
+    await supabase.from("gis_processing_queue").insert({
+      layer_id: insert.id,
+      status: "pending",
+      payload: { country_iso: countryIso, file_type: fileExt, bucket, path: storagePath },
+    });
 
-    if (queueError)
-      throw new Error(`Failed to enqueue processing job: ${queueError.message}`);
-
-    console.log(`✅ Uploaded and queued layer ${layer_id}`);
+    console.log(`✅ File queued for processing: ${fileName}`);
 
     return NextResponse.json({
       ok: true,
       message: "✅ GIS layer uploaded and queued for processing.",
-      layer_id,
-      country_iso,
-      format,
-      file_type: fileType,
-      size_mb: (file.size / (1024 * 1024)).toFixed(2),
-      storage_path: `${bucket}/${objectPath}`,
+      layer_id: insert.id,
+      country_iso: countryIso,
+      format: fileExt,
+      queue_status: "pending",
     });
   } catch (err: any) {
-    console.error("❌ proxy-upload error:", err);
-    return NextResponse.json(
-      { error: err.message || "Internal Server Error" },
-      { status: 500 }
-    );
+    console.error("❌ Proxy upload error:", err);
+    return NextResponse.json({ error: err.message || "Unexpected error" }, { status: 500 });
   }
 }
