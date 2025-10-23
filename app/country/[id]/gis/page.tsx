@@ -11,7 +11,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Leaflet dynamically imported to avoid SSR issues
+// Leaflet dynamic imports (SSR-safe)
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
   { ssr: false }
@@ -111,13 +111,13 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   /** ───────────────────────────────────────────────
-   * Delete layer (file + DB cascade)
+   * Delete layer (DB + storage)
    * ─────────────────────────────────────────────── */
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Are you sure you want to delete "${layer.layer_name}"?`)) return;
 
     try {
-      // 1️⃣ Delete from Supabase Storage
+      // 1️⃣ Delete from storage
       const bucket = layer.source?.bucket || "gis_raw";
       const path = layer.source?.path || layer.layer_name;
       if (bucket && path) {
@@ -125,7 +125,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         if (storageError) console.warn("⚠️ Storage deletion failed:", storageError.message);
       }
 
-      // 2️⃣ Delete in DB (cascade RPC)
+      // 2️⃣ Cascade delete from DB
       const { error: rpcError } = await supabase.rpc("delete_gis_layer_cascade", {
         p_id: layer.id,
       });
@@ -169,14 +169,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Layers</h2>
+        <h2 className="text-lg font-semibold">GIS Layers</h2>
         <div className="flex gap-2">
           <button
             onClick={() => setOpenUpload(true)}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
             <Plus className="w-4 h-4" />
-            Upload Layer
+            Upload
           </button>
           <button
             onClick={refreshMetrics}
@@ -184,11 +184,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh Metrics
+            Refresh
           </button>
         </div>
       </div>
 
+      {/* ─────────────── Table ─────────────── */}
       <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-50 border-b">
@@ -244,13 +245,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </table>
       </div>
 
-      {/* ───────────────────── Map ───────────────────── */}
+      {/* ─────────────── Map ─────────────── */}
       <div className="h-[500px] rounded-md overflow-hidden border">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
-          whenCreated={(map) => (mapRef.current = map)}
+          whenReady={(e) => {
+            mapRef.current = e.target;
+          }}
         >
           <TileLayer
             attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
