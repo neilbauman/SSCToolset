@@ -1,47 +1,69 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { country_iso, filename, path } = await req.json();
+    const { country_iso, filename, path } = await request.json();
 
-    if (!country_iso || !filename || !path)
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+    if (!country_iso || !filename || !path) {
+      return NextResponse.json(
+        { error: "Missing required fields: country_iso, filename, or path" },
+        { status: 400 }
+      );
+    }
 
-    const bucket = "gis_raw";
-    const storageUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
-    const format = filename.endsWith(".zip") ? "shapefile" : "gdb";
+    const fileExt = filename.split(".").pop()?.toLowerCase() || "zip";
+    const format =
+      fileExt === "zip" ? "shapefile" : fileExt === "geojson" ? "geojson" : "unknown";
 
-    // Insert GIS layer
-    const { data, error } = await supabase
+    // Insert layer
+    const { data: layer, error: insertError } = await supabase
       .from("gis_layers")
       .insert({
         country_iso,
         layer_name: filename,
-        source: { bucket, path, url: storageUrl },
         format,
+        source: {
+          bucket: "gis_raw",
+          path,
+          url: `${SUPABASE_URL}/storage/v1/object/public/gis_raw/${path}`,
+        },
         is_active: true,
       })
       .select("id")
       .single();
 
-    if (error) throw error;
+    if (insertError) throw insertError;
 
-    await supabase.from("gis_processing_queue").insert({
-      layer_id: data.id,
+    // Add to queue
+    const { error: queueError } = await supabase.from("gis_processing_queue").insert({
+      layer_id: layer.id,
       status: "pending",
-      payload: { country_iso, bucket, path, format },
+      payload: {
+        country_iso,
+        bucket: "gis_raw",
+        path,
+        format,
+      },
     });
 
-    return NextResponse.json({ ok: true, id: data.id });
+    if (queueError) throw queueError;
+
+    return NextResponse.json({
+      ok: true,
+      message: "✅ File registered and queued for processing.",
+      layer_id: layer.id,
+      format,
+    });
   } catch (err: any) {
     console.error("❌ register-upload error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Unexpected error in register-upload" },
+      { status: 500 }
+    );
   }
 }
