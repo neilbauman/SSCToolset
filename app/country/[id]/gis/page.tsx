@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
@@ -11,7 +11,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// ✅ Lazy-load Leaflet to prevent SSR issues
+// Lazy imports
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -34,10 +34,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
-  /** ───────────────────────────────────────────────
-   * Load all GIS layers for this country
-   * ─────────────────────────────────────────────── */
-  const fetchLayers = async () => {
+  /** Fetch layers */
+  const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
       .select(
@@ -46,11 +44,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
-    if (error) {
-      console.error("❌ Error loading layers:", error.message);
-      return;
-    }
-
+    if (error) return console.error("Error loading layers:", error.message);
     const typed = (data || []).map((l) => ({
       id: l.id,
       country_iso: countryIso,
@@ -64,11 +58,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })) as GISLayer[];
 
     setLayers(typed);
-  };
+  }, [countryIso]);
 
-  /** ───────────────────────────────────────────────
-   * Toggle visibility for a layer
-   * ─────────────────────────────────────────────── */
+  /** Load GeoJSON on toggle */
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
@@ -84,63 +76,56 @@ export default function GISPage({ params }: { params: CountryParams }) {
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
         setGeojsonById((prev) => ({ ...prev, [id]: json }));
 
-        // Auto-fit bounds
-        if (mapRef.current && json.features?.length) {
-          const coords = json.features
-            .flatMap((f) =>
-              f.geometry?.type === "Polygon" ||
-              f.geometry?.type === "MultiPolygon"
-                ? (f.geometry.coordinates.flat(2) as number[][])
-                : []
-            )
-            .filter((c) => Array.isArray(c) && c.length === 2);
-
-          if (coords.length > 0) {
-            const lats = coords.map((c) => c[1]);
-            const lngs = coords.map((c) => c[0]);
-            const bounds: [[number, number], [number, number]] = [
-              [Math.min(...lats), Math.min(...lngs)],
-              [Math.max(...lats), Math.max(...lngs)],
-            ];
-            mapRef.current.fitBounds(bounds, { padding: [20, 20] });
-          }
-        }
+        fitToLayer(json);
       } catch (err) {
-        console.error("⚠️ Failed loading GeoJSON:", err);
+        console.error("Failed loading GeoJSON:", err);
       }
+    } else if (isVisible && geojsonById[id]) {
+      fitToLayer(geojsonById[id]);
     }
   };
 
-  /** ───────────────────────────────────────────────
-   * Delete layer (DB + Storage)
-   * ─────────────────────────────────────────────── */
-  const handleDeleteLayer = async (layer: GISLayer) => {
-    if (!confirm(`Are you sure you want to delete "${layer.layer_name}"?`)) return;
+  /** Fit map to new layer */
+  const fitToLayer = (geojson: FeatureCollection) => {
+    if (!mapRef.current || !geojson.features?.length) return;
 
+    const coords = geojson.features
+      .flatMap((f) =>
+        f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon"
+          ? (f.geometry.coordinates.flat(2) as number[][])
+          : []
+      )
+      .filter((c) => Array.isArray(c) && c.length === 2);
+
+    if (coords.length > 0) {
+      const lats = coords.map((c) => c[1]);
+      const lngs = coords.map((c) => c[0]);
+      const bounds: [[number, number], [number, number]] = [
+        [Math.min(...lats), Math.min(...lngs)],
+        [Math.max(...lats), Math.max(...lngs)],
+      ];
+      mapRef.current.fitBounds(bounds, { padding: [20, 20] });
+    }
+  };
+
+  /** Delete layer */
+  const handleDeleteLayer = async (layer: GISLayer) => {
+    if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
     try {
       const bucket = layer.source?.bucket || "gis_raw";
       const path = layer.source?.path || layer.layer_name;
       if (bucket && path) {
-        const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
-        if (storageError) console.warn("⚠️ Storage delete failed:", storageError.message);
+        await supabase.storage.from(bucket).remove([path]);
       }
-
-      const { error: rpcError } = await supabase.rpc("delete_gis_layer_cascade", {
-        p_id: layer.id,
-      });
-      if (rpcError) throw rpcError;
-
-      alert(`✅ Deleted: ${layer.layer_name}`);
+      await supabase.rpc("delete_gis_layer_cascade", { p_id: layer.id });
       await fetchLayers();
+      alert(`✅ Deleted ${layer.layer_name}`);
     } catch (err: any) {
-      console.error("❌ Delete failed:", err.message);
       alert("Delete failed: " + err.message);
     }
   };
 
-  /** ───────────────────────────────────────────────
-   * Refresh metrics
-   * ─────────────────────────────────────────────── */
+  /** Refresh metrics */
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -149,24 +134,30 @@ export default function GISPage({ params }: { params: CountryParams }) {
       });
       if (error) throw error;
       await fetchLayers();
-      alert("✅ Metrics refreshed!");
+      alert("✅ Metrics refreshed.");
     } catch (err: any) {
-      console.error("Metrics refresh failed:", err.message);
-      alert("❌ Metrics refresh failed: " + err.message);
+      alert("Metrics refresh failed: " + err.message);
     } finally {
       setRefreshing(false);
     }
   };
 
+  /** Invalidate map container on mount */
+  useEffect(() => {
+    if (mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.invalidateSize();
+      }, 500);
+    }
+  }, [geojsonById, visible]);
+
   useEffect(() => {
     fetchLayers();
-  }, []);
+  }, [fetchLayers]);
 
-  /** ───────────────────────────────────────────────
-   * Render
-   * ─────────────────────────────────────────────── */
   return (
     <div className="p-6 space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">GIS Layers</h2>
         <div className="flex gap-2">
@@ -205,7 +196,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
             {layers.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center italic text-gray-500 py-3">
-                  No GIS layers found. Upload one to get started.
+                  No GIS layers found.
                 </td>
               </tr>
             ) : (
@@ -245,16 +236,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
       </div>
 
       {/* Map */}
-      <div className="h-[500px] rounded-md overflow-hidden border">
+      <div className="h-[500px] w-full rounded-md overflow-hidden border relative">
         <MapContainer
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
-          whenReady={() => {
-            // ✅ Type-safe assignment with no params
-            if (mapRef.current === null && (window as any).L) {
-              mapRef.current = (window as any).L.map;
-            }
+          whenReady={(mapEvent) => {
+            mapRef.current = mapEvent.target;
+            setTimeout(() => mapEvent.target.invalidateSize(), 300);
           }}
         >
           <TileLayer
