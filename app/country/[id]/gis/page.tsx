@@ -63,7 +63,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ---------- Delete GIS layer (with cascade) ----------
+  // ---------- Delete GIS layer (cascade) ----------
   const deleteLayer = async (id: string) => {
     if (!confirm("Delete this layer and its related data?")) return;
     const { error } = await supabase.rpc("delete_gis_layer_cascade", { p_layer_id: id });
@@ -115,6 +115,9 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                 <th className="px-3 py-2 text-right">Features</th>
                 <th className="px-3 py-2 text-right">Avg Area (km²)</th>
                 <th className="px-3 py-2 text-right">Centroid</th>
+                <th className="px-3 py-2 text-right">Unique Pcodes</th>
+                <th className="px-3 py-2 text-right">Missing Names</th>
+                <th className="px-3 py-2 text-center">Visible</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
@@ -133,15 +136,23 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
                       : "—"}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      className="text-[#640811] hover:underline mr-3"
-                      onClick={() => {
-                        setVisible((v) => ({ ...v, [l.id]: !v[l.id] }));
-                        if (!geojsonById[l.id]) fetchGeoJSON(l);
+                    {l.unique_pcodes ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {l.missing_names ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!visible[l.id]}
+                      onChange={() => {
+                        const newVal = !visible[l.id];
+                        setVisible((v) => ({ ...v, [l.id]: newVal }));
+                        if (newVal && !geojsonById[l.id]) fetchGeoJSON(l);
                       }}
-                    >
-                      {visible[l.id] ? "Hide" : "View"}
-                    </button>
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
                     <button
                       className="text-red-600 hover:underline"
                       onClick={() => deleteLayer(l.id)}
@@ -154,7 +165,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
               {layers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={9}
                     className="px-3 py-4 text-center text-gray-500 italic"
                   >
                     No GIS layers yet. Click “Upload Layer” to add one.
