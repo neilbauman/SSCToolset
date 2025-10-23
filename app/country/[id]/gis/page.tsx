@@ -11,21 +11,11 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// ─── Lazy imports ────────────────────────────────
-const MapContainer = dynamic(
-  () => import("react-leaflet").then((m) => m.MapContainer),
-  { ssr: false }
-);
-const TileLayer = dynamic(
-  () => import("react-leaflet").then((m) => m.TileLayer),
-  { ssr: false }
-);
-const GeoJSON = dynamic(
-  () => import("react-leaflet").then((m) => m.GeoJSON),
-  { ssr: false }
-);
+// Lazy imports (React-Leaflet)
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
-// ──────────────────────────────────────────────────────
 export default function GISPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -34,20 +24,22 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [openUpload, setOpenUpload] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
+  const [mapKey, setMapKey] = useState(0); // forces re-mount when needed
 
-  // ─── Load layers ────────────────────────────────
+  /** Load all GIS layers for this country */
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
-      .select(
-        "id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, centroid_lat, centroid_lon, source"
-      )
+      .select("id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, centroid_lat, centroid_lon, source")
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
-    if (error) return console.error("❌ Error loading layers:", error.message);
+    if (error) {
+      console.error("❌ Error loading layers:", error.message);
+      return;
+    }
 
-    const typed = (data || []).map((l) => ({
+    const typed = (data || []).map(l => ({
       id: l.id,
       country_iso: countryIso,
       layer_name: l.layer_name,
@@ -62,11 +54,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setLayers(typed);
   }, [countryIso]);
 
-  // ─── Load GeoJSON + toggle visibility ───────────
+  /** Load & toggle layer visibility */
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
-    setVisible((prev) => ({ ...prev, [id]: isVisible }));
+    setVisible(prev => ({ ...prev, [id]: isVisible }));
 
     if (isVisible && !geojsonById[id]) {
       try {
@@ -77,33 +69,33 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
         const text = await data.text();
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
-        setGeojsonById((prev) => ({ ...prev, [id]: json }));
+        setGeojsonById(prev => ({ ...prev, [id]: json }));
 
         fitToLayer(json);
       } catch (err) {
-        console.error("⚠️ Failed to load GeoJSON:", err);
+        console.error("⚠️ Failed loading GeoJSON:", err);
       }
     } else if (isVisible && geojsonById[id]) {
       fitToLayer(geojsonById[id]);
     }
   };
 
-  // ─── Fit map bounds ─────────────────────────────
+  /** Fit map view to layer bounds */
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
     if (!map || !geojson.features?.length) return;
 
     const coords = geojson.features
-      .flatMap((f) =>
+      .flatMap(f =>
         f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon"
           ? (f.geometry.coordinates.flat(2) as number[][])
           : []
       )
-      .filter((c) => Array.isArray(c) && c.length === 2);
+      .filter(c => Array.isArray(c) && c.length === 2);
 
     if (coords.length > 0) {
-      const lats = coords.map((c) => c[1]);
-      const lngs = coords.map((c) => c[0]);
+      const lats = coords.map(c => c[1]);
+      const lngs = coords.map(c => c[0]);
       map.fitBounds(
         [
           [Math.min(...lats), Math.min(...lngs)],
@@ -114,9 +106,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ─── Delete layer (DB + Storage) ────────────────
+  /** Delete layer (Supabase DB + storage) */
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
+
     try {
       const bucket = layer.source?.bucket || "gis_raw";
       const path = layer.source?.path || layer.layer_name;
@@ -131,7 +124,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ─── Refresh metrics ────────────────────────────
+  /** Refresh metrics */
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -140,27 +133,33 @@ export default function GISPage({ params }: { params: CountryParams }) {
       });
       if (error) throw error;
       await fetchLayers();
-      alert("✅ Metrics refreshed.");
+      alert("✅ Metrics refreshed");
     } catch (err: any) {
-      alert("Metrics refresh failed: " + err.message);
+      alert("❌ Metrics refresh failed: " + err.message);
     } finally {
       setRefreshing(false);
     }
   };
 
-  // ─── Ensure map resizes correctly ───────────────
+  /** Revalidate map sizing when data changes */
   useEffect(() => {
     const map = mapRef.current;
     if (map) {
-      setTimeout(() => map.invalidateSize(), 300);
+      setTimeout(() => map.invalidateSize(), 400);
     }
   }, [geojsonById, visible]);
 
+  /** Reload layers on mount */
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
 
-  // ─── Render ─────────────────────────────────────
+  /** If map tiles still fail, force reload once after hydration */
+  useEffect(() => {
+    const timer = setTimeout(() => setMapKey(k => k + 1), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -204,7 +203,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 </td>
               </tr>
             ) : (
-              layers.map((l) => (
+              layers.map(l => (
                 <tr key={l.id} className="border-b hover:bg-gray-50">
                   <td className="px-3 py-2">
                     <Link href="#" className="text-[#640811] hover:underline break-words">
@@ -242,15 +241,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
       {/* Map */}
       <div className="h-[500px] w-full rounded-md overflow-hidden border relative">
         <MapContainer
+          key={mapKey}
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
-          ref={(mapInstance) => {
-            if (mapInstance && !mapRef.current) {
-              mapRef.current = mapInstance;
-              setTimeout(() => mapInstance.invalidateSize(), 400);
-            }
-          }}
+          ref={mapRef}
         >
           <TileLayer
             attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
