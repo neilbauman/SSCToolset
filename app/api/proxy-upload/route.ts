@@ -1,66 +1,56 @@
 // app/api/proxy-upload/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-// We'll use the public key here since uploads are client-level.
-const supabase = createClient(supabaseUrl, supabaseAnon);
-
-export const runtime = "nodejs"; // ensures streaming works in Vercel
+import { supabaseServer as supabase } from "@/lib/supabase/supabaseServer";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { remote_url, country_iso = "UNK" } = body;
+    const { remote_url, country_iso } = body;
 
-    if (!remote_url)
-      return NextResponse.json({ error: "Missing remote_url" }, { status: 400 });
-
-    console.log("📡 Downloading from:", remote_url);
-
-    // Download remote file
-    const response = await fetch(remote_url, {
-      headers: { "User-Agent": "SSC-Toolset-Proxy/1.0" },
-    });
-
-    if (!response.ok)
+    if (!remote_url || !country_iso)
       return NextResponse.json(
-        { error: `Download failed: ${response.status} ${response.statusText}` },
-        { status: response.status }
+        { error: "Missing remote_url or country_iso" },
+        { status: 400 }
       );
 
-    const arrayBuffer = await response.arrayBuffer();
-    const fileBytes = new Uint8Array(arrayBuffer);
+    console.log("📡 Fetching remote file:", remote_url);
 
-    // Save to Supabase Storage
+    // Fetch file with browser headers
+    const resp = await fetch(remote_url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+        Accept: "application/octet-stream, application/zip, */*",
+      },
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch remote file: ${resp.status} ${resp.statusText}`);
+    }
+
+    const arrayBuffer = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Create a file path and upload to Supabase
     const filename = `${crypto.randomUUID()}.zip`;
-    const storagePath = `${country_iso}/${filename}`;
-    console.log("💾 Uploading to Supabase:", storagePath);
+    const path = `${country_iso}/${filename}`;
+    const bucket = "gis_uploads";
 
-    const { error: uploadErr } = await supabase.storage
-      .from("gis_uploads")
-      .upload(storagePath, fileBytes, {
-        contentType: "application/zip",
-        upsert: true,
-      });
+    console.log("💾 Uploading to Supabase:", bucket, path);
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(path, buffer, { contentType: "application/zip", upsert: true });
 
-    if (uploadErr) throw uploadErr;
-
-    console.log("✅ Upload successful:", storagePath);
+    if (uploadError) throw uploadError;
 
     return NextResponse.json({
       ok: true,
-      bucket: "gis_uploads",
-      path: storagePath,
-      message: "✅ File successfully proxied to Supabase.",
+      bucket,
+      path,
+      message: "✅ File fetched and uploaded to Supabase.",
     });
   } catch (err: any) {
     console.error("❌ proxy-upload error:", err);
-    return NextResponse.json(
-      { error: err.message || "Unexpected error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
