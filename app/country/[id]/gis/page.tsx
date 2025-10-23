@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import { Trash2, RefreshCw, UploadCloud } from "lucide-react";
@@ -12,11 +12,10 @@ import UploadGISModal from "@/components/country/UploadGISModal";
 import GISDataHealthPanel from "@/components/country/GISDataHealthPanel";
 
 import type { CountryParams } from "@/app/country/types";
-import type { GISLayer, GISDatasetVersion } from "@/types/gis";
+import type { GISLayer } from "@/types/gis";
 import type { FeatureCollection } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 
-// SSR-safe dynamic imports
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
@@ -28,7 +27,6 @@ type LayerWithRuntime = GISLayer & {
 
 export default function CountryGISPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
-
   const [layers, setLayers] = useState<LayerWithRuntime[]>([]);
   const [geojsonById, setGeojsonById] = useState<Record<string, FeatureCollection>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
@@ -36,19 +34,17 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
-  // ---------- helpers ----------
+  // Resolve Supabase storage public URL
   const resolvePublicUrl = (l: LayerWithRuntime): string | null => {
     const bucket = (l.source as any)?.bucket || "gis_raw";
     const rawPath =
-      (l.source as any)?.path ||
-      (l as any).path ||
-      (l as any).storage_path ||
-      null;
+      (l.source as any)?.path || (l as any).path || (l as any).storage_path || null;
     if (!rawPath) return null;
     const { data } = supabase.storage.from(bucket).getPublicUrl(rawPath);
     return data?.publicUrl ?? null;
   };
 
+  // Fetch and preview GeoJSON
   const fetchGeo = async (l: LayerWithRuntime) => {
     const url = l._publicUrl ?? resolvePublicUrl(l);
     if (!url) return;
@@ -67,6 +63,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     }
   };
 
+  // Reload all GIS layers
   const reloadAll = async () => {
     setRefreshing(true);
     try {
@@ -75,14 +72,17 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
         .select("*")
         .eq("country_iso", countryIso)
         .order("created_at", { ascending: false });
+
       const arr: LayerWithRuntime[] = (data || []).map((x) => ({
         ...x,
         _publicUrl: resolvePublicUrl(x as any),
       })) as any;
+
       setLayers(arr);
       const defaults: Record<string, boolean> = {};
       for (const l of arr) defaults[l.id] = (l.admin_level || "") === "ADM0";
       setVisible(defaults);
+
       const adm0 = arr.find((l) => l.admin_level === "ADM0");
       if (adm0) await fetchGeo(adm0);
     } catch (err) {
@@ -92,49 +92,45 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ---------- cascading delete ----------
+  // Delete layer using RPC
   const handleDelete = async (layer: LayerWithRuntime) => {
     if (!confirm(`Delete layer "${layer.layer_name}" and all related data?`)) return;
 
     try {
-      // 1. delete from storage
+      // 1️⃣ Remove file from storage if it exists
       const bucket = "gis_raw";
       const path =
         (layer.source as any)?.path ||
         (layer as any).path ||
         (layer as any).storage_path;
       if (path) {
-        const { error: delErr } = await supabase.storage.from(bucket).remove([path]);
-        if (delErr) console.warn("Storage delete warning:", delErr);
+        await supabase.storage.from(bucket).remove([path]);
       }
 
-      // 2. delete related features (cascading)
-      await supabase.from("gis_features").delete().eq("layer_id", layer.id);
-
-      // 3. delete layer record
-      const { error } = await supabase.from("gis_layers").delete().eq("id", layer.id);
+      // 2️⃣ RPC to cascade delete from DB
+      const { error } = await supabase.rpc("delete_gis_layer_cascade", {
+        p_layer_id: layer.id,
+      });
       if (error) throw error;
 
-      alert(`Deleted ${layer.layer_name}`);
+      alert(`🗑️ Deleted "${layer.layer_name}" successfully`);
       reloadAll();
-    } catch (err) {
+    } catch (err: any) {
       console.error("❌ Delete failed:", err);
-      alert("Delete failed: " + (err as any).message);
+      alert("Delete failed: " + err.message);
     }
   };
 
-  // ---------- lifecycle ----------
   useEffect(() => {
     reloadAll();
   }, [countryIso]);
 
-  // ---------- render ----------
   return (
     <SidebarLayout
       headerProps={{
         title: `${countryIso} – GIS Datasets`,
         group: "country-config",
-        description: "Upload, view, and manage GIS layers for this country.",
+        description: "Upload, preview, and manage GIS layers for this country.",
         breadcrumbs: (
           <Breadcrumbs
             items={[
@@ -153,14 +149,14 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => reloadAll()}
-              className="flex items-center gap-1 px-3 py-1.5 rounded bg-[#044389] text-white text-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-[#044389] text-white text-sm hover:opacity-90"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </button>
             <button
               onClick={() => setOpenUpload(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded bg-[#640811] text-white text-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-[#640811] text-white text-sm hover:opacity-90"
             >
               <UploadCloud className="w-4 h-4" />
               Upload
@@ -242,7 +238,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
         </div>
       </section>
 
-      {/* Map */}
+      {/* ---- Map ---- */}
       <section className="mt-4 border rounded-lg overflow-hidden">
         <MapContainer
           center={[12.8797, 121.774]}
@@ -283,7 +279,7 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
         </MapContainer>
       </section>
 
-      {/* Upload Modal */}
+      {/* ---- Upload Modal ---- */}
       {openUpload && (
         <UploadGISModal
           open={openUpload}
