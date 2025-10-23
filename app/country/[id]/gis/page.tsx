@@ -75,24 +75,35 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
     await fetchLayers();
   };
 
-  // ---------- Fit map to visible layers ----------
+ // ---------- Fit map to visible layers ----------
   const fitVisibleLayers = () => {
     if (!mapRef.current) return;
-    const allBounds: LatLngBoundsExpression[] = [];
+    const allCoords: [number, number][] = [];
 
     Object.entries(geojsonById).forEach(([id, fc]) => {
       if (!visible[id]) return;
-      const coords = fc.features
-        .flatMap((f) => (f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon" ? f.geometry.coordinates : []))
-        .flat(2)
-        .filter((c: any) => Array.isArray(c) && c.length === 2);
-      if (coords.length) allBounds.push(coords as any);
+
+      // ✅ Flatten all polygons / multipolygons into coordinate pairs
+      for (const feature of fc.features) {
+        const geom = feature.geometry as Geometry | undefined;
+        if (!geom) continue;
+
+        let coords: any[] = [];
+        if (geom.type === "Polygon") coords = geom.coordinates.flat(1);
+        else if (geom.type === "MultiPolygon") coords = geom.coordinates.flat(2);
+
+        coords.forEach((c) => {
+          if (Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number") {
+            allCoords.push([c[1], c[0]]); // flip lon/lat → lat/lon for Leaflet
+          }
+        });
+      }
     });
 
-    if (allBounds.length) {
+    if (allCoords.length) {
       try {
         const L = require("leaflet");
-        const bounds = L.latLngBounds(allBounds.flat());
+        const bounds = L.latLngBounds(allCoords);
         mapRef.current.fitBounds(bounds, { padding: [40, 40] });
       } catch (err) {
         console.error("fitBounds failed:", err);
