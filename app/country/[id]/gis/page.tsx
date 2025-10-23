@@ -329,12 +329,11 @@ export default function CountryGISPage({ params }: { params: CountryParams }) {
       {/* Modals */}
       {openUpload && (
   <UploadGISModal
-    open={openUpload}
-    onClose={() => setOpenUpload(false)}
-    countryIso={countryIso}
-    datasetVersionId={activeVersion?.id}   // <- pass UUID or omit
-    onUploaded={reloadAll}
-  />
+  open={openUpload}
+  onClose={() => setOpenUpload(false)}
+  countryIso={countryIso}
+  onUploaded={reloadAll}
+/>
 )}
 
       {editingLayer && (
