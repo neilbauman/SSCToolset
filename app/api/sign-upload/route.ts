@@ -1,28 +1,36 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { filename, contentType } = await req.json();
+    const { filename, contentType } = await request.json();
 
-    if (!filename || !contentType)
-      return NextResponse.json({ error: "Missing filename or contentType" }, { status: 400 });
+    if (!filename) {
+      return NextResponse.json({ error: "Missing filename" }, { status: 400 });
+    }
 
+    // Generate signed upload URL
     const { data, error } = await supabase.storage
       .from("gis_raw")
-      .createSignedUploadUrl(filename, 3600); // valid for 1 hour
+      .createSignedUploadUrl(filename, { expiresIn: 3600 }); // ✅ 1 hour expiration
 
     if (error) throw error;
 
-    return NextResponse.json({ url: data.signedUrl, path: data.path });
+    return NextResponse.json({
+      ok: true,
+      url: data.signedUrl,
+      path: data.path,
+      contentType,
+    });
   } catch (err: any) {
     console.error("❌ sign-upload error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Unexpected error in sign-upload" },
+      { status: 500 }
+    );
   }
 }
