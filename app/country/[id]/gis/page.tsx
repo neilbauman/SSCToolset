@@ -11,7 +11,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Lazy imports
+// ─── Lazy imports ────────────────────────────────
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -25,6 +25,7 @@ const GeoJSON = dynamic(
   { ssr: false }
 );
 
+// ──────────────────────────────────────────────────────
 export default function GISPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [layers, setLayers] = useState<GISLayer[]>([]);
@@ -34,7 +35,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
-  /** Fetch layers */
+  // ─── Load layers ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -44,7 +45,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
-    if (error) return console.error("Error loading layers:", error.message);
+    if (error) return console.error("❌ Error loading layers:", error.message);
+
     const typed = (data || []).map((l) => ({
       id: l.id,
       country_iso: countryIso,
@@ -60,7 +62,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setLayers(typed);
   }, [countryIso]);
 
-  /** Load GeoJSON on toggle */
+  // ─── Load GeoJSON + toggle visibility ───────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
@@ -72,22 +74,24 @@ export default function GISPage({ params }: { params: CountryParams }) {
         const path = layer.source?.path || layer.layer_name;
         const { data } = await supabase.storage.from(bucket).download(path);
         if (!data) return;
+
         const text = await data.text();
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
         setGeojsonById((prev) => ({ ...prev, [id]: json }));
 
         fitToLayer(json);
       } catch (err) {
-        console.error("Failed loading GeoJSON:", err);
+        console.error("⚠️ Failed to load GeoJSON:", err);
       }
     } else if (isVisible && geojsonById[id]) {
       fitToLayer(geojsonById[id]);
     }
   };
 
-  /** Fit map to new layer */
+  // ─── Fit map bounds ─────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
-    if (!mapRef.current || !geojson.features?.length) return;
+    const map = mapRef.current;
+    if (!map || !geojson.features?.length) return;
 
     const coords = geojson.features
       .flatMap((f) =>
@@ -100,15 +104,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
     if (coords.length > 0) {
       const lats = coords.map((c) => c[1]);
       const lngs = coords.map((c) => c[0]);
-      const bounds: [[number, number], [number, number]] = [
-        [Math.min(...lats), Math.min(...lngs)],
-        [Math.max(...lats), Math.max(...lngs)],
-      ];
-      mapRef.current.fitBounds(bounds, { padding: [20, 20] });
+      map.fitBounds(
+        [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)],
+        ],
+        { padding: [20, 20] }
+      );
     }
   };
 
-  /** Delete layer */
+  // ─── Delete layer (DB + Storage) ────────────────
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
     try {
@@ -125,7 +131,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  /** Refresh metrics */
+  // ─── Refresh metrics ────────────────────────────
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -142,12 +148,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  /** Invalidate map container on mount */
+  // ─── Ensure map resizes correctly ───────────────
   useEffect(() => {
-    if (mapRef.current) {
-      setTimeout(() => {
-        mapRef.current?.invalidateSize();
-      }, 500);
+    const map = mapRef.current;
+    if (map) {
+      setTimeout(() => map.invalidateSize(), 300);
     }
   }, [geojsonById, visible]);
 
@@ -155,6 +160,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchLayers();
   }, [fetchLayers]);
 
+  // ─── Render ─────────────────────────────────────
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -165,16 +171,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
             onClick={() => setOpenUpload(true)}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
-            <Plus className="w-4 h-4" />
-            Upload
+            <Plus className="w-4 h-4" /> Upload
           </button>
           <button
             onClick={refreshMetrics}
             disabled={refreshing}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
       </div>
@@ -241,9 +245,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
           center={[12.8797, 121.774]}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
-          whenReady={(mapEvent) => {
-            mapRef.current = mapEvent.target;
-            setTimeout(() => mapEvent.target.invalidateSize(), 300);
+          ref={(mapInstance) => {
+            if (mapInstance && !mapRef.current) {
+              mapRef.current = mapInstance;
+              setTimeout(() => mapInstance.invalidateSize(), 400);
+            }
           }}
         >
           <TileLayer
