@@ -13,7 +13,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // ✅ Create client lazily at runtime
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
