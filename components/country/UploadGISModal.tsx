@@ -61,10 +61,10 @@ export default function UploadGISModal({
 
       // Step 2️⃣ – upload the actual file (streamed)
       const uploadRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
+  method: "PUT",
+  headers: { "Content-Type": file.type || "application/octet-stream" },
+  body: file,
+});
 
       const uploadData = await uploadRes.json();
       if (!uploadRes.ok) throw new Error(uploadData.error || "Upload failed");
