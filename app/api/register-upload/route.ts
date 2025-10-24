@@ -1,17 +1,27 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
 export async function POST(request: Request) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("⚠️ Missing Supabase environment variables.");
+    return NextResponse.json(
+      { error: "Missing Supabase credentials" },
+      { status: 500 }
+    );
+  }
+
+  // ✅ Create client lazily at runtime
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
   try {
     const { country_iso, filename, path } = await request.json();
 
     if (!country_iso || !filename || !path) {
       return NextResponse.json(
-        { error: "Missing required fields: country_iso, filename, or path" },
+        { error: "Missing required fields: country_iso, filename, path" },
         { status: 400 }
       );
     }
@@ -26,7 +36,6 @@ export async function POST(request: Request) {
         ? "filegdb"
         : "unknown";
 
-    // ✅ Insert new GIS layer
     const { data: layer, error: insertError } = await supabase
       .from("gis_layers")
       .insert({
@@ -45,16 +54,10 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError;
 
-    // ✅ Add to processing queue
     const { error: queueError } = await supabase.from("gis_processing_queue").insert({
       layer_id: layer.id,
       status: "pending",
-      payload: {
-        country_iso,
-        bucket: "gis_raw",
-        path,
-        format,
-      },
+      payload: { country_iso, bucket: "gis_raw", path, format },
     });
 
     if (queueError) throw queueError;
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
   } catch (err: any) {
     console.error("❌ register-upload error:", err);
     return NextResponse.json(
-      { error: err.message || "Unexpected error in register-upload" },
+      { error: err.message || "Unexpected error" },
       { status: 500 }
     );
   }
