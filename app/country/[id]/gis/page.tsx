@@ -13,7 +13,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap, LatLngBoundsExpression } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Lazy load Leaflet components
+// Lazy-load Leaflet components
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
@@ -25,9 +25,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [openUpload, setOpenUpload] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const [mapKey, setMapKey] = useState(0);
   const [simplifyLevel, setSimplifyLevel] = useState<"None" | "Low" | "Medium" | "High">("Medium");
+  const [mapKey, setMapKey] = useState(0);
+  const mapRef = useRef<LeafletMap | null>(null);
 
   // Toast notifications
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
@@ -44,7 +44,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     const { data, error } = await supabase
       .from("gis_layers")
       .select("id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, source")
-      .eq("country_iso", countryIso) // enforced uppercase
+      .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
     if (error) console.error("❌ Error fetching layers:", error.message);
@@ -52,7 +52,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, [countryIso]);
 
   // ────────────────────────────────
-  // Simplify GeoJSON coordinates
+  // Simplify GeoJSON geometry
   // ────────────────────────────────
   const simplifyCoords = (coords: any, tolerance = 0.01): any => {
     if (!Array.isArray(coords)) return coords;
@@ -64,13 +64,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
     try {
       return {
         ...json,
-        features: json.features.map(f => ({
-          ...f,
-          geometry: {
-            ...f.geometry,
-            coordinates: simplifyCoords(f.geometry.coordinates, 0.01),
-          },
-        })),
+        features: json.features.map(f => {
+          const geom = f.geometry;
+          // Only simplify geometries that have coordinates
+          if ("coordinates" in geom) {
+            return {
+              ...f,
+              geometry: {
+                ...geom,
+                coordinates: simplifyCoords(geom.coordinates, 0.01),
+              },
+            };
+          }
+          return f; // GeometryCollection or invalid type
+        }),
       };
     } catch (err) {
       console.error("⚠️ Simplification failed:", err);
@@ -79,7 +86,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Fit map to GeoJSON layer
+  // Fit map to GeoJSON bounds
   // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
@@ -105,7 +112,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Load and toggle layers
+  // Toggle layer visibility
   // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
@@ -135,7 +142,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Delete layer
+  // Delete layer (Supabase DB + Storage)
   // ────────────────────────────────
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
@@ -220,7 +227,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header actions */}
+        {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">GIS Layers</h2>
@@ -255,7 +262,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </div>
         </div>
 
-        {/* Layer table */}
+        {/* Table */}
         <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -325,13 +332,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {Object.entries(geojsonById).map(([id, gj]) =>
-              visible[id] ? (
-                <GeoJSON
-                  key={id}
-                  data={gj as any}
-                  style={{ color: "#640811", weight: 1 }}
-                />
-              ) : null
+              visible[id] ? <GeoJSON key={id} data={gj as any} style={{ color: "#640811", weight: 1 }} /> : null
             )}
           </MapContainer>
         </div>
