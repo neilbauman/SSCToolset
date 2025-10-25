@@ -34,54 +34,84 @@ export default function UploadGISModal({
     if (!file) return;
     setUploading(true);
     setProgress(5);
-    setMessage("Preparing upload…");
+    setMessage("Preparing upload...");
 
     try {
+      // ────────────────────────────────
+      // 1️⃣ Determine file format + ADM level
+      // ────────────────────────────────
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const format =
+        ext === "geojson" || ext === "json"
+          ? "geojson"
+          : ext === "zip"
+          ? "zip"
+          : "unknown";
+
+      if (format === "unknown") {
+        throw new Error("Unsupported file type. Please upload .geojson, .json, or .zip");
+      }
+
+      const admMatch = file.name.toLowerCase().match(/adm(\d)/);
+      const adminLevel = admMatch
+        ? `ADM${admMatch[1]}`
+        : "ADM0"; // fallback if pattern not found
+
+      // ────────────────────────────────
+      // 2️⃣ Upload to Supabase Storage
+      // ────────────────────────────────
+      const bucket = "gis_raw";
       const isoUpper = countryIso.toUpperCase();
       const isoLower = countryIso.toLowerCase();
+      const objectKey = `${isoUpper}/${crypto.randomUUID()}/${file.name}`;
 
-      // Guess ADM level from filename (adm0, adm1, etc.)
-      const admMatch = file.name.match(/adm(\d)/i);
-      const adminLevel = admMatch ? `ADM${admMatch[1]}` : null;
+      setProgress(20);
+      setMessage(`Uploading to storage path:\n${objectKey}`);
 
-      // Define target path: /gis_raw/{countryLower}/{filename}
-      const targetPath = `${isoLower}/${file.name}`;
-      setProgress(25);
-      setMessage(`Uploading to storage:\n${targetPath}`);
-
-      // Upload file directly to Supabase Storage
       const { error: uploadErr } = await supabase.storage
-        .from("gis_raw")
-        .upload(targetPath, file, {
-          upsert: true,
-          contentType: file.type || "application/octet-stream",
+        .from(bucket)
+        .upload(objectKey, file, {
+          contentType:
+            file.type ||
+            (format === "geojson"
+              ? "application/geo+json"
+              : "application/zip"),
+          upsert: false,
         });
 
       if (uploadErr) throw uploadErr;
-      setProgress(70);
-      setMessage("Registering in database…");
 
-      // Create layer metadata
-      const publicUrl = supabase.storage
-        .from("gis_raw")
-        .getPublicUrl(targetPath).data.publicUrl;
+      setProgress(65);
+      setMessage("Registering layer in database...");
+
+      // ────────────────────────────────
+      // 3️⃣ Create public URL + DB entry
+      // ────────────────────────────────
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(objectKey);
+      const publicUrl = pub?.publicUrl ?? null;
 
       const layerName = file.name;
-      const source = { bucket: "gis_raw", path: targetPath, url: publicUrl };
+      const source = { bucket, path: objectKey, url: publicUrl };
 
-      const { error: dbErr } = await supabase
-        .from("gis_layers")
-        .upsert(
-          {
-            country_iso: isoUpper,
-            layer_name: layerName,
-            admin_level: adminLevel,
-            source,
-          },
-          { onConflict: "country_iso,layer_name" }
-        );
+      const { error: insertErr } = await supabase.from("gis_layers").insert({
+        country_iso: isoUpper,
+        layer_name: layerName,
+        admin_level: adminLevel,
+        format,
+        feature_count: null,
+        avg_area_sqkm: null,
+        source,
+      });
 
-      if (dbErr) throw dbErr;
+      if (insertErr) throw insertErr;
+
+      setProgress(85);
+      setMessage("Recomputing layer metrics...");
+
+      // Optional: trigger Supabase function if available
+      await supabase.functions.invoke("compute-gis-metrics", {
+        body: { country_iso: isoUpper },
+      });
 
       setProgress(100);
       setMessage("✅ Upload complete!");
@@ -90,11 +120,10 @@ export default function UploadGISModal({
       setTimeout(() => {
         reset();
         onClose();
-      }, 1000);
+      }, 1200);
     } catch (err: any) {
       console.error("❌ Upload error:", err);
       setMessage(`❌ ${err.message || "Upload failed"}`);
-    } finally {
       setUploading(false);
     }
   };
@@ -146,7 +175,7 @@ export default function UploadGISModal({
             disabled={!file || uploading}
             className="px-4 py-1.5 rounded bg-[#640811] text-white text-sm hover:opacity-90 disabled:opacity-60"
           >
-            {uploading ? "Uploading…" : "Upload"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
         </div>
       </div>
