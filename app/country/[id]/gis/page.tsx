@@ -93,32 +93,31 @@ export default function GISPage({ params }: { params: CountryParams }) {
 const refreshMetrics = async () => {
   setRefreshing(true);
   try {
-    // Step 1️⃣: Trigger edge function to recompute
+    // 1️⃣ Call the edge function
     const { data, error } = await supabase.functions.invoke("compute-gis-metrics", {
       body: { country_iso: countryIso },
     });
-
     if (error) throw error;
 
-    // Step 2️⃣: Small delay to ensure DB updates are committed
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // 2️⃣ Wait a bit to ensure DB updates propagate
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // Step 3️⃣: Re-fetch the updated metrics
-    const { data: refreshed, error: fetchErr } = await supabase
+    // 3️⃣ Force fetch fresh data (no cache)
+    const { data: updatedLayers, error: fetchErr } = await supabase
       .from("gis_layers")
-      .select(
-        "id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, total_area_sqkm, matched_features, unmatched_features, health_score"
-      )
+      .select("id, layer_name, admin_level, feature_count, matched_features, unmatched_features, health_score")
       .eq("country_iso", countryIso)
-      .order("admin_level", { ascending: true });
+      .order("admin_level", { ascending: true })
+      .maybeSingle(false); // ensure full reload
 
     if (fetchErr) throw fetchErr;
 
-    setLayers(refreshed || []);
-    showToast("📊 Metrics refreshed");
+    // 4️⃣ Replace existing state
+    setLayers(updatedLayers || []);
+    showToast("✅ Metrics updated");
   } catch (err: any) {
     console.error("❌ Metrics refresh failed:", err);
-    showToast("❌ Metrics refresh failed: " + (err.message || "Unknown error"));
+    showToast("❌ Metrics refresh failed: " + err.message);
   } finally {
     setRefreshing(false);
   }
