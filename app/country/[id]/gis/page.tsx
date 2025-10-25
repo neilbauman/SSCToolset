@@ -218,19 +218,18 @@ export default function GISPage({ params }: { params: CountryParams }) {
   useEffect(() => {
     const channel = supabase
       .channel("gis_layers_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, () => fetchLayers())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "gis_layers" },
+        () => fetchLayers()
+      )
       .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [fetchLayers]);
 
-  useEffect(() => {
-    fetchLayers();
+    // ✅ Cleanup — synchronous wrapper to satisfy React types
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [fetchLayers]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setMapKey(k => k + 1), 200);
-    return () => clearTimeout(timer);
-  }, []);
 
   // ────────────────────────────────
   // Render
