@@ -104,8 +104,8 @@ export default function GISPage({ params }: { params: CountryParams }) {
     })),
   });
 
-  // ────────────────────────────────
-  // Fit to GeoJSON
+    // ────────────────────────────────
+  // Fit map to GeoJSON layer
   // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
@@ -131,17 +131,20 @@ export default function GISPage({ params }: { params: CountryParams }) {
     };
 
     for (const f of geojson.features) extract(f.geometry);
-    const valid = coords.filter(c => Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]));
+    const valid = coords.filter(
+      (c): c is [number, number] =>
+        Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1])
+    );
     if (valid.length === 0) return;
 
     const lats = valid.map(c => c[1]);
     const lngs = valid.map(c => c[0]);
-    const bounds = [
+    const bounds: [[number, number], [number, number]] = [
       [Math.min(...lats), Math.min(...lngs)],
       [Math.max(...lats), Math.max(...lngs)],
     ];
 
-    map.fitBounds(bounds, { padding: [20, 20] });
+    map.fitBounds(bounds as [[number, number], [number, number]], { padding: [20, 20] });
   };
 
   // ────────────────────────────────
