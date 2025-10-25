@@ -105,7 +105,17 @@ const refreshMetrics = async () => {
     // 3️⃣ Force fetch fresh data (no cache)
     const { data: updatedLayers, error: fetchErr } = await supabase
   .from("gis_layers")
-  .select("id, layer_name, admin_level, feature_count, matched_features, unmatched_features, health_score")
+  .select(`
+    id,
+    layer_name,
+    admin_level,
+    country_iso,
+    feature_count,
+    matched_features,
+    unmatched_features,
+    total_area_sqkm,
+    health_score
+  `)
   .eq("country_iso", countryIso)
   .order("admin_level", { ascending: true });
 
