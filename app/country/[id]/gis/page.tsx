@@ -174,186 +174,188 @@ export default function GISPage({ params }: { params: CountryParams }) {
       ? "text-yellow-600 font-medium"
       : "text-red-600 font-medium";
 
-  // ────────────────────────────────
+    // ────────────────────────────────
   // Render
   // ────────────────────────────────
   return (
-    <SidebarLayout
-      headerProps={{
-        title: `${countryIso} – GIS Layers`,
-        group: "country-config",
-        breadcrumbs: (
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/" },
-              { label: "Country Configuration", href: "/country" },
-              { label: countryIso, href: `/country/${countryIso}` },
-              { label: "GIS", href: "#" },
-            ]}
-          />
-        ),
-      }}
-    >
-      <div className="p-6 space-y-4 relative">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">GIS Layers</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setOpenUpload(true)}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-            >
-              <Plus className="w-4 h-4" /> Upload
-            </button>
-            <button
-              onClick={refreshMetrics}
-              disabled={refreshing}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
-          <table className="min-w-full border-collapse">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Name</th>
-                <th className="px-3 py-2 text-left font-medium">Admin</th>
-                <th className="px-3 py-2 text-right font-medium">Features</th>
-                <th className="px-3 py-2 text-right font-medium">Avg Area (km²)</th>
-                <th className="px-3 py-2 text-right font-medium">Total Area (km²)</th>
-                <th className="px-3 py-2 text-right font-medium">Matched</th>
-                <th className="px-3 py-2 text-right font-medium">Unmatched</th>
-                <th className="px-3 py-2 text-right font-medium">Health (%)</th>
-                <th className="px-3 py-2 text-center font-medium">Visible</th>
-                <th className="px-3 py-2 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {layers.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="text-center italic text-gray-500 py-3">
-                    No GIS layers found.
-                  </td>
-                </tr>
-              ) : (
-                layers.map(l => (
-                  <tr key={l.id} className="border-b hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <Link href="#" className="text-[#640811] hover:underline break-words">
-                        {l.layer_name}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">{l.admin_level ?? "—"}</td>
-                    <td className="px-3 py-2 text-right">{l.feature_count ?? "—"}</td>
-                    <td className="px-3 py-2 text-right">
-                      {l.avg_area_sqkm ? l.avg_area_sqkm.toLocaleString() : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {l.total_area_sqkm ? l.total_area_sqkm.toLocaleString() : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">{l.matched_features ?? "—"}</td>
-                    <td className="px-3 py-2 text-right text-red-600">
-                      {l.unmatched_features ?? "—"}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${healthClass(l.health_score)}`}>
-                      {l.health_score != null ? `${l.health_score.toFixed(1)}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        checked={!!visible[l.id]}
-                        onChange={() => toggleLayer(l)}
-                        className="cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => handleDeleteLayer(l)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 className="w-4 h-4 inline" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Map */}
-        <div className="h-[500px] w-full rounded-md overflow-hidden border relative z-0">
-          <MapContainer
-            key={mapKey}
-            center={[12.8797, 121.774]}
-            zoom={5}
-            style={{ height: "100%", width: "100%" }}
-            ref={mapRef}
-          >
-            <TileLayer
-              attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    <>
+      <SidebarLayout
+        headerProps={{
+          title: `${countryIso} – GIS Layers`,
+          group: "country-config",
+          breadcrumbs: (
+            <Breadcrumbs
+              items={[
+                { label: "Dashboard", href: "/" },
+                { label: "Country Configuration", href: "/country" },
+                { label: countryIso, href: `/country/${countryIso}` },
+                { label: "GIS", href: "#" },
+              ]}
             />
-            {Object.entries(geojsonById).map(([id, gj]) =>
-              visible[id] ? (
-                <GeoJSON
-                  key={id}
-                  data={gj as any}
-                  style={{ color: "#640811", weight: 1, fillOpacity: 0.2 }}
-                />
-              ) : null
-            )}
-          </MapContainer>
-
-          {/* Legend */}
-          <div className="absolute bottom-3 left-3 bg-white/90 p-3 rounded shadow-md z-10">
-            <div className="text-sm font-medium mb-1">Health Legend</div>
-            <div className="space-y-1 text-xs">
-              <div>
-                <span className="inline-block w-3 h-3 bg-green-500 mr-2 rounded-sm" />
-                ≥ 90% Healthy
-              </div>
-              <div>
-                <span className="inline-block w-3 h-3 bg-yellow-500 mr-2 rounded-sm" />
-                70–89% Moderate
-              </div>
-              <div>
-                <span className="inline-block w-3 h-3 bg-red-500 mr-2 rounded-sm" />
-                < 70% Poor
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Upload Modal */}
-        {openUpload && (
-          <UploadGISModal
-            open={openUpload}
-            onClose={() => setOpenUpload(false)}
-            countryIso={countryIso}
-            onUploaded={fetchLayers}
-          />
-        )}
-
-        {/* Toasts */}
-        <div className="fixed bottom-4 right-4 space-y-2 z-50">
-          {toasts.map(t => (
-            <div
-              key={t.id}
-              className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md"
-            >
-              <span>{t.msg}</span>
-              <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>
-                <X className="w-4 h-4" />
+          ),
+        }}
+      >
+        <div className="p-6 space-y-4 relative">
+          {/* Header actions */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">GIS Layers</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOpenUpload(true)}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
+              >
+                <Plus className="w-4 h-4" /> Upload
+              </button>
+              <button
+                onClick={refreshMetrics}
+                disabled={refreshing}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
               </button>
             </div>
-          ))}
+          </div>
+
+          {/* Table */}
+          <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
+            <table className="min-w-full border-collapse">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Name</th>
+                  <th className="px-3 py-2 text-left font-medium">Admin</th>
+                  <th className="px-3 py-2 text-right font-medium">Features</th>
+                  <th className="px-3 py-2 text-right font-medium">Avg Area (km²)</th>
+                  <th className="px-3 py-2 text-right font-medium">Total Area (km²)</th>
+                  <th className="px-3 py-2 text-right font-medium">Matched</th>
+                  <th className="px-3 py-2 text-right font-medium">Unmatched</th>
+                  <th className="px-3 py-2 text-right font-medium">Health (%)</th>
+                  <th className="px-3 py-2 text-center font-medium">Visible</th>
+                  <th className="px-3 py-2 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layers.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center italic text-gray-500 py-3">
+                      No GIS layers found.
+                    </td>
+                  </tr>
+                ) : (
+                  layers.map(l => (
+                    <tr key={l.id} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2">
+                        <Link href="#" className="text-[#640811] hover:underline break-words">
+                          {l.layer_name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">{l.admin_level ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">{l.feature_count ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">
+                        {l.avg_area_sqkm ? l.avg_area_sqkm.toLocaleString() : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {l.total_area_sqkm ? l.total_area_sqkm.toLocaleString() : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">{l.matched_features ?? "—"}</td>
+                      <td className="px-3 py-2 text-right text-red-600">
+                        {l.unmatched_features ?? "—"}
+                      </td>
+                      <td className={`px-3 py-2 text-right ${healthClass(l.health_score)}`}>
+                        {l.health_score != null ? `${l.health_score.toFixed(1)}%` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!visible[l.id]}
+                          onChange={() => toggleLayer(l)}
+                          className="cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => handleDeleteLayer(l)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="w-4 h-4 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Map */}
+          <div className="h-[500px] w-full rounded-md overflow-hidden border relative z-0">
+            <MapContainer
+              key={mapKey}
+              center={[12.8797, 121.774]}
+              zoom={5}
+              style={{ height: "100%", width: "100%" }}
+              ref={mapRef}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {Object.entries(geojsonById).map(([id, gj]) =>
+                visible[id] ? (
+                  <GeoJSON
+                    key={id}
+                    data={gj as any}
+                    style={{ color: "#640811", weight: 1, fillOpacity: 0.2 }}
+                  />
+                ) : null
+              )}
+            </MapContainer>
+
+            {/* Legend Overlay */}
+            <div className="absolute bottom-3 left-3 bg-white/90 p-3 rounded shadow-md z-10">
+              <div className="text-sm font-medium mb-1">Health Legend</div>
+              <div className="space-y-1 text-xs">
+                <div>
+                  <span className="inline-block w-3 h-3 bg-green-500 mr-2 rounded-sm"></span> ≥ 90%
+                  Healthy
+                </div>
+                <div>
+                  <span className="inline-block w-3 h-3 bg-yellow-500 mr-2 rounded-sm"></span> 70–89%
+                  Moderate
+                </div>
+                <div>
+                  <span className="inline-block w-3 h-3 bg-red-500 mr-2 rounded-sm"></span> &lt; 70%
+                  Poor
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Modal */}
+          {openUpload && (
+            <UploadGISModal
+              open={openUpload}
+              onClose={() => setOpenUpload(false)}
+              countryIso={countryIso}
+              onUploaded={fetchLayers}
+            />
+          )}
+
+          {/* Toasts */}
+          <div className="fixed bottom-4 right-4 space-y-2 z-50">
+            {toasts.map(t => (
+              <div
+                key={t.id}
+                className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md"
+              >
+                <span>{t.msg}</span>
+                <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    </SidebarLayout>
+      </SidebarLayout>
+    </>
   );
 }
