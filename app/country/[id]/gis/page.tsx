@@ -183,12 +183,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Realtime updates
-  // ────────────────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel("gis_layers_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, payload => {
+// Realtime updates
+// ────────────────────────────────
+useEffect(() => {
+  const channel = supabase
+    .channel("gis_layers_changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "gis_layers" },
+      payload => {
         console.log("🔄 GIS layer changed — refreshing...");
         fetchLayers();
 
@@ -198,11 +201,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
           showToast(`🗑️ Removed layer: ${(payload.old as any).layer_name}`);
         else if (payload.eventType === "UPDATE")
           showToast(`✏️ Updated layer: ${(payload.new as any).layer_name}`);
-      })
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => supabase.removeChannel(channel);
-  }, [fetchLayers]);
+  // ✅ synchronous cleanup — no Promise returned
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [fetchLayers]);
 
   // ────────────────────────────────
   // Mount
