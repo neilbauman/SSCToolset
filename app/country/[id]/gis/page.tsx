@@ -285,7 +285,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
         </div>
 
         {/* Map */}
-        <div className="h-[500px] w-full rounded-md overflow-hidden border relative z-0">
+        <div className="relative h-[500px] w-full rounded-md overflow-hidden border z-0">
           <MapContainer
             key={mapKey}
             center={[12.8797, 121.774]}
@@ -312,18 +312,28 @@ export default function GISPage({ params }: { params: CountryParams }) {
             )}
           </MapContainer>
 
-          {/* Legend */}
-          <div className="absolute bottom-3 left-3 bg-white bg-opacity-90 rounded-md shadow-md px-3 py-2 text-xs border">
-            <div className="font-semibold mb-1">Legend</div>
-            {Object.entries(levelColors).map(([lvl, color]) => (
-              <div key={lvl} className="flex items-center gap-2 mb-0.5">
+          {/* Floating Legend */}
+          <div className="absolute bottom-3 left-3 bg-white bg-opacity-95 rounded-md shadow-lg px-3 py-2 text-xs border z-[1000]">
+            <div className="font-semibold mb-1 text-gray-800">Legend</div>
+            {Object.entries(levelColors).map(([lvl, color]) => {
+              const isActive = layers.some(
+                l => l.admin_level === lvl && visible[l.id]
+              );
+              return (
                 <div
-                  className="w-3 h-3 rounded-sm border"
-                  style={{ backgroundColor: color }}
-                ></div>
-                <span>{lvl}</span>
-              </div>
-            ))}
+                  key={lvl}
+                  className={`flex items-center gap-2 mb-0.5 transition-opacity ${
+                    isActive ? "opacity-100 text-gray-900 font-semibold" : "opacity-50 text-gray-500"
+                  }`}
+                >
+                  <div
+                    className="w-3 h-3 rounded-sm border"
+                    style={{ backgroundColor: color }}
+                  ></div>
+                  <span>{lvl}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
