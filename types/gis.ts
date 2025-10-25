@@ -36,6 +36,10 @@ export interface GISLayer {
   avg_area_sqkm?: number | null;
   centroid_lat?: number | null;
   centroid_lon?: number | null;
+  total_area_sqkm: number | null;          // ✅ new field
+  matched_features: number | null;         // ✅ new field
+  unmatched_features: number | null;       // ✅ new field
+  health_score: number | null;             // ✅ new field
 
   // Integrity metrics
   unique_pcodes?: number | null;
