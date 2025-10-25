@@ -51,7 +51,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, [countryIso]);
 
   // ────────────────────────────────
-  // Fit map bounds to GeoJSON
+  // Fit map bounds
   // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
@@ -86,19 +86,19 @@ export default function GISPage({ params }: { params: CountryParams }) {
     const isVisible = !visible[id];
     setVisible(prev => ({ ...prev, [id]: isVisible }));
 
-    if (!isVisible) return; // turning off, nothing to load
+    if (!isVisible) return; // toggling off
 
     if (!geojsonById[id]) {
       try {
         let text: string | null = null;
 
-        // Try direct public URL first
+        // Try public URL first
         if (layer.source?.url) {
           const res = await fetch(layer.source.url);
           if (res.ok) text = await res.text();
         }
 
-        // Fallback to Supabase Storage
+        // Fallback to Supabase storage
         if (!text) {
           const bucket = layer.source?.bucket || "gis_raw";
           const path = layer.source?.path || layer.layer_name;
@@ -183,36 +183,36 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-// Realtime updates
-// ────────────────────────────────
-useEffect(() => {
-  const channel = supabase
-    .channel("gis_layers_changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "gis_layers" },
-      payload => {
-        console.log("🔄 GIS layer changed — refreshing...");
-        fetchLayers();
+  // Realtime updates (non-async cleanup)
+  // ────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel("gis_layers_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "gis_layers" },
+        payload => {
+          console.log("🔄 GIS layer changed — refreshing...");
+          fetchLayers();
 
-        if (payload.eventType === "INSERT")
-          showToast(`🆕 Added layer: ${(payload.new as any).layer_name}`);
-        else if (payload.eventType === "DELETE")
-          showToast(`🗑️ Removed layer: ${(payload.old as any).layer_name}`);
-        else if (payload.eventType === "UPDATE")
-          showToast(`✏️ Updated layer: ${(payload.new as any).layer_name}`);
-      }
-    )
-    .subscribe();
+          if (payload.eventType === "INSERT")
+            showToast(`🆕 Added layer: ${(payload.new as any).layer_name}`);
+          else if (payload.eventType === "DELETE")
+            showToast(`🗑️ Removed layer: ${(payload.old as any).layer_name}`);
+          else if (payload.eventType === "UPDATE")
+            showToast(`✏️ Updated layer: ${(payload.new as any).layer_name}`);
+        }
+      )
+      .subscribe();
 
-  // ✅ synchronous cleanup — no Promise returned
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [fetchLayers]);
+    // ✅ synchronous cleanup
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchLayers]);
 
   // ────────────────────────────────
-  // Mount
+  // Mount + rerender
   // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
@@ -223,7 +223,9 @@ useEffect(() => {
     return () => clearTimeout(timer);
   }, []);
 
+  // ────────────────────────────────
   // Color by admin level
+  // ────────────────────────────────
   const colorByLevel = (lvl?: string) =>
     lvl === "ADM1" ? "#a31d1d" : lvl === "ADM2" ? "#c94f23" : lvl === "ADM3" ? "#640811" : "#555";
 
@@ -343,9 +345,7 @@ useEffect(() => {
                   key={id}
                   data={gj as any}
                   style={{
-                    color: colorByLevel(
-                      layers.find(l => l.id === id)?.admin_level
-                    ),
+                    color: colorByLevel(layers.find(l => l.id === id)?.admin_level ?? undefined),
                     weight: 1,
                   }}
                 />
