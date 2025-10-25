@@ -12,7 +12,7 @@ import type { CountryParams } from "@/app/country/types";
 import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 
-// Lazy load leaflet components
+// Lazy-load Leaflet
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
@@ -20,7 +20,7 @@ const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ss
 interface GISLayer {
   id: string;
   layer_name: string;
-  admin_level: string;
+  admin_level: string | null;
   feature_count: number | null;
   avg_area_sqkm: number | null;
   total_area_sqkm: number | null;
@@ -45,12 +45,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const showToast = (msg: string) => {
     const id = Date.now();
     setToasts(t => [...t, { id, msg }]);
-    setTimeout(() => {
-      setToasts(t => t.filter(toast => toast.id !== id));
-    }, 4000);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
   };
 
-  // Fetch GIS Layers
+  // ────────────────────────────────
+  // Load GIS layers
+  // ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -60,41 +60,41 @@ export default function GISPage({ params }: { params: CountryParams }) {
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
 
-    if (error) console.error("❌ Error fetching layers:", error.message);
+    if (error) console.error("❌ Error fetching layers:", error);
     else setLayers(data || []);
   }, [countryIso]);
 
-  // Fit bounds to a GeoJSON
+  // ────────────────────────────────
+  // Fit bounds to GeoJSON
+  // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
     if (!map || !geojson.features?.length) return;
-
-    const coords = geojson.features
-      .flatMap(f =>
-        f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon"
-          ? (f.geometry.coordinates.flat(2) as number[][])
-          : []
-      )
-      .filter(c => Array.isArray(c) && c.length === 2);
-
-    if (coords.length > 0) {
-      const lats = coords.map(c => c[1]);
-      const lngs = coords.map(c => c[0]);
-      map.fitBounds(
-        [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)],
-        ],
-        { padding: [20, 20] }
-      );
-    }
+    const coords: number[][] = geojson.features.flatMap(f =>
+      f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon"
+        ? (f.geometry.coordinates.flat(2) as number[][])
+        : []
+    );
+    const valid = coords.filter(c => Array.isArray(c) && c.length === 2);
+    if (!valid.length) return;
+    const lats = valid.map(c => c[1]);
+    const lngs = valid.map(c => c[0]);
+    map.fitBounds(
+      [
+        [Math.min(...lats), Math.min(...lngs)],
+        [Math.max(...lats), Math.max(...lngs)],
+      ],
+      { padding: [20, 20] }
+    );
   };
 
+  // ────────────────────────────────
   // Toggle visibility
+  // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
-    setVisible(prev => ({ ...prev, [id]: isVisible }));
+    setVisible(v => ({ ...v, [id]: isVisible }));
 
     if (isVisible && !geojsonById[id]) {
       try {
@@ -102,22 +102,23 @@ export default function GISPage({ params }: { params: CountryParams }) {
         const path = layer.source?.path || layer.layer_name;
         const { data } = await supabase.storage.from(bucket).download(path);
         if (!data) return;
-        const text = await data.text();
-        const json = JSON.parse(text) as FeatureCollection<Geometry>;
-        setGeojsonById(prev => ({ ...prev, [id]: json }));
+        const json = JSON.parse(await data.text()) as FeatureCollection<Geometry>;
+        setGeojsonById(g => ({ ...g, [id]: json }));
         fitToLayer(json);
-      } catch (err) {
-        console.error("⚠️ Failed loading GeoJSON:", err);
+      } catch (e) {
+        console.error("⚠️ GeoJSON load failed:", e);
+        showToast("⚠️ Failed to load GeoJSON");
       }
     } else if (isVisible && geojsonById[id]) {
       fitToLayer(geojsonById[id]);
     }
   };
 
+  // ────────────────────────────────
   // Delete layer
+  // ────────────────────────────────
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
-
     try {
       const bucket = layer.source?.bucket || "gis_raw";
       const path = layer.source?.path || layer.layer_name;
@@ -125,12 +126,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
       await supabase.rpc("delete_gis_layer_cascade", { p_id: layer.id });
       await fetchLayers();
       showToast(`🗑️ Deleted ${layer.layer_name}`);
-    } catch (err: any) {
-      showToast("❌ Delete failed: " + err.message);
+    } catch (e: any) {
+      showToast(`❌ Delete failed: ${e.message}`);
     }
   };
 
+  // ────────────────────────────────
   // Refresh metrics
+  // ────────────────────────────────
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -140,33 +143,40 @@ export default function GISPage({ params }: { params: CountryParams }) {
       if (error) throw error;
       await fetchLayers();
       showToast("📊 Metrics refreshed");
-    } catch (err: any) {
-      showToast("❌ Metrics refresh failed: " + err.message);
+    } catch (e: any) {
+      showToast(`❌ Metrics refresh failed: ${e.message}`);
     } finally {
       setRefreshing(false);
     }
   };
 
-  // Load on mount
+  // ────────────────────────────────
+  // Lifecycle
+  // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
 
-  // Force rerender map
   useEffect(() => {
-    const timer = setTimeout(() => setMapKey(k => k + 1), 200);
+    const timer = setTimeout(() => setMapKey(k => k + 1), 150);
     return () => clearTimeout(timer);
   }, []);
 
-  // Health badge color
-  const healthClass = (score: number | null) => {
-    if (score == null) return "text-gray-500";
-    if (score >= 90) return "text-green-600 font-medium";
-    if (score >= 70) return "text-yellow-600 font-medium";
-    return "text-red-600 font-medium";
-  };
+  // ────────────────────────────────
+  // Helpers
+  // ────────────────────────────────
+  const healthClass = (s: number | null) =>
+    s == null
+      ? "text-gray-500"
+      : s >= 90
+      ? "text-green-600 font-medium"
+      : s >= 70
+      ? "text-yellow-600 font-medium"
+      : "text-red-600 font-medium";
 
+  // ────────────────────────────────
   // Render
+  // ────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -185,7 +195,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }}
     >
       <div className="p-6 space-y-4 relative">
-        {/* Header actions */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">GIS Layers</h2>
           <div className="flex gap-2">
@@ -217,7 +227,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                 <th className="px-3 py-2 text-right font-medium">Total Area (km²)</th>
                 <th className="px-3 py-2 text-right font-medium">Matched</th>
                 <th className="px-3 py-2 text-right font-medium">Unmatched</th>
-                <th className="px-3 py-2 text-right font-medium">Health</th>
+                <th className="px-3 py-2 text-right font-medium">Health (%)</th>
                 <th className="px-3 py-2 text-center font-medium">Visible</th>
                 <th className="px-3 py-2 text-right font-medium">Actions</th>
               </tr>
@@ -237,7 +247,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                         {l.layer_name}
                       </Link>
                     </td>
-                    <td className="px-3 py-2">{l.admin_level}</td>
+                    <td className="px-3 py-2">{l.admin_level ?? "—"}</td>
                     <td className="px-3 py-2 text-right">{l.feature_count ?? "—"}</td>
                     <td className="px-3 py-2 text-right">
                       {l.avg_area_sqkm ? l.avg_area_sqkm.toLocaleString() : "—"}
@@ -281,7 +291,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
             key={mapKey}
             center={[12.8797, 121.774]}
             zoom={5}
-            style={{ height: "100%", width: "100%", zIndex: 0 }}
+            style={{ height: "100%", width: "100%" }}
             ref={mapRef}
           >
             <TileLayer
@@ -299,13 +309,22 @@ export default function GISPage({ params }: { params: CountryParams }) {
             )}
           </MapContainer>
 
-          {/* Legend Overlay */}
+          {/* Legend */}
           <div className="absolute bottom-3 left-3 bg-white/90 p-3 rounded shadow-md z-10">
             <div className="text-sm font-medium mb-1">Health Legend</div>
             <div className="space-y-1 text-xs">
-              <div><span className="inline-block w-3 h-3 bg-green-500 mr-2 rounded-sm"></span> ≥ 90% Healthy</div>
-              <div><span className="inline-block w-3 h-3 bg-yellow-500 mr-2 rounded-sm"></span> 70–89% Moderate</div>
-              <div><span className="inline-block w-3 h-3 bg-red-500 mr-2 rounded-sm"></span> < 70% Poor</div>
+              <div>
+                <span className="inline-block w-3 h-3 bg-green-500 mr-2 rounded-sm" />
+                ≥ 90% Healthy
+              </div>
+              <div>
+                <span className="inline-block w-3 h-3 bg-yellow-500 mr-2 rounded-sm" />
+                70–89% Moderate
+              </div>
+              <div>
+                <span className="inline-block w-3 h-3 bg-red-500 mr-2 rounded-sm" />
+                < 70% Poor
+              </div>
             </div>
           </div>
         </div>
