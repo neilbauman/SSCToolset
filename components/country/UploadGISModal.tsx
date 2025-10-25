@@ -10,6 +10,8 @@ interface UploadGISModalProps {
   onUploaded: () => void;
 }
 
+const ADMIN_LEVELS = ["ADM0", "ADM1", "ADM2", "ADM3", "ADM4", "ADM5"];
+
 export default function UploadGISModal({
   open,
   onClose,
@@ -17,6 +19,7 @@ export default function UploadGISModal({
   onUploaded,
 }: UploadGISModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [adminLevel, setAdminLevel] = useState("ADM0");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
@@ -30,16 +33,26 @@ export default function UploadGISModal({
     setUploading(false);
   };
 
+  const handleFileSelect = (selectedFile: File | null) => {
+    setFile(selectedFile);
+    if (!selectedFile) return;
+
+    // Try to auto-detect admin level
+    const admMatch = selectedFile.name.toLowerCase().match(/adm(\d)/);
+    if (admMatch) {
+      const detected = `ADM${admMatch[1]}`;
+      setAdminLevel(detected);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
-    setProgress(5);
-    setMessage("Preparing upload...");
+    setProgress(10);
+    setMessage("Uploading to Supabase Storage...");
 
     try {
-      // ────────────────────────────────
-      // 1️⃣ Determine file format + ADM level
-      // ────────────────────────────────
+      // Determine format
       const ext = file.name.split(".").pop()?.toLowerCase();
       const format =
         ext === "geojson" || ext === "json"
@@ -47,30 +60,15 @@ export default function UploadGISModal({
           : ext === "zip"
           ? "zip"
           : "unknown";
+      if (format === "unknown") throw new Error("Unsupported file type");
 
-      if (format === "unknown") {
-        throw new Error("Unsupported file type. Please upload .geojson, .json, or .zip");
-      }
-
-      const admMatch = file.name.toLowerCase().match(/adm(\d)/);
-      const adminLevel = admMatch
-        ? `ADM${admMatch[1]}`
-        : "ADM0"; // fallback if pattern not found
-
-      // ────────────────────────────────
-      // 2️⃣ Upload to Supabase Storage
-      // ────────────────────────────────
       const bucket = "gis_raw";
       const isoUpper = countryIso.toUpperCase();
-      const isoLower = countryIso.toLowerCase();
-      const objectKey = `${isoUpper}/${crypto.randomUUID()}/${file.name}`;
-
-      setProgress(20);
-      setMessage(`Uploading to storage path:\n${objectKey}`);
+      const path = `${isoUpper}/${crypto.randomUUID()}/${file.name}`;
 
       const { error: uploadErr } = await supabase.storage
         .from(bucket)
-        .upload(objectKey, file, {
+        .upload(path, file, {
           contentType:
             file.type ||
             (format === "geojson"
@@ -80,35 +78,26 @@ export default function UploadGISModal({
         });
 
       if (uploadErr) throw uploadErr;
+      setProgress(60);
 
-      setProgress(65);
-      setMessage("Registering layer in database...");
-
-      // ────────────────────────────────
-      // 3️⃣ Create public URL + DB entry
-      // ────────────────────────────────
-      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(objectKey);
-      const publicUrl = pub?.publicUrl ?? null;
-
-      const layerName = file.name;
-      const source = { bucket, path: objectKey, url: publicUrl };
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
+      const publicUrl = pub?.publicUrl || null;
 
       const { error: insertErr } = await supabase.from("gis_layers").insert({
         country_iso: isoUpper,
-        layer_name: layerName,
+        layer_name: file.name,
         admin_level: adminLevel,
         format,
         feature_count: null,
         avg_area_sqkm: null,
-        source,
+        source: { bucket, path, url: publicUrl },
       });
 
       if (insertErr) throw insertErr;
 
-      setProgress(85);
-      setMessage("Recomputing layer metrics...");
+      setProgress(90);
+      setMessage("Computing layer metrics...");
 
-      // Optional: trigger Supabase function if available
       await supabase.functions.invoke("compute-gis-metrics", {
         body: { country_iso: isoUpper },
       });
@@ -137,13 +126,31 @@ export default function UploadGISModal({
           <b>{countryIso.toUpperCase()}</b>.
         </p>
 
+        {/* File Input */}
         <input
           type="file"
           accept=".zip,.json,.geojson"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
           disabled={uploading}
           className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
         />
+
+        {/* Admin level dropdown */}
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-gray-700">Admin Level</label>
+          <select
+            value={adminLevel}
+            onChange={(e) => setAdminLevel(e.target.value)}
+            disabled={uploading}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          >
+            {ADMIN_LEVELS.map((adm) => (
+              <option key={adm} value={adm}>
+                {adm}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {progress > 0 && (
           <div className="w-full bg-gray-200 rounded h-2 overflow-hidden">
@@ -158,6 +165,7 @@ export default function UploadGISModal({
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{message}</p>
         )}
 
+        {/* Action buttons */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={() => {
