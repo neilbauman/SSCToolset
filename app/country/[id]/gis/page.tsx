@@ -13,10 +13,63 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap, LatLngBoundsExpression } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Lazy-load Leaflet components
+// Lazy load Leaflet components
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
+
+// ────────────────────────────────
+// Lightweight, non-recursive simplifier
+// ────────────────────────────────
+function simplifyPolyline(points: number[][], tolerance = 0.01): number[][] {
+  if (points.length <= 2) return points;
+  const sqTolerance = tolerance * tolerance;
+  const simplified: number[][] = [points[0]];
+
+  let prevPoint = points[0];
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i];
+    const dx = point[0] - prevPoint[0];
+    const dy = point[1] - prevPoint[1];
+    if (dx * dx + dy * dy > sqTolerance) {
+      simplified.push(point);
+      prevPoint = point;
+    }
+  }
+
+  if (simplified[simplified.length - 1] !== points[points.length - 1]) {
+    simplified.push(points[points.length - 1]);
+  }
+  return simplified;
+}
+
+function simplifyGeoJSON(
+  json: FeatureCollection<Geometry>,
+  tolerance = 0.01
+): FeatureCollection<Geometry> {
+  try {
+    const simplifyPolygon = (coords: any): any =>
+      coords.map((ring: number[][]) => simplifyPolyline(ring, tolerance));
+
+    const simplifyMultiPolygon = (coords: any): any =>
+      coords.map((poly: number[][][]) => simplifyPolygon(poly));
+
+    return {
+      ...json,
+      features: json.features.map(f => {
+        const geom = f.geometry;
+        if (geom.type === "Polygon")
+          return { ...f, geometry: { ...geom, coordinates: simplifyPolygon(geom.coordinates) } };
+        if (geom.type === "MultiPolygon")
+          return { ...f, geometry: { ...geom, coordinates: simplifyMultiPolygon(geom.coordinates) } };
+        return f;
+      }),
+    };
+  } catch (err) {
+    console.warn("⚠️ Simplify failed:", err);
+    return json;
+  }
+}
 
 export default function GISPage({ params }: { params: CountryParams }) {
   const countryIso = params.id.toUpperCase();
@@ -38,7 +91,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Fetch GIS layers
+  // Load GIS layers
   // ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
@@ -52,46 +105,11 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, [countryIso]);
 
   // ────────────────────────────────
-  // Simplify GeoJSON geometry
-  // ────────────────────────────────
-  const simplifyCoords = (coords: any, tolerance = 0.01): any => {
-    if (!Array.isArray(coords)) return coords;
-    if (typeof coords[0] === "number") return coords.map(n => +n.toFixed(5));
-    return coords.map(inner => simplifyCoords(inner, tolerance));
-  };
-
-  const simplifyGeoJSON = (json: FeatureCollection): FeatureCollection => {
-    try {
-      return {
-        ...json,
-        features: json.features.map(f => {
-          const geom = f.geometry;
-          // Only simplify geometries that have coordinates
-          if ("coordinates" in geom) {
-            return {
-              ...f,
-              geometry: {
-                ...geom,
-                coordinates: simplifyCoords(geom.coordinates, 0.01),
-              },
-            };
-          }
-          return f; // GeometryCollection or invalid type
-        }),
-      };
-    } catch (err) {
-      console.error("⚠️ Simplification failed:", err);
-      return json;
-    }
-  };
-
-  // ────────────────────────────────
-  // Fit map to GeoJSON bounds
+  // Fit map to GeoJSON
   // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
     if (!map || !geojson?.features?.length) return;
-
     const coords = geojson.features.flatMap(f => {
       if (f.geometry?.type === "Polygon")
         return (f.geometry.coordinates.flat(1) as number[][]).filter(c => Array.isArray(c) && c.length === 2);
@@ -99,20 +117,18 @@ export default function GISPage({ params }: { params: CountryParams }) {
         return (f.geometry.coordinates.flat(2) as number[][]).filter(c => Array.isArray(c) && c.length === 2);
       return [];
     });
-
-    if (coords.length > 0) {
-      const lats = coords.map(c => c[1]);
-      const lngs = coords.map(c => c[0]);
-      const bounds: LatLngBoundsExpression = [
-        [Math.min(...lats), Math.min(...lngs)],
-        [Math.max(...lats), Math.max(...lngs)],
-      ];
-      map.fitBounds(bounds, { padding: [20, 20] });
-    }
+    if (!coords.length) return;
+    const lats = coords.map(c => c[1]);
+    const lngs = coords.map(c => c[0]);
+    const bounds: LatLngBoundsExpression = [
+      [Math.min(...lats), Math.min(...lngs)],
+      [Math.max(...lats), Math.max(...lngs)],
+    ];
+    map.fitBounds(bounds, { padding: [20, 20] });
   };
 
   // ────────────────────────────────
-  // Toggle layer visibility
+  // Toggle layer
   // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
@@ -124,25 +140,27 @@ export default function GISPage({ params }: { params: CountryParams }) {
         const bucket = layer.source?.bucket || "gis_raw";
         const path = layer.source?.path || layer.layer_name;
         const { data, error } = await supabase.storage.from(bucket).download(path);
-        if (error || !data) throw error || new Error("No data returned");
-
+        if (error || !data) throw error || new Error("Download failed");
         const text = await data.text();
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
-        const simplified = simplifyGeoJSON(json);
 
+        let tol = 0;
+        if (simplifyLevel === "Low") tol = 0.02;
+        else if (simplifyLevel === "Medium") tol = 0.05;
+        else if (simplifyLevel === "High") tol = 0.1;
+
+        const simplified = simplifyLevel === "None" ? json : simplifyGeoJSON(json, tol);
         setGeojsonById(prev => ({ ...prev, [id]: simplified }));
         fitToLayer(simplified);
       } catch (err) {
         console.error("⚠️ Failed loading GeoJSON:", err);
         showToast(`Failed to load ${layer.layer_name}`);
       }
-    } else if (isVisible && geojsonById[id]) {
-      fitToLayer(geojsonById[id]);
-    }
+    } else if (isVisible && geojsonById[id]) fitToLayer(geojsonById[id]);
   };
 
   // ────────────────────────────────
-  // Delete layer (Supabase DB + Storage)
+  // Delete
   // ────────────────────────────────
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
@@ -159,7 +177,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Refresh metrics
+  // Refresh
   // ────────────────────────────────
   const refreshMetrics = async () => {
     setRefreshing(true);
@@ -178,7 +196,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Realtime listener (safe cleanup)
+  // Realtime updates
   // ────────────────────────────────
   useEffect(() => {
     const channel = supabase
@@ -191,16 +209,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
     };
   }, [fetchLayers]);
 
-  // ────────────────────────────────
-  // Load layers on mount
-  // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
 
-  // ────────────────────────────────
-  // Force map re-render
-  // ────────────────────────────────
   useEffect(() => {
     const timer = setTimeout(() => setMapKey(k => k + 1), 200);
     return () => clearTimeout(timer);
@@ -227,7 +239,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">GIS Layers</h2>
@@ -304,10 +315,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => handleDeleteLayer(l)}
-                        className="text-red-600 hover:text-red-800"
-                      >
+                      <button onClick={() => handleDeleteLayer(l)} className="text-red-600 hover:text-red-800">
                         <Trash2 className="w-4 h-4 inline" />
                       </button>
                     </td>
