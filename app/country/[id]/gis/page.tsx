@@ -28,9 +28,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const mapRef = useRef<LeafletMap | null>(null);
   const [mapKey, setMapKey] = useState(0);
 
-  // ────────────────────────────────
-  // Toasts
-  // ────────────────────────────────
+  // Toast notifications
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
   const showToast = (msg: string) => {
     const id = Date.now();
@@ -52,7 +50,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, [countryIso]);
 
   // ────────────────────────────────
-  // Load GeoJSON + toggle visibility
+  // Toggle layer visibility + load GeoJSON
   // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
@@ -63,14 +61,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
       try {
         const bucket = layer.source?.bucket || "gis_raw";
         let path = layer.source?.path || layer.layer_name;
-
-        // 🩹 Auto-correct lowercase “phl/” → “PHL/”
-        path = path.replace(/^phl\//i, "PHL/");
+        path = path.replace(/^phl\//i, "PHL/"); // auto-correct lowercase folder
 
         const { data, error } = await supabase.storage.from(bucket).download(path);
         if (error || !data) throw error || new Error("No data returned");
 
         const text = await data.text();
+        if (!text.trim().startsWith("{")) throw new Error("Invalid GeoJSON file");
+
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
         setGeojsonById(prev => ({ ...prev, [id]: json }));
         fitToLayer(json);
@@ -84,7 +82,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Fit map to GeoJSON (safe flatten)
+  // Stack-safe coordinate walker
   // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
@@ -92,39 +90,66 @@ export default function GISPage({ params }: { params: CountryParams }) {
 
     const coords: number[][] = [];
 
-    for (const f of geojson.features) {
-      const geom = f.geometry;
-      if (!geom) continue;
+    const extractCoords = (geom: any) => {
+      if (!geom || !geom.type) return;
 
-      const extractCoords = (g: any) => {
-        if (!g) return;
-        if (g.type === "Point") coords.push(g.coordinates);
-        else if (g.type === "MultiPoint" || g.type === "LineString")
-          coords.push(...g.coordinates);
-        else if (g.type === "MultiLineString" || g.type === "Polygon")
-          coords.push(...g.coordinates.flat());
-        else if (g.type === "MultiPolygon")
-          coords.push(...g.coordinates.flat(2));
-      };
+      switch (geom.type) {
+        case "Point":
+          coords.push(geom.coordinates);
+          break;
 
-      extractCoords(geom);
+        case "MultiPoint":
+        case "LineString":
+          for (const c of geom.coordinates) coords.push(c);
+          break;
+
+        case "MultiLineString":
+        case "Polygon":
+          for (const ring of geom.coordinates)
+            for (const c of ring) coords.push(c);
+          break;
+
+        case "MultiPolygon":
+          for (const poly of geom.coordinates)
+            for (const ring of poly)
+              for (const c of ring) coords.push(c);
+          break;
+
+        case "GeometryCollection":
+          for (const g of geom.geometries) extractCoords(g);
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    for (const feature of geojson.features) {
+      extractCoords(feature.geometry);
     }
 
     if (coords.length > 0) {
       const lats = coords.map(c => c[1]);
       const lngs = coords.map(c => c[0]);
-      map.fitBounds(
-        [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)],
-        ],
-        { padding: [20, 20] }
-      );
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+
+      if (isFinite(minLat) && isFinite(maxLat) && isFinite(minLng) && isFinite(maxLng)) {
+        map.fitBounds(
+          [
+            [minLat, minLng],
+            [maxLat, maxLng],
+          ],
+          { padding: [20, 20] }
+        );
+      }
     }
   };
 
   // ────────────────────────────────
-  // Delete a layer
+  // Delete layer (DB + storage)
   // ────────────────────────────────
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
@@ -167,7 +192,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     const channel = supabase
       .channel("gis_layers_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, payload => {
-        console.log("🔄 GIS layer changed — refreshing...");
         fetchLayers();
         if (payload.eventType === "INSERT")
           showToast(`🆕 Added layer: ${(payload.new as any).layer_name}`);
@@ -190,9 +214,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     fetchLayers();
   }, [fetchLayers]);
 
-  // ────────────────────────────────
-  // Force map re-render
-  // ────────────────────────────────
+  // Force map re-render on mount
   useEffect(() => {
     const timer = setTimeout(() => setMapKey(k => k + 1), 200);
     return () => clearTimeout(timer);
@@ -239,7 +261,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </div>
         </div>
 
-        {/* Layer Table */}
+        {/* Table */}
         <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
