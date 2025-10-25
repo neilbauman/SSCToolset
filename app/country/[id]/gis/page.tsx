@@ -34,18 +34,35 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setTimeout(() => setToasts(t => t.filter(toast => toast.id !== id)), 4000);
   };
 
+  // ────────────────────────────────
+  // Fetch all GIS layers
+  // ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
-      .select(
-        "id, country_iso, layer_name, admin_level, feature_count, avg_area_sqkm, total_area_sqkm, matched_features, unmatched_features, health_score, source"
-      )
+      .select(`
+        id,
+        country_iso,
+        layer_name,
+        admin_level,
+        feature_count,
+        avg_area_sqkm,
+        total_area_sqkm,
+        matched_features,
+        unmatched_features,
+        health_score,
+        source
+      `)
       .eq("country_iso", countryIso)
       .order("admin_level", { ascending: true });
+
     if (error) console.error(error);
     else setLayers(data || []);
   }, [countryIso]);
 
+  // ────────────────────────────────
+  // Toggle map layer visibility
+  // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
@@ -67,6 +84,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
             ? (f.geometry.coordinates.flat(2) as number[][])
             : []
         );
+
         if (coords.length) {
           const map = mapRef.current;
           if (map) {
@@ -88,54 +106,64 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-// Refresh metrics (force update from edge function)
-// ────────────────────────────────
-const refreshMetrics = async () => {
-  setRefreshing(true);
-  try {
-    // 1️⃣ Call the edge function
-    const { data, error } = await supabase.functions.invoke("compute-gis-metrics", {
-      body: { country_iso: countryIso },
-    });
-    if (error) throw error;
+  // Refresh metrics (force update from edge function)
+  // ────────────────────────────────
+  const refreshMetrics = async () => {
+    setRefreshing(true);
+    try {
+      // 1️⃣ Call the edge function
+      const { data, error } = await supabase.functions.invoke("compute-gis-metrics", {
+        body: { country_iso: countryIso },
+      });
+      if (error) throw error;
 
-    // 2️⃣ Wait a bit to ensure DB updates propagate
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+      // 2️⃣ Wait briefly to allow updates to propagate
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // 3️⃣ Force fetch fresh data (no cache)
-    const { data: updatedLayers, error: fetchErr } = await supabase
-  .from("gis_layers")
-  .select(`
-    id,
-    layer_name,
-    admin_level,
-    country_iso,
-    feature_count,
-    matched_features,
-    unmatched_features,
-    total_area_sqkm,
-    health_score
-  `)
-  .eq("country_iso", countryIso)
-  .order("admin_level", { ascending: true });
+      // 3️⃣ Force fresh query from database (bypass cache)
+      const { data: updatedLayers, error: fetchErr } = await supabase
+        .from("gis_layers")
+        .select(`
+          id,
+          layer_name,
+          admin_level,
+          country_iso,
+          feature_count,
+          matched_features,
+          unmatched_features,
+          total_area_sqkm,
+          health_score
+        `)
+        .eq("country_iso", countryIso)
+        .order("admin_level", { ascending: true })
+        .neq("updated_at", null)
+        .throwOnError();
 
-    if (fetchErr) throw fetchErr;
+      if (fetchErr) throw fetchErr;
 
-    // 4️⃣ Replace existing state
-    setLayers(updatedLayers || []);
-    showToast("✅ Metrics updated");
-  } catch (err: any) {
-    console.error("❌ Metrics refresh failed:", err);
-    showToast("❌ Metrics refresh failed: " + err.message);
-  } finally {
-    setRefreshing(false);
-  }
-};
+      console.log("🔄 Refetched layers:", updatedLayers);
 
+      // 4️⃣ Replace state
+      setLayers(updatedLayers || []);
+      showToast("✅ Metrics updated");
+    } catch (err: any) {
+      console.error("❌ Metrics refresh failed:", err);
+      showToast("❌ Metrics refresh failed: " + err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ────────────────────────────────
+  // Initial load
+  // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
 
+  // ────────────────────────────────
+  // Render
+  // ────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -293,10 +321,7 @@ const refreshMetrics = async () => {
         {/* Toasts */}
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
           {toasts.map(t => (
-            <div
-              key={t.id}
-              className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md"
-            >
+            <div key={t.id} className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md">
               <span>{t.msg}</span>
               <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>
                 <X className="w-4 h-4" />
