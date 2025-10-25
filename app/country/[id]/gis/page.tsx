@@ -36,33 +36,25 @@ export default function GISPage({ params }: { params: CountryParams }) {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
   };
 
-  // Color palette for ADM levels
-  const colorByLevel = (level?: string) => {
-    const map: Record<string, string> = {
-      ADM0: "#8B0000",
-      ADM1: "#B22222",
-      ADM2: "#DC143C",
-      ADM3: "#E36C0A",
-      ADM4: "#E3B60A",
-      ADM5: "#A8D603",
-    };
-    return map[level || ""] || "#640811";
+  // Color palette by ADM level
+  const levelColors: Record<string, string> = {
+    ADM0: "#8B0000",
+    ADM1: "#B22222",
+    ADM2: "#DC143C",
+    ADM3: "#E36C0A",
+    ADM4: "#E3B60A",
+    ADM5: "#A8D603",
   };
+  const colorByLevel = (level?: string) => levelColors[level || ""] || "#640811";
 
-  // ────────────────────────────────
-  // GeoJSON simplifier
-  // ────────────────────────────────
+  // Simplify coordinates
   const simplifyCoords = (coords: any, tolerance = 0.01): any => {
     if (!Array.isArray(coords)) return coords;
-    if (typeof coords[0] === "number") {
-      return coords.map(n => +(+n).toFixed(5));
-    }
+    if (typeof coords[0] === "number") return coords.map(n => +(+n).toFixed(5));
     return coords.map(c => simplifyCoords(c, tolerance));
   };
 
-  // ────────────────────────────────
   // Fetch GIS layers
-  // ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -73,14 +65,10 @@ export default function GISPage({ params }: { params: CountryParams }) {
     if (error) {
       console.error("❌ Error fetching layers:", error.message);
       showToast("❌ Failed to load GIS layers");
-    } else {
-      setLayers(data || []);
-    }
+    } else setLayers(data || []);
   }, [countryIso]);
 
-  // ────────────────────────────────
-  // Toggle layer visibility and load data
-  // ────────────────────────────────
+  // Toggle visibility and load GeoJSON
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
@@ -93,14 +81,12 @@ export default function GISPage({ params }: { params: CountryParams }) {
           layer.source?.path ||
           layer.source?.url?.split("/storage/v1/object/public/")[1] ||
           layer.layer_name;
-
         const { data: file, error } = await supabase.storage.from(bucket).download(path);
         if (error || !file) throw new Error(error?.message || "No data found");
-
         const text = await file.text();
         const json = JSON.parse(text) as FeatureCollection<Geometry>;
 
-        // Clean up malformed coordinates
+        // Clean geometry
         const cleaned = {
           ...json,
           features: json.features.map(f => ({
@@ -127,9 +113,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ────────────────────────────────
-  // Fit map bounds to GeoJSON
-  // ────────────────────────────────
+  // Fit map bounds
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
     if (!map || !geojson.features?.length) return;
@@ -140,7 +124,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
         : []
     );
     const valid = coords.filter(c => Array.isArray(c) && c.length === 2);
-
     if (valid.length > 0) {
       const lats = valid.map(c => c[1]);
       const lngs = valid.map(c => c[0]);
@@ -152,9 +135,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ────────────────────────────────
-  // Delete layer + cascade cleanup
-  // ────────────────────────────────
+  // Delete layer (cascade)
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}" and all its features?`)) return;
     try {
@@ -169,9 +150,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ────────────────────────────────
   // Refresh metrics
-  // ────────────────────────────────
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -188,32 +167,25 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ────────────────────────────────
   // Realtime listener
-  // ────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel("gis_layers_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, () => {
-        fetchLayers();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, () =>
+        fetchLayers()
+      )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [fetchLayers]);
 
-  // ────────────────────────────────
   // Initial load
-  // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
 
-  // ────────────────────────────────
-  // Force map re-render
-  // ────────────────────────────────
+  // Force map refresh
   useEffect(() => {
     const timer = setTimeout(() => setMapKey(k => k + 1), 200);
     return () => clearTimeout(timer);
@@ -312,7 +284,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </table>
         </div>
 
-        {/* Map Container */}
+        {/* Map */}
         <div className="h-[500px] w-full rounded-md overflow-hidden border relative z-0">
           <MapContainer
             key={mapKey}
@@ -331,16 +303,28 @@ export default function GISPage({ params }: { params: CountryParams }) {
                   key={id}
                   data={gj as any}
                   style={{
-                    color: colorByLevel(
-                      layers.find(l => l.id === id)?.admin_level || "ADM3"
-                    ),
+                    color: colorByLevel(layers.find(l => l.id === id)?.admin_level || "ADM3"),
                     weight: 1,
-                    fillOpacity: 0.2,
+                    fillOpacity: 0.25,
                   }}
                 />
               ) : null
             )}
           </MapContainer>
+
+          {/* Legend */}
+          <div className="absolute bottom-3 left-3 bg-white bg-opacity-90 rounded-md shadow-md px-3 py-2 text-xs border">
+            <div className="font-semibold mb-1">Legend</div>
+            {Object.entries(levelColors).map(([lvl, color]) => (
+              <div key={lvl} className="flex items-center gap-2 mb-0.5">
+                <div
+                  className="w-3 h-3 rounded-sm border"
+                  style={{ backgroundColor: color }}
+                ></div>
+                <span>{lvl}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Upload Modal */}
