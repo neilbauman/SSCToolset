@@ -13,7 +13,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Lazy load Leaflet
+// Lazy-load Leaflet
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
@@ -37,7 +37,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Load GIS layers
+  // Fetch GIS layers
   // ────────────────────────────────
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
@@ -79,32 +79,38 @@ export default function GISPage({ params }: { params: CountryParams }) {
   };
 
   // ────────────────────────────────
-  // Toggle visibility + load GeoJSON
+  // Toggle layer + load GeoJSON
   // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
     setVisible(prev => ({ ...prev, [id]: isVisible }));
-
-    if (!isVisible) return; // toggling off
+    if (!isVisible) return;
 
     if (!geojsonById[id]) {
       try {
         let text: string | null = null;
+        const bucket = layer.source?.bucket || "gis_raw";
+        const path = layer.source?.path || layer.layer_name;
 
-        // Try public URL first
-        if (layer.source?.url) {
-          const res = await fetch(layer.source.url);
-          if (res.ok) text = await res.text();
+        // ✅ Supabase storage first
+        try {
+          const { data, error } = await supabase.storage.from(bucket).download(path);
+          if (error) console.warn("⚠️ Supabase download failed:", error.message);
+          else if (data) text = await data.text();
+        } catch (err) {
+          console.error("⚠️ Supabase fetch error:", err);
         }
 
-        // Fallback to Supabase storage
-        if (!text) {
-          const bucket = layer.source?.bucket || "gis_raw";
-          const path = layer.source?.path || layer.layer_name;
-          const { data, error } = await supabase.storage.from(bucket).download(path);
-          if (error) console.error("⚠️ Supabase download failed:", error.message);
-          else if (data) text = await data.text();
+        // ✅ Fallback to public URL if defined
+        if (!text && layer.source?.url) {
+          try {
+            const res = await fetch(layer.source.url);
+            if (res.ok) text = await res.text();
+            else console.warn(`⚠️ HTTP ${res.status} on ${layer.source.url}`);
+          } catch (err) {
+            console.error("⚠️ Public URL fetch failed:", err);
+          }
         }
 
         if (!text) {
@@ -112,7 +118,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           return;
         }
 
-        // Defensive JSON parsing
+        // Safe parse
         let parsed: any;
         try {
           parsed = JSON.parse(text);
@@ -205,14 +211,13 @@ export default function GISPage({ params }: { params: CountryParams }) {
       )
       .subscribe();
 
-    // ✅ synchronous cleanup
     return () => {
       supabase.removeChannel(channel);
     };
   }, [fetchLayers]);
 
   // ────────────────────────────────
-  // Mount + rerender
+  // Mount + re-render
   // ────────────────────────────────
   useEffect(() => {
     fetchLayers();
@@ -224,7 +229,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
   }, []);
 
   // ────────────────────────────────
-  // Color by admin level
+  // Color helper
   // ────────────────────────────────
   const colorByLevel = (lvl?: string) =>
     lvl === "ADM1" ? "#a31d1d" : lvl === "ADM2" ? "#c94f23" : lvl === "ADM3" ? "#640811" : "#555";
@@ -250,7 +255,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header actions */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">GIS Layers</h2>
           <div className="flex gap-2">
@@ -354,7 +359,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </MapContainer>
         </div>
 
-        {/* Upload Modal */}
+        {/* Upload modal above map */}
         {openUpload && (
           <div className="z-50 relative">
             <UploadGISModal
