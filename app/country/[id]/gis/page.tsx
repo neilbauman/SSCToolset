@@ -13,7 +13,6 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { Map as LeafletMap } from "leaflet";
 import UploadGISModal from "@/components/country/UploadGISModal";
 
-// Lazy-loaded Leaflet components
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
@@ -27,16 +26,15 @@ export default function GISPage({ params }: { params: CountryParams }) {
   const [refreshing, setRefreshing] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const [mapKey, setMapKey] = useState(0);
-
-  // ───────────── Toasts
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+
   const showToast = (msg: string) => {
     const id = Date.now();
     setToasts(t => [...t, { id, msg }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
   };
 
-  // ───────────── Fetch GIS layers
+  // Fetch GIS layers
   const fetchLayers = useCallback(async () => {
     const { data, error } = await supabase
       .from("gis_layers")
@@ -47,67 +45,91 @@ export default function GISPage({ params }: { params: CountryParams }) {
     else setLayers(data || []);
   }, [countryIso]);
 
-  // ───────────── Safe coordinate flattener
-  const collectCoordinates = (geom: any, acc: number[][]) => {
-    if (!geom) return;
-    const stack: any[] = [geom];
-    const seen = new WeakSet();
+  // ────────────────────────────────
+  // GeoJSON simplifier + coordinate guard
+  // ────────────────────────────────
+  const simplifyCoords = (coords: any, tolerance = 0.01) => {
+    if (!Array.isArray(coords)) return coords;
+    if (typeof coords[0] === "number") return coords.map(n => +n.toFixed(5));
 
-    while (stack.length) {
-      const g = stack.pop();
-      if (!g || seen.has(g)) continue;
-      seen.add(g);
+    return coords.map(c => simplifyCoords(c, tolerance));
+  };
 
-      const { type, coordinates, geometries } = g;
+  const simplifyGeometry = (geom: any) => {
+    if (!geom || !geom.type) return geom;
+    const { type, coordinates, geometries } = geom;
 
-      if (type === "Point" && Array.isArray(coordinates)) {
-        acc.push(coordinates);
-      } else if (
-        type === "MultiPoint" ||
-        type === "LineString"
-      ) {
-        for (const c of coordinates || []) if (Array.isArray(c)) acc.push(c);
-      } else if (type === "Polygon" || type === "MultiLineString") {
-        for (const ring of coordinates || [])
-          for (const c of ring || []) if (Array.isArray(c)) acc.push(c);
-      } else if (type === "MultiPolygon") {
-        for (const poly of coordinates || [])
-          for (const ring of poly || [])
-            for (const c of ring || []) if (Array.isArray(c)) acc.push(c);
-      } else if (type === "GeometryCollection" && Array.isArray(geometries)) {
-        for (const sub of geometries) stack.push(sub);
-      }
+    switch (type) {
+      case "Point":
+        return { ...geom, coordinates: simplifyCoords(coordinates) };
+      case "MultiPoint":
+      case "LineString":
+      case "MultiLineString":
+      case "Polygon":
+      case "MultiPolygon":
+        return { ...geom, coordinates: simplifyCoords(coordinates) };
+      case "GeometryCollection":
+        return {
+          ...geom,
+          geometries: (geometries || []).map((g: any) => simplifyGeometry(g)),
+        };
+      default:
+        return geom;
     }
   };
 
-  // ───────────── Fit map to layer
+  const simplifyGeoJSON = (fc: FeatureCollection): FeatureCollection => ({
+    ...fc,
+    features: fc.features.map(f => ({
+      ...f,
+      geometry: simplifyGeometry(f.geometry),
+    })),
+  });
+
+  // ────────────────────────────────
+  // Fit map to layer
+  // ────────────────────────────────
   const fitToLayer = (geojson: FeatureCollection) => {
     const map = mapRef.current;
     if (!map || !geojson.features?.length) return;
 
     const coords: number[][] = [];
-    for (const f of geojson.features) collectCoordinates(f.geometry, coords);
+    const extract = (geom: any) => {
+      if (!geom || !geom.type) return;
+      const { type, coordinates, geometries } = geom;
+
+      if (type === "Point") coords.push(coordinates);
+      else if (type === "LineString" || type === "MultiPoint") {
+        for (const c of coordinates || []) coords.push(c);
+      } else if (type === "Polygon" || type === "MultiLineString") {
+        for (const ring of coordinates || []) for (const c of ring || []) coords.push(c);
+      } else if (type === "MultiPolygon") {
+        for (const poly of coordinates || [])
+          for (const ring of poly || [])
+            for (const c of ring || []) coords.push(c);
+      } else if (type === "GeometryCollection") {
+        for (const g of geometries || []) extract(g);
+      }
+    };
+
+    for (const f of geojson.features) extract(f.geometry);
 
     const valid = coords.filter(c => Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]));
     if (valid.length === 0) return;
 
     const lats = valid.map(c => c[1]);
     const lngs = valid.map(c => c[0]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
+    const bounds = [
+      [Math.min(...lats), Math.min(...lngs)],
+      [Math.max(...lats), Math.max(...lngs)],
+    ];
 
-    map.fitBounds(
-      [
-        [minLat, minLng],
-        [maxLat, maxLng],
-      ],
-      { padding: [20, 20] }
-    );
+    map.fitBounds(bounds, { padding: [20, 20] });
   };
 
-  // ───────────── Toggle visibility + load
+  // ────────────────────────────────
+  // Toggle visibility + load
+  // ────────────────────────────────
   const toggleLayer = async (layer: GISLayer) => {
     const id = layer.id;
     const isVisible = !visible[id];
@@ -120,16 +142,14 @@ export default function GISPage({ params }: { params: CountryParams }) {
         path = path.replace(/^phl\//i, "PHL/");
 
         const { data, error } = await supabase.storage.from(bucket).download(path);
-        if (error || !data) throw error || new Error("No data returned");
+        if (error || !data) throw error || new Error("No data");
 
         const text = await data.text();
-        if (!text.trim().startsWith("{")) throw new Error("Invalid GeoJSON file");
-        const json = JSON.parse(text) as FeatureCollection<Geometry>;
-
-        // sanitize coordinates before storing
-        json.features = json.features.filter(f => f.geometry);
-        setGeojsonById(prev => ({ ...prev, [id]: json }));
-        fitToLayer(json);
+        if (!text.trim().startsWith("{")) throw new Error("Invalid GeoJSON");
+        const raw = JSON.parse(text) as FeatureCollection<Geometry>;
+        const simplified = simplifyGeoJSON(raw); // ⬅️ key fix here
+        setGeojsonById(prev => ({ ...prev, [id]: simplified }));
+        fitToLayer(simplified);
       } catch (err) {
         console.error("⚠️ Failed loading GeoJSON:", err);
         showToast(`⚠️ Could not load ${layer.layer_name}`);
@@ -139,7 +159,7 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ───────────── Delete layer
+  // Delete + Refresh
   const handleDeleteLayer = async (layer: GISLayer) => {
     if (!confirm(`Delete layer "${layer.layer_name}"?`)) return;
     try {
@@ -155,7 +175,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ───────────── Refresh metrics
   const refreshMetrics = async () => {
     setRefreshing(true);
     try {
@@ -172,27 +191,17 @@ export default function GISPage({ params }: { params: CountryParams }) {
     }
   };
 
-  // ───────────── Realtime
+  // Realtime changes
   useEffect(() => {
     const channel = supabase
       .channel("gis_layers_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, payload => {
-        fetchLayers();
-        if (payload.eventType === "INSERT")
-          showToast(`🆕 Added layer: ${(payload.new as any).layer_name}`);
-        else if (payload.eventType === "DELETE")
-          showToast(`🗑️ Removed layer: ${(payload.old as any).layer_name}`);
-        else if (payload.eventType === "UPDATE")
-          showToast(`✏️ Updated layer: ${(payload.new as any).layer_name}`);
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "gis_layers" }, () => fetchLayers())
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [fetchLayers]);
 
-  // ───────────── Mount
   useEffect(() => {
     fetchLayers();
   }, [fetchLayers]);
@@ -202,7 +211,9 @@ export default function GISPage({ params }: { params: CountryParams }) {
     return () => clearTimeout(timer);
   }, []);
 
-  // ───────────── Render
+  // ────────────────────────────────
+  // Render
+  // ────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -221,7 +232,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">GIS Layers</h2>
           <div className="flex gap-2">
@@ -241,7 +251,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </div>
         </div>
 
-        {/* Table */}
         <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -318,7 +327,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
           </MapContainer>
         </div>
 
-        {/* Upload Modal */}
         {openUpload && (
           <UploadGISModal
             open={openUpload}
@@ -328,7 +336,6 @@ export default function GISPage({ params }: { params: CountryParams }) {
           />
         )}
 
-        {/* Toasts */}
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
           {toasts.map(t => (
             <div
