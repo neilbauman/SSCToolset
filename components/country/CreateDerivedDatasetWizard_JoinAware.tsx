@@ -1,37 +1,50 @@
+// components/country/CreateDerivedDatasetWizard_JoinAware.tsx
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Source = "core" | "other" | "derived" | "gis";
-type DatasetOption = { id: string; title: string; source: Source; table: string };
 type Method = "ratio" | "multiply" | "sum" | "difference";
+
+type DatasetOption = {
+  id: string;         // for selects
+  title: string;      // label shown
+  source: Source;     // grouping
+  table: string;      // table to pass to RPCs
+};
+
+type EditPayload = {
+  id: string;
+  title: string;
+  description: string | null;
+  admin_level: string;
+  method: Method;
+  use_scalar_b?: boolean | null;
+  scalar_b_val?: number | null;
+  dataset_a_id?: string | null;
+  dataset_b_id?: string | null;
+  table_a?: string | null;
+  table_b?: string | null;
+  col_a?: string | null;
+  col_b?: string | null;
+  decimals?: number | null;
+  formula?: string | null;
+  is_parametric?: boolean | null;
+  source_level?: string | null;
+  target_level?: string | null;
+  dynamic_resolution?: boolean | null;
+  dependencies?: any;
+  taxonomy_categories?: string[] | null;
+  taxonomy_terms?: string[] | null;
+  country_iso?: string | null;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  editDataset?: {
-    id: string;
-    title: string;
-    description: string | null;
-    admin_level: string;
-    method: Method;
-    use_scalar_b: boolean;
-    scalar_b_val: number | null;
-    dataset_a_id: string | null;
-    dataset_b_id: string | null;
-    table_a: string | null;
-    table_b: string | null;
-    col_a: string | null;
-    col_b: string | null;
-    decimals: number | null;
-    source_level: string | null;
-    target_level: string | null;
-    dynamic_resolution: boolean | null;
-    dependencies: any | null;
-    formula: string | null;
-    taxonomy_categories: string[] | null;
-    taxonomy_terms: string[] | null;
-  } | null;
+  editDataset?: EditPayload | null; // if provided, wizard pre-populates and updates
 };
 
 const ACCENT = "#640811";
@@ -42,149 +55,205 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   countryIso,
   editDataset = null,
 }: Props) {
-  // ───────────────── state
+  // ---------- options state ----------
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
+
+  // columns
   const [colA, setColA] = useState("population");
   const [colB, setColB] = useState("area_sqkm");
+
+  // math
   const [method, setMethod] = useState<Method>("ratio");
+  const [decimals, setDecimals] = useState(3);
+
+  // scalar mode
   const [useScalarB, setUseScalarB] = useState(false);
   const [scalarB, setScalarB] = useState<number>(1);
-  const [decimals, setDecimals] = useState(2);
-  const [preview, setPreview] = useState<any[]>([]);
+  const [scalarRollup, setScalarRollup] = useState(true); // aggregate scalar up to target
+
+  // meta
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [targetLevel, setTargetLevel] = useState("ADM3");
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [isParametric, setIsParametric] = useState(true);
 
   // taxonomy
-  const [categories, setCategories] = useState<Record<string, string[]>>({});
-  const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
+  const [categoriesMap, setCategoriesMap] = useState<Record<string, string[]>>({});
+  // taxonomy as sets to avoid dupes and keep toggles cheap
+  const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
-  // ───────────────── helper toast (inline)
-  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
-  const toast = (msg: string) => {
-    const id = Date.now();
-    setToasts((t) => [...t, { id, msg }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
-  };
+  // UI
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [preview, setPreview] = useState<
+    { out_pcode: string | null; place_name: string | null; a: number | null; b: number | null; derived: number | null; completeness_warning: string | null }[]
+  >([]);
 
-  // ───────────────── dataset options
+  // ---------- load dataset options ----------
   useEffect(() => {
     if (!open) return;
+
     (async () => {
-      const list: DatasetOption[] = [
-        { id: "core-admin", title: "Administrative Boundaries [core]", source: "core", table: "admin_units" },
-        { id: "core-pop",   title: "Population Data [core]",           source: "core", table: "population_data" },
-        { id: "core-gis",   title: "GIS Features [core]",              source: "gis",  table: "gis_features" },
+      const all: DatasetOption[] = [
+        { id: "core-admin", title: "Administrative Units [core]", source: "core", table: "admin_units" },
+        { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
+        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features" },
       ];
 
-      // user datasets (other)
-      const { data: others, error: e1 } = await supabase
+      // other datasets
+      const { data: others } = await supabase
         .from("dataset_metadata")
         .select("id,title")
         .eq("country_iso", countryIso);
-      if (!e1 && others) {
-        others.forEach((d: any) =>
-          list.push({ id: d.id, title: d.title, source: "other", table: `dataset_${d.id}` })
-        );
+
+      if (others?.length) {
+        for (const d of others) {
+          all.push({
+            id: d.id,
+            title: d.title,
+            source: "other",
+            table: `dataset_${d.id}`,
+          });
+        }
       }
 
       // derived datasets
-      const { data: derived, error: e2 } = await supabase
+      const { data: derived } = await supabase
         .from("derived_dataset_metadata")
         .select("id,title")
         .eq("country_iso", countryIso);
-      if (!e2 && derived) {
-        derived.forEach((d: any) =>
-          list.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` })
-        );
+
+      if (derived?.length) {
+        for (const d of derived) {
+          all.push({
+            id: d.id,
+            title: d.title,
+            source: "derived",
+            table: `derived_${d.id}`,
+          });
+        }
       }
 
-      setDatasets(list);
+      setDatasets(all);
     })();
   }, [open, countryIso]);
 
-  // ───────────────── taxonomy options
+  // ---------- load taxonomy ----------
   useEffect(() => {
     if (!open) return;
+
     (async () => {
-      const { data, error } = await supabase.from("taxonomy_terms").select("category,name");
-      if (error || !data) return;
+      const { data } = await supabase.from("taxonomy_terms").select("category,name");
+      if (!data) return;
+
       const grouped: Record<string, string[]> = {};
-      data.forEach((t) => {
-        if (!grouped[t.category]) grouped[t.category] = [];
-        grouped[t.category].push(t.name);
+      data.forEach(({ category, name }) => {
+        if (!grouped[category]) grouped[category] = [];
+        grouped[category].push(name);
       });
-      setCategories(grouped);
+      setCategoriesMap(grouped);
     })();
   }, [open]);
 
-  // ───────────────── load edit values
+  // ---------- if editing, hydrate ----------
   useEffect(() => {
     if (!open) return;
-
-    if (editDataset) {
-      setTitle(editDataset.title || "");
-      setDesc(editDataset.description || "");
-      setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
-      setMethod((editDataset.method as Method) || "ratio");
-      setUseScalarB(!!editDataset.use_scalar_b);
-      setScalarB(editDataset.scalar_b_val ?? 1);
-      setColA(editDataset.col_a || "population");
-      setColB(editDataset.col_b || "area_sqkm");
-      setDecimals(editDataset.decimals ?? 2);
-
-      // best-effort hydrate datasetA/B from current list after datasets load
-      // (we’ll resolve in a memo below)
-    } else {
-      // sensible defaults for a fresh “population density” style config
+    if (!editDataset) {
+      // defaults for new
       setTitle("");
       setDesc("");
       setTargetLevel("ADM3");
       setMethod("ratio");
       setUseScalarB(false);
       setScalarB(1);
+      setScalarRollup(true);
+      setIsParametric(true);
       setColA("population");
       setColB("area_sqkm");
-      setDecimals(2);
+      setDecimals(3);
+      setDatasetA(null);
+      setDatasetB(null);
+      setPreview([]);
       setTaxonomy({});
+      return;
     }
-  }, [open, editDataset]);
 
-  // resolve datasetA/datasetB against datasets list after it arrives
-  useEffect(() => {
-    if (!editDataset || datasets.length === 0) return;
-    const a =
-      datasets.find((d) => d.table === (editDataset.table_a || "")) ||
-      datasets.find((d) => d.id === (editDataset.dataset_a_id || ""));
-    const b =
-      datasets.find((d) => d.table === (editDataset.table_b || "")) ||
-      datasets.find((d) => d.id === (editDataset.dataset_b_id || ""));
-    if (a) setDatasetA(a);
-    if (b) setDatasetB(b);
+    // hydrate from editDataset
+    setTitle(editDataset.title || "");
+    setDesc(editDataset.description || "");
+    setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
+    setMethod((editDataset.method as Method) || "ratio");
+    setUseScalarB(!!editDataset.use_scalar_b);
+    setScalarB(editDataset.scalar_b_val ?? 1);
+    setIsParametric(editDataset.is_parametric ?? true);
+    setDecimals(editDataset.decimals ?? 3);
+    setScalarRollup(true); // default on when using scalar; we can’t infer from older records
+
+    if (editDataset.col_a) setColA(editDataset.col_a);
+    if (editDataset.col_b) setColB(editDataset.col_b);
+
+    // best-effort match of tables to options
+    if (editDataset.table_a) {
+      const foundA = datasets.find((d) => d.table === editDataset.table_a);
+      setDatasetA(foundA || null);
+    }
+    if (editDataset.table_b) {
+      const foundB = datasets.find((d) => d.table === editDataset.table_b);
+      setDatasetB(foundB || null);
+    }
+
     // taxonomy
-    const tcat = editDataset.taxonomy_categories || [];
-    const tterms = editDataset.taxonomy_terms || [];
-    if (tcat.length || tterms.length) {
-      const next: Record<string, string[]> = {};
-      tcat.forEach((c) => { next[c] = []; });
-      tterms.forEach((t) => {
-        const cat = Object.keys(categories).find((c) => categories[c]?.includes(t));
-        if (cat) next[cat] = Array.from(new Set([...(next[cat] || []), t]));
-      });
-      setTaxonomy(next);
+    const catArr = editDataset.taxonomy_categories || [];
+    const termArr = editDataset.taxonomy_terms || [];
+    const next: Record<string, Set<string>> = {};
+    for (const cat of catArr) next[cat] = new Set<string>();
+    for (const t of termArr) {
+      // place into first category that has the term; if none, create loose "Uncategorized"
+      let placed = false;
+      for (const cat of Object.keys(categoriesMap)) {
+        if (categoriesMap[cat]?.includes(t)) {
+          if (!next[cat]) next[cat] = new Set<string>();
+          next[cat].add(t);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        if (!next["Uncategorized"]) next["Uncategorized"] = new Set<string>();
+        next["Uncategorized"].add(t);
+      }
     }
-  }, [editDataset, datasets, categories]);
+    setTaxonomy(next);
+  }, [open, editDataset, datasets, categoriesMap]);
 
-  // ───────────────── methods
+  // ---------- helpers ----------
+  const methodSymbol = useMemo(() => {
+    switch (method) {
+      case "ratio":
+        return "÷";
+      case "multiply":
+        return "×";
+      case "sum":
+        return "+";
+      case "difference":
+        return "−";
+    }
+  }, [method]);
+
+  const computedFormula = useMemo(() => {
+    const rhs = useScalarB ? String(scalarB) : `B.${colB}`;
+    return `A.${colA} ${methodSymbol} ${rhs}`;
+  }, [useScalarB, scalarB, colA, colB, methodSymbol]);
+
+  // ---------- preview ----------
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
-      toast("Select Dataset A and (Dataset B or a scalar).");
+      alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
     setLoadingPreview(true);
+
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table,
       p_table_b: useScalarB ? null : datasetB?.table ?? null,
@@ -194,127 +263,111 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_col_a: colA,
       p_col_b: useScalarB ? null : colB,
       p_use_scalar_b: useScalarB,
-      p_scalar_b_val: scalarB,
+      p_scalar_b_val: useScalarB ? scalarB : null,
+      p_is_parametric: isParametric,
+      p_scalar_rollup: useScalarB ? scalarRollup : null,
     });
+
     setLoadingPreview(false);
     if (error) {
-      toast("Preview error: " + error.message);
+      alert("Preview error: " + error.message);
       return;
     }
-    setPreview(data || []);
+    setPreview((data as any[]) || []);
   }
 
+  // ---------- save ----------
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) {
-      toast("Select Dataset A and (Dataset B or a scalar).");
+      alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
-    const formula = `${colA} ${method === "ratio" ? "/" : method === "multiply" ? "*" : method === "sum" ? "+" : "-"} ${useScalarB ? scalarB : colB}`;
 
-    const { error } = await supabase.rpc("create_or_update_derived_dataset", {
-      p_id: editDataset?.id ?? null,
+    const txCategories = Object.keys(taxonomy);
+    const txTerms = txCategories.flatMap((c) => Array.from(taxonomy[c] || []));
+
+    const payload: Record<string, any> = {
       p_country_iso: countryIso,
-      p_title: title,
+      p_title:
+        title ||
+        (method === "ratio"
+          ? `Ratio (${targetLevel})`
+          : `${method[0].toUpperCase()}${method.slice(1)} (${targetLevel})`),
       p_description: desc || null,
       p_admin_level: targetLevel,
-      p_method: method,
-      p_use_scalar_b: useScalarB,
-      p_scalar_b_val: useScalarB ? scalarB : null,
       p_table_a: datasetA.table,
       p_table_b: useScalarB ? null : datasetB?.table ?? null,
       p_col_a: colA,
       p_col_b: useScalarB ? null : colB,
+      p_use_scalar_b: useScalarB,
+      p_scalar_b_val: useScalarB ? scalarB : null,
+      p_method: method,
       p_decimals: decimals,
-      p_formula: formula,
-      p_taxonomy_categories: Object.keys(taxonomy),
-      p_taxonomy_terms: Object.values(taxonomy).flat(),
-    });
+      p_taxonomy_categories: txCategories,
+      p_taxonomy_terms: txTerms,
+      p_formula: computedFormula,
+      p_is_parametric: isParametric,
+      p_scalar_rollup: useScalarB ? scalarRollup : null,
+    };
 
+    // if editing, pass the record id to update
+    if (editDataset?.id) payload.p_existing_id = editDataset.id;
+
+    const { error } = await supabase.rpc("create_derived_dataset", payload);
     if (error) {
-      toast("Save error: " + error.message);
+      alert("Save failed: " + error.message);
       return;
     }
-    toast(editDataset ? "✅ Changes saved." : "✅ Derived dataset created.");
+    alert(editDataset ? "✅ Changes saved." : "✅ Derived dataset created.");
     onClose();
   }
 
-  // ───────────────── UI helpers (compact)
-  const MethodButton = ({ m }: { m: Method }) => (
-    <button
-      onClick={() => setMethod(m)}
-      className={`px-2 py-1 border rounded text-xs ${
-        method === m ? "text-white" : ""
-      }`}
-      style={{
-        borderColor: ACCENT,
-        background: method === m ? ACCENT : "transparent",
-      }}
-    >
-      {m}
-    </button>
-  );
-
-  const Group = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex flex-wrap gap-2 mb-2 items-center">{children}</div>
-  );
-
-  const Field = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
-    <div className={`flex-1 min-w-[180px] ${className}`}>
-      <label className="block text-xs font-medium mb-1">{label}</label>
-      {children}
-    </div>
-  );
-
   if (!open) return null;
 
+  // ---------- UI ----------
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
-        <h2 className="text-base font-semibold mb-3" style={{ color: ACCENT }}>
-          {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
-        </h2>
+        <h2 className="text-lg font-semibold mb-3">Create Derived Dataset</h2>
 
         {/* Title / Description / Target Level */}
-        <Group>
-          <Field label="Title">
-            <input
-              className="border p-1 rounded w-full"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Population Density (ADM3)"
-            />
-          </Field>
-          <Field label="Description">
-            <input
-              className="border p-1 rounded w-full"
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="Short description"
-            />
-          </Field>
-          <Field label="Target Admin Level">
-            <select
-              className="border p-1 rounded w-full"
-              value={targetLevel}
-              onChange={(e) => setTargetLevel(e.target.value)}
-            >
-              {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
-                <option key={lvl}>{lvl}</option>
-              ))}
-            </select>
-          </Field>
-        </Group>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Description"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+          />
+          <select
+            className="border p-1 rounded"
+            value={targetLevel}
+            onChange={(e) => setTargetLevel(e.target.value)}
+          >
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
+              <option key={lvl}>{lvl}</option>
+            ))}
+          </select>
+        </div>
 
-        {/* Dataset Pickers (explicit blocks, avoids TS tuple-ReactNode issue) */}
-        <Group>
-          <Field label="Dataset A">
+        {/* Dataset pickers */}
+        <div className="flex flex-wrap gap-2 mb-2">
+          <div className="flex-1">
+            <label className="font-medium text-xs">Dataset A</label>
             <select
               className="border p-1 rounded w-full"
               value={datasetA?.id || ""}
-              onChange={(e) => setDatasetA(datasets.find((d) => d.id === e.target.value) || null)}
+              onChange={(e) =>
+                setDatasetA(datasets.find((x) => x.id === e.target.value) || null)
+              }
             >
               <option value="">Select Dataset A</option>
-              {(["core", "gis", "other", "derived"] as Source[]).map((group) => (
+              {(["core", "gis", "other", "derived"] as const).map((group) => (
                 <optgroup key={group} label={group.toUpperCase()}>
                   {datasets
                     .filter((d) => d.source === group)
@@ -326,52 +379,105 @@ export default function CreateDerivedDatasetWizard_JoinAware({
                 </optgroup>
               ))}
             </select>
-          </Field>
+          </div>
 
-          <Field label="Dataset B">
-            <select
-              className="border p-1 rounded w-full disabled:bg-gray-100"
-              disabled={useScalarB}
-              value={datasetB?.id || ""}
-              onChange={(e) => setDatasetB(datasets.find((d) => d.id === e.target.value) || null)}
-            >
-              <option value="">Select Dataset B</option>
-              {(["core", "gis", "other", "derived"] as Source[]).map((group) => (
-                <optgroup key={group} label={group.toUpperCase()}>
-                  {datasets
-                    .filter((d) => d.source === group)
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
+          {!useScalarB && (
+            <div className="flex-1">
+              <label className="font-medium text-xs">Dataset B</label>
+              <select
+                className="border p-1 rounded w-full"
+                value={datasetB?.id || ""}
+                onChange={(e) =>
+                  setDatasetB(datasets.find((x) => x.id === e.target.value) || null)
+                }
+              >
+                <option value="">Select Dataset B</option>
+                {(["core", "gis", "other", "derived"] as const).map((group) => (
+                  <optgroup key={group} label={group.toUpperCase()}>
+                    {datasets
+                      .filter((d) => d.source === group)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
 
-          <div className="flex items-center gap-2 mt-5">
+        {/* Columns + Scalar + Parametric */}
+        <div className="flex flex-wrap items-end gap-3 mb-2">
+          <div>
+            <label className="text-xs font-medium">Column A</label>
+            <input
+              className="border p-1 rounded w-40"
+              value={colA}
+              onChange={(e) => setColA(e.target.value)}
+              placeholder="e.g., population"
+            />
+          </div>
+
+          {!useScalarB && (
+            <div>
+              <label className="text-xs font-medium">Column B</label>
+              <input
+                className="border p-1 rounded w-40"
+                value={colB}
+                onChange={(e) => setColB(e.target.value)}
+                placeholder="e.g., area_sqkm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
             <label className="text-xs">
               <input
                 type="checkbox"
                 checked={useScalarB}
                 onChange={(e) => setUseScalarB(e.target.checked)}
-                className="mr-1"
-              />
-              Use scalar for B
+              />{" "}
+              Use scalar B
             </label>
-            <input
-              type="number"
-              step="0.0001"
-              disabled={!useScalarB}
-              value={scalarB}
-              onChange={(e) => setScalarB(parseFloat(e.target.value))}
-              className="border rounded w-24 text-right p-1 disabled:bg-gray-100"
-            />
+            {useScalarB && (
+              <>
+                <input
+                  type="number"
+                  value={Number.isFinite(scalarB) ? scalarB : 0}
+                  onChange={(e) =>
+                    setScalarB(parseFloat(e.target.value || "0"))
+                  }
+                  className="border rounded w-24 text-right p-1"
+                />
+                <label className="text-xs">
+                  <input
+                    type="checkbox"
+                    checked={scalarRollup}
+                    onChange={(e) => setScalarRollup(e.target.checked)}
+                  />{" "}
+                  Aggregate scalar up to target
+                </label>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <label className="text-xs">
+              <input
+                type="checkbox"
+                checked={isParametric}
+                onChange={(e) => setIsParametric(e.target.checked)}
+              />{" "}
+              Parametric
+            </label>
+
             <select
-              className="border rounded text-xs p-1 ml-2"
+              className="border rounded text-xs p-1"
               value={decimals}
               onChange={(e) => setDecimals(parseInt(e.target.value))}
+              title="Decimals"
             >
               {[0, 1, 2, 3].map((d) => (
                 <option key={d} value={d}>
@@ -380,52 +486,41 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               ))}
             </select>
           </div>
-        </Group>
+        </div>
 
-        {/* Columns + Method */}
-        <Group>
-          <Field label="Column A">
-            <input
-              className="border p-1 rounded w-full"
-              value={colA}
-              onChange={(e) => setColA(e.target.value)}
-              placeholder="population"
-            />
-          </Field>
-          <Field label="Column B">
-            <input
-              className="border p-1 rounded w-full disabled:bg-gray-100"
-              disabled={useScalarB}
-              value={colB}
-              onChange={(e) => setColB(e.target.value)}
-              placeholder="area_sqkm"
-            />
-          </Field>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs">Method:</span>
-            <MethodButton m="ratio" />
-            <MethodButton m="multiply" />
-            <MethodButton m="sum" />
-            <MethodButton m="difference" />
+        {/* Method + Preview */}
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs">Method:</span>
+          {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
-              onClick={previewJoin}
-              className="ml-2 px-3 py-1 rounded text-white text-xs"
-              style={{ background: ACCENT }}
-              disabled={loadingPreview}
+              key={m}
+              onClick={() => setMethod(m)}
+              className={`px-2 py-1 border rounded ${
+                method === m ? "text-white" : ""
+              }`}
+              style={{
+                background: method === m ? ACCENT : "transparent",
+                borderColor: "#e5e7eb",
+              }}
             >
-              {loadingPreview ? "Loading..." : "Preview"}
+              {m}
             </button>
-          </div>
-        </Group>
+          ))}
+          <button
+            onClick={previewJoin}
+            className="ml-auto px-3 py-1 text-white rounded"
+            style={{ background: ACCENT }}
+          >
+            {loadingPreview ? "Loading..." : "Preview"}
+          </button>
+        </div>
 
         <p className="text-xs italic mb-2">
-          Derived = A.{colA} {method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"}{" "}
-          {useScalarB ? scalarB : `B.${colB}`}
+          Derived = {computedFormula}
         </p>
 
         {/* Preview Table */}
-        <div className="max-h-48 overflow-y-auto border rounded mb-4 text-xs">
+        <div className="max-h-56 overflow-y-auto border rounded mb-4 text-xs">
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr>
@@ -440,93 +535,92 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             <tbody>
               {preview.map((r, i) => (
                 <tr key={i} className="border-t">
-                  <td className="p-1">{r.out_pcode}</td>
-                  <td className="p-1">{r.place_name}</td>
-                  <td className="p-1 text-right">{r.a}</td>
-                  <td className="p-1 text-right">{r.b}</td>
-                  <td className="p-1 text-right">{r.derived}</td>
-                  <td className="p-1">{r.completeness_warning}</td>
+                  <td className="p-1">{r.out_pcode ?? ""}</td>
+                  <td className="p-1">{r.place_name ?? ""}</td>
+                  <td className="p-1 text-right">
+                    {r.a === null || r.a === undefined ? "" : r.a}
+                  </td>
+                  <td className="p-1 text-right">
+                    {r.b === null || r.b === undefined ? "" : r.b}
+                  </td>
+                  <td className="p-1 text-right">
+                    {r.derived === null || r.derived === undefined
+                      ? ""
+                      : Number.isFinite(r.derived)
+                      ? r.derived?.toFixed(Math.min(6, Math.max(0, decimals)))
+                      : r.derived}
+                  </td>
+                  <td className="p-1">{r.completeness_warning ?? ""}</td>
                 </tr>
               ))}
-              {preview.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-2 text-center italic text-gray-500">
-                    No preview yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
 
-        {/* Taxonomy (restored, compact) */}
-        <h3 className="text-sm font-semibold mb-2" style={{ color: ACCENT }}>
-          Assign Taxonomy
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
-          {Object.keys(categories).map((cat) => (
-            <div key={cat} className="border rounded p-2">
-              <label className="flex items-center gap-1 text-xs font-medium">
-                <input
-                  type="checkbox"
-                  checked={!!taxonomy[cat]}
-                  onChange={(e) => {
-                    const t = { ...taxonomy };
-                    if (e.target.checked) t[cat] = [...(t[cat] || [])];
-                    else delete t[cat];
-                    setTaxonomy(t);
-                  }}
-                />
-                {cat}
-              </label>
-              {taxonomy[cat] && (
-                <div className="mt-1 grid grid-cols-1 ml-2">
-                  {categories[cat].map((term) => (
-                    <label key={term} className="flex items-center gap-1 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={taxonomy[cat]?.includes(term) || false}
-                        onChange={(e) => {
-                          const t = { ...taxonomy };
-                          if (e.target.checked) t[cat] = Array.from(new Set([...(t[cat] || []), term]));
-                          else t[cat] = (t[cat] || []).filter((x) => x !== term);
-                          if ((t[cat] || []).length === 0) delete t[cat];
-                          setTaxonomy(t);
-                        }}
-                      />
-                      {term}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+        {/* Taxonomy */}
+        <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {Object.keys(categoriesMap).map((cat) => {
+            const isChecked = !!taxonomy[cat];
+            return (
+              <div key={cat} className="border rounded p-2">
+                <label className="flex items-center gap-1 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) =>
+                      setTaxonomy((prev) => {
+                        const next = { ...prev };
+                        if (e.target.checked) {
+                          if (!next[cat]) next[cat] = new Set<string>();
+                        } else {
+                          delete next[cat];
+                        }
+                        return next;
+                      })
+                    }
+                  />{" "}
+                  {cat}
+                </label>
+                {isChecked && (
+                  <div className="ml-3 mt-1 grid grid-cols-1">
+                    {categoriesMap[cat].map((term) => (
+                      <label key={term} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={!!taxonomy[cat]?.has(term)}
+                          onChange={(e) =>
+                            setTaxonomy((prev) => {
+                              const next = { ...prev };
+                              if (!next[cat]) next[cat] = new Set<string>();
+                              if (e.target.checked) next[cat]!.add(term);
+                              else next[cat]!.delete(term);
+                              return next;
+                            })
+                          }
+                        />{" "}
+                        {term}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded text-xs">
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
           </button>
           <button
             onClick={saveDerived}
-            className="px-3 py-1 rounded text-white text-xs"
+            className="px-3 py-1 text-white rounded"
             style={{ background: ACCENT }}
           >
             {editDataset ? "Save Changes" : "Save Derived"}
           </button>
-        </div>
-
-        {/* Toasts */}
-        <div className="fixed bottom-4 right-4 space-y-2 z-50">
-          {toasts.map((t) => (
-            <div key={t.id} className="flex items-center gap-2 px-3 py-2 rounded shadow-md text-white" style={{ background: ACCENT }}>
-              <span className="text-xs">{t.msg}</span>
-              <button onClick={() => setToasts((ts) => ts.filter((x) => x.id !== t.id))} className="text-white/80 text-xs">
-                ✕
-              </button>
-            </div>
-          ))}
         </div>
       </div>
     </div>
