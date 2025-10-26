@@ -24,20 +24,18 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [colB, setColB] = useState("area_sqkm");
   const [method, setMethod] = useState<"ratio" | "multiply" | "sum" | "difference">("ratio");
   const [useScalarB, setUseScalarB] = useState(false);
-  const [scalarB, setScalarB] = useState<number>(1);
+  const [scalarB, setScalarB] = useState<number>(2.5);
   const [decimals, setDecimals] = useState(2);
-  const [preview, setPreview] = useState<any[]>([]);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [targetLevel, setTargetLevel] = useState("ADM3");
+  const [preview, setPreview] = useState<any[]>([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [dynamic, setDynamic] = useState(true);
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
   const [categories, setCategories] = useState<Record<string, string[]>>({});
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  // ────────────────────────────────────────────────
-  // 1️⃣ Load dataset options
-  // ────────────────────────────────────────────────
+  // Load dataset options
   useEffect(() => {
     if (!open) return;
     const loadDatasets = async () => {
@@ -46,35 +44,22 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
         { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features" },
       ];
-
-      const { data: others } = await supabase
-        .from("dataset_metadata")
-        .select("id,title")
-        .eq("country_iso", countryIso);
-
+      const { data: others } = await supabase.from("dataset_metadata").select("id,title").eq("country_iso", countryIso);
       if (others)
         others.forEach((d: any) =>
           all.push({ id: d.id, title: d.title, source: "other", table: `dataset_${d.id}` })
         );
-
-      const { data: derived } = await supabase
-        .from("derived_dataset_metadata")
-        .select("id,title")
-        .eq("country_iso", countryIso);
-
+      const { data: derived } = await supabase.from("derived_dataset_metadata").select("id,title").eq("country_iso", countryIso);
       if (derived)
         derived.forEach((d: any) =>
           all.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` })
         );
-
       setDatasets(all);
     };
     loadDatasets();
   }, [open, countryIso]);
 
-  // ────────────────────────────────────────────────
-  // 2️⃣ Load taxonomy
-  // ────────────────────────────────────────────────
+  // Load taxonomy
   useEffect(() => {
     if (!open) return;
     const loadTaxonomy = async () => {
@@ -90,105 +75,74 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     loadTaxonomy();
   }, [open]);
 
-  // ────────────────────────────────────────────────
-  // 3️⃣ Edit mode load
-  // ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!editDataset) return;
-    setTitle(editDataset.title || "");
-    setDesc(editDataset.description || "");
-    setTargetLevel(editDataset.admin_level || "ADM3");
-    setMethod(editDataset.method || "ratio");
-    setColA(editDataset.col_a || "population");
-    setColB(editDataset.col_b || "area_sqkm");
-    setUseScalarB(editDataset.use_scalar_b || false);
-    setScalarB(editDataset.scalar_b_val || 1);
-    setDecimals(editDataset.decimals || 2);
-  }, [editDataset]);
-
-  // ────────────────────────────────────────────────
-  // 4️⃣ Preview join (auto handles population/area)
-  // ────────────────────────────────────────────────
+  // Handle preview
   async function previewJoin() {
-    setLoadingPreview(true);
-
-    const isAuto = datasetA?.table === "population_data" && datasetB?.table === "gis_features";
-    let data: any = null;
-    let error: any = null;
-
-    if (isAuto) {
-      ({ data, error } = await supabase.rpc("simulate_join_preview_pd_dynamic", {
-        p_country_iso: countryIso,
-        p_target_level: targetLevel,
-      }));
-    } else {
-      ({ data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-        p_table_a: datasetA?.table,
-        p_table_b: datasetB?.table,
-        p_country: countryIso,
-        p_target_level: targetLevel,
-        p_method: method,
-        p_col_a: colA,
-        p_col_b: colB,
-        p_use_scalar_b: useScalarB,
-        p_scalar_b_val: scalarB,
-      }));
+    if (!datasetA || (!datasetB && !useScalarB)) {
+      alert("Please select Dataset A and either Dataset B or a scalar.");
+      return;
     }
-
+    setLoadingPreview(true);
+    const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
+      p_table_a: datasetA.table,
+      p_table_b: datasetB?.table || null,
+      p_country: countryIso,
+      p_target_level: targetLevel,
+      p_method: method,
+      p_col_a: colA,
+      p_col_b: colB,
+      p_use_scalar_b: useScalarB,
+      p_scalar_b_val: scalarB,
+    });
     setLoadingPreview(false);
-
     if (error) {
-      console.error("Preview error:", error);
       alert("Preview error: " + error.message);
     } else {
       setPreview(data || []);
     }
   }
 
-  // ────────────────────────────────────────────────
-  // 5️⃣ Save derived dataset
-  // ────────────────────────────────────────────────
+  // Handle save
   async function saveDerived() {
-    if (!datasetA && !useScalarB) return alert("Please select dataset A");
-    setSaving(true);
-
+    if (!datasetA || (!datasetB && !useScalarB)) {
+      alert("Please select Dataset A and either Dataset B or a scalar.");
+      return;
+    }
     const { error } = await supabase.rpc("create_derived_dataset", {
       p_country_iso: countryIso,
       p_title: title,
       p_description: desc,
       p_admin_level: targetLevel,
-      p_table_a: datasetA?.table || "population_data",
-      p_table_b: datasetB?.table || (useScalarB ? null : "gis_features"),
+      p_table_a: datasetA.table,
+      p_table_b: datasetB?.table || null,
       p_col_a: colA,
       p_col_b: colB,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: scalarB,
       p_method: method,
       p_decimals: decimals,
+      p_dynamic_resolution: dynamic,
+      p_formula: `${colA} ${method} ${useScalarB ? scalarB : colB}`,
       p_taxonomy_categories: Object.keys(taxonomy),
       p_taxonomy_terms: Object.values(taxonomy).flat(),
-      p_formula: `${colA} ${method} ${useScalarB ? scalarB : colB}`,
     });
-
-    setSaving(false);
-    if (error) return alert("Save failed: " + error.message);
-    alert("✅ Derived dataset saved successfully.");
-    onClose();
+    if (error) {
+      alert("Save failed: " + error.message);
+    } else {
+      alert("✅ Derived dataset saved successfully!");
+      onClose();
+    }
   }
 
   if (!open) return null;
 
-  // ────────────────────────────────────────────────
-  // Render
-  // ────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
         <h2 className="text-lg font-semibold mb-3">
           {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
         </h2>
 
-        {/* Title, Description, Admin Level */}
+        {/* Title + Description + Level */}
         <div className="flex flex-wrap gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -207,47 +161,52 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             value={targetLevel}
             onChange={(e) => setTargetLevel(e.target.value)}
           >
-            {["ADM4", "ADM3", "ADM2", "ADM1", "ADM0"].map((lvl) => (
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
               <option key={lvl}>{lvl}</option>
             ))}
           </select>
         </div>
 
-        {/* Dataset Pickers */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          {([
-  { label: "Dataset A", value: datasetA, setValue: setDatasetA },
-  { label: "Dataset B", value: datasetB, setValue: setDatasetB },
-] as const).map(({ label, value, setValue }, i) => (
-  <div key={i}>
-    <label className="font-medium text-xs block mb-1">{label}</label>
-    <select
-      className="border p-1 rounded w-full"
-      value={value?.id || ""}
-      onChange={(e) => {
-        const selected = datasets.find((x) => x.id === e.target.value) || null;
-        setValue(selected);
-      }}
-    >
-      <option value="">Select {label}</option>
-      {["core", "other", "derived", "gis"].map((group) => (
-        <optgroup key={group} label={group.toUpperCase()}>
-          {datasets
-            .filter((d) => d.source === group)
-            .map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.title}
-              </option>
-            ))}
-        </optgroup>
-      ))}
-    </select>
-  </div>
-))}
+        {/* Dynamic toggle */}
+        <label className="flex items-center gap-2 mb-3 text-xs">
+          <input type="checkbox" checked={dynamic} disabled /> Dynamic (auto-refresh / parametric)
+        </label>
+
+        {/* Dataset pickers */}
+        <div className="flex flex-wrap gap-3 mb-4">
+          {[
+            ["Dataset A", datasetA, setDatasetA],
+            ["Dataset B", datasetB, setDatasetB],
+          ].map(([label, ds, setDs], i) => (
+            <div key={i} className="flex-1">
+              <label className="font-medium text-xs">{label}</label>
+              <select
+                className="border p-1 rounded w-full disabled:bg-gray-100"
+                value={(ds as DatasetOption | null)?.id || ""}
+                onChange={(e) =>
+                  setDs(datasets.find((x) => x.id === e.target.value) || null)
+                }
+                disabled={useScalarB && label === "Dataset B"}
+              >
+                <option value="">Select {label}</option>
+                {["core", "other", "derived", "gis"].map((group) => (
+                  <optgroup key={group} label={group.toUpperCase()}>
+                    {datasets
+                      .filter((d) => d.source === group)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          ))}
         </div>
 
-        {/* Scalar Option */}
-        <div className="flex items-center gap-2 mb-3">
+        {/* Scalar toggle */}
+        <div className="flex items-center gap-2 mb-4">
           <label className="text-xs">
             <input
               type="checkbox"
@@ -259,24 +218,16 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           {useScalarB && (
             <input
               type="number"
-              className="border rounded w-24 text-right p-1"
+              step="any"
               value={scalarB}
               onChange={(e) => setScalarB(parseFloat(e.target.value))}
+              className="border rounded w-24 text-right p-1"
             />
           )}
-          <select
-            className="border rounded text-xs p-1 ml-auto"
-            value={decimals}
-            onChange={(e) => setDecimals(parseInt(e.target.value))}
-          >
-            {[0, 1, 2, 3].map((d) => (
-              <option key={d}>{d} decimals</option>
-            ))}
-          </select>
         </div>
 
-        {/* Method & Preview */}
-        <div className="flex items-center gap-2 mb-2">
+        {/* Method buttons */}
+        <div className="flex items-center gap-2 mb-3">
           <span className="text-xs">Method:</span>
           {["ratio", "multiply", "sum", "difference"].map((m) => (
             <button
@@ -289,23 +240,38 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               {m}
             </button>
           ))}
+          <select
+            className="ml-auto border rounded text-xs p-1"
+            value={decimals}
+            onChange={(e) => setDecimals(parseInt(e.target.value))}
+          >
+            {[0, 1, 2, 3].map((d) => (
+              <option key={d}>{d} dec</option>
+            ))}
+          </select>
           <button
             onClick={previewJoin}
-            disabled={loadingPreview}
-            className="ml-auto px-3 py-1 bg-[#640811] text-white rounded"
+            className="px-3 py-1 bg-[#640811] text-white rounded"
           >
             {loadingPreview ? "Loading..." : "Preview"}
           </button>
         </div>
 
-        {/* Formula Display */}
+        {/* Formula hint */}
         <p className="text-xs italic mb-2">
-          Derived = A.{colA} {method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"}{" "}
+          Derived = A.{colA}{" "}
+          {method === "ratio"
+            ? "÷"
+            : method === "multiply"
+            ? "×"
+            : method === "sum"
+            ? "+"
+            : "-"}{" "}
           {useScalarB ? scalarB : `B.${colB}`}
         </p>
 
-        {/* Preview Table */}
-        <div className="max-h-56 overflow-y-auto border rounded mb-4 text-xs">
+        {/* Preview table */}
+        <div className="max-h-48 overflow-y-auto border rounded mb-4 text-xs">
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr>
@@ -317,38 +283,36 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               </tr>
             </thead>
             <tbody>
-              {preview.length === 0 ? (
+              {preview.map((r, i) => (
+                <tr key={i} className="border-t">
+                  <td className="p-1">{r.out_pcode}</td>
+                  <td className="p-1">{r.place_name}</td>
+                  <td className="p-1 text-right">{r.a}</td>
+                  <td className="p-1 text-right">{r.b}</td>
+                  <td className="p-1 text-right">{r.derived}</td>
+                </tr>
+              ))}
+              {!preview.length && (
                 <tr>
-                  <td colSpan={5} className="text-center italic text-gray-500 py-3">
+                  <td className="p-2 text-center text-gray-500" colSpan={5}>
                     No preview data
                   </td>
                 </tr>
-              ) : (
-                preview.map((r, i) => (
-                  <tr key={i} className="border-t hover:bg-gray-50">
-                    <td className="p-1">{r.out_pcode}</td>
-                    <td className="p-1">{r.place_name}</td>
-                    <td className="p-1 text-right">{r.a ?? "—"}</td>
-                    <td className="p-1 text-right">{r.b ?? "—"}</td>
-                    <td className="p-1 text-right">{r.derived ?? "—"}</td>
-                  </tr>
-                ))
               )}
             </tbody>
           </table>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 mt-5">
+        <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
           </button>
           <button
             onClick={saveDerived}
-            disabled={saving}
             className="px-3 py-1 bg-[#640811] text-white rounded"
           >
-            {saving ? "Saving..." : editDataset ? "Save Changes" : "Save Derived"}
+            Save Derived
           </button>
         </div>
       </div>
