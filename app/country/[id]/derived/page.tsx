@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import Link from "next/link";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus, Eye, Edit3, Trash2, ArrowUpDown } from "lucide-react";
+import { Plus, Eye, Edit3, Trash2, ArrowUpDown, X } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
@@ -18,6 +17,8 @@ type DerivedDataset = {
   created_at: string;
 };
 
+type DerivedRow = Record<string, any>;
+
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
@@ -27,7 +28,13 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     key: "created_at",
     direction: "desc",
   });
+  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
+  const [viewerData, setViewerData] = useState<DerivedRow[]>([]);
+  const [viewerLoading, setViewerLoading] = useState(false);
 
+  // ────────────────────────────────────────────────
+  // Fetch derived datasets
+  // ────────────────────────────────────────────────
   const fetchDerivedDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -42,6 +49,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     fetchDerivedDatasets();
   }, [countryIso]);
 
+  // ────────────────────────────────────────────────
+  // Sorting logic
+  // ────────────────────────────────────────────────
   const sortedDatasets = useMemo(() => {
     const sorted = [...datasets];
     sorted.sort((a, b) => {
@@ -61,6 +71,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }));
   };
 
+  // ────────────────────────────────────────────────
+  // Delete dataset
+  // ────────────────────────────────────────────────
   const handleDelete = async (datasetId: string) => {
     if (!confirm("Are you sure you want to delete this derived dataset?")) return;
     const { error } = await supabase.from("derived_dataset_metadata").delete().eq("id", datasetId);
@@ -68,6 +81,28 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     await fetchDerivedDatasets();
   };
 
+  // ────────────────────────────────────────────────
+  // Load dataset preview
+  // ────────────────────────────────────────────────
+  const loadDatasetPreview = async (dataset: DerivedDataset) => {
+    setViewerLoading(true);
+    setSelectedDataset(dataset);
+    try {
+      const tableName = `derived_${dataset.id}`;
+      const { data, error } = await supabase.from(tableName).select("*").limit(100);
+      if (error) throw error;
+      setViewerData(data || []);
+    } catch (err: any) {
+      console.error("Preview load error:", err);
+      alert("⚠️ Failed to load dataset preview: " + err.message);
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  // ────────────────────────────────────────────────
+  // JSX
+  // ────────────────────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -136,19 +171,18 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 sortedDatasets.map(d => (
                   <tr
                     key={d.id}
-                    className="border-b hover:bg-gray-50 cursor-pointer"
-                    onClick={() => window.location.assign(`/country/${countryIso}/derived/${d.id}`)}
+                    className={`border-b hover:bg-gray-50 cursor-pointer ${
+                      selectedDataset?.id === d.id ? "bg-rose-50" : ""
+                    }`}
+                    onClick={() => loadDatasetPreview(d)}
                   >
                     <td className="px-3 py-2 text-[#640811] font-medium">{d.title}</td>
                     <td className="px-3 py-2">{d.admin_level}</td>
                     <td className="px-3 py-2">{d.method}</td>
                     <td className="px-3 py-2">{new Date(d.created_at).toLocaleDateString()}</td>
-                    <td
-                      className="px-3 py-2 text-right space-x-2"
-                      onClick={e => e.stopPropagation()}
-                    >
+                    <td className="px-3 py-2 text-right space-x-2" onClick={e => e.stopPropagation()}>
                       <button
-                        onClick={() => window.location.assign(`/country/${countryIso}/derived/${d.id}`)}
+                        onClick={() => loadDatasetPreview(d)}
                         className="text-[#640811] hover:text-[#3c050c]"
                         title="View Dataset"
                       >
@@ -179,11 +213,60 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
+        {/* Dataset Viewer */}
+        {selectedDataset && (
+          <div className="mt-6 border rounded-lg bg-white shadow-md p-4 relative">
+            <button
+              onClick={() => setSelectedDataset(null)}
+              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+              title="Close viewer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-md font-semibold mb-2 text-[#640811]">
+              Viewing: {selectedDataset.title}
+            </h3>
+            {viewerLoading ? (
+              <p className="text-sm italic text-gray-500">Loading...</p>
+            ) : viewerData.length === 0 ? (
+              <p className="text-sm italic text-gray-500">No records found.</p>
+            ) : (
+              <div className="max-h-[400px] overflow-auto border rounded text-xs">
+                <table className="w-full border-collapse">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      {Object.keys(viewerData[0]).map(k => (
+                        <th key={k} className="px-2 py-1 border-b text-left whitespace-nowrap">
+                          {k}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewerData.map((row, i) => (
+                      <tr key={i} className="border-t hover:bg-gray-50">
+                        {Object.values(row).map((v, j) => (
+                          <td key={j} className="px-2 py-1 whitespace-nowrap">
+                            {v === null ? "—" : v}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Wizard Modal */}
         {openWizard && (
           <CreateDerivedDatasetWizard_JoinAware
             open={openWizard}
-            onClose={() => setOpenWizard(false)}
+            onClose={() => {
+              setOpenWizard(false);
+              fetchDerivedDatasets();
+            }}
             countryIso={countryIso}
             editDataset={editDataset}
           />
