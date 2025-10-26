@@ -187,10 +187,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {/* Dataset selectors */}
         <div className="grid grid-cols-2 gap-4 mb-3">
-          {[["Dataset A", datasetA, setDatasetA], ["Dataset B", datasetB, setDatasetB]].map(
-            ([label, ds, setDs], i) => (
-              <div key={i}>
-                <label className="font-medium text-xs">{label}</label>
+          {([
+  ["Dataset A", datasetA, setDatasetA],
+  ["Dataset B", datasetB, setDatasetB],
+] as [string, DatasetOption | null, React.Dispatch<React.SetStateAction<DatasetOption | null>>][]).map(
+  ([label, ds, setDs], i) => (
+    <div key={i}>
+      <label className="font-medium text-xs">{String(label)}</label>
                 <select
                   className="border p-1 rounded w-full disabled:bg-gray-100"
                   disabled={useScalarB && label === "Dataset B"}
