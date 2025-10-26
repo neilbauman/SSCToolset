@@ -346,7 +346,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               setEditDataset(null);
             }}
             countryIso={countryIso}
-            editDataset={editDataset}
+            editDataset={
+              editDataset
+                ? { ...editDataset, method: editDataset.method as "ratio" | "multiply" | "sum" | "difference" }
+                : null
+            }
           />
         )}
       </div>
