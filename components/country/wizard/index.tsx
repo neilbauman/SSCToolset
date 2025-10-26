@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import WizardHeader from "./WizardHeader";
 import WizardComputationPanel from "./WizardComputationPanel";
 import WizardTaxonomyPanel from "./WizardTaxonomyPanel";
 
+const ACCENT = "#640811";
+
+type Source = "core" | "other" | "derived" | "gis";
 type Method = "ratio" | "multiply" | "sum" | "difference";
 
-/** The options shown in the dataset selectors.
- *  NOTE: we intentionally use `id` to store the PHYSICAL TABLE NAME so we
- *  can pass it straight to the RPC (p_table_a / p_table_b).
- */
-type DatasetOption = { id: string; title: string };
+type DatasetOption = {
+  id: string;
+  title: string;
+  source: Source;
+  table: string;
+};
 
 type EditPayload = {
   id: string;
@@ -28,7 +31,10 @@ type EditPayload = {
   col_b?: string | null;
   decimals?: number | null;
   formula?: string | null;
-  target_level?: string | null;
+  is_parametric?: boolean | null;
+  taxonomy_categories?: string[] | null;
+  taxonomy_terms?: string[] | null;
+  country_iso?: string | null;
 };
 
 type Props = {
@@ -38,272 +44,154 @@ type Props = {
   editDataset?: EditPayload | null;
 };
 
-const ACCENT = "#640811";
-
-// sensible defaults per your preference:
-// ratio => 2; others => 0
-const DEFAULT_DECIMALS: Record<Method, number> = {
-  ratio: 2,
-  multiply: 0,
-  sum: 0,
-  difference: 0,
-};
-
-export default function CreateDerivedDatasetWizard_JoinAware({
+export default function CreateDerivedDatasetWizard({
   open,
   onClose,
   countryIso,
   editDataset = null,
 }: Props) {
-  // dataset choices
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
-
-  // metadata + config
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [targetLevel, setTargetLevel] = useState("ADM4");
-
-  // computation
   const [colA, setColA] = useState("population");
   const [colB, setColB] = useState("area_sqkm");
+  const [method, setMethod] = useState<Method>("ratio");
+  const [decimals, setDecimals] = useState(2);
+  const [isParametric, setIsParametric] = useState(true);
   const [useScalarB, setUseScalarB] = useState(false);
   const [scalarB, setScalarB] = useState<number>(1);
-  const [decimals, setDecimals] = useState<number>(DEFAULT_DECIMALS.ratio);
-  const [method, setMethod] = useState<Method>("ratio");
-
-  // preview
-  const [preview, setPreview] = useState<any[]>([]);
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [targetLevel, setTargetLevel] = useState("ADM3");
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
-
-  // taxonomy
+  const [preview, setPreview] = useState<any[]>([]);
+  const [showTaxonomy, setShowTaxonomy] = useState(true);
   const [taxonomyMap, setTaxonomyMap] = useState<Record<string, string[]>>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
-  const [showTaxonomy, setShowTaxonomy] = useState(false);
 
-  // ─────────────────────────────────────────────────────────────
-  // load dataset options (core + user datasets)
-  // ─────────────────────────────────────────────────────────────
+  // Load dataset options
   useEffect(() => {
     if (!open) return;
-
     (async () => {
-      const opts: DatasetOption[] = [
-        // Core tables first (use id = PHYSICAL TABLE for simple RPC passing)
-        { id: "population_data", title: "Population Data [core]" },
-        { id: "gis_features", title: "GIS Features [core]" },
+      const all: DatasetOption[] = [
+        { id: "core-admin", title: "Administrative Units [core]", source: "core", table: "admin_units" },
+        { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
+        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features" },
       ];
-
-      // user datasets (dataset_metadata)
-      const { data: meta, error } = await supabase
+      const { data: others } = await supabase
         .from("dataset_metadata")
-        .select("id,title,country_iso")
-        .or(`country_iso.eq.${countryIso},country_iso.is.null`);
-
-      if (!error && meta?.length) {
-        for (const row of meta) {
-          opts.push({
-            id: `dataset_${row.id}`, // physical table naming convention
-            title: row.title || "Untitled dataset",
-          });
-        }
-      }
-
-      // derived datasets (optional: include as selectable B inputs)
-      const { data: dmeta } = await supabase
-        .from("derived_dataset_metadata")
-        .select("id,title,country_iso")
+        .select("id,title")
         .eq("country_iso", countryIso);
-
-      if (dmeta?.length) {
-        for (const row of dmeta) {
-          opts.push({
-            id: `derived_${row.id}`,
-            title: row.title || "Derived dataset",
-          });
-        }
+      if (others?.length) {
+        others.forEach((d) =>
+          all.push({ id: d.id, title: d.title, source: "other", table: `dataset_${d.id}` })
+        );
       }
-
-      setDatasets(opts);
+      const { data: derived } = await supabase
+        .from("derived_dataset_metadata")
+        .select("id,title")
+        .eq("country_iso", countryIso);
+      if (derived?.length) {
+        derived.forEach((d) =>
+          all.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` })
+        );
+      }
+      setDatasets(all);
     })();
   }, [open, countryIso]);
 
-  // ─────────────────────────────────────────────────────────────
-  // load taxonomy map (category -> terms)
-  // ─────────────────────────────────────────────────────────────
+  // Load taxonomy
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data, error } = await supabase
-        .from("taxonomy_terms")
-        .select("category,name");
-      if (error || !data) return;
-
+      const { data } = await supabase.from("taxonomy_terms").select("category,name");
+      if (!data) return;
       const grouped: Record<string, string[]> = {};
-      for (const { category, name } of data) {
+      data.forEach(({ category, name }) => {
         if (!grouped[category]) grouped[category] = [];
         grouped[category].push(name);
-      }
+      });
       setTaxonomyMap(grouped);
     })();
   }, [open]);
 
-  // ─────────────────────────────────────────────────────────────
-  // hydrate from editDataset (if provided)
-  // ─────────────────────────────────────────────────────────────
+  // If editing, hydrate fields
   useEffect(() => {
     if (!open) return;
-
     if (!editDataset) {
       setTitle("");
       setDesc("");
-      setTargetLevel("ADM4");
-      setMethod("ratio");
-      setDecimals(DEFAULT_DECIMALS.ratio);
-      setUseScalarB(false);
-      setScalarB(1);
       setColA("population");
       setColB("area_sqkm");
-      setDatasetA(null);
-      setDatasetB(null);
-      setShowPreview(true);
-      setShowTaxonomy(false);
-      setPreview([]);
+      setMethod("ratio");
+      setDecimals(2);
+      setIsParametric(true);
       setTaxonomy({});
       return;
     }
-
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
-    setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM4");
-    setMethod((editDataset.method as Method) || "ratio");
-    setDecimals(
-      Number.isInteger(editDataset.decimals ?? NaN)
-        ? (editDataset.decimals as number)
-        : DEFAULT_DECIMALS[(editDataset.method as Method) || "ratio"]
-    );
-    setUseScalarB(!!editDataset.use_scalar_b);
-    setScalarB(editDataset.scalar_b_val ?? 1);
+    setMethod(editDataset.method || "ratio");
+    setDecimals(editDataset.decimals ?? 2);
+    setIsParametric(editDataset.is_parametric ?? true);
     setColA(editDataset.col_a || "population");
     setColB(editDataset.col_b || "area_sqkm");
-
-    // resolve datasetA/B from provided physical tables
-    if (datasets.length > 0) {
-      const foundA =
-        datasets.find((d) => d.id === editDataset.table_a) ||
-        datasets.find((d) => d.id === "population_data") ||
-        null;
-      const foundB =
-        editDataset.use_scalar_b
-          ? null
-          : datasets.find((d) => d.id === editDataset.table_b || "") || null;
-      setDatasetA(foundA);
-      setDatasetB(foundB);
-    }
-  }, [open, editDataset, datasets]);
-
-  // ─────────────────────────────────────────────────────────────
-  // set default decimals when method changes (user can override)
-  // ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    setDecimals(DEFAULT_DECIMALS[method]);
-  }, [method]);
-
-  // ─────────────────────────────────────────────────────────────
-  // helpers
-  // ─────────────────────────────────────────────────────────────
-  const methodSymbol = useMemo(() => {
-    switch (method) {
-      case "ratio": return "÷";
-      case "multiply": return "×";
-      case "sum": return "+";
-      case "difference": return "−";
-    }
-  }, [method]);
+  }, [open, editDataset]);
 
   const computedFormula = useMemo(() => {
     const rhs = useScalarB ? String(scalarB) : `B.${colB}`;
-    return `A.${colA} ${methodSymbol} ${rhs}`;
-  }, [useScalarB, scalarB, colA, colB, methodSymbol]);
+    return `A.${colA} ${method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"} ${rhs}`;
+  }, [colA, colB, method, scalarB, useScalarB]);
 
-  const formatNumber = (v: number | null) => {
-    if (v == null || isNaN(v as any)) return "";
-    return Number(v).toLocaleString(undefined, { maximumFractionDigits: decimals });
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // preview call → new RPC (data-health-aware)
-  // ─────────────────────────────────────────────────────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
     setLoadingPreview(true);
-
-    const { data, error } = await supabase.rpc(
-      "simulate_join_preview_autoaggregate",
-      {
-        p_table_a: datasetA.id,
-        p_table_b: useScalarB ? null : datasetB?.id ?? null,
-        p_country: countryIso,
-        p_target_level: targetLevel,
-        p_method: method,
-        p_col_a: colA,
-        p_col_b: useScalarB ? null : colB,
-        p_use_scalar_b: useScalarB,
-        p_scalar_b_val: useScalarB ? scalarB : null,
-      }
-    );
-
+    const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
+      p_table_a: datasetA.table,
+      p_table_b: useScalarB ? null : datasetB?.table ?? null,
+      p_country: countryIso,
+      p_target_level: targetLevel,
+      p_method: method,
+      p_col_a: colA,
+      p_col_b: useScalarB ? null : colB,
+      p_use_scalar_b: useScalarB,
+      p_scalar_b_val: useScalarB ? scalarB : null,
+    });
     setLoadingPreview(false);
     if (error) {
-      console.error(error);
       alert("Preview error: " + error.message);
       return;
     }
     setPreview((data as any[]) || []);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // save → create_derived_dataset RPC
-  // ─────────────────────────────────────────────────────────────
   async function saveDerived() {
-    if (!datasetA || (!datasetB && !useScalarB)) {
-      alert("Select Dataset A and (Dataset B or a scalar).");
-      return;
-    }
-
-    const cats = Object.keys(taxonomy);
-    const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
-
-    const payload: Record<string, any> = {
+    const txCategories = Object.keys(taxonomy);
+    const txTerms = txCategories.flatMap((c) => Array.from(taxonomy[c] || []));
+    const payload = {
       p_country_iso: countryIso,
-      p_title: title || `${method[0].toUpperCase()}${method.slice(1)} (${targetLevel})`,
-      p_description: desc || null,
+      p_title: title,
+      p_description: desc,
       p_admin_level: targetLevel,
-      p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id ?? null,
+      p_table_a: datasetA?.table ?? null,
+      p_table_b: useScalarB ? null : datasetB?.table ?? null,
       p_col_a: colA,
       p_col_b: useScalarB ? null : colB,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
       p_method: method,
       p_decimals: decimals,
-      p_taxonomy_categories: cats,
-      p_taxonomy_terms: terms,
+      p_taxonomy_categories: txCategories,
+      p_taxonomy_terms: txTerms,
       p_formula: computedFormula,
-      p_is_parametric: true, // keep compatibility with earlier flows
+      p_is_parametric: isParametric,
+      p_existing_id: editDataset?.id ?? null,
     };
-
-    // if editing, pass the record id
-    if (editDataset?.id) payload.p_existing_id = editDataset.id;
-
     const { error } = await supabase.rpc("create_derived_dataset", payload);
     if (error) {
-      console.error(error);
       alert("Save failed: " + error.message);
       return;
     }
@@ -320,49 +208,56 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
         </h2>
 
-        {/* Header: title/desc/level + dataset selectors */}
-        <WizardHeader
-          title={title}
-          setTitle={setTitle}
-          desc={desc}
-          setDesc={setDesc}
-          targetLevel={targetLevel}
-          setTargetLevel={setTargetLevel}
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Description"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+          />
+          <select
+            className="border p-1 rounded"
+            value={targetLevel}
+            onChange={(e) => setTargetLevel(e.target.value)}
+          >
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
+              <option key={lvl}>{lvl}</option>
+            ))}
+          </select>
+        </div>
+
+        <WizardComputationPanel
+          datasets={datasets}
           datasetA={datasetA}
           setDatasetA={setDatasetA}
           datasetB={datasetB}
           setDatasetB={setDatasetB}
-          datasets={datasets}
-          useScalarB={useScalarB}
-        />
-
-        {/* Computation & preview */}
-        <WizardComputationPanel
           colA={colA}
           setColA={setColA}
           colB={colB}
           setColB={setColB}
+          method={method}
+          setMethod={setMethod}
           useScalarB={useScalarB}
           setUseScalarB={setUseScalarB}
           scalarB={scalarB}
           setScalarB={setScalarB}
           decimals={decimals}
           setDecimals={setDecimals}
-          method={method}
-          setMethod={(m) => setMethod(m as Method)}
-          preview={preview}
-          showPreview={showPreview}
-          setShowPreview={setShowPreview}
+          isParametric={isParametric}
+          setIsParametric={setIsParametric}
           previewJoin={previewJoin}
           loadingPreview={loadingPreview}
-          formatNumber={formatNumber}
+          preview={preview}
+          computedFormula={computedFormula}
         />
 
-        <p className="text-xs italic mb-2">
-          Derived = {computedFormula}
-        </p>
-
-        {/* Taxonomy */}
         <WizardTaxonomyPanel
           taxonomyMap={taxonomyMap}
           taxonomy={taxonomy}
@@ -371,7 +266,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           setShowTaxonomy={setShowTaxonomy}
         />
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
