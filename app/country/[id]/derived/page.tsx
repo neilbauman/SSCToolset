@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import SidebarLayout from "@/components/layouts/SidebarLayout";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
@@ -18,6 +18,21 @@ type DerivedDataset = {
   updated_at?: string;
   formula?: string;
   is_index_ready?: boolean;
+  use_scalar_b?: boolean;
+  scalar_b_val?: number | null;
+  dataset_a_id?: string | null;
+  dataset_b_id?: string | null;
+  table_a?: string | null;
+  table_b?: string | null;
+  col_a?: string | null;
+  col_b?: string | null;
+  decimals?: number | null;
+  source_level?: string | null;
+  target_level?: string | null;
+  dynamic_resolution?: boolean;
+  dependencies?: Record<string, any>;
+  taxonomy_categories?: any[];
+  taxonomy_terms?: any[];
 };
 
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
@@ -67,50 +82,42 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   // Handle view (preview)
   // ─────────────────────────────
   const viewDataset = async (dataset: DerivedDataset) => {
-  setSelectedDataset(dataset);
-  setPreviewData([]);
-  const tableName = `derived_${dataset.id}`;
+    setSelectedDataset(dataset);
+    setPreviewData([]);
+    const tableName = `derived_${dataset.id}`;
 
-  // Check if the physical table exists
-  const { error: existsErr } = await supabase
-    .from(tableName)
-    .select("pcode")
-    .limit(1);
+    // Check if the physical table exists
+    const { error: existsErr } = await supabase.from(tableName).select("pcode").limit(1);
 
-  if (existsErr) {
-    console.warn("Dataset table missing, attempting dynamic preview...");
+    if (existsErr) {
+      console.warn("Dataset table missing, attempting dynamic preview...");
 
-    // Try using the dynamic preview RPC (for auto or parametric datasets)
-    const { data, error } = await supabase.rpc("simulate_join_preview_pd_dynamic", {
-      p_country_iso: countryIso,
-      p_target_level: dataset.admin_level,
-    });
+      // Try using the dynamic preview RPC (for auto or parametric datasets)
+      const { data, error } = await supabase.rpc("simulate_join_preview_pd_dynamic", {
+        p_country_iso: countryIso,
+        p_target_level: dataset.admin_level,
+      });
+
+      if (error) {
+        console.error("Preview RPC failed:", error);
+        setPreviewData([]);
+        alert(`⚠️ Dataset not yet computed or missing in schema (${tableName}).`);
+        return;
+      }
+      setPreviewData(data || []);
+      return;
+    }
+
+    // Otherwise, query the physical table
+    const { data, error } = await supabase.from(tableName).select("*").limit(100);
 
     if (error) {
-      console.error("Preview RPC failed:", error);
-      setPreviewData([]);
-      alert(
-        `⚠️ Dataset not yet computed or missing in schema (${tableName}).`
-      );
+      console.error("Preview error:", error);
+      alert("Failed to load preview");
       return;
     }
     setPreviewData(data || []);
-    return;
-  }
-
-  // Otherwise, query the physical table
-  const { data, error } = await supabase
-    .from(tableName)
-    .select("*")
-    .limit(100);
-
-  if (error) {
-    console.error("Preview error:", error);
-    alert("Failed to load preview");
-    return;
-  }
-  setPreviewData(data || []);
-};
+  };
 
   // ─────────────────────────────
   // Handle delete
@@ -332,41 +339,15 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
 
         {/* Wizard Modal */}
         {openWizard && (
-  <CreateDerivedDatasetWizard_JoinAware
-    open={openWizard}
-    onClose={() => {
-      setOpenWizard(false);
-      setEditDataset(null);
-    }}
-    countryIso={countryIso}
-    editDataset={editDataset}
-/>
-)} {
-          id: editDataset.id,
-          title: editDataset.title,
-          description: editDataset.description ?? null,
-          admin_level: editDataset.admin_level,
-          method: (editDataset.method as "ratio" | "multiply" | "sum" | "difference") ?? "ratio",
-          use_scalar_b: !!editDataset.use_scalar_b,
-          scalar_b_val: editDataset.scalar_b_val ?? null,
-          dataset_a_id: editDataset.dataset_a_id ?? null,
-          dataset_b_id: editDataset.dataset_b_id ?? null,
-          table_a: editDataset.table_a ?? null,
-          table_b: editDataset.table_b ?? null,
-          col_a: editDataset.col_a ?? "population",
-          col_b: editDataset.col_b ?? "area_sqkm",
-          decimals: editDataset.decimals ?? 2,
-          source_level: editDataset.source_level ?? null,
-          target_level: editDataset.target_level ?? editDataset.admin_level ?? null,
-          dynamic_resolution: editDataset.dynamic_resolution ?? false,
-          dependencies: editDataset.dependencies ?? {},
-          formula: editDataset.formula ?? "",
-          taxonomy_categories: editDataset.taxonomy_categories ?? [],
-          taxonomy_terms: editDataset.taxonomy_terms ?? [],
-        }
-      : null
-  }
-/>
+          <CreateDerivedDatasetWizard_JoinAware
+            open={openWizard}
+            onClose={() => {
+              setOpenWizard(false);
+              setEditDataset(null);
+            }}
+            countryIso={countryIso}
+            editDataset={editDataset}
+          />
         )}
       </div>
     </SidebarLayout>
