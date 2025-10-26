@@ -215,34 +215,35 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {/* Dataset Pickers */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          {[["Dataset A", datasetA, setDatasetA], ["Dataset B", datasetB, setDatasetB]].map(
-  ([label, ds, setDs], i) => (
-    <div key={i}>
-      <label className="font-medium text-xs">{label}</label>
-      <select
-        className="border p-1 rounded w-full"
-        value={(ds as DatasetOption | null)?.id || ""}
-        onChange={(e) => {
-          const selected = datasets.find((x) => x.id === e.target.value) || null;
-          (setDs as any)(selected);
-        }}
-      >
-        <option value="">Select {label}</option>
-        {["core", "other", "derived", "gis"].map((group) => (
-          <optgroup key={group} label={group.toUpperCase()}>
-            {datasets
-              .filter((d) => d.source === group)
-              .map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.title}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-    </div>
-  )
-)}
+          {([
+  { label: "Dataset A", value: datasetA, setValue: setDatasetA },
+  { label: "Dataset B", value: datasetB, setValue: setDatasetB },
+] as const).map(({ label, value, setValue }, i) => (
+  <div key={i}>
+    <label className="font-medium text-xs block mb-1">{label}</label>
+    <select
+      className="border p-1 rounded w-full"
+      value={value?.id || ""}
+      onChange={(e) => {
+        const selected = datasets.find((x) => x.id === e.target.value) || null;
+        setValue(selected);
+      }}
+    >
+      <option value="">Select {label}</option>
+      {["core", "other", "derived", "gis"].map((group) => (
+        <optgroup key={group} label={group.toUpperCase()}>
+          {datasets
+            .filter((d) => d.source === group)
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+        </optgroup>
+      ))}
+    </select>
+  </div>
+))}
         </div>
 
         {/* Scalar Option */}
