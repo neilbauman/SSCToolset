@@ -333,14 +333,40 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         {/* Wizard Modal */}
         {openWizard && (
           <CreateDerivedDatasetWizard_JoinAware
-            open={openWizard}
-            onClose={() => {
-              setOpenWizard(false);
-              loadDatasets();
-            }}
-            countryIso={countryIso}
-            editDataset={editDataset}
-          />
+  open={wizardOpen}
+  onClose={() => {
+    setWizardOpen(false);
+    setEditDataset(null);
+  }}
+  countryIso={countryIso}
+  editDataset={
+    editDataset
+      ? {
+          id: editDataset.id,
+          title: editDataset.title,
+          description: editDataset.description ?? null,
+          admin_level: editDataset.admin_level,
+          method: (editDataset.method as "ratio" | "multiply" | "sum" | "difference") ?? "ratio",
+          use_scalar_b: !!editDataset.use_scalar_b,
+          scalar_b_val: editDataset.scalar_b_val ?? null,
+          dataset_a_id: editDataset.dataset_a_id ?? null,
+          dataset_b_id: editDataset.dataset_b_id ?? null,
+          table_a: editDataset.table_a ?? null,
+          table_b: editDataset.table_b ?? null,
+          col_a: editDataset.col_a ?? "population",
+          col_b: editDataset.col_b ?? "area_sqkm",
+          decimals: editDataset.decimals ?? 2,
+          source_level: editDataset.source_level ?? null,
+          target_level: editDataset.target_level ?? editDataset.admin_level ?? null,
+          dynamic_resolution: editDataset.dynamic_resolution ?? false,
+          dependencies: editDataset.dependencies ?? {},
+          formula: editDataset.formula ?? "",
+          taxonomy_categories: editDataset.taxonomy_categories ?? [],
+          taxonomy_terms: editDataset.taxonomy_terms ?? [],
+        }
+      : null
+  }
+/>
         )}
       </div>
     </SidebarLayout>
