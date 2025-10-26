@@ -8,6 +8,7 @@ import {
   Trash2,
   Zap,
   ArrowUpDown,
+  XCircle,
 } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
@@ -40,6 +41,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<DerivedDataset | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
 
   const showToast = (msg: string) => {
@@ -48,6 +50,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   };
 
+  // ───────────────────────────────
+  // Fetch all derived datasets
+  // ───────────────────────────────
   async function fetchDerived() {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -62,6 +67,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     fetchDerived();
   }, [countryIso]);
 
+  // ───────────────────────────────
+  // View dataset preview
+  // ───────────────────────────────
   async function viewDataset(dataset: DerivedDataset) {
     setSelectedDataset(dataset);
     setLoadingPreview(true);
@@ -78,6 +86,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   }
 
+  // ───────────────────────────────
+  // Sort preview data
+  // ───────────────────────────────
   function sortData(col: string) {
     if (!dataPreview.length) return;
     const newAsc = sortCol === col ? !sortAsc : true;
@@ -96,6 +107,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setSortAsc(newAsc);
   }
 
+  // ───────────────────────────────
+  // Refresh derived (edge function)
+  // ───────────────────────────────
   async function refreshDerived(dataset: DerivedDataset) {
     try {
       setRefreshing(true);
@@ -112,22 +126,29 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   }
 
-  async function deleteDerived(dataset: DerivedDataset) {
-    if (!confirm(`Delete "${dataset.title}"?`)) return;
+  // ───────────────────────────────
+  // Delete dataset (confirmation modal)
+  // ───────────────────────────────
+  async function deleteDerivedConfirmed() {
+    if (!confirmDelete) return;
     try {
       const { error } = await supabase
         .from("derived_dataset_metadata")
         .delete()
-        .eq("id", dataset.id);
+        .eq("id", confirmDelete.id);
       if (error) throw error;
-      showToast(`🗑️ Deleted ${dataset.title}`);
-      if (selectedDataset?.id === dataset.id) setSelectedDataset(null);
+      showToast(`🗑️ Deleted ${confirmDelete.title}`);
+      if (selectedDataset?.id === confirmDelete.id) setSelectedDataset(null);
+      setConfirmDelete(null);
       await fetchDerived();
     } catch (err: any) {
       showToast("❌ Delete failed: " + err.message);
     }
   }
 
+  // ───────────────────────────────
+  // Render
+  // ───────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -209,6 +230,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                           viewDataset(d);
                         }}
                         className="text-blue-600 hover:text-blue-800"
+                        title="View Dataset"
                       >
                         <Eye className="w-4 h-4 inline" />
                       </button>
@@ -219,15 +241,17 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                           setOpenWizard(true);
                         }}
                         className="text-gray-700 hover:text-gray-900"
+                        title="Edit"
                       >
                         <Pencil className="w-4 h-4 inline" />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteDerived(d);
+                          setConfirmDelete(d);
                         }}
                         className="text-red-600 hover:text-red-800"
+                        title="Delete"
                       >
                         <Trash2 className="w-4 h-4 inline" />
                       </button>
@@ -300,12 +324,63 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
             onClose={() => {
               setOpenWizard(false);
               setEditDataset(null);
+            }}
+            onSaved={() => {
               fetchDerived();
+              showToast("✅ Dataset list refreshed");
             }}
             countryIso={countryIso}
             editDataset={editDataset}
           />
         )}
+
+        {/* Delete Confirmation Modal */}
+        {confirmDelete && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+            <div className="bg-white rounded-xl p-6 w-[90%] max-w-sm shadow-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <XCircle className="w-6 h-6 text-red-600" />
+                <h3 className="text-lg font-semibold">Delete Derived Dataset</h3>
+              </div>
+              <p className="text-sm mb-4">
+                Are you sure you want to permanently delete{" "}
+                <span className="font-medium text-[#640811]">
+                  {confirmDelete.title}
+                </span>
+                ?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  className="px-3 py-1 border rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteDerivedConfirmed}
+                  className="px-3 py-1 bg-[#640811] text-white rounded"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toasts */}
+        <div className="fixed bottom-4 right-4 space-y-2 z-50">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md"
+            >
+              <span>{t.msg}</span>
+              <button onClick={() => setToasts((ts) => ts.filter((x) => x.id !== t.id))}>
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </SidebarLayout>
   );
