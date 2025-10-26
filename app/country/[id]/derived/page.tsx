@@ -5,34 +5,18 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
-import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
+import CreateDerivedDatasetWizard_JoinAware from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
 
 type DerivedDataset = {
   id: string;
   title: string;
-  description: string;
+  description: string | null;
   admin_level: string;
   method: string;
   created_at: string;
-  updated_at?: string;
-  formula?: string;
+  taxonomy_categories?: string[];
   is_index_ready?: boolean;
-  use_scalar_b?: boolean;
-  scalar_b_val?: number | null;
-  dataset_a_id?: string | null;
-  dataset_b_id?: string | null;
-  table_a?: string | null;
-  table_b?: string | null;
-  col_a?: string | null;
-  col_b?: string | null;
-  decimals?: number | null;
-  source_level?: string | null;
-  target_level?: string | null;
-  dynamic_resolution?: boolean;
-  dependencies?: Record<string, any>;
-  taxonomy_categories?: any[];
-  taxonomy_terms?: any[];
 };
 
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
@@ -45,10 +29,8 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [healthSummary, setHealthSummary] = useState<string | null>(null);
 
-  // ─────────────────────────────
-  // Load derived datasets
-  // ─────────────────────────────
   const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -67,9 +49,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     loadDatasets();
   }, [sortField, sortAsc, countryIso]);
 
-  // ─────────────────────────────
-  // Handle sort
-  // ─────────────────────────────
   const toggleSort = (field: keyof DerivedDataset) => {
     if (sortField === field) setSortAsc(!sortAsc);
     else {
@@ -78,78 +57,80 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   };
 
-  // ─────────────────────────────
-  // Handle view (preview)
-  // ─────────────────────────────
   const viewDataset = async (dataset: DerivedDataset) => {
     setSelectedDataset(dataset);
     setPreviewData([]);
     const tableName = `derived_${dataset.id}`;
 
-    // Check if the physical table exists
     const { error: existsErr } = await supabase.from(tableName).select("pcode").limit(1);
-
     if (existsErr) {
       console.warn("Dataset table missing, attempting dynamic preview...");
-
-      // Try using the dynamic preview RPC (for auto or parametric datasets)
-      const { data, error } = await supabase.rpc("simulate_join_preview_pd_dynamic", {
-        p_country_iso: countryIso,
+      const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
+        p_table_a: "population_data",
+        p_table_b: "gis_features",
+        p_country: countryIso,
         p_target_level: dataset.admin_level,
+        p_method: "ratio",
+        p_col_a: "population",
+        p_col_b: "area_sqkm",
+        p_use_scalar_b: false,
+        p_scalar_b_val: null,
       });
-
       if (error) {
         console.error("Preview RPC failed:", error);
         setPreviewData([]);
-        alert(`⚠️ Dataset not yet computed or missing in schema (${tableName}).`);
+        setHealthSummary(null);
+        alert(`⚠️ Dataset not yet computed or missing (${tableName}).`);
         return;
       }
       setPreviewData(data || []);
+      summarizeHealth(data);
       return;
     }
 
-    // Otherwise, query the physical table
     const { data, error } = await supabase.from(tableName).select("*").limit(100);
-
     if (error) {
       console.error("Preview error:", error);
       alert("Failed to load preview");
       return;
     }
     setPreviewData(data || []);
+    summarizeHealth(data);
   };
 
-  // ─────────────────────────────
-  // Handle delete
-  // ─────────────────────────────
-  const deleteDataset = async (dataset: DerivedDataset) => {
-    if (!confirm(`Delete derived dataset "${dataset.title}"? This cannot be undone.`)) return;
+  const summarizeHealth = (data: any[]) => {
+    if (!data || data.length === 0) return setHealthSummary(null);
+    const total = data.length;
+    const missing = data.filter((r) => r.join_status === "missing_gis").length;
+    const pct = ((missing / total) * 100).toFixed(1);
+    setHealthSummary(`Data health: ${total - missing}/${total} matched (${pct}% missing GIS)`);
+  };
 
+  const deleteDataset = async (dataset: DerivedDataset) => {
+    if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
     const { error } = await supabase
       .from("derived_dataset_metadata")
       .delete()
       .eq("id", dataset.id);
-
     if (error) {
       console.error("Delete failed:", error);
       alert("Delete failed: " + error.message);
       return;
     }
-
-    // Optional: drop the physical table if exists
     await supabase.rpc("drop_derived_dataset_table", { p_dataset_id: dataset.id });
-
     alert("🗑️ Dataset deleted");
     loadDatasets();
   };
 
-  // ─────────────────────────────
-  // Refresh button handler
-  // ─────────────────────────────
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadDatasets();
     setRefreshing(false);
+  };
+
+  const formatNumber = (v: any) => {
+    if (v == null || isNaN(v)) return "—";
+    return Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
   };
 
   return (
@@ -192,7 +173,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </div>
         </div>
 
-        {/* Table */}
+        {/* Dataset Table */}
         <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -200,9 +181,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 {[
                   ["title", "Title"],
                   ["admin_level", "Admin"],
-                  ["method", "Method"],
-                  ["created_at", "Created"],
+                  ["taxonomy_categories", "Taxonomy"],
                   ["is_index_ready", "Index Ready"],
+                  ["created_at", "Created"],
                 ].map(([field, label]) => (
                   <th
                     key={field}
@@ -239,12 +220,16 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                   >
                     <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
                     <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2">{ds.method}</td>
                     <td className="px-3 py-2">
-                      {new Date(ds.created_at).toLocaleDateString()}
+                      {ds.taxonomy_categories?.length
+                        ? ds.taxonomy_categories.join(", ")
+                        : "—"}
                     </td>
                     <td className="px-3 py-2 text-center">
                       {ds.is_index_ready ? "✅" : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {new Date(ds.created_at).toLocaleDateString()}
                     </td>
                     <td
                       className="px-3 py-2 text-right"
@@ -298,6 +283,13 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 Close
               </button>
             </div>
+
+            {healthSummary && (
+              <div className="text-xs text-gray-700 italic mb-2">
+                {healthSummary}
+              </div>
+            )}
+
             <div className="max-h-80 overflow-y-auto text-xs border rounded">
               <table className="w-full">
                 <thead className="bg-gray-100">
@@ -313,19 +305,16 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <tbody>
                   {previewData.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="text-center italic text-gray-500 py-2"
-                      >
+                      <td colSpan={6} className="text-center italic text-gray-500 py-2">
                         No preview data
                       </td>
                     </tr>
                   ) : (
                     previewData.map((r, i) => (
                       <tr key={i} className="border-t">
-                        {Object.values(r).map((v: any, j) => (
+                        {Object.entries(r).map(([k, v], j) => (
                           <td key={j} className="p-1">
-                            {v === null ? "—" : v.toString()}
+                            {typeof v === "number" ? formatNumber(v) : v?.toString()}
                           </td>
                         ))}
                       </tr>
@@ -344,13 +333,10 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
             onClose={() => {
               setOpenWizard(false);
               setEditDataset(null);
+              loadDatasets();
             }}
             countryIso={countryIso}
-            editDataset={
-              editDataset
-                ? { ...editDataset, method: editDataset.method as "ratio" | "multiply" | "sum" | "difference" }
-                : null
-            }
+            editDataset={editDataset}
           />
         )}
       </div>
