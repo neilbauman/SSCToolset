@@ -5,7 +5,8 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 type Props = {
   taxonomyMap: Record<string, string[]>;
   taxonomy: Record<string, Set<string>>;
-  setTaxonomy: (t: Record<string, Set<string>>) => void;
+  // ✅ Allow either direct object or functional updater (React.SetStateAction)
+  setTaxonomy: React.Dispatch<React.SetStateAction<Record<string, Set<string>>>>;
   showTaxonomy: boolean;
   setShowTaxonomy: (v: boolean) => void;
 };
@@ -51,8 +52,8 @@ export default function WizardTaxonomyPanel({
                     type="checkbox"
                     checked={isChecked}
                     onChange={(e) => {
-                      setTaxonomy((prev: Record<string, Set<string>>) => {
-                        const next = { ...prev };
+                      setTaxonomy((prev) => {
+                        const next: Record<string, Set<string>> = { ...prev };
                         if (e.target.checked) {
                           if (!next[cat]) next[cat] = new Set<string>();
                         } else {
@@ -77,8 +78,10 @@ export default function WizardTaxonomyPanel({
                           type="checkbox"
                           checked={!!taxonomy[cat]?.has(term)}
                           onChange={(e) => {
-                            setTaxonomy((prev: Record<string, Set<string>>) => {
-                              const next = { ...prev };
+                            setTaxonomy((prev) => {
+                              const next: Record<string, Set<string>> = {
+                                ...prev,
+                              };
                               if (!next[cat]) next[cat] = new Set<string>();
                               if (e.target.checked) next[cat]!.add(term);
                               else next[cat]!.delete(term);
