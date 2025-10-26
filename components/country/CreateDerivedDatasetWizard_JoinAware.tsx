@@ -47,9 +47,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   countryIso,
   editDataset = null,
 }: Props) {
-  // ─────────────────────────────
-  // State
-  // ─────────────────────────────
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
@@ -86,9 +83,61 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         }
       }
 
+      const { data: derived } = await supabase
+        .from("derived_dataset_metadata")
+        .select("id,title")
+        .eq("country_iso", countryIso);
+
+      if (derived?.length) {
+        for (const d of derived) {
+          all.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` });
+        }
+      }
+
       setDatasets(all);
     })();
   }, [open, countryIso]);
+
+  // ─────────────────────────────
+  // Hydrate when editing
+  // ─────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+
+    if (!editDataset) {
+      // Reset for new dataset
+      setTitle("");
+      setDesc("");
+      setTargetLevel("ADM3");
+      setMethod("ratio");
+      setUseScalarB(false);
+      setScalarB(1);
+      setColA("population");
+      setColB("area_sqkm");
+      setDatasetA(null);
+      setDatasetB(null);
+      setPreview([]);
+      return;
+    }
+
+    // Populate from existing dataset
+    setTitle(editDataset.title || "");
+    setDesc(editDataset.description || "");
+    setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
+    setMethod((editDataset.method as Method) || "ratio");
+    setUseScalarB(!!editDataset.use_scalar_b);
+    setScalarB(editDataset.scalar_b_val ?? 1);
+    setColA(editDataset.col_a || "population");
+    setColB(editDataset.col_b || "area_sqkm");
+
+    // Match Dataset A/B to loaded options (after they exist)
+    if (datasets.length > 0) {
+      const foundA = datasets.find((d) => d.table === editDataset.table_a);
+      const foundB = datasets.find((d) => d.table === editDataset.table_b);
+      setDatasetA(foundA || null);
+      setDatasetB(foundB || null);
+    }
+  }, [open, editDataset, datasets]);
 
   // ─────────────────────────────
   // Compute formula text
@@ -108,14 +157,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }, [useScalarB, scalarB, colA, colB, methodSymbol]);
 
   // ─────────────────────────────
-  // Preview derived dataset
+  // Preview
   // ─────────────────────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
-
     setLoadingPreview(true);
 
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
@@ -131,17 +179,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     });
 
     setLoadingPreview(false);
-
     if (error) {
       alert("Preview error: " + error.message);
       return;
     }
-
     setPreview(data || []);
   }
 
   // ─────────────────────────────
-  // Save derived dataset
+  // Save
   // ─────────────────────────────
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) {
@@ -168,13 +214,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     };
 
     const { error } = await supabase.rpc("create_derived_dataset", payload);
-
     if (error) {
       alert("Save failed: " + error.message);
       return;
     }
 
-    alert("✅ Derived dataset saved successfully!");
+    alert(editDataset ? "✅ Changes saved." : "✅ Derived dataset created.");
     onClose();
   }
 
@@ -186,9 +231,11 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
-        <h2 className="text-lg font-semibold mb-3">Create Derived Dataset</h2>
+        <h2 className="text-lg font-semibold mb-3">
+          {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
+        </h2>
 
-        {/* Title and Description */}
+        {/* Title / Description */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -244,20 +291,18 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Columns and Scalar */}
+        {/* Columns + Scalar */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 rounded w-40"
             value={colA}
             onChange={(e) => setColA(e.target.value)}
-            placeholder="Column A"
           />
           {!useScalarB && (
             <input
               className="border p-1 rounded w-40"
               value={colB}
               onChange={(e) => setColB(e.target.value)}
-              placeholder="Column B"
             />
           )}
           <label className="text-xs flex items-center gap-1 ml-auto">
@@ -278,7 +323,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Method and Preview */}
+        {/* Method + Preview */}
         <div className="flex items-center gap-2 mb-3">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
@@ -335,7 +380,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             className="px-3 py-1 text-white rounded"
             style={{ background: ACCENT }}
           >
-            Save Derived
+            {editDataset ? "Save Changes" : "Save Derived"}
           </button>
         </div>
       </div>
