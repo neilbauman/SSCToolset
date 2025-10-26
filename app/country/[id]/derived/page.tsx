@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus, Eye, Edit3, Trash2, ArrowUpDown, X } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
 import type { CountryParams } from "@/app/country/types";
 
@@ -15,138 +15,106 @@ type DerivedDataset = {
   admin_level: string;
   method: string;
   created_at: string;
-  dynamic_resolution?: boolean;
-  table_a?: string;
-  table_b?: string;
-  col_a?: string;
-  col_b?: string;
+  updated_at?: string;
+  formula?: string;
+  is_index_ready?: boolean;
 };
-
-type DerivedRow = Record<string, any>;
 
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
+  const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
   const [openWizard, setOpenWizard] = useState(false);
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
-  const [sortConfig, setSortConfig] = useState<{ key: keyof DerivedDataset; direction: "asc" | "desc" }>({
-    key: "created_at",
-    direction: "desc",
-  });
-  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
-  const [viewerData, setViewerData] = useState<DerivedRow[]>([]);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // ────────────────────────────────────────────────
-  // Fetch derived datasets
-  // ────────────────────────────────────────────────
-  const fetchDerivedDatasets = async () => {
+  // ─────────────────────────────
+  // Load derived datasets
+  // ─────────────────────────────
+  const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select("id, title, description, admin_level, method, created_at, dynamic_resolution, table_a, table_b, col_a, col_b")
+      .select("*")
       .eq("country_iso", countryIso)
-      .order("created_at", { ascending: false });
-    if (error) console.error("Fetch error:", error);
-    else setDatasets(data || []);
+      .order(sortField, { ascending: sortAsc });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setDatasets(data || []);
   };
 
   useEffect(() => {
-    fetchDerivedDatasets();
-  }, [countryIso]);
+    loadDatasets();
+  }, [sortField, sortAsc, countryIso]);
 
-  // ────────────────────────────────────────────────
-  // Sorting logic
-  // ────────────────────────────────────────────────
-  const sortedDatasets = useMemo(() => {
-    const sorted = [...datasets];
-    sorted.sort((a, b) => {
-      const aVal = a[sortConfig.key] ?? "";
-      const bVal = b[sortConfig.key] ?? "";
-      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [datasets, sortConfig]);
-
-  const requestSort = (key: keyof DerivedDataset) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
-    }));
-  };
-
-  // ────────────────────────────────────────────────
-  // Delete dataset
-  // ────────────────────────────────────────────────
-  const handleDelete = async (datasetId: string) => {
-    if (!confirm("Are you sure you want to delete this derived dataset?")) return;
-    const { error } = await supabase.from("derived_dataset_metadata").delete().eq("id", datasetId);
-    if (error) return alert("❌ Delete failed: " + error.message);
-    await fetchDerivedDatasets();
-  };
-
-  // ────────────────────────────────────────────────
-  // Load dataset preview (handles both types)
-  // ────────────────────────────────────────────────
-  const loadDatasetPreview = async (dataset: DerivedDataset) => {
-    setViewerLoading(true);
-    setViewerError(null);
-    setSelectedDataset(dataset);
-    setViewerData([]);
-
-    try {
-      // if dynamic_resolution true → use RPC
-      if (dataset.dynamic_resolution) {
-        const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-          p_table_a: dataset.table_a,
-          p_table_b: dataset.table_b,
-          p_country: countryIso,
-          p_target_level: dataset.admin_level,
-          p_method: dataset.method,
-          p_col_a: dataset.col_a,
-          p_col_b: dataset.col_b,
-          p_use_scalar_b: false,
-          p_scalar_b_val: 0,
-        });
-        if (error) throw error;
-        if (!data || data.length === 0) {
-          setViewerError("No preview data returned for this dynamic dataset.");
-        } else {
-          setViewerData(data);
-        }
-        return;
-      }
-
-      // otherwise look for materialized table
-      const safeTableName = `derived_${dataset.id.replace(/-/g, "_")}`;
-      const { data: exists, error: checkErr } = await supabase
-        .from("pg_tables")
-        .select("tablename")
-        .eq("tablename", safeTableName)
-        .single();
-
-      if (checkErr || !exists) {
-        setViewerError(`Dataset not yet computed or missing in schema (${safeTableName}).`);
-        setViewerData([]);
-        return;
-      }
-
-      const { data, error } = await supabase.from(safeTableName).select("*").limit(100);
-      if (error) throw error;
-      setViewerData(data || []);
-    } catch (err: any) {
-      console.error("Preview load error:", err);
-      setViewerError(err.message || "Unknown error loading dataset preview.");
-    } finally {
-      setViewerLoading(false);
+  // ─────────────────────────────
+  // Handle sort
+  // ─────────────────────────────
+  const toggleSort = (field: keyof DerivedDataset) => {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else {
+      setSortField(field);
+      setSortAsc(true);
     }
   };
 
-  // ────────────────────────────────────────────────
-  // JSX
-  // ────────────────────────────────────────────────
+  // ─────────────────────────────
+  // Handle view (preview)
+  // ─────────────────────────────
+  const viewDataset = async (dataset: DerivedDataset) => {
+    setSelectedDataset(dataset);
+    const tableName = `derived_${dataset.id}`;
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*")
+      .limit(100);
+
+    if (error) {
+      console.error("Preview error:", error);
+      alert("Failed to load preview");
+      return;
+    }
+    setPreviewData(data || []);
+  };
+
+  // ─────────────────────────────
+  // Handle delete
+  // ─────────────────────────────
+  const deleteDataset = async (dataset: DerivedDataset) => {
+    if (!confirm(`Delete derived dataset "${dataset.title}"? This cannot be undone.`)) return;
+
+    const { error } = await supabase
+      .from("derived_dataset_metadata")
+      .delete()
+      .eq("id", dataset.id);
+
+    if (error) {
+      console.error("Delete failed:", error);
+      alert("Delete failed: " + error.message);
+      return;
+    }
+
+    // Optional: drop the physical table if exists
+    await supabase.rpc("drop_derived_dataset_table", { p_dataset_id: dataset.id });
+
+    alert("🗑️ Dataset deleted");
+    loadDatasets();
+  };
+
+  // ─────────────────────────────
+  // Refresh button handler
+  // ─────────────────────────────
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadDatasets();
+    setRefreshing(false);
+  };
+
   return (
     <SidebarLayout
       headerProps={{
@@ -164,98 +132,113 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         ),
       }}
     >
-      <div className="p-6 space-y-4">
+      <div className="p-6 space-y-5">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
-          <button
-            onClick={() => {
-              setEditDataset(null);
-              setOpenWizard(true);
-            }}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" /> New Derived Dataset
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleRefresh}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+            </button>
+            <button
+              onClick={() => {
+                setEditDataset(null);
+                setOpenWizard(true);
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
+            >
+              <Plus className="w-4 h-4" /> New
+            </button>
+          </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
+        <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
               <tr>
                 {[
-                  { key: "title", label: "Title" },
-                  { key: "admin_level", label: "Admin" },
-                  { key: "method", label: "Method" },
-                  { key: "created_at", label: "Created" },
-                ].map(({ key, label }) => (
+                  ["title", "Title"],
+                  ["admin_level", "Admin"],
+                  ["method", "Method"],
+                  ["created_at", "Created"],
+                  ["is_index_ready", "Index Ready"],
+                ].map(([field, label]) => (
                   <th
-                    key={key}
-                    onClick={() => requestSort(key as keyof DerivedDataset)}
-                    className="px-3 py-2 text-left cursor-pointer select-none hover:bg-gray-100"
+                    key={field}
+                    className="px-3 py-2 text-left cursor-pointer select-none"
+                    onClick={() => toggleSort(field as keyof DerivedDataset)}
                   >
                     <div className="flex items-center gap-1">
                       {label}
-                      <ArrowUpDown className="w-3 h-3 opacity-60" />
+                      {sortField === field &&
+                        (sortAsc ? (
+                          <ChevronUp className="w-3 h-3 text-gray-500" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3 text-gray-500" />
+                        ))}
                     </div>
                   </th>
                 ))}
-                <th className="px-3 py-2 text-left">Type</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {sortedDatasets.length === 0 ? (
+              {datasets.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center italic text-gray-500 py-3">
                     No derived datasets found.
                   </td>
                 </tr>
               ) : (
-                sortedDatasets.map(d => (
+                datasets.map((ds) => (
                   <tr
-                    key={d.id}
-                    className={`border-b hover:bg-gray-50 cursor-pointer ${
-                      selectedDataset?.id === d.id ? "bg-rose-50" : ""
-                    }`}
-                    onClick={() => loadDatasetPreview(d)}
+                    key={ds.id}
+                    className="border-b hover:bg-gray-50 cursor-pointer"
+                    onClick={() => viewDataset(ds)}
                   >
-                    <td className="px-3 py-2 text-[#640811] font-medium">{d.title}</td>
-                    <td className="px-3 py-2">{d.admin_level}</td>
-                    <td className="px-3 py-2">{d.method}</td>
-                    <td className="px-3 py-2">{new Date(d.created_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
+                    <td className="px-3 py-2">{ds.admin_level}</td>
+                    <td className="px-3 py-2">{ds.method}</td>
                     <td className="px-3 py-2">
-                      {d.dynamic_resolution ? (
-                        <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Dynamic</span>
-                      ) : (
-                        <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded">Materialized</span>
-                      )}
+                      {new Date(ds.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-3 py-2 text-right space-x-2" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => loadDatasetPreview(d)}
-                        className="text-[#640811] hover:text-[#3c050c]"
-                        title="View Dataset"
-                      >
-                        <Eye className="w-4 h-4 inline" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditDataset(d);
-                          setOpenWizard(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Edit Dataset"
-                      >
-                        <Edit3 className="w-4 h-4 inline" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(d.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete Dataset"
-                      >
-                        <Trash2 className="w-4 h-4 inline" />
-                      </button>
+                    <td className="px-3 py-2 text-center">
+                      {ds.is_index_ready ? "✅" : "—"}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          title="View"
+                          onClick={() => viewDataset(ds)}
+                          className="text-gray-700 hover:text-[#640811]"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          title="Edit"
+                          onClick={() => {
+                            setEditDataset(ds);
+                            setOpenWizard(true);
+                          }}
+                          className="text-gray-700 hover:text-[#640811]"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          title="Delete"
+                          onClick={() => deleteDataset(ds)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -264,61 +247,66 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
-        {/* Dataset Viewer */}
+        {/* Dataset Preview */}
         {selectedDataset && (
-          <div className="mt-6 border rounded-lg bg-white shadow-md p-4 relative">
-            <button
-              onClick={() => setSelectedDataset(null)}
-              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-              title="Close viewer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <h3 className="text-md font-semibold mb-2 text-[#640811]">
-              Viewing: {selectedDataset.title}
-            </h3>
-            {viewerLoading ? (
-              <p className="text-sm italic text-gray-500">Loading...</p>
-            ) : viewerError ? (
-              <p className="text-sm text-red-600">⚠ {viewerError}</p>
-            ) : viewerData.length === 0 ? (
-              <p className="text-sm italic text-gray-500">No records found.</p>
-            ) : (
-              <div className="max-h-[400px] overflow-auto border rounded text-xs">
-                <table className="w-full border-collapse">
-                  <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                      {Object.keys(viewerData[0]).map(k => (
-                        <th key={k} className="px-2 py-1 border-b text-left whitespace-nowrap">
+          <div className="mt-6 bg-white border rounded-md shadow p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-semibold text-sm">
+                Preview: {selectedDataset.title}
+              </h3>
+              <button
+                onClick={() => setSelectedDataset(null)}
+                className="text-xs text-gray-600 hover:text-[#640811]"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-80 overflow-y-auto text-xs border rounded">
+              <table className="w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    {previewData.length > 0 &&
+                      Object.keys(previewData[0]).map((k) => (
+                        <th key={k} className="p-1 text-left">
                           {k}
                         </th>
                       ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="text-center italic text-gray-500 py-2"
+                      >
+                        No preview data
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {viewerData.map((row, i) => (
-                      <tr key={i} className="border-t hover:bg-gray-50">
-                        {Object.values(row).map((v, j) => (
-                          <td key={j} className="px-2 py-1 whitespace-nowrap">
-                            {v === null ? "—" : v}
+                  ) : (
+                    previewData.map((r, i) => (
+                      <tr key={i} className="border-t">
+                        {Object.values(r).map((v: any, j) => (
+                          <td key={j} className="p-1">
+                            {v === null ? "—" : v.toString()}
                           </td>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        {/* Wizard */}
+        {/* Wizard Modal */}
         {openWizard && (
           <CreateDerivedDatasetWizard_JoinAware
             open={openWizard}
             onClose={() => {
               setOpenWizard(false);
-              fetchDerivedDatasets();
+              loadDatasets();
             }}
             countryIso={countryIso}
             editDataset={editDataset}
