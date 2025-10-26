@@ -48,16 +48,13 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   };
 
-  // ────────────────────────────────
-  // Fetch derived datasets
-  // ────────────────────────────────
   async function fetchDerived() {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
       .select("*")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-    if (error) console.error("❌ Error loading derived datasets:", error);
+    if (error) console.error(error);
     else setDatasets(data || []);
   }
 
@@ -65,54 +62,40 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     fetchDerived();
   }, [countryIso]);
 
-  // ────────────────────────────────
-  // View derived dataset
-  // ────────────────────────────────
   async function viewDataset(dataset: DerivedDataset) {
     setSelectedDataset(dataset);
     setLoadingPreview(true);
-
     try {
       const tableName = `derived_pop_density_${dataset.admin_level.toLowerCase()}`;
       const { data, error } = await supabase.from(tableName).select("*").limit(200);
       if (error) throw error;
       setDataPreview(data || []);
-      if (data && data.length > 0) {
-        setColumns(Object.keys(data[0]));
-      } else {
-        setColumns([]);
-      }
+      setColumns(data?.length ? Object.keys(data[0]) : []);
     } catch (err: any) {
-      console.error("❌ Error fetching dataset rows:", err.message);
-      showToast("Failed to load dataset preview");
+      showToast("Failed to load dataset preview: " + err.message);
     } finally {
       setLoadingPreview(false);
     }
   }
 
-  // ────────────────────────────────
-  // Sort dataset viewer table
-  // ────────────────────────────────
   function sortData(col: string) {
     if (!dataPreview.length) return;
     const newAsc = sortCol === col ? !sortAsc : true;
     const sorted = [...dataPreview].sort((a, b) => {
-      const valA = a[col] ?? "";
-      const valB = b[col] ?? "";
-      if (typeof valA === "number" && typeof valB === "number")
-        return newAsc ? valA - valB : valB - valA;
+      const valA = a[col];
+      const valB = b[col];
+      const numA = parseFloat(valA);
+      const numB = parseFloat(valB);
+      if (!isNaN(numA) && !isNaN(numB)) return newAsc ? numA - numB : numB - numA;
       return newAsc
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+        ? String(valA ?? "").localeCompare(String(valB ?? ""))
+        : String(valB ?? "").localeCompare(String(valA ?? ""));
     });
     setDataPreview(sorted);
     setSortCol(col);
     setSortAsc(newAsc);
   }
 
-  // ────────────────────────────────
-  // Refresh dataset (calls edge)
-  // ────────────────────────────────
   async function refreshDerived(dataset: DerivedDataset) {
     try {
       setRefreshing(true);
@@ -123,18 +106,14 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       showToast(`✅ Triggered refresh for ${dataset.title}`);
       await fetchDerived();
     } catch (err: any) {
-      console.error(err);
       showToast("❌ Refresh failed: " + err.message);
     } finally {
       setRefreshing(false);
     }
   }
 
-  // ────────────────────────────────
-  // Delete derived dataset
-  // ────────────────────────────────
   async function deleteDerived(dataset: DerivedDataset) {
-    if (!confirm(`Delete derived dataset "${dataset.title}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete "${dataset.title}"?`)) return;
     try {
       const { error } = await supabase
         .from("derived_dataset_metadata")
@@ -142,13 +121,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         .eq("id", dataset.id);
       if (error) throw error;
       showToast(`🗑️ Deleted ${dataset.title}`);
-      if (selectedDataset?.id === dataset.id) {
-        setSelectedDataset(null);
-        setDataPreview([]);
-      }
+      if (selectedDataset?.id === dataset.id) setSelectedDataset(null);
       await fetchDerived();
     } catch (err: any) {
-      console.error(err);
       showToast("❌ Delete failed: " + err.message);
     }
   }
@@ -181,11 +156,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
             }}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
-            <Zap className="w-4 h-4" /> New Derived Dataset
+            <Zap className="w-4 h-4" /> New Derived
           </button>
         </div>
 
-        {/* Derived Dataset Table */}
+        {/* Dataset Table */}
         <div className="bg-white border rounded-md overflow-hidden text-sm shadow">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -215,18 +190,14 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                       selectedDataset?.id === d.id ? "bg-gray-100" : ""
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-[#640811] hover:underline">
+                    <td className="px-3 py-2 text-[#640811] font-medium hover:underline">
                       {d.title}
                     </td>
                     <td className="px-3 py-2">{d.admin_level}</td>
                     <td className="px-3 py-2">{d.method ?? "—"}</td>
                     <td className="px-3 py-2">{d.formula ?? "—"}</td>
                     <td className="px-3 py-2">
-                      {d.dynamic_resolution ? (
-                        <span className="text-green-600 font-medium">Auto</span>
-                      ) : (
-                        <span className="text-gray-500">Manual</span>
-                      )}
+                      {d.dynamic_resolution ? "Auto" : "Manual"}
                     </td>
                     <td className="px-3 py-2 text-gray-500">
                       {new Date(d.created_at).toLocaleDateString()}
@@ -240,16 +211,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                         className="text-blue-600 hover:text-blue-800"
                       >
                         <Eye className="w-4 h-4 inline" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          refreshDerived(d);
-                        }}
-                        disabled={refreshing}
-                        className="text-[#640811] hover:text-red-700 disabled:opacity-50"
-                      >
-                        <RefreshCw className="w-4 h-4 inline" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -281,35 +242,27 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         {/* Dataset Viewer */}
         {selectedDataset && (
           <div className="bg-white border rounded-md p-4 shadow-md">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex justify-between mb-2">
               <h3 className="text-md font-semibold">
                 {selectedDataset.title} — Preview
               </h3>
-              {loadingPreview ? (
-                <span className="text-sm text-gray-500">Loading…</span>
-              ) : (
-                <span className="text-sm text-gray-400">
-                  Showing up to 200 records
-                </span>
-              )}
+              {loadingPreview && <span className="text-gray-500 text-sm">Loading…</span>}
             </div>
 
-            <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded">
-              {loadingPreview ? (
-                <div className="text-center p-10 text-gray-500">Loading data…</div>
-              ) : dataPreview.length === 0 ? (
-                <div className="text-center p-10 text-gray-500">
-                  No records found for this dataset.
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded">
+              {dataPreview.length === 0 ? (
+                <div className="text-center p-6 text-gray-500">
+                  {loadingPreview ? "Loading data…" : "No records found."}
                 </div>
               ) : (
                 <table className="min-w-full text-xs border-collapse">
-                  <thead className="bg-gray-50 border-b sticky top-0 z-10">
+                  <thead className="bg-gray-50 border-b sticky top-0">
                     <tr>
                       {columns.map((c) => (
                         <th
                           key={c}
                           onClick={() => sortData(c)}
-                          className="px-2 py-1 text-left border-b cursor-pointer select-none hover:bg-gray-100"
+                          className="px-2 py-1 text-left border-b cursor-pointer hover:bg-gray-100 select-none"
                         >
                           {c}{" "}
                           {sortCol === c && (
@@ -350,20 +303,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               fetchDerived();
             }}
             countryIso={countryIso}
+            editDataset={editDataset}
           />
         )}
-
-        {/* Toasts */}
-        <div className="fixed bottom-4 right-4 space-y-2 z-50">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              className="flex items-center gap-2 bg-[#640811] text-white px-4 py-2 rounded shadow-md"
-            >
-              <span>{t.msg}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </SidebarLayout>
   );
