@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import SidebarLayout from "@/components/layout/SidebarLayout";
+import SidebarLayout from "@/components/layouts/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
