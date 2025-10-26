@@ -122,27 +122,39 @@ export default function CreateDerivedDatasetWizard_JoinAware({ open, onClose, co
         </div>
 
         {/* Dataset selectors */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          {[["Dataset A", datasetA, setDatasetA], ["Dataset B", datasetB, setDatasetB]].map(([label, ds, setDs], i) => (
-            <div key={i} className="flex-1">
-              <label className="font-medium text-xs">{label}</label>
-              <select
-                className="border p-1 rounded w-full"
-                value={(ds as DatasetOption | null)?.id || ""}
-                onChange={e => setDs(datasets.find(x => x.id === e.target.value) || null)}
-              >
-                <option value="">Select {label}</option>
-                {["core", "other", "derived", "gis"].map(g => (
-                  <optgroup key={g} label={g.toUpperCase()}>
-                    {datasets.filter(d => d.source === g).map(d => (
-                      <option key={d.id} value={d.id}>{d.title}</option>
-                    ))}
-                  </optgroup>
+<div className="flex flex-wrap gap-2 mb-3">
+  {([
+    { label: "Dataset A", ds: datasetA, setDs: setDatasetA },
+    { label: "Dataset B", ds: datasetB, setDs: setDatasetB },
+  ] as { label: string; ds: DatasetOption | null; setDs: (v: DatasetOption | null) => void }[]).map(
+    ({ label, ds, setDs }, i) => (
+      <div key={i} className="flex-1">
+        <label className="font-medium text-xs">{label}</label>
+        <select
+          className="border p-1 rounded w-full"
+          value={ds?.id || ""}
+          onChange={(e) =>
+            setDs(datasets.find((x) => x.id === e.target.value) || null)
+          }
+        >
+          <option value="">Select {label}</option>
+          {["core", "other", "derived", "gis"].map((group) => (
+            <optgroup key={group} label={group.toUpperCase()}>
+              {datasets
+                .filter((d) => d.source === group)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
                 ))}
-              </select>
-            </div>
+            </optgroup>
           ))}
-        </div>
+        </select>
+      </div>
+    )
+  )}
+</div>
+        
 
         {/* Method & Controls */}
         <div className="flex items-center gap-2 mb-2">
