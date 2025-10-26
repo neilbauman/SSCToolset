@@ -31,6 +31,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
   const [viewerData, setViewerData] = useState<DerivedRow[]>([]);
   const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState<string | null>(null);
 
   // ────────────────────────────────────────────────
   // Fetch derived datasets
@@ -82,19 +83,37 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   };
 
   // ────────────────────────────────────────────────
-  // Load dataset preview
+  // Load dataset preview (safe & graceful)
   // ────────────────────────────────────────────────
   const loadDatasetPreview = async (dataset: DerivedDataset) => {
     setViewerLoading(true);
+    setViewerError(null);
     setSelectedDataset(dataset);
+    setViewerData([]);
+
     try {
-      const tableName = `derived_${dataset.id}`;
-      const { data, error } = await supabase.from(tableName).select("*").limit(100);
+      const safeTableName = `derived_${dataset.id.replace(/-/g, "_")}`;
+
+      // Check if the table actually exists
+      const { data: exists, error: checkErr } = await supabase
+        .from("pg_tables")
+        .select("tablename")
+        .eq("tablename", safeTableName)
+        .single();
+
+      if (checkErr || !exists) {
+        setViewerError(`Dataset not yet computed or missing in schema (${safeTableName}).`);
+        setViewerData([]);
+        return;
+      }
+
+      // Load first 100 rows
+      const { data, error } = await supabase.from(safeTableName).select("*").limit(100);
       if (error) throw error;
       setViewerData(data || []);
     } catch (err: any) {
       console.error("Preview load error:", err);
-      alert("⚠️ Failed to load dataset preview: " + err.message);
+      setViewerError(err.message || "Unknown error loading dataset preview.");
     } finally {
       setViewerLoading(false);
     }
@@ -228,6 +247,8 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
             </h3>
             {viewerLoading ? (
               <p className="text-sm italic text-gray-500">Loading...</p>
+            ) : viewerError ? (
+              <p className="text-sm text-red-600">⚠ {viewerError}</p>
             ) : viewerData.length === 0 ? (
               <p className="text-sm italic text-gray-500">No records found.</p>
             ) : (
