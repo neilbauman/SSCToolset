@@ -11,7 +11,10 @@ type DatasetOption = {
   title: string;
   source: Source;
   table: string;
+  defaultCol?: string | null;
 };
+
+type TaxonomyMap = Record<string, string[]>;
 
 type EditPayload = {
   id: string;
@@ -48,8 +51,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
-  const [colA, setColA] = useState("population");
-  const [colB, setColB] = useState("area_sqkm");
+  const [colA, setColA] = useState("");
+  const [colB, setColB] = useState("");
   const [method, setMethod] = useState<Method>("ratio");
   const [useScalarB, setUseScalarB] = useState(false);
   const [scalarB, setScalarB] = useState<number>(1);
@@ -59,50 +62,57 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [decimals, setDecimals] = useState(2);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [taxonomyMap, setTaxonomyMap] = useState<TaxonomyMap>({});
+  const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
-  // ─────────────────────────────
-  // Load dataset options
-  // ─────────────────────────────
+  // ───────────── Dataset loading ─────────────
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const all: DatasetOption[] = [
-        { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
-        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features" },
+      const base: DatasetOption[] = [
+        { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data", defaultCol: "population" },
+        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features", defaultCol: "area_sqkm" },
       ];
 
       const { data: others } = await supabase
         .from("dataset_metadata")
-        .select("id,title")
+        .select("id,title,default_numeric_column")
         .eq("country_iso", countryIso);
 
       if (others?.length) {
         for (const d of others) {
-          all.push({ id: d.id, title: d.title, source: "other", table: `dataset_${d.id}` });
+          base.push({
+            id: d.id,
+            title: d.title,
+            source: "other",
+            table: `dataset_${d.id}`,
+            defaultCol: d.default_numeric_column || null,
+          });
         }
       }
 
-      const { data: derived } = await supabase
-        .from("derived_dataset_metadata")
-        .select("id,title")
-        .eq("country_iso", countryIso);
-
-      if (derived?.length) {
-        for (const d of derived) {
-          all.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` });
-        }
-      }
-
-      setDatasets(all);
+      setDatasets(base);
     })();
   }, [open, countryIso]);
 
-  // ─────────────────────────────
-  // Hydrate when editing
-  // ─────────────────────────────
+  // ───────────── Taxonomy loading ─────────────
   useEffect(() => {
     if (!open) return;
+    (async () => {
+      const { data } = await supabase.from("taxonomy_terms").select("category,name");
+      if (!data) return;
+      const grouped: TaxonomyMap = {};
+      data.forEach(({ category, name }) => {
+        if (!grouped[category]) grouped[category] = [];
+        grouped[category].push(name);
+      });
+      setTaxonomyMap(grouped);
+    })();
+  }, [open]);
 
+  // ───────────── Hydration ─────────────
+  useEffect(() => {
+    if (!open) return;
     if (!editDataset) {
       setTitle("");
       setDesc("");
@@ -110,12 +120,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       setMethod("ratio");
       setUseScalarB(false);
       setScalarB(1);
-      setColA("population");
-      setColB("area_sqkm");
+      setColA("");
+      setColB("");
       setDecimals(2);
       setDatasetA(null);
       setDatasetB(null);
       setPreview([]);
+      setTaxonomy({});
       return;
     }
 
@@ -125,8 +136,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setMethod((editDataset.method as Method) || "ratio");
     setUseScalarB(!!editDataset.use_scalar_b);
     setScalarB(editDataset.scalar_b_val ?? 1);
-    setColA(editDataset.col_a || "population");
-    setColB(editDataset.col_b || "area_sqkm");
+    setColA(editDataset.col_a || "");
+    setColB(editDataset.col_b || "");
     setDecimals(editDataset.decimals ?? 2);
 
     if (datasets.length > 0) {
@@ -137,9 +148,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     }
   }, [open, editDataset, datasets]);
 
-  // ─────────────────────────────
-  // Helpers
-  // ─────────────────────────────
+  // ───────────── Auto-fill columns ─────────────
+  useEffect(() => {
+    if (datasetA && !colA) setColA(datasetA.defaultCol || "value");
+    if (datasetB && !colB) setColB(datasetB.defaultCol || "value");
+  }, [datasetA, datasetB]);
+
+  // ───────────── Helpers ─────────────
   const methodSymbol = useMemo(() => {
     switch (method) {
       case "ratio": return "÷";
@@ -154,15 +169,17 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     return `A.${colA} ${methodSymbol} ${rhs}`;
   }, [useScalarB, scalarB, colA, colB, methodSymbol]);
 
-  // ─────────────────────────────
-  // Preview
-  // ─────────────────────────────
+  const formatNumber = (v: number | null) => {
+    if (v == null || isNaN(v)) return "";
+    return v.toLocaleString(undefined, { maximumFractionDigits: decimals });
+  };
+
+  // ───────────── Preview ─────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
-
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table,
@@ -176,24 +193,21 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_scalar_b_val: useScalarB ? scalarB : null,
     });
     setLoadingPreview(false);
-
     if (error) {
       alert("Preview error: " + error.message);
       return;
     }
-
     setPreview(data || []);
   }
 
-  // ─────────────────────────────
-  // Save
-  // ─────────────────────────────
+  // ───────────── Save ─────────────
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
-
+    const cats = Object.keys(taxonomy);
+    const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
     const payload = {
       p_country: countryIso,
       p_title: title || `Derived (${targetLevel})`,
@@ -207,35 +221,23 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_col_a: colA,
       p_col_b: useScalarB ? null : colB,
       p_formula: computedFormula,
-      p_source_level: "variable",
       p_target_level: targetLevel,
-      p_dynamic_resolution: true,
+      p_taxonomy_categories: cats,
+      p_taxonomy_terms: terms,
       p_decimals: decimals,
     };
-
     const { error } = await supabase.rpc("create_derived_dataset", payload);
     if (error) {
       alert("Save failed: " + error.message);
       return;
     }
-
     alert(editDataset ? "✅ Changes saved." : "✅ Derived dataset created.");
     onClose();
   }
 
   if (!open) return null;
 
-  // ─────────────────────────────
-  // UI
-  // ─────────────────────────────
-  const formatNumber = (value: number | null) => {
-    if (value == null || isNaN(value)) return "";
-    return value.toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: decimals,
-    });
-  };
-
+  // ───────────── UI ─────────────
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
@@ -268,7 +270,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Dataset Selectors */}
+        {/* Dataset selectors */}
         <div className="flex gap-2 mb-3">
           <select
             className="border p-1 rounded flex-1"
@@ -307,12 +309,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             className="border p-1 rounded w-40"
             value={colA}
             onChange={(e) => setColA(e.target.value)}
+            placeholder="Column A"
           />
           {!useScalarB && (
             <input
               className="border p-1 rounded w-40"
               value={colB}
               onChange={(e) => setColB(e.target.value)}
+              placeholder="Column B"
             />
           )}
           <label className="text-xs flex items-center gap-1 ml-auto">
@@ -320,7 +324,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               type="checkbox"
               checked={useScalarB}
               onChange={(e) => setUseScalarB(e.target.checked)}
-            />
+            />{" "}
             Use Scalar B
           </label>
           {useScalarB && (
@@ -346,7 +350,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </div>
 
         {/* Method + Preview */}
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
               key={m}
@@ -381,7 +385,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               </tr>
             </thead>
             <tbody>
-              {preview.map((r, i) => (
+              {preview.map((r: any, i: number) => (
                 <tr key={i} className="border-t">
                   <td className="p-1">{r.join_key}</td>
                   <td className="p-1">{r.place_name ?? "—"}</td>
@@ -392,6 +396,58 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Taxonomy */}
+        <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+          {Object.keys(taxonomyMap).map((cat) => {
+            const isChecked = !!taxonomy[cat];
+            return (
+              <div key={cat} className="border rounded p-2">
+                <label className="flex items-center gap-1 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) =>
+                      setTaxonomy((prev) => {
+                        const next = { ...prev };
+                        if (e.target.checked) {
+                          if (!next[cat]) next[cat] = new Set<string>();
+                        } else {
+                          delete next[cat];
+                        }
+                        return next;
+                      })
+                    }
+                  />{" "}
+                  {cat}
+                </label>
+                {isChecked && (
+                  <div className="ml-3 mt-1 grid grid-cols-1">
+                    {taxonomyMap[cat].map((term) => (
+                      <label key={term} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={!!taxonomy[cat]?.has(term)}
+                          onChange={(e) =>
+                            setTaxonomy((prev) => {
+                              const next = { ...prev };
+                              if (!next[cat]) next[cat] = new Set<string>();
+                              if (e.target.checked) next[cat]!.add(term);
+                              else next[cat]!.delete(term);
+                              return next;
+                            })
+                          }
+                        />{" "}
+                        {term}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Footer */}
