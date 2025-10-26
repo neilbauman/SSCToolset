@@ -132,29 +132,31 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Dataset selectors */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          {[["Dataset A", datasetA, setDatasetA], ["Dataset B", datasetB, setDatasetB]].map(
-            ([label, ds, setDs], i) => (
-              <div key={i} className="flex-1">
-                <label className="font-medium text-xs">{label}</label>
-                <select
-                  className="border p-1 rounded w-full"
-                  value={(ds as DatasetOption | null)?.id || ""}
-                  onChange={e => setDs(datasets.find(x => x.id === e.target.value) || null)}
-                >
-                  <option value="">Select {label}</option>
-                  {datasets.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )
-          )}
-        </div>
-
+       {/* Dataset selectors */}
+<div className="flex flex-wrap gap-2 mb-3">
+  {[
+    { label: "Dataset A", value: datasetA, setter: setDatasetA },
+    { label: "Dataset B", value: datasetB, setter: setDatasetB },
+  ].map(({ label, value, setter }, i) => (
+    <div key={i} className="flex-1">
+      <label className="font-medium text-xs">{label}</label>
+      <select
+        className="border p-1 rounded w-full"
+        value={value?.id || ""}
+        onChange={e =>
+          setter(datasets.find(x => x.id === e.target.value) || null)
+        }
+      >
+        <option value="">Select {label}</option>
+        {datasets.map(d => (
+          <option key={d.id} value={d.id}>
+            {d.title}
+          </option>
+        ))}
+      </select>
+    </div>
+  ))}
+</div>
         {/* Methods */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs">Method:</span>
