@@ -28,8 +28,6 @@ type EditPayload = {
   decimals?: number | null;
   formula?: string | null;
   target_level?: string | null;
-  taxonomy_categories?: string[] | null;
-  taxonomy_terms?: string[] | null;
 };
 
 type Props = {
@@ -58,6 +56,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [targetLevel, setTargetLevel] = useState("ADM3");
+  const [decimals, setDecimals] = useState(2);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
@@ -105,7 +104,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     if (!open) return;
 
     if (!editDataset) {
-      // Reset for new dataset
       setTitle("");
       setDesc("");
       setTargetLevel("ADM3");
@@ -114,13 +112,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       setScalarB(1);
       setColA("population");
       setColB("area_sqkm");
+      setDecimals(2);
       setDatasetA(null);
       setDatasetB(null);
       setPreview([]);
       return;
     }
 
-    // Populate from existing dataset
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
     setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
@@ -129,8 +127,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setScalarB(editDataset.scalar_b_val ?? 1);
     setColA(editDataset.col_a || "population");
     setColB(editDataset.col_b || "area_sqkm");
+    setDecimals(editDataset.decimals ?? 2);
 
-    // Match Dataset A/B to loaded options (after they exist)
     if (datasets.length > 0) {
       const foundA = datasets.find((d) => d.table === editDataset.table_a);
       const foundB = datasets.find((d) => d.table === editDataset.table_b);
@@ -140,7 +138,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }, [open, editDataset, datasets]);
 
   // ─────────────────────────────
-  // Compute formula text
+  // Helpers
   // ─────────────────────────────
   const methodSymbol = useMemo(() => {
     switch (method) {
@@ -164,8 +162,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
-    setLoadingPreview(true);
 
+    setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table,
       p_table_b: useScalarB ? null : datasetB?.table ?? null,
@@ -177,12 +175,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
     });
-
     setLoadingPreview(false);
+
     if (error) {
       alert("Preview error: " + error.message);
       return;
     }
+
     setPreview(data || []);
   }
 
@@ -211,6 +210,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       p_source_level: "variable",
       p_target_level: targetLevel,
       p_dynamic_resolution: true,
+      p_decimals: decimals,
     };
 
     const { error } = await supabase.rpc("create_derived_dataset", payload);
@@ -228,6 +228,14 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   // ─────────────────────────────
   // UI
   // ─────────────────────────────
+  const formatNumber = (value: number | null) => {
+    if (value == null || isNaN(value)) return "";
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: decimals,
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
@@ -266,6 +274,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             className="border p-1 rounded flex-1"
             value={datasetA?.id || ""}
             onChange={(e) => setDatasetA(datasets.find((d) => d.id === e.target.value) || null)}
+            disabled={!!editDataset}
           >
             <option value="">Select Dataset A</option>
             {datasets.map((d) => (
@@ -280,6 +289,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               className="border p-1 rounded flex-1"
               value={datasetB?.id || ""}
               onChange={(e) => setDatasetB(datasets.find((d) => d.id === e.target.value) || null)}
+              disabled={!!editDataset}
             >
               <option value="">Select Dataset B</option>
               {datasets.map((d) => (
@@ -321,6 +331,18 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))}
             />
           )}
+          <select
+            className="border rounded text-xs p-1"
+            value={decimals}
+            onChange={(e) => setDecimals(parseInt(e.target.value))}
+            title="Decimals"
+          >
+            {[0, 1, 2, 3].map((d) => (
+              <option key={d} value={d}>
+                {d} dec
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Method + Preview */}
@@ -351,7 +373,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr>
-                <th className="p-1 text-left">Key</th>
+                <th className="p-1 text-left">Pcode</th>
+                <th className="p-1 text-left">Name</th>
                 <th className="p-1 text-right">A</th>
                 <th className="p-1 text-right">B</th>
                 <th className="p-1 text-right">Derived</th>
@@ -361,9 +384,10 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               {preview.map((r, i) => (
                 <tr key={i} className="border-t">
                   <td className="p-1">{r.join_key}</td>
-                  <td className="p-1 text-right">{r.a}</td>
-                  <td className="p-1 text-right">{r.b}</td>
-                  <td className="p-1 text-right">{r.derived}</td>
+                  <td className="p-1">{r.place_name ?? "—"}</td>
+                  <td className="p-1 text-right">{formatNumber(r.a)}</td>
+                  <td className="p-1 text-right">{formatNumber(r.b)}</td>
+                  <td className="p-1 text-right font-medium">{formatNumber(r.derived)}</td>
                 </tr>
               ))}
             </tbody>
