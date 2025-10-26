@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
   Eye,
   RefreshCw,
   Pencil,
   Trash2,
   Zap,
+  ArrowUpDown,
 } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { CountryParams } from "@/app/country/types";
+import CreateDerivedDatasetWizard_JoinAware from "@/components/country/CreateDerivedDatasetWizard_JoinAware";
 
 type DerivedDataset = {
   id: string;
@@ -35,6 +36,10 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [columns, setColumns] = useState<string[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [openWizard, setOpenWizard] = useState(false);
+  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
 
   const showToast = (msg: string) => {
@@ -43,7 +48,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   };
 
-  // Fetch all derived datasets
+  // ────────────────────────────────
+  // Fetch derived datasets
+  // ────────────────────────────────
   async function fetchDerived() {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -54,17 +61,20 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     else setDatasets(data || []);
   }
 
-  // View dataset (load its rows dynamically)
+  useEffect(() => {
+    fetchDerived();
+  }, [countryIso]);
+
+  // ────────────────────────────────
+  // View derived dataset
+  // ────────────────────────────────
   async function viewDataset(dataset: DerivedDataset) {
     setSelectedDataset(dataset);
     setLoadingPreview(true);
 
     try {
       const tableName = `derived_pop_density_${dataset.admin_level.toLowerCase()}`;
-      const { data, error } = await supabase
-        .from(tableName)
-        .select("*")
-        .limit(100);
+      const { data, error } = await supabase.from(tableName).select("*").limit(200);
       if (error) throw error;
       setDataPreview(data || []);
       if (data && data.length > 0) {
@@ -80,7 +90,29 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   }
 
-  // Refresh dataset via edge function (temporary for popdensity)
+  // ────────────────────────────────
+  // Sort dataset viewer table
+  // ────────────────────────────────
+  function sortData(col: string) {
+    if (!dataPreview.length) return;
+    const newAsc = sortCol === col ? !sortAsc : true;
+    const sorted = [...dataPreview].sort((a, b) => {
+      const valA = a[col] ?? "";
+      const valB = b[col] ?? "";
+      if (typeof valA === "number" && typeof valB === "number")
+        return newAsc ? valA - valB : valB - valA;
+      return newAsc
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+    setDataPreview(sorted);
+    setSortCol(col);
+    setSortAsc(newAsc);
+  }
+
+  // ────────────────────────────────
+  // Refresh dataset (calls edge)
+  // ────────────────────────────────
   async function refreshDerived(dataset: DerivedDataset) {
     try {
       setRefreshing(true);
@@ -98,9 +130,28 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   }
 
-  useEffect(() => {
-    fetchDerived();
-  }, [countryIso]);
+  // ────────────────────────────────
+  // Delete derived dataset
+  // ────────────────────────────────
+  async function deleteDerived(dataset: DerivedDataset) {
+    if (!confirm(`Delete derived dataset "${dataset.title}"? This cannot be undone.`)) return;
+    try {
+      const { error } = await supabase
+        .from("derived_dataset_metadata")
+        .delete()
+        .eq("id", dataset.id);
+      if (error) throw error;
+      showToast(`🗑️ Deleted ${dataset.title}`);
+      if (selectedDataset?.id === dataset.id) {
+        setSelectedDataset(null);
+        setDataPreview([]);
+      }
+      await fetchDerived();
+    } catch (err: any) {
+      console.error(err);
+      showToast("❌ Delete failed: " + err.message);
+    }
+  }
 
   return (
     <SidebarLayout
@@ -124,6 +175,10 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <button
+            onClick={() => {
+              setEditDataset(null);
+              setOpenWizard(true);
+            }}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
           >
             <Zap className="w-4 h-4" /> New Derived Dataset
@@ -199,7 +254,8 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          showToast("✏️ Edit mode coming soon");
+                          setEditDataset(d);
+                          setOpenWizard(true);
                         }}
                         className="text-gray-700 hover:text-gray-900"
                       >
@@ -208,7 +264,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          showToast("🗑️ Delete mode coming soon");
+                          deleteDerived(d);
                         }}
                         className="text-red-600 hover:text-red-800"
                       >
@@ -233,12 +289,12 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <span className="text-sm text-gray-500">Loading…</span>
               ) : (
                 <span className="text-sm text-gray-400">
-                  Showing up to 100 records
+                  Showing up to 200 records
                 </span>
               )}
             </div>
 
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded">
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded">
               {loadingPreview ? (
                 <div className="text-center p-10 text-gray-500">Loading data…</div>
               ) : dataPreview.length === 0 ? (
@@ -247,11 +303,22 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 </div>
               ) : (
                 <table className="min-w-full text-xs border-collapse">
-                  <thead className="bg-gray-50 border-b sticky top-0">
+                  <thead className="bg-gray-50 border-b sticky top-0 z-10">
                     <tr>
                       {columns.map((c) => (
-                        <th key={c} className="px-2 py-1 text-left border-b">
-                          {c}
+                        <th
+                          key={c}
+                          onClick={() => sortData(c)}
+                          className="px-2 py-1 text-left border-b cursor-pointer select-none hover:bg-gray-100"
+                        >
+                          {c}{" "}
+                          {sortCol === c && (
+                            <ArrowUpDown
+                              className={`inline w-3 h-3 ml-1 ${
+                                sortAsc ? "rotate-180" : ""
+                              }`}
+                            />
+                          )}
                         </th>
                       ))}
                     </tr>
@@ -271,6 +338,19 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               )}
             </div>
           </div>
+        )}
+
+        {/* Wizard */}
+        {openWizard && (
+          <CreateDerivedDatasetWizard_JoinAware
+            open={openWizard}
+            onClose={() => {
+              setOpenWizard(false);
+              setEditDataset(null);
+              fetchDerived();
+            }}
+            countryIso={countryIso}
+          />
         )}
 
         {/* Toasts */}
