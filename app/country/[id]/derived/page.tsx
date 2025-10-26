@@ -67,20 +67,50 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   // Handle view (preview)
   // ─────────────────────────────
   const viewDataset = async (dataset: DerivedDataset) => {
-    setSelectedDataset(dataset);
-    const tableName = `derived_${dataset.id}`;
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .limit(100);
+  setSelectedDataset(dataset);
+  setPreviewData([]);
+  const tableName = `derived_${dataset.id}`;
+
+  // Check if the physical table exists
+  const { error: existsErr } = await supabase
+    .from(tableName)
+    .select("pcode")
+    .limit(1);
+
+  if (existsErr) {
+    console.warn("Dataset table missing, attempting dynamic preview...");
+
+    // Try using the dynamic preview RPC (for auto or parametric datasets)
+    const { data, error } = await supabase.rpc("simulate_join_preview_pd_dynamic", {
+      p_country_iso: countryIso,
+      p_target_level: dataset.admin_level,
+    });
 
     if (error) {
-      console.error("Preview error:", error);
-      alert("Failed to load preview");
+      console.error("Preview RPC failed:", error);
+      setPreviewData([]);
+      alert(
+        `⚠️ Dataset not yet computed or missing in schema (${tableName}).`
+      );
       return;
     }
     setPreviewData(data || []);
-  };
+    return;
+  }
+
+  // Otherwise, query the physical table
+  const { data, error } = await supabase
+    .from(tableName)
+    .select("*")
+    .limit(100);
+
+  if (error) {
+    console.error("Preview error:", error);
+    alert("Failed to load preview");
+    return;
+  }
+  setPreviewData(data || []);
+};
 
   // ─────────────────────────────
   // Handle delete
