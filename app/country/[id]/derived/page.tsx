@@ -15,6 +15,11 @@ type DerivedDataset = {
   admin_level: string;
   method: string;
   created_at: string;
+  dynamic_resolution?: boolean;
+  table_a?: string;
+  table_b?: string;
+  col_a?: string;
+  col_b?: string;
 };
 
 type DerivedRow = Record<string, any>;
@@ -39,7 +44,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const fetchDerivedDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select("id, title, description, admin_level, method, created_at")
+      .select("id, title, description, admin_level, method, created_at, dynamic_resolution, table_a, table_b, col_a, col_b")
       .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
     if (error) console.error("Fetch error:", error);
@@ -83,7 +88,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   };
 
   // ────────────────────────────────────────────────
-  // Load dataset preview (safe & graceful)
+  // Load dataset preview (handles both types)
   // ────────────────────────────────────────────────
   const loadDatasetPreview = async (dataset: DerivedDataset) => {
     setViewerLoading(true);
@@ -92,9 +97,30 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setViewerData([]);
 
     try {
-      const safeTableName = `derived_${dataset.id.replace(/-/g, "_")}`;
+      // if dynamic_resolution true → use RPC
+      if (dataset.dynamic_resolution) {
+        const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
+          p_table_a: dataset.table_a,
+          p_table_b: dataset.table_b,
+          p_country: countryIso,
+          p_target_level: dataset.admin_level,
+          p_method: dataset.method,
+          p_col_a: dataset.col_a,
+          p_col_b: dataset.col_b,
+          p_use_scalar_b: false,
+          p_scalar_b_val: 0,
+        });
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          setViewerError("No preview data returned for this dynamic dataset.");
+        } else {
+          setViewerData(data);
+        }
+        return;
+      }
 
-      // Check if the table actually exists
+      // otherwise look for materialized table
+      const safeTableName = `derived_${dataset.id.replace(/-/g, "_")}`;
       const { data: exists, error: checkErr } = await supabase
         .from("pg_tables")
         .select("tablename")
@@ -107,7 +133,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         return;
       }
 
-      // Load first 100 rows
       const { data, error } = await supabase.from(safeTableName).select("*").limit(100);
       if (error) throw error;
       setViewerData(data || []);
@@ -140,7 +165,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header Actions */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <button
@@ -176,13 +200,14 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                     </div>
                   </th>
                 ))}
+                <th className="px-3 py-2 text-left">Type</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedDatasets.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center italic text-gray-500 py-3">
+                  <td colSpan={6} className="text-center italic text-gray-500 py-3">
                     No derived datasets found.
                   </td>
                 </tr>
@@ -199,6 +224,13 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                     <td className="px-3 py-2">{d.admin_level}</td>
                     <td className="px-3 py-2">{d.method}</td>
                     <td className="px-3 py-2">{new Date(d.created_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-2">
+                      {d.dynamic_resolution ? (
+                        <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Dynamic</span>
+                      ) : (
+                        <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded">Materialized</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right space-x-2" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => loadDatasetPreview(d)}
@@ -280,7 +312,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </div>
         )}
 
-        {/* Wizard Modal */}
+        {/* Wizard */}
         {openWizard && (
           <CreateDerivedDatasetWizard_JoinAware
             open={openWizard}
