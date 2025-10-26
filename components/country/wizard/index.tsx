@@ -74,30 +74,36 @@ export default function CreateDerivedDatasetWizard({
   // ─────────────────────────────
   useEffect(() => {
     if (!open) return;
+
     (async () => {
       const all: DatasetOption[] = [
         { id: "core-admin", title: "Administrative Units [core]", source: "core", table: "admin_units" },
         { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
         { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features" },
       ];
+
       const { data: others } = await supabase
         .from("dataset_metadata")
         .select("id,title")
         .eq("country_iso", countryIso);
+
       if (others?.length) {
         others.forEach((d) =>
           all.push({ id: d.id, title: d.title, source: "other", table: `dataset_${d.id}` })
         );
       }
+
       const { data: derived } = await supabase
         .from("derived_dataset_metadata")
         .select("id,title")
         .eq("country_iso", countryIso);
+
       if (derived?.length) {
         derived.forEach((d) =>
           all.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}` })
         );
       }
+
       setDatasets(all);
     })();
   }, [open, countryIso]);
@@ -120,21 +126,10 @@ export default function CreateDerivedDatasetWizard({
   }, [open]);
 
   // ─────────────────────────────
-  // Hydrate when editing
+  // Hydrate when editing (AFTER datasets load)
   // ─────────────────────────────
   useEffect(() => {
-    if (!open) return;
-    if (!editDataset) {
-      setTitle("");
-      setDesc("");
-      setColA("population");
-      setColB("area_sqkm");
-      setMethod("ratio");
-      setDecimals(2);
-      setIsParametric(true);
-      setTaxonomy({});
-      return;
-    }
+    if (!open || !editDataset || datasets.length === 0) return;
 
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
@@ -145,18 +140,19 @@ export default function CreateDerivedDatasetWizard({
     setColB(editDataset.col_b || "area_sqkm");
     setUseScalarB(editDataset.use_scalar_b ?? false);
     setScalarB(editDataset.scalar_b_val ?? 1);
+    setTargetLevel(editDataset.admin_level || "ADM3");
 
-    // Match dataset references
+    // Match Dataset A + B
     if (editDataset.table_a) {
       const foundA = datasets.find((d) => d.table === editDataset.table_a);
-      setDatasetA(foundA || null);
+      if (foundA) setDatasetA(foundA);
     }
     if (editDataset.table_b) {
       const foundB = datasets.find((d) => d.table === editDataset.table_b);
-      setDatasetB(foundB || null);
+      if (foundB) setDatasetB(foundB);
     }
 
-    // Taxonomy
+    // Restore taxonomy
     const catArr = editDataset.taxonomy_categories || [];
     const termArr = editDataset.taxonomy_terms || [];
     const next: Record<string, Set<string>> = {};
@@ -173,7 +169,7 @@ export default function CreateDerivedDatasetWizard({
   }, [open, editDataset, datasets, taxonomyMap]);
 
   // ─────────────────────────────
-  // Derived formula
+  // Formula
   // ─────────────────────────────
   const computedFormula = useMemo(() => {
     const rhs = useScalarB ? String(scalarB) : `B.${colB}`;
