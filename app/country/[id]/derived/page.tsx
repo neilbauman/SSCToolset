@@ -269,62 +269,91 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
-        {/* Dataset Preview */}
-        {selectedDataset && (
-          <div className="mt-6 bg-white border rounded-md shadow p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-semibold text-sm">
-                Preview: {selectedDataset.title}
-              </h3>
-              <button
-                onClick={() => setSelectedDataset(null)}
-                className="text-xs text-gray-600 hover:text-[#640811]"
-              >
-                Close
-              </button>
-            </div>
+        {/* Dataset Preview + Metadata */}
+{selectedDataset && (
+  <div className="mt-6 bg-white border rounded-md shadow p-4">
+    <div className="flex justify-between items-center mb-3">
+      <h3 className="font-semibold text-sm">
+        {selectedDataset.title} — {selectedDataset.admin_level}
+      </h3>
+      <button
+        onClick={() => setSelectedDataset(null)}
+        className="text-xs text-gray-600 hover:text-[#640811]"
+      >
+        Close
+      </button>
+    </div>
 
-            {healthSummary && (
-              <div className="text-xs text-gray-700 italic mb-2">
-                {healthSummary}
-              </div>
-            )}
+    {/* Compact metadata panel */}
+    <div className="border rounded-md bg-gray-50 p-2 text-xs mb-3 grid grid-cols-3 gap-y-1 gap-x-4">
+      <div>
+        <span className="font-medium text-gray-700">Method:</span>{" "}
+        {selectedDataset.method}
+      </div>
+      <div>
+        <span className="font-medium text-gray-700">Created:</span>{" "}
+        {new Date(selectedDataset.created_at).toLocaleDateString()}
+      </div>
+      <div>
+        <span className="font-medium text-gray-700">Index Ready:</span>{" "}
+        {selectedDataset.is_index_ready ? "✅ Yes" : "—"}
+      </div>
 
-            <div className="max-h-80 overflow-y-auto text-xs border rounded">
-              <table className="w-full">
-                <thead className="bg-gray-100">
-                  <tr>
-                    {previewData.length > 0 &&
-                      Object.keys(previewData[0]).map((k) => (
-                        <th key={k} className="p-1 text-left">
-                          {k}
-                        </th>
-                      ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center italic text-gray-500 py-2">
-                        No preview data
-                      </td>
-                    </tr>
-                  ) : (
-                    previewData.map((r, i) => (
-                      <tr key={i} className="border-t">
-                        {Object.entries(r).map(([k, v], j) => (
-                          <td key={j} className="p-1">
-                            {typeof v === "number" ? formatNumber(v) : v?.toString()}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+      {selectedDataset.taxonomy_categories && (
+        <div className="col-span-3">
+          <span className="font-medium text-gray-700">Taxonomy:</span>{" "}
+          {selectedDataset.taxonomy_categories.length > 0
+            ? selectedDataset.taxonomy_categories.join(", ")
+            : "—"}
+        </div>
+      )}
+      {healthSummary && (
+        <div className="col-span-3 text-[#640811] font-medium">
+          {healthSummary}
+        </div>
+      )}
+    </div>
+
+    {/* Dataset Preview Table */}
+    <div className="max-h-80 overflow-y-auto text-xs border rounded">
+      <table className="w-full">
+        <thead className="bg-gray-100">
+          <tr>
+            {previewData.length > 0 &&
+              Object.keys(previewData[0]).map((k) => (
+                <th key={k} className="p-1 text-left">
+                  {k}
+                </th>
+              ))}
+          </tr>
+        </thead>
+        <tbody>
+          {previewData.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="text-center italic text-gray-500 py-2">
+                No preview data
+              </td>
+            </tr>
+          ) : (
+            previewData.map((r, i) => (
+              <tr key={i} className="border-t">
+                {Object.entries(r).map(([k, v], j) => (
+                  <td key={j} className="p-1">
+                    {typeof v === "number"
+                      ? Number(v).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })
+                      : v?.toString() ?? "—"}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
         {/* Wizard Modal */}
 {openWizard && (
