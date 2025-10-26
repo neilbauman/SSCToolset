@@ -4,12 +4,18 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Source = "core" | "other" | "derived" | "gis";
-type DatasetOption = { id: string; title: string; source: Source; table: string };
 
-// ✨ Now includes optional editDataset prop
+type DatasetOption = {
+  id: string;
+  title: string;
+  source: Source;
+  table: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  onSaved?: () => void;
   countryIso: string;
   editDataset?: {
     id: string;
@@ -25,6 +31,7 @@ type Props = {
 export default function CreateDerivedDatasetWizard_JoinAware({
   open,
   onClose,
+  onSaved,
   countryIso,
   editDataset,
 }: Props) {
@@ -47,7 +54,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [isEditing, setIsEditing] = useState(false);
 
   // ───────────────────────────────
-  // Initialize wizard mode
+  // Initialize edit/create mode
   // ───────────────────────────────
   useEffect(() => {
     if (editDataset) {
@@ -75,6 +82,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         { id: "core-pop", title: "Population Data [core]", source: "core", table: "population_data" },
         { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features_normalized" },
       ];
+
       const { data: others } = await supabase
         .from("dataset_metadata")
         .select("id,title")
@@ -116,7 +124,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }, [open]);
 
   // ───────────────────────────────
-  // Preview join result
+  // Preview join
   // ───────────────────────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select datasets first");
@@ -138,13 +146,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   }
 
   // ───────────────────────────────
-  // Save (insert or update)
+  // Save derived dataset
   // ───────────────────────────────
   async function saveDerived() {
     if (!title) return alert("Title required");
     try {
       if (isEditing && editDataset) {
-        // 🧩 Update existing derived dataset
         const { error } = await supabase
           .from("derived_dataset_metadata")
           .update({
@@ -159,7 +166,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         if (error) throw error;
         alert("✅ Derived dataset updated.");
       } else {
-        // 🆕 Create new derived dataset
         const { error } = await supabase.rpc("create_derived_dataset", {
           p_country_iso: countryIso,
           p_title: title,
@@ -180,6 +186,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         if (error) throw error;
         alert("✅ Derived dataset created.");
       }
+
+      if (typeof onSaved === "function") onSaved();
       onClose();
     } catch (err: any) {
       alert("❌ Save failed: " + err.message);
@@ -188,6 +196,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   if (!open) return null;
 
+  // ───────────────────────────────
+  // Render UI
+  // ───────────────────────────────
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[90vh] overflow-y-auto text-sm">
@@ -195,7 +206,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           {isEditing ? "Edit Derived Dataset" : "Create Derived Dataset"}
         </h2>
 
-        {/* Title / Description / Level */}
+        {/* Title, Description, Level */}
         <div className="flex flex-wrap gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -275,7 +286,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Method / Preview */}
+        {/* Method + Preview */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs">Method:</span>
           {["ratio", "multiply", "sum", "difference"].map((m) => (
@@ -298,7 +309,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </button>
         </div>
 
-        {/* Preview */}
         <p className="text-xs italic mb-2">
           Derived = A.{colA}{" "}
           {method === "ratio"
@@ -311,6 +321,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           {useScalarB ? scalarB : `B.${colB}`}
         </p>
 
+        {/* Preview Table */}
         <div className="max-h-48 overflow-y-auto border rounded mb-4 text-xs">
           <table className="w-full">
             <thead className="bg-gray-100">
@@ -334,48 +345,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               ))}
             </tbody>
           </table>
-        </div>
-
-        {/* Taxonomy */}
-        <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {Object.keys(categories).map((cat) => (
-            <div key={cat}>
-              <label className="flex items-center gap-1 text-xs font-medium">
-                <input
-                  type="checkbox"
-                  checked={!!taxonomy[cat]}
-                  onChange={(e) => {
-                    const t = { ...taxonomy };
-                    if (e.target.checked) t[cat] = [];
-                    else delete t[cat];
-                    setTaxonomy(t);
-                  }}
-                />{" "}
-                {cat}
-              </label>
-              {taxonomy[cat] && (
-                <div className="ml-3 mt-1 grid grid-cols-1">
-                  {categories[cat].map((term) => (
-                    <label key={term} className="flex items-center gap-1 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={taxonomy[cat]?.includes(term)}
-                        onChange={(e) => {
-                          const t = { ...taxonomy };
-                          if (e.target.checked)
-                            t[cat] = [...(t[cat] || []), term];
-                          else t[cat] = t[cat].filter((x) => x !== term);
-                          setTaxonomy(t);
-                        }}
-                      />{" "}
-                      {term}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
         </div>
 
         {/* Footer */}
