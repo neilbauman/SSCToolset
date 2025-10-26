@@ -327,18 +327,18 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
         )}
 
         {/* Wizard Modal */}
-        {openWizard && (
-          <CreateDerivedDatasetWizard_JoinAware
-            open={openWizard}
-            onClose={() => {
-              setOpenWizard(false);
-              setEditDataset(null);
-              loadDatasets();
-            }}
-            countryIso={countryIso}
-            editDataset={editDataset}
-          />
-        )}
+{openWizard && (
+  <CreateDerivedDatasetWizard_JoinAware
+    open={openWizard}
+    onClose={() => {
+      setOpenWizard(false);
+      setEditDataset(null);
+      loadDatasets();
+    }}
+    countryIso={countryIso}
+    editDataset={editDataset as any} // ✅ fix: cast to expected type
+  />
+)}
       </div>
     </SidebarLayout>
   );
