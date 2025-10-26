@@ -69,7 +69,9 @@ export default function CreateDerivedDatasetWizard({
   const [taxonomyMap, setTaxonomyMap] = useState<Record<string, string[]>>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
-  // Load dataset options
+  // ─────────────────────────────
+  // Load datasets
+  // ─────────────────────────────
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -100,7 +102,9 @@ export default function CreateDerivedDatasetWizard({
     })();
   }, [open, countryIso]);
 
+  // ─────────────────────────────
   // Load taxonomy
+  // ─────────────────────────────
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -115,7 +119,9 @@ export default function CreateDerivedDatasetWizard({
     })();
   }, [open]);
 
-  // If editing, hydrate fields
+  // ─────────────────────────────
+  // Hydrate when editing
+  // ─────────────────────────────
   useEffect(() => {
     if (!open) return;
     if (!editDataset) {
@@ -129,6 +135,7 @@ export default function CreateDerivedDatasetWizard({
       setTaxonomy({});
       return;
     }
+
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
     setMethod(editDataset.method || "ratio");
@@ -136,13 +143,46 @@ export default function CreateDerivedDatasetWizard({
     setIsParametric(editDataset.is_parametric ?? true);
     setColA(editDataset.col_a || "population");
     setColB(editDataset.col_b || "area_sqkm");
-  }, [open, editDataset]);
+    setUseScalarB(editDataset.use_scalar_b ?? false);
+    setScalarB(editDataset.scalar_b_val ?? 1);
 
+    // Match dataset references
+    if (editDataset.table_a) {
+      const foundA = datasets.find((d) => d.table === editDataset.table_a);
+      setDatasetA(foundA || null);
+    }
+    if (editDataset.table_b) {
+      const foundB = datasets.find((d) => d.table === editDataset.table_b);
+      setDatasetB(foundB || null);
+    }
+
+    // Taxonomy
+    const catArr = editDataset.taxonomy_categories || [];
+    const termArr = editDataset.taxonomy_terms || [];
+    const next: Record<string, Set<string>> = {};
+    catArr.forEach((c) => (next[c] = new Set<string>()));
+    termArr.forEach((t) => {
+      for (const cat of Object.keys(taxonomyMap)) {
+        if (taxonomyMap[cat]?.includes(t)) {
+          if (!next[cat]) next[cat] = new Set<string>();
+          next[cat].add(t);
+        }
+      }
+    });
+    setTaxonomy(next);
+  }, [open, editDataset, datasets, taxonomyMap]);
+
+  // ─────────────────────────────
+  // Derived formula
+  // ─────────────────────────────
   const computedFormula = useMemo(() => {
     const rhs = useScalarB ? String(scalarB) : `B.${colB}`;
     return `A.${colA} ${method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "-"} ${rhs}`;
   }, [colA, colB, method, scalarB, useScalarB]);
 
+  // ─────────────────────────────
+  // Preview RPC
+  // ─────────────────────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
@@ -152,11 +192,11 @@ export default function CreateDerivedDatasetWizard({
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.table,
       p_table_b: useScalarB ? null : datasetB?.table ?? null,
-      p_country: countryIso,
-      p_target_level: targetLevel,
-      p_method: method,
       p_col_a: colA,
       p_col_b: useScalarB ? null : colB,
+      p_country: countryIso,
+      p_method: method,
+      p_target_level: targetLevel,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
     });
@@ -165,10 +205,17 @@ export default function CreateDerivedDatasetWizard({
       alert("Preview error: " + error.message);
       return;
     }
-    setPreview((data as any[]) || []);
+    setPreview(data || []);
   }
 
+  // ─────────────────────────────
+  // Save dataset
+  // ─────────────────────────────
   async function saveDerived() {
+    if (!datasetA?.table) {
+      alert("Please select Dataset A before saving.");
+      return;
+    }
     const txCategories = Object.keys(taxonomy);
     const txTerms = txCategories.flatMap((c) => Array.from(taxonomy[c] || []));
     const payload = {
