@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Button } from "@/components/ui/button";
 
 type DatasetOption = {
   id: string;
@@ -37,6 +36,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [method, setMethod] = useState("ratio");
   const [decimals, setDecimals] = useState(0);
   const [isDynamic, setIsDynamic] = useState(false);
+  const [taxonomyCategories, setTaxonomyCategories] = useState<string[]>([]);
+  const [taxonomyTerms, setTaxonomyTerms] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -64,6 +65,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       setScalarValue(editDataset.scalar_b_val || null);
       setDecimals(editDataset.decimals || 0);
       setIsDynamic(editDataset.dynamic_resolution || false);
+      setTaxonomyCategories(editDataset.taxonomy_categories || []);
+      setTaxonomyTerms(editDataset.taxonomy_terms || []);
     }
   }, [editDataset]);
 
@@ -123,8 +126,8 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         p_formula: useScalarB
           ? `A.population ÷ ${scalarValue}`
           : `A.population ÷ B.area_sqkm`,
-        p_taxonomy_categories: [],
-        p_taxonomy_terms: [],
+        p_taxonomy_categories: taxonomyCategories || [],
+        p_taxonomy_terms: taxonomyTerms || [],
         p_id: editDataset?.id || null,
       }
     );
@@ -143,7 +146,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-5 w-full max-w-4xl shadow-lg">
+      <div className="bg-white rounded-lg p-5 w-full max-w-5xl shadow-lg overflow-y-auto max-h-[90vh]">
         <h2 className="text-xl font-semibold mb-4">
           {editDataset ? "Edit" : "Create"} Derived Dataset
         </h2>
@@ -186,7 +189,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         <div className="grid grid-cols-2 gap-4 mb-3">
           {[["Dataset A", datasetA, setDatasetA], ["Dataset B", datasetB, setDatasetB]].map(
             ([label, ds, setDs], i) => (
-              <div key={i} className="flex-1">
+              <div key={i}>
                 <label className="font-medium text-xs">{label}</label>
                 <select
                   className="border p-1 rounded w-full disabled:bg-gray-100"
@@ -210,7 +213,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
         </div>
 
         {/* Scalar toggle */}
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-3">
           <input
             type="checkbox"
             checked={useScalarB}
@@ -222,22 +225,24 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               type="number"
               className="border p-1 rounded w-24 ml-2"
               value={scalarValue ?? ""}
-              placeholder="Scalar"
+              placeholder="Scalar value"
               onChange={(e) => setScalarValue(parseFloat(e.target.value))}
             />
           )}
         </div>
 
         {/* Method + decimals */}
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           {["ratio", "multiply", "sum", "difference"].map((m) => (
-            <Button
+            <button
               key={m}
-              variant={method === m ? "default" : "outline"}
               onClick={() => setMethod(m)}
+              className={`px-3 py-1 border rounded ${
+                method === m ? "bg-blue-600 text-white" : "bg-gray-100"
+              }`}
             >
               {m}
-            </Button>
+            </button>
           ))}
           <select
             className="border p-1 rounded ml-auto"
@@ -248,9 +253,39 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               <option key={d}>{d} decimals</option>
             ))}
           </select>
-          <Button onClick={handlePreview} disabled={loading}>
+          <button
+            className="px-3 py-1 bg-green-600 text-white rounded"
+            onClick={handlePreview}
+            disabled={loading}
+          >
             {loading ? "Loading…" : "Preview"}
-          </Button>
+          </button>
+        </div>
+
+        {/* Taxonomy */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <input
+            type="text"
+            placeholder="Taxonomy Categories (comma separated)"
+            className="border p-2 rounded"
+            value={taxonomyCategories.join(", ")}
+            onChange={(e) =>
+              setTaxonomyCategories(
+                e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
+              )
+            }
+          />
+          <input
+            type="text"
+            placeholder="Taxonomy Terms (comma separated)"
+            className="border p-2 rounded"
+            value={taxonomyTerms.join(", ")}
+            onChange={(e) =>
+              setTaxonomyTerms(
+                e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
+              )
+            }
+          />
         </div>
 
         {/* Preview table */}
@@ -289,10 +324,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {/* Actions */}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <button className="border px-3 py-1 rounded" onClick={onClose}>
             Cancel
-          </Button>
-          <Button onClick={handleSave}>Save Derived</Button>
+          </button>
+          <button
+            className="bg-blue-600 text-white px-4 py-1 rounded"
+            onClick={handleSave}
+          >
+            Save Derived
+          </button>
         </div>
       </div>
     </div>
