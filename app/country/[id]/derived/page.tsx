@@ -332,16 +332,16 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
 
         {/* Wizard Modal */}
         {openWizard && (
-          <CreateDerivedDatasetWizard_JoinAware
-  open={wizardOpen}
-  onClose={() => {
-    setWizardOpen(false);
-    setEditDataset(null);
-  }}
-  countryIso={countryIso}
-  editDataset={
-    editDataset
-      ? {
+  <CreateDerivedDatasetWizard_JoinAware
+    open={openWizard}
+    onClose={() => {
+      setOpenWizard(false);
+      setEditDataset(null);
+    }}
+    countryIso={countryIso}
+    editDataset={editDataset}
+/>
+)} {
           id: editDataset.id,
           title: editDataset.title,
           description: editDataset.description ?? null,
