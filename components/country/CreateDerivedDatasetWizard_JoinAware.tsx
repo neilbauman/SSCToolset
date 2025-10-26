@@ -174,12 +174,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
         {/* Dataset pickers */}
         <div className="flex flex-wrap gap-3 mb-4">
-          {[
-            ["Dataset A", datasetA, setDatasetA],
-            ["Dataset B", datasetB, setDatasetB],
-          ].map(([label, ds, setDs], i) => (
-            <div key={i} className="flex-1">
-              <label className="font-medium text-xs">{label}</label>
+          {([
+  ["Dataset A", datasetA, setDatasetA],
+  ["Dataset B", datasetB, setDatasetB],
+] as [string, DatasetOption | null, React.Dispatch<React.SetStateAction<DatasetOption | null>>][]).map(
+  ([label, ds, setDs], i) => (
+    <div key={i} className="flex-1">
+      <label className="font-medium text-xs">{label}</label>
               <select
                 className="border p-1 rounded w-full disabled:bg-gray-100"
                 value={(ds as DatasetOption | null)?.id || ""}
