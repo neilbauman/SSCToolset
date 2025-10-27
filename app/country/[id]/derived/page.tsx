@@ -2,364 +2,301 @@
 
 import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import SidebarLayout from "@/components/layout/SidebarLayout";
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
-import CreateDerivedDatasetWizard_JoinAware from "@/components/country/wizard";
-import type { CountryParams } from "@/app/country/types";
+import { Loader2, Play, Save, XCircle } from "lucide-react";
 
-type DerivedDataset = {
-  id: string;
-  title: string;
-  description: string | null;
-  admin_level: string;
-  method: string;
-  created_at: string;
-  taxonomy_categories?: string[];
-  is_index_ready?: boolean;
-};
-
-export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
-  const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
-  const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
-  const [sortAsc, setSortAsc] = useState(false);
-  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
-  const [openWizard, setOpenWizard] = useState(false);
-  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
+export default function CreateDerivedDatasetWizard_JoinAware({
+  countryIso,
+  onClose,
+  editDataset,
+}: {
+  countryIso: string;
+  onClose: () => void;
+  editDataset?: any;
+}) {
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [tableA, setTableA] = useState("");
+  const [tableB, setTableB] = useState("");
+  const [colA, setColA] = useState("");
+  const [colB, setColB] = useState("");
+  const [method, setMethod] = useState("multiply");
+  const [targetLevel, setTargetLevel] = useState("ADM3");
+  const [normalizePercent, setNormalizePercent] = useState(false);
+  const [useScalarB, setUseScalarB] = useState(false);
+  const [scalarBVal, setScalarBVal] = useState<number | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [healthSummary, setHealthSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const loadDatasets = async () => {
-    const { data, error } = await supabase
-      .from("derived_dataset_metadata")
-      .select("*")
-      .eq("country_iso", countryIso)
-      .order(sortField, { ascending: sortAsc });
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-    setDatasets(data || []);
-  };
-
+  // Load all available datasets
   useEffect(() => {
-    loadDatasets();
-  }, [sortField, sortAsc, countryIso]);
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("id, title, admin_level, method")
+        .eq("country_iso", countryIso);
+      if (error) console.error(error);
+      setDatasets(data || []);
+    };
+    load();
+  }, [countryIso]);
 
-  const toggleSort = (field: keyof DerivedDataset) => {
-    if (sortField === field) setSortAsc(!sortAsc);
-    else {
-      setSortField(field);
-      setSortAsc(true);
+  const handlePreview = async () => {
+    if (!tableA || !colA || (!tableB && !useScalarB)) {
+      setMessage("Please select both datasets and columns (or enable scalar).");
+      return;
     }
-  };
 
-  const viewDataset = async (dataset: DerivedDataset) => {
-    setSelectedDataset(dataset);
-    setPreviewData([]);
-    const tableName = `derived_${dataset.id}`;
-
-    const { error: existsErr } = await supabase.from(tableName).select("pcode").limit(1);
-    if (existsErr) {
-      console.warn("Dataset table missing, attempting dynamic preview...");
-      const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-        p_table_a: "population_data",
-        p_table_b: "gis_features",
-        p_country: countryIso,
-        p_target_level: dataset.admin_level,
-        p_method: "ratio",
-        p_col_a: "population",
-        p_col_b: "area_sqkm",
-        p_use_scalar_b: false,
-        p_scalar_b_val: null,
+    setLoading(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("resolve_parametric_dataset_v2", {
+        p_derived_dataset_id: editDataset?.id || null,
+        p_country_iso: countryIso,
+        p_scalar_b_val: scalarBVal,
+        p_normalize_percent: normalizePercent,
+        p_debug: true,
       });
-      if (error) {
-        console.error("Preview RPC failed:", error);
-        setPreviewData([]);
-        setHealthSummary(null);
-        alert(`⚠️ Dataset not yet computed or missing (${tableName}).`);
-        return;
-      }
+
+      if (error) throw error;
       setPreviewData(data || []);
-      summarizeHealth(data);
+      setMessage(`Preview generated (${data?.length || 0} rows).`);
+    } catch (err: any) {
+      console.error(err);
+      setMessage("⚠️ Preview failed: " + err.message);
+      setPreviewData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!tableA || !colA || (!tableB && !useScalarB)) {
+      setMessage("Missing dataset selections or columns.");
       return;
     }
 
-    const { data, error } = await supabase.from(tableName).select("*").limit(100);
-    if (error) {
-      console.error("Preview error:", error);
-      alert("Failed to load preview");
-      return;
+    setCreating(true);
+    setMessage(null);
+
+    try {
+      const { data, error } = await supabase.rpc("create_derived_dataset_v2", {
+        p_table_a: tableA,
+        p_table_b: tableB || null,
+        p_col_a: colA,
+        p_col_b: colB || null,
+        p_country_iso: countryIso,
+        p_method: method,
+        p_target_level: targetLevel,
+        p_use_scalar_b: useScalarB,
+        p_scalar_b_val: scalarBVal,
+        p_normalize_percent: normalizePercent,
+        p_is_parametric: true,
+      });
+
+      if (error) throw error;
+
+      setMessage("✅ Derived dataset created successfully!");
+      setPreviewData([]);
+      setTimeout(onClose, 1200);
+    } catch (err: any) {
+      console.error(err);
+      setMessage("❌ Creation failed: " + err.message);
+    } finally {
+      setCreating(false);
     }
-    setPreviewData(data || []);
-    summarizeHealth(data);
-  };
-
-  const summarizeHealth = (data: any[]) => {
-    if (!data || data.length === 0) return setHealthSummary(null);
-    const total = data.length;
-    const missing = data.filter((r) => r.join_status === "missing_gis").length;
-    const pct = ((missing / total) * 100).toFixed(1);
-    setHealthSummary(`Data health: ${total - missing}/${total} matched (${pct}% missing GIS)`);
-  };
-
-  const deleteDataset = async (dataset: DerivedDataset) => {
-    if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
-    const { error } = await supabase
-      .from("derived_dataset_metadata")
-      .delete()
-      .eq("id", dataset.id);
-    if (error) {
-      console.error("Delete failed:", error);
-      alert("Delete failed: " + error.message);
-      return;
-    }
-    await supabase.rpc("drop_derived_dataset_table", { p_dataset_id: dataset.id });
-    alert("🗑️ Dataset deleted");
-    loadDatasets();
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadDatasets();
-    setRefreshing(false);
   };
 
   return (
-    <SidebarLayout
-      headerProps={{
-        title: `${countryIso} – Derived Datasets`,
-        group: "country-config",
-        breadcrumbs: (
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/" },
-              { label: "Country Configuration", href: "/country" },
-              { label: countryIso, href: `/country/${countryIso}` },
-              { label: "Derived Datasets", href: "#" },
-            ]}
+    <div className="p-6 space-y-4 text-sm">
+      {/* Header */}
+      <div className="flex justify-between items-center border-b pb-3">
+        <h2 className="text-lg font-semibold text-[#640811]">
+          {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
+        </h2>
+        <button
+          onClick={onClose}
+          className="text-gray-500 hover:text-[#640811] transition"
+        >
+          <XCircle size={20} />
+        </button>
+      </div>
+
+      {/* Dataset Selection */}
+      <div className="grid grid-cols-2 gap-6">
+        {/* Dataset A */}
+        <div>
+          <label className="block text-gray-700 font-medium mb-1">
+            Dataset A
+          </label>
+          <select
+            className="w-full border rounded px-2 py-1"
+            value={tableA}
+            onChange={(e) => setTableA(e.target.value)}
+          >
+            <option value="">Select dataset...</option>
+            {datasets.map((ds) => (
+              <option key={ds.id} value={ds.id}>
+                {ds.title} ({ds.admin_level})
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="Column name (e.g. population)"
+            value={colA}
+            onChange={(e) => setColA(e.target.value)}
+            className="w-full border rounded px-2 py-1 mt-2"
           />
-        ),
-      }}
-    >
-      <div className="p-6 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Derived Datasets</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={handleRefresh}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
-            </button>
-            <button
-              onClick={() => {
-                setEditDataset(null);
-                setOpenWizard(true);
-              }}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
-            >
-              <Plus className="w-4 h-4" /> New
-            </button>
-          </div>
         </div>
 
-        {/* Dataset Table */}
-        <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
-          <table className="min-w-full border-collapse">
-            <thead className="bg-gray-50 border-b">
+        {/* Dataset B */}
+        <div>
+          <label className="block text-gray-700 font-medium mb-1">
+            Dataset B
+          </label>
+          <select
+            className="w-full border rounded px-2 py-1"
+            value={tableB}
+            onChange={(e) => setTableB(e.target.value)}
+            disabled={useScalarB}
+          >
+            <option value="">Select dataset...</option>
+            {datasets.map((ds) => (
+              <option key={ds.id} value={ds.id}>
+                {ds.title} ({ds.admin_level})
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="text"
+            placeholder="Column name (e.g. area_sqkm)"
+            value={colB}
+            onChange={(e) => setColB(e.target.value)}
+            className="w-full border rounded px-2 py-1 mt-2"
+            disabled={useScalarB}
+          />
+
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="checkbox"
+              checked={useScalarB}
+              onChange={(e) => setUseScalarB(e.target.checked)}
+            />
+            <span className="text-gray-700 text-xs">Use scalar instead</span>
+          </div>
+          {useScalarB && (
+            <input
+              type="number"
+              placeholder="Scalar value"
+              value={scalarBVal ?? ""}
+              onChange={(e) => setScalarBVal(parseFloat(e.target.value))}
+              className="w-full border rounded px-2 py-1 mt-2"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Method & Options */}
+      <div className="grid grid-cols-3 gap-4 mt-3">
+        <div>
+          <label className="block text-gray-700 font-medium mb-1">Method</label>
+          <select
+            className="w-full border rounded px-2 py-1"
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+          >
+            <option value="ratio">Ratio (A / B)</option>
+            <option value="multiply">Multiply (A × B)</option>
+            <option value="sum">Sum (A + B)</option>
+            <option value="difference">Difference (A − B)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-gray-700 font-medium mb-1">
+            Target Admin Level
+          </label>
+          <select
+            className="w-full border rounded px-2 py-1"
+            value={targetLevel}
+            onChange={(e) => setTargetLevel(e.target.value)}
+          >
+            <option value="ADM1">ADM1</option>
+            <option value="ADM2">ADM2</option>
+            <option value="ADM3">ADM3</option>
+            <option value="ADM4">ADM4</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col justify-center mt-4">
+          <label className="flex items-center gap-2 text-gray-700 text-sm">
+            <input
+              type="checkbox"
+              checked={normalizePercent}
+              onChange={(e) => setNormalizePercent(e.target.checked)}
+            />
+            Normalize (%) divisor
+          </label>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex justify-end gap-3 mt-5">
+        <button
+          onClick={handlePreview}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <Play size={16} />}
+          Preview
+        </button>
+
+        <button
+          onClick={handleCreate}
+          disabled={creating}
+          className="flex items-center gap-2 px-4 py-1.5 bg-[#640811] text-white rounded hover:opacity-90 disabled:opacity-50"
+        >
+          {creating ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />}
+          {editDataset ? "Update" : "Create"}
+        </button>
+      </div>
+
+      {/* Feedback */}
+      {message && (
+        <div className="text-xs text-center text-gray-700 bg-gray-50 border rounded p-2">
+          {message}
+        </div>
+      )}
+
+      {/* Preview Table */}
+      {previewData.length > 0 && (
+        <div className="border rounded-md mt-4 max-h-72 overflow-y-auto text-xs">
+          <table className="w-full">
+            <thead className="bg-gray-100">
               <tr>
-                {[
-                  ["title", "Title"],
-                  ["admin_level", "Admin"],
-                  ["taxonomy_categories", "Taxonomy"],
-                  ["is_index_ready", "Index Ready"],
-                  ["created_at", "Created"],
-                ].map(([field, label]) => (
-                  <th
-                    key={field}
-                    className="px-3 py-2 text-left cursor-pointer select-none"
-                    onClick={() => toggleSort(field as keyof DerivedDataset)}
-                  >
-                    <div className="flex items-center gap-1">
-                      {label}
-                      {sortField === field &&
-                        (sortAsc ? (
-                          <ChevronUp className="w-3 h-3 text-gray-500" />
-                        ) : (
-                          <ChevronDown className="w-3 h-3 text-gray-500" />
-                        ))}
-                    </div>
+                {Object.keys(previewData[0]).map((k) => (
+                  <th key={k} className="p-1 text-left border-b">
+                    {k}
                   </th>
                 ))}
-                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {datasets.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center italic text-gray-500 py-3">
-                    No derived datasets found.
-                  </td>
+              {previewData.map((row, i) => (
+                <tr key={i} className="border-b hover:bg-gray-50">
+                  {Object.entries(row).map(([k, v], j) => (
+                    <td key={j} className="p-1">
+                      {v?.toString() ?? "—"}
+                    </td>
+                  ))}
                 </tr>
-              ) : (
-                datasets.map((ds) => (
-                  <tr
-                    key={ds.id}
-                    className="border-b hover:bg-gray-50 cursor-pointer"
-                    onClick={() => viewDataset(ds)}
-                  >
-                    <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
-                    <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2">
-                      {ds.taxonomy_categories?.length
-                        ? ds.taxonomy_categories.join(", ")
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {ds.is_index_ready ? "✅" : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {new Date(ds.created_at).toLocaleDateString()}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          title="View"
-                          onClick={() => viewDataset(ds)}
-                          className="text-gray-700 hover:text-[#640811]"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          title="Edit"
-                          onClick={() => {
-                            setEditDataset(ds);
-                            setOpenWizard(true);
-                          }}
-                          className="text-gray-700 hover:text-[#640811]"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          title="Delete"
-                          onClick={() => deleteDataset(ds)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
-
-        {/* Dataset Preview */}
-        {selectedDataset && (
-          <div className="mt-6 bg-white border rounded-md shadow p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-semibold text-sm">
-                {selectedDataset.title} — {selectedDataset.admin_level}
-              </h3>
-              <button
-                onClick={() => setSelectedDataset(null)}
-                className="text-xs text-gray-600 hover:text-[#640811]"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="border rounded-md bg-gray-50 p-2 text-xs mb-3 grid grid-cols-3 gap-y-1 gap-x-4">
-              <div>
-                <span className="font-medium text-gray-700">Method:</span>{" "}
-                {selectedDataset.method}
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Created:</span>{" "}
-                {new Date(selectedDataset.created_at).toLocaleDateString()}
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Index Ready:</span>{" "}
-                {selectedDataset.is_index_ready ? "✅ Yes" : "—"}
-              </div>
-
-              {selectedDataset.taxonomy_categories && (
-                <div className="col-span-3">
-                  <span className="font-medium text-gray-700">Taxonomy:</span>{" "}
-                  {selectedDataset.taxonomy_categories.length > 0
-                    ? selectedDataset.taxonomy_categories.join(", ")
-                    : "—"}
-                </div>
-              )}
-              {healthSummary && (
-                <div className="col-span-3 text-[#640811] font-medium">
-                  {healthSummary}
-                </div>
-              )}
-            </div>
-
-            <div className="max-h-80 overflow-y-auto text-xs border rounded">
-              <table className="w-full">
-                <thead className="bg-gray-100">
-                  <tr>
-                    {previewData.length > 0 &&
-                      Object.keys(previewData[0]).map((k) => (
-                        <th key={k} className="p-1 text-left">
-                          {k}
-                        </th>
-                      ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="text-center italic text-gray-500 py-2"
-                      >
-                        No preview data
-                      </td>
-                    </tr>
-                  ) : (
-                    previewData.map((r, i) => (
-                      <tr key={i} className="border-t">
-                        {Object.entries(r).map(([k, v], j) => (
-                          <td key={j} className="p-1">
-                            {typeof v === "number"
-                              ? Number(v).toLocaleString(undefined, {
-                                  maximumFractionDigits: 2,
-                                })
-                              : v?.toString() ?? "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Wizard Modal */}
-        {openWizard && (
-          <CreateDerivedDatasetWizard_JoinAware
-            countryIso={countryIso}
-            onClose={() => setOpenWizard(false)}
-            editDataset={editDataset}
-          />
-        )}
-      </div>
-    </SidebarLayout>
+      )}
+    </div>
   );
 }
