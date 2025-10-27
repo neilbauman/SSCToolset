@@ -5,14 +5,14 @@ import { supabaseBrowser } from "@/lib/supabase/supabaseBrowser";
 import WizardComputationPanel from "./WizardComputationPanel";
 import WizardDerivedPanel from "./WizardDerivedPanel";
 
-export default function WizardIndex({ countryIso }: { countryIso: string }) {
+export default function DerivedDatasetWizard({ countryIso }: { countryIso: string }) {
   const supabase = supabaseBrowser();
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<any[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // 🗂️ Load base datasets available for derivation
+  // Load available datasets (to display or later select as A/B)
   useEffect(() => {
     const loadDatasets = async () => {
       setLoading(true);
@@ -45,14 +45,14 @@ export default function WizardIndex({ countryIso }: { countryIso: string }) {
         </h1>
       </div>
 
-      {/* Dataset summary */}
+      {/* Available datasets (for reference) */}
       {loading ? (
         <p className="text-gray-500 text-sm">Loading datasets...</p>
       ) : error ? (
         <p className="text-red-500 text-sm">Error: {error}</p>
       ) : (
         <div className="border rounded-lg p-4 bg-white shadow-sm">
-          <h2 className="font-semibold mb-2 text-lg">Available Base Datasets</h2>
+          <h2 className="font-semibold mb-2 text-lg">Available Datasets</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm border">
               <thead className="bg-gray-100 border-b">
@@ -78,13 +78,13 @@ export default function WizardIndex({ countryIso }: { countryIso: string }) {
         </div>
       )}
 
-      {/* Computation Controls */}
+      {/* Computation and preview */}
       <WizardComputationPanel
         countryIso={countryIso}
         onPreview={setPreviewData}
       />
 
-      {/* Derived Dataset Preview & Save */}
+      {/* Preview results */}
       <WizardDerivedPanel
         countryIso={countryIso}
         previewData={previewData}
