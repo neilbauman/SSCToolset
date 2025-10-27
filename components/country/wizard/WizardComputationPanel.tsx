@@ -10,7 +10,7 @@ export default function WizardComputationPanel({
   countryIso: string;
   onPreview: (data: any[]) => void;
 }) {
-  const supabase = supabaseBrowser();
+  const supabase = supabaseBrowser;
   const [method, setMethod] = useState("multiply");
   const [targetLevel, setTargetLevel] = useState("ADM3");
   const [normalizePercent, setNormalizePercent] = useState(false);
