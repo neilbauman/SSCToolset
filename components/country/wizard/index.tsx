@@ -6,13 +6,12 @@ import WizardComputationPanel from "./WizardComputationPanel";
 import WizardDerivedPanel from "./WizardDerivedPanel";
 
 export default function DerivedDatasetWizard({ countryIso }: { countryIso: string }) {
-  const supabase = supabaseBrowser();
+  const supabase = supabaseBrowser;
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<any[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Load available datasets (to display or later select as A/B)
   useEffect(() => {
     const loadDatasets = async () => {
       setLoading(true);
@@ -38,14 +37,10 @@ export default function DerivedDatasetWizard({ countryIso }: { countryIso: strin
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-800">
-          Derived Dataset Wizard
-        </h1>
+        <h1 className="text-2xl font-semibold text-gray-800">Derived Dataset Wizard</h1>
       </div>
 
-      {/* Available datasets (for reference) */}
       {loading ? (
         <p className="text-gray-500 text-sm">Loading datasets...</p>
       ) : error ? (
@@ -78,17 +73,8 @@ export default function DerivedDatasetWizard({ countryIso }: { countryIso: strin
         </div>
       )}
 
-      {/* Computation and preview */}
-      <WizardComputationPanel
-        countryIso={countryIso}
-        onPreview={setPreviewData}
-      />
-
-      {/* Preview results */}
-      <WizardDerivedPanel
-        countryIso={countryIso}
-        previewData={previewData}
-      />
+      <WizardComputationPanel countryIso={countryIso} onPreview={setPreviewData} />
+      <WizardDerivedPanel countryIso={countryIso} previewData={previewData} />
     </div>
   );
 }
