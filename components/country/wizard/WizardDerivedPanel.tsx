@@ -1,4 +1,3 @@
-// /components/country/wizard/WizardDerivedPanel.tsx
 "use client";
 
 import { useState } from "react";
@@ -11,7 +10,7 @@ export default function WizardDerivedPanel({
   countryIso: string;
   previewData: any[];
 }) {
-  const supabase = supabaseBrowser();
+  const supabase = supabaseBrowser;
   const [saving, setSaving] = useState(false);
 
   const saveDerivedDataset = async () => {
@@ -36,7 +35,6 @@ export default function WizardDerivedPanel({
       if (error) throw error;
       alert("Derived dataset created successfully!");
     } catch (err: any) {
-      console.error(err);
       alert("Failed to save derived dataset: " + err.message);
     } finally {
       setSaving(false);
@@ -48,7 +46,7 @@ export default function WizardDerivedPanel({
       <h2 className="text-lg font-semibold mb-3">Preview Results</h2>
 
       {previewData.length === 0 ? (
-        <p className="text-sm text-gray-500">No preview data yet. Run the computation first.</p>
+        <p className="text-sm text-gray-500">Run a preview first.</p>
       ) : (
         <div className="overflow-x-auto border rounded">
           <table className="min-w-full text-sm">
