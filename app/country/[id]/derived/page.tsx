@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ChevronUp,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import CreateDerivedDatasetWizard_JoinAware from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
@@ -19,7 +20,6 @@ import type { CountryParams } from "@/app/country/types";
 type DerivedDataset = {
   id: string;
   title: string;
-  description?: string | null;
   admin_level: string;
   method: string;
   created_at: string;
@@ -38,12 +38,13 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [healthSummary, setHealthSummary] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
-  // Load derived datasets
+  // 🔹 Load datasets
   const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select("*")
+      .select("id, title, admin_level, method, created_at, taxonomy_categories, is_index_ready")
       .eq("country_iso", countryIso)
       .order(sortField, { ascending: sortAsc });
 
@@ -66,14 +67,18 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   };
 
+  // 🔹 View dataset
   const viewDataset = async (dataset: DerivedDataset) => {
     setSelectedDataset(dataset);
     setPreviewData([]);
+    setLoadingPreview(true);
     const tableName = `derived_${dataset.id}`;
 
+    // Check if table exists
     const { error: existsErr } = await supabase.from(tableName).select("pcode").limit(1);
     if (existsErr) {
       alert(`⚠️ Dataset not yet computed or missing (${tableName}).`);
+      setLoadingPreview(false);
       return;
     }
 
@@ -81,13 +86,15 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     if (error) {
       console.error("Preview error:", error);
       alert("Failed to load preview");
+      setLoadingPreview(false);
       return;
     }
-
     setPreviewData(data || []);
     summarizeHealth(data);
+    setLoadingPreview(false);
   };
 
+  // 🔹 Data health
   const summarizeHealth = (data: any[]) => {
     if (!data || data.length === 0) return setHealthSummary(null);
     const total = data.length;
@@ -96,6 +103,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setHealthSummary(`Data health: ${total - missing}/${total} matched (${pct}% missing GIS)`);
   };
 
+  // 🔹 Delete dataset
   const deleteDataset = async (dataset: DerivedDataset) => {
     if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
     const { error } = await supabase
@@ -103,11 +111,10 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       .delete()
       .eq("id", dataset.id);
     if (error) {
-      console.error("Delete failed:", error);
       alert("Delete failed: " + error.message);
       return;
     }
-    await supabase.rpc("drop_derived_dataset_table", { p_dataset_id: dataset.id });
+    await supabase.from("derived_dataset_records").delete().eq("derived_dataset_id", dataset.id);
     alert("🗑️ Dataset deleted");
     loadDatasets();
   };
@@ -246,7 +253,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
-        {/* Dataset Preview + Metadata */}
+        {/* Dataset Preview */}
         {selectedDataset && (
           <div className="mt-6 bg-white border rounded-md shadow p-4">
             <div className="flex justify-between items-center mb-3">
@@ -270,6 +277,10 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <span className="font-medium text-gray-700">Created:</span>{" "}
                 {new Date(selectedDataset.created_at).toLocaleDateString()}
               </div>
+              <div>
+                <span className="font-medium text-gray-700">Index Ready:</span>{" "}
+                {selectedDataset.is_index_ready ? "✅ Yes" : "—"}
+              </div>
               {healthSummary && (
                 <div className="col-span-3 text-[#640811] font-medium">
                   {healthSummary}
@@ -277,56 +288,76 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               )}
             </div>
 
-            <div className="max-h-80 overflow-y-auto text-xs border rounded">
-              <table className="w-full">
-                <thead className="bg-gray-100">
-                  <tr>
-                    {previewData.length > 0 &&
-                      Object.keys(previewData[0]).map((k) => (
-                        <th key={k} className="p-1 text-left">
-                          {k}
-                        </th>
-                      ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.length === 0 ? (
+            {loadingPreview ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                <span className="ml-2 text-gray-500 text-sm">Loading preview...</span>
+              </div>
+            ) : (
+              <div className="max-h-80 overflow-y-auto text-xs border rounded">
+                <table className="w-full">
+                  <thead className="bg-gray-100">
                     <tr>
-                      <td colSpan={6} className="text-center italic text-gray-500 py-2">
-                        No preview data
-                      </td>
-                    </tr>
-                  ) : (
-                    previewData.map((r, i) => (
-                      <tr key={i} className="border-t">
-                        {Object.entries(r).map(([k, v], j) => (
-                          <td key={j} className="p-1">
-                            {typeof v === "number"
-                              ? Number(v).toLocaleString(undefined, {
-                                  maximumFractionDigits: 2,
-                                })
-                              : v?.toString() ?? "—"}
-                          </td>
+                      {previewData.length > 0 &&
+                        Object.keys(previewData[0]).map((k) => (
+                          <th key={k} className="p-1 text-left">
+                            {k}
+                          </th>
                         ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="text-center italic text-gray-500 py-2"
+                        >
+                          No preview data
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      previewData.map((r, i) => (
+                        <tr key={i} className="border-t">
+                          {Object.entries(r).map(([k, v], j) => (
+                            <td key={j} className="p-1">
+                              {typeof v === "number"
+                                ? Number(v).toLocaleString(undefined, {
+                                    maximumFractionDigits: 2,
+                                  })
+                                : v?.toString() ?? "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
         {/* Wizard Modal */}
         {openWizard && (
-          <CreateDerivedDatasetWizard_JoinAware
-            countryIso={countryIso}
-            editDataset={editDataset}
-            onClose={() => {
-              setOpenWizard(false);
-              loadDatasets(); // ✅ Refresh on close
-            }}
-          />
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+            <div className="bg-white rounded-lg shadow-lg max-w-6xl w-full h-[90vh] overflow-y-auto relative">
+              <button
+                onClick={() => setOpenWizard(false)}
+                className="absolute top-3 right-3 text-gray-500 hover:text-gray-800"
+              >
+                ✕
+              </button>
+              <CreateDerivedDatasetWizard_JoinAware
+                countryIso={countryIso}
+                onClose={() => {
+                  setOpenWizard(false);
+                  loadDatasets();
+                }}
+                editDataset={editDataset}
+              />
+            </div>
+          </div>
         )}
       </div>
     </SidebarLayout>
