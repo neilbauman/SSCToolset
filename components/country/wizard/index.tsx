@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Source = "core" | "other" | "derived" | "gis";
-type Method = "ratio" | "multiply" | "sum" | "difference";
+// 👇 Broader method type for compatibility with string values in DB
+type Method = "ratio" | "multiply" | "sum" | "difference" | string;
 
 type DatasetOption = {
   id: string;
@@ -16,13 +17,13 @@ type DatasetOption = {
 
 type TaxonomyMap = Record<string, string[]>;
 
-// 👇 more flexible: allows DerivedDataset or EditPayload
+// Loosened to allow for DerivedDataset type union
 type EditPayload = {
   id?: string;
   title?: string;
   description?: string | null;
   admin_level?: string;
-  method?: Method;
+  method?: Method | string;
   use_scalar_b?: boolean | null;
   scalar_b_val?: number | null;
   table_a?: string | null;
@@ -144,7 +145,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
     setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
-    setMethod((editDataset.method as Method) || "ratio");
+    setMethod(editDataset.method || "ratio");
     setUseScalarB(!!editDataset.use_scalar_b);
     setScalarB(editDataset.scalar_b_val ?? 1);
     setColA(editDataset.col_a || "");
@@ -171,6 +172,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
       case "multiply": return "×";
       case "sum": return "+";
       case "difference": return "−";
+      default: return "?";
     }
   }, [method]);
 
@@ -278,7 +280,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Datasets */}
+        {/* Dataset Selectors */}
         <div className="flex gap-2 mb-3">
           <select
             className="border p-1 rounded flex-1"
@@ -309,7 +311,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Columns */}
+        {/* Columns & Scalars */}
         <div className="flex gap-2 mb-3 items-center">
           <input
             className="border p-1 rounded w-40"
@@ -361,9 +363,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
             <button
               key={m}
               onClick={() => setMethod(m)}
-              className={`px-2 py-1 border rounded ${
-                method === m ? "text-white" : ""
-              }`}
+              className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`}
               style={{ background: method === m ? ACCENT : "transparent", borderColor: "#e5e7eb" }}
             >
               {m}
