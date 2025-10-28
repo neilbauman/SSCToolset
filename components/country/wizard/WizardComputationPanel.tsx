@@ -1,114 +1,172 @@
 "use client";
 
-import { useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase/supabaseBrowser";
+import { Loader2 } from "lucide-react";
+
+type DatasetOption = {
+  id: string;
+  title: string;
+  table: string;
+  source: string;
+};
+
+type Method = "ratio" | "multiply" | "sum" | "difference";
+
+type Props = {
+  datasets: DatasetOption[];
+  datasetA: DatasetOption | null;
+  setDatasetA: (v: DatasetOption | null) => void;
+  datasetB: DatasetOption | null;
+  setDatasetB: (v: DatasetOption | null) => void;
+  colA: string;
+  setColA: (v: string) => void;
+  colB: string;
+  setColB: (v: string) => void;
+  method: Method;
+  setMethod: (v: Method) => void;
+  useScalarB: boolean;
+  setUseScalarB: (v: boolean) => void;
+  scalarB: number;
+  setScalarB: (v: number) => void;
+  decimals: number;
+  setDecimals: (v: number) => void;
+  onPreview: () => void;
+  loadingPreview: boolean;
+  accent: string;
+};
 
 export default function WizardComputationPanel({
-  countryIso,
+  datasets,
+  datasetA,
+  setDatasetA,
+  datasetB,
+  setDatasetB,
+  colA,
+  setColA,
+  colB,
+  setColB,
+  method,
+  setMethod,
+  useScalarB,
+  setUseScalarB,
+  scalarB,
+  setScalarB,
+  decimals,
+  setDecimals,
   onPreview,
-}: {
-  countryIso: string;
-  onPreview: (data: any[]) => void;
-}) {
-  const supabase = supabaseBrowser;
-  const [method, setMethod] = useState("multiply");
-  const [targetLevel, setTargetLevel] = useState("ADM3");
-  const [normalizePercent, setNormalizePercent] = useState(false);
-  const [useScalar, setUseScalar] = useState(false);
-  const [scalarValue, setScalarValue] = useState(1);
-  const [loading, setLoading] = useState(false);
-
-  const runPreview = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-        p_table_a: "population_data",
-        p_table_b: "poverty_rate",
-        p_col_a: "population",
-        p_col_b: "poverty_rate",
-        p_country_iso: countryIso,
-        p_method: method,
-        p_target_level: targetLevel,
-        p_use_scalar_b: useScalar,
-        p_scalar_b_val: scalarValue,
-        p_normalize_percent: normalizePercent,
-      });
-
-      if (error) throw error;
-      onPreview(data || []);
-    } catch (err: any) {
-      alert("Preview failed: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  loadingPreview,
+  accent,
+}: Props) {
   return (
-    <div className="p-4 border rounded-lg bg-white shadow-sm">
-      <h2 className="text-lg font-semibold mb-3">Computation Settings</h2>
+    <div className="mb-5">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">
+        Dataset Configuration
+      </h3>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium">Method</label>
+      {/* Dataset A & B Selectors */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-2">
+        <select
+          className="border rounded p-1 flex-1"
+          value={datasetA?.id || ""}
+          onChange={(e) =>
+            setDatasetA(datasets.find((d) => d.id === e.target.value) || null)
+          }
+        >
+          <option value="">Select Dataset A</option>
+          {datasets.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.title}
+            </option>
+          ))}
+        </select>
+
+        {!useScalarB && (
           <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-            className="mt-1 w-full border rounded px-2 py-1"
+            className="border rounded p-1 flex-1"
+            value={datasetB?.id || ""}
+            onChange={(e) =>
+              setDatasetB(datasets.find((d) => d.id === e.target.value) || null)
+            }
           >
-            <option value="multiply">Multiply</option>
-            <option value="ratio">Ratio (A / B)</option>
-            <option value="sum">Sum (A + B)</option>
-            <option value="difference">Difference (A - B)</option>
+            <option value="">Select Dataset B</option>
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
           </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Target Level</label>
-          <select
-            value={targetLevel}
-            onChange={(e) => setTargetLevel(e.target.value)}
-            className="mt-1 w-full border rounded px-2 py-1"
-          >
-            <option value="ADM4">ADM4</option>
-            <option value="ADM3">ADM3</option>
-            <option value="ADM2">ADM2</option>
-          </select>
-        </div>
-
-        <div className="col-span-2 flex items-center gap-2 mt-2">
-          <input
-            type="checkbox"
-            checked={normalizePercent}
-            onChange={(e) => setNormalizePercent(e.target.checked)}
-          />
-          <label className="text-sm">Normalize B as Percent</label>
-        </div>
-
-        <div className="col-span-2 flex items-center gap-2 mt-2">
-          <input
-            type="checkbox"
-            checked={useScalar}
-            onChange={(e) => setUseScalar(e.target.checked)}
-          />
-          <label className="text-sm">Use Scalar for B</label>
-          {useScalar && (
-            <input
-              type="number"
-              value={scalarValue}
-              onChange={(e) => setScalarValue(parseFloat(e.target.value))}
-              className="ml-2 border rounded px-2 py-1 w-20"
-            />
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="mt-4 flex justify-end">
-        <button
-          onClick={runPreview}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      {/* Columns and Scalars */}
+      <div className="flex flex-wrap gap-2 items-center mb-3">
+        <input
+          className="border rounded p-1 w-36"
+          value={colA}
+          onChange={(e) => setColA(e.target.value)}
+          placeholder="Column A"
+        />
+        {!useScalarB && (
+          <input
+            className="border rounded p-1 w-36"
+            value={colB}
+            onChange={(e) => setColB(e.target.value)}
+            placeholder="Column B"
+          />
+        )}
+        <label className="text-xs flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={useScalarB}
+            onChange={(e) => setUseScalarB(e.target.checked)}
+          />
+          Use Scalar B
+        </label>
+        {useScalarB && (
+          <input
+            type="number"
+            className="border p-1 rounded w-20 text-right"
+            value={scalarB}
+            onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))}
+          />
+        )}
+        <select
+          className="border rounded text-xs p-1"
+          value={decimals}
+          onChange={(e) => setDecimals(parseInt(e.target.value))}
+          title="Decimals"
         >
-          {loading ? "Running..." : "Preview"}
+          {[0, 1, 2, 3].map((d) => (
+            <option key={d}>{d} dec</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Methods */}
+      <div className="flex items-center gap-2 mb-2">
+        {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMethod(m)}
+            className={`px-2 py-1 border rounded ${
+              method === m ? "text-white" : ""
+            }`}
+            style={{
+              background: method === m ? accent : "transparent",
+              borderColor: "#e5e7eb",
+            }}
+          >
+            {m}
+          </button>
+        ))}
+        <button
+          onClick={onPreview}
+          className="ml-auto px-3 py-1 text-white rounded flex items-center gap-1"
+          style={{ background: accent }}
+        >
+          {loadingPreview && (
+            <Loader2 size={14} className="animate-spin text-white" />
+          )}
+          Preview
         </button>
       </div>
     </div>
