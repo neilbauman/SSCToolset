@@ -377,15 +377,16 @@ export default function DerivedDatasetsPage({
         )}
 
         {openWizard && (
-          <DerivedDatasetWizard
-            countryIso={countryIso}
-            onClose={() => {
-              setOpenWizard(false);
-              loadDatasets();
-            }}
-            editDataset={editDataset ? (editDataset as any) : null}
-          />
-        )}
+  <DerivedDatasetWizard
+    open={openWizard}                     // ✅ added
+    countryIso={countryIso}
+    onClose={() => {
+      setOpenWizard(false);
+      loadDatasets();
+    }}
+    editDataset={editDataset}
+  />
+)}
       </div>
     </SidebarLayout>
   );
