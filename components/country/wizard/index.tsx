@@ -225,10 +225,12 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
           </select>
         </div>
         <div className="flex gap-2 mb-3">
-          {[
-            ["A", datasetA, setDatasetA],
-            ["B", datasetB, setDatasetB]
-          ].map(([label, ds, setter], i) =>
+          {(
+  [
+    ["A", datasetA, setDatasetA],
+    ["B", datasetB, setDatasetB],
+  ] as [string, DatasetOption | null, React.Dispatch<React.SetStateAction<DatasetOption | null>>][]
+).map(([label, ds, setter], i) =>
             !useScalarB || label === "A" ? (
               <select key={i} className="border p-1 rounded flex-1" value={(ds as any)?.id || ""} onChange={e => setter(datasets.find(d => d.id === e.target.value) || null)}>
                 <option value="">Select Dataset {label}</option>
