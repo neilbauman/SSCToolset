@@ -27,6 +27,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   const [taxonomyMap, setTaxonomyMap] = useState<TaxonomyMap>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
+  // ───────────── Load datasets + taxonomy ─────────────
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -46,11 +47,13 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     })();
   }, [open]);
 
+  // ───────────── Hydrate edit mode ─────────────
   useEffect(() => {
     if (!editDataset || !open) return;
-    setTitle(editDataset.title || ""); setDesc(editDataset.description || ""); setTargetLevel(editDataset.admin_level || "ADM3");
-    setMethod(editDataset.method || "multiply"); setUseScalarB(!!editDataset.use_scalar_b);
-    setScalarB(editDataset.scalar_b_val ?? 1); setColA(editDataset.col_a || ""); setColB(editDataset.col_b || "");
+    setTitle(editDataset.title || ""); setDesc(editDataset.description || "");
+    setTargetLevel(editDataset.admin_level || "ADM3"); setMethod(editDataset.method || "multiply");
+    setUseScalarB(!!editDataset.use_scalar_b); setScalarB(editDataset.scalar_b_val ?? 1);
+    setColA(editDataset.col_a || ""); setColB(editDataset.col_b || "");
     setDecimals(editDataset.decimals ?? 2); setIsParametric(!!editDataset.is_parametric);
     const A = datasets.find(d => d.table === editDataset.table_a); const B = datasets.find(d => d.table === editDataset.table_b);
     if (A) setDatasetA(A); if (B) setDatasetB(B);
@@ -103,17 +106,35 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
           </select>
         </div>
 
-        {/* Dataset selectors */}
+        {/* Dataset selectors - FIXED TYPE VERSION */}
         <div className="flex gap-2 mb-3">
-          {[["A",datasetA,setDatasetA],["B",datasetB,setDatasetB]].map(([label,ds,setter],i)=>!useScalarB||label==="A"?(
-            <select key={label} className="border p-1 rounded flex-1" value={(ds as any)?.id||""} onChange={e=>setter(datasets.find(d=>d.id===e.target.value)||null)} disabled={!!editDataset}>
-              <option value="">Select Dataset {label}</option>
-              {["core","gis","other","derived"].map(g=>(
-                <optgroup key={g} label={g.toUpperCase()}>
-                  {datasets.filter(d=>d.source===g).map(d=><option key={d.id} value={d.id}>{d.title}</option>)}
-                </optgroup>
-              ))}
-            </select>):null)}
+          {([
+            ["A", datasetA, setDatasetA] as ["A", DatasetOption | null, (v: DatasetOption | null) => void],
+            ["B", datasetB, setDatasetB] as ["B", DatasetOption | null, (v: DatasetOption | null) => void],
+          ]).map(([label, ds, setter]) =>
+            !useScalarB || label === "A" ? (
+              <select
+                key={label}
+                className="border p-1 rounded flex-1"
+                value={ds?.id || ""}
+                onChange={(e) => setter(datasets.find((d) => d.id === e.target.value) || null)}
+                disabled={!!editDataset}
+              >
+                <option value="">Select Dataset {label}</option>
+                {["core", "gis", "other", "derived"].map((group) => (
+                  <optgroup key={group} label={group.toUpperCase()}>
+                    {datasets
+                      .filter((d) => d.source === group)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            ) : null
+          )}
         </div>
 
         {/* Columns + Scalar */}
