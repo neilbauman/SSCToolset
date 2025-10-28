@@ -378,13 +378,20 @@ export default function DerivedDatasetsPage({
 
         {openWizard && (
   <DerivedDatasetWizard
-    open={openWizard}                     // ✅ added
+    open={openWizard}
     countryIso={countryIso}
     onClose={() => {
       setOpenWizard(false);
       loadDatasets();
     }}
-    editDataset={editDataset}
+    editDataset={
+      editDataset
+        ? {
+            ...editDataset,
+            description: editDataset.description ?? null, // ✅ ensures not undefined
+          }
+        : null
+    }
   />
 )}
       </div>
