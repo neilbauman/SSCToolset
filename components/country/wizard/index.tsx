@@ -1,266 +1,56 @@
-"use client";
-import {useEffect,useMemo,useState} from "react";
-import {supabaseBrowser as supabase} from "@/lib/supabase/supabaseBrowser";
-
-type Source="core"|"gis"|"other"|"derived";
-type Method="ratio"|"multiply"|"sum"|"difference";
-type DatasetOption={id:string;title:string;source:Source;table:string;defaultCol?:string|null;adminLevel?:string|null;};
-type TaxMap=Record<string,string[]>;
-const ACCENT="#640811";
-
-export default function DerivedDatasetWizard({open,onClose,countryIso,editDataset=null}:{open:boolean;onClose:()=>void;countryIso:string;editDataset?:any|null;}) {
-  const [datasets,setDatasets]=useState<DatasetOption[]>([]);
-  const [datasetA,setDatasetA]=useState<DatasetOption|null>(null);
-  const [datasetB,setDatasetB]=useState<DatasetOption|null>(null);
-  const [colA,setColA]=useState(""); const [colB,setColB]=useState("");
-  const [method,setMethod]=useState<Method>("multiply");
-  const [isParametric,setIsParametric]=useState(true);
-  const [useScalarB,setUseScalarB]=useState(false);
-  const [scalarB,setScalarB]=useState<number>(1);
-  const [normalizePct,setNormalizePct]=useState<boolean>(true);
-  const [title,setTitle]=useState(""); const [desc,setDesc]=useState("");
-  const [targetLevel,setTargetLevel]=useState("ADM3"); const [decimals,setDecimals]=useState(2);
-  const [preview,setPreview]=useState<any[]>([]); const [loadingPreview,setLoadingPreview]=useState(false);
-  const [taxMap,setTaxMap]=useState<TaxMap>({}); const [taxSel,setTaxSel]=useState<Record<string,Set<string>>>({});
-  const [datasetsReady,setDatasetsReady]=useState(false); const [taxonomyReady,setTaxonomyReady]=useState(false);
-
-  const looksPercent=(s?:string|null)=>!!s&&(/%|rate|pct/i.test(s));
-
-  // ---- 1) Load datasets (core + other + derived) ----
-  useEffect(()=>{if(!open)return;(async()=>{
-    const base:DatasetOption[]=[
-      {id:"core-pop",title:"Population [core]",source:"core",table:"population_data",defaultCol:"population"},
-      {id:"core-gis",title:"GIS Features [core]",source:"gis",table:"gis_features",defaultCol:"area_sqkm"},
-    ];
-    const isoU=countryIso.toUpperCase(),isoL=countryIso.toLowerCase();
-    // OTHER
-    const {data:others}=await supabase.from("dataset_metadata")
-      .select("id,title,default_numeric_column,admin_level,country_iso")
-      .or(`country_iso.eq.${countryIso},country_iso.eq.${isoU},country_iso.eq.${isoL}`);
-    others?.forEach((d:any)=>base.push({
-      id:d.id,title:`${d.title} [other]`,source:"other",table:`dataset_${d.id}`,
-      defaultCol:d.default_numeric_column||"value",adminLevel:d.admin_level
-    }));
-    // DERIVED
-    const {data:derived}=await supabase.from("derived_dataset_metadata")
-      .select("id,title,admin_level,country_iso")
-      .or(`country_iso.eq.${countryIso},country_iso.eq.${isoU},country_iso.eq.${isoL}`);
-    derived?.forEach((d:any)=>base.push({
-      id:d.id,title:`${d.title} [derived]`,source:"derived",table:`derived_${d.id}`,defaultCol:"derived",adminLevel:d.admin_level
-    }));
-    // Sort for nice UX
-    base.sort((a,b)=>a.source===b.source?a.title.localeCompare(b.title):["core","gis","other","derived"].indexOf(a.source)-["core","gis","other","derived"].indexOf(b.source));
-    setDatasets(base); setDatasetsReady(true);
-  })();},[open,countryIso]);
-
-  // ---- 2) Load taxonomy terms ----
-  useEffect(()=>{if(!open)return;(async()=>{
-    const {data}=await supabase.from("taxonomy_terms").select("category,name").order("category");
-    const grouped:TaxMap={}; data?.forEach(({category,name}:any)=>{if(!grouped[category])grouped[category]=[]; grouped[category].push(name);});
-    setTaxMap(grouped); setTaxonomyReady(true);
-  })();},[open]);
-
-  // ---- 3) Hydrate when datasets & taxonomy ready ----
-  useEffect(()=>{if(!open||!editDataset||!datasetsReady||!taxonomyReady)return;(async()=>{
-    setTitle(editDataset.title??""); setDesc(editDataset.description??"");
-    setTargetLevel(editDataset.admin_level??"ADM3");
-    setMethod((["ratio","multiply","sum","difference"].includes(editDataset.method)?editDataset.method:"multiply") as Method);
-    // full params for the dataset row
-    const {data:full}=await supabase.from("derived_datasets")
-      .select("table_a,table_b,col_a,col_b,use_scalar_b,scalar_b_val,is_parametric,normalize_percent")
-      .eq("id",editDataset.id).maybeSingle();
-    const foundA=datasets.find(d=>d.table===full?.table_a)||null;
-    const foundB=datasets.find(d=>d.table===full?.table_b)||null;
-    setDatasetA(foundA); setDatasetB(foundB);
-    setColA(full?.col_a||foundA?.defaultCol||"value"); setColB(full?.col_b||foundB?.defaultCol||"value");
-    setUseScalarB(!!full?.use_scalar_b); setScalarB(full?.scalar_b_val??1);
-    setIsParametric(full?.is_parametric??true);
-    setNormalizePct(full?.normalize_percent ?? looksPercent(full?.col_b||foundB?.defaultCol||""));
-    // taxonomy hydration
-    const {data:meta}=await supabase.from("derived_dataset_metadata").select("taxonomy_categories,taxonomy_terms").eq("id",editDataset.id).maybeSingle();
-    const cats:string[]=meta?.taxonomy_categories??[]; const terms:string[]=meta?.taxonomy_terms??[];
-    const sel:Record<string,Set<string>>={}; cats.forEach(c=>sel[c]=new Set());
-    terms.forEach(t=>{const cat=Object.keys(taxMap).find(c=>taxMap[c]?.includes(t)); if(cat){if(!sel[cat])sel[cat]=new Set(); sel[cat].add(t);}});
-    setTaxSel(sel);
-  })();},[open,editDataset,datasetsReady,taxonomyReady,datasets,taxMap]);
-
-  // ---- Autofill columns when dataset picked ----
-  useEffect(()=>{if(datasetA&&!colA)setColA(datasetA.defaultCol||"value");},[datasetA]);
-  useEffect(()=>{if(!useScalarB&&datasetB&&!colB)setColB(datasetB.defaultCol||"value");},[datasetB,useScalarB]);
-
-  // ---- Derived formula preview text ----
-  const symbol=useMemo(()=>({ratio:"÷",multiply:"×",sum:"+",difference:"−"}[method]),[method]);
-  const rhs=useScalarB?String(scalarB):`B.${colB||"value"}`;
-  const formula=`A.${colA||"value"} ${symbol} ${rhs}`;
-  const fmt=(v:any)=>v==null||isNaN(Number(v))?"":Number(v).toLocaleString(undefined,{maximumFractionDigits:decimals});
-
-  // ---- Preview ----
-  async function doPreview(){
-    if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or scalar).");return;}
-    setLoadingPreview(true);
-    const {data,error}=await supabase.rpc("simulate_join_preview_autoaggregate",{
-      p_table_a:datasetA.table,
-      p_table_b:useScalarB?null:datasetB?.table??null,
-      p_col_a:colA||datasetA.defaultCol,
-      p_col_b:useScalarB?null:colB||datasetB?.defaultCol,
-      p_country_iso:countryIso,
-      p_method:method,
-      p_target_level:targetLevel,
-      p_use_scalar_b:useScalarB,
-      p_scalar_b_val:useScalarB?scalarB:null,
-      p_limit:200,
-      p_normalize_percent:normalizePct,
-    });
-    setLoadingPreview(false);
-    if(error){alert("Preview error: "+error.message);return;}
-    setPreview(data||[]);
-  }
-
-  // ---- Save ----
-  async function doSave(){
-    if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or scalar).");return;}
-    const cats=Object.keys(taxSel); const terms=cats.flatMap(c=>Array.from(taxSel[c]||[]));
-    const args={p_title:title||`Derived (${targetLevel})`,p_table_a:datasetA.table,p_table_b:useScalarB?null:datasetB?.table??null,p_col_a:colA||datasetA.defaultCol,p_col_b:useScalarB?null:colB||datasetB?.defaultCol,p_admin_level:targetLevel,p_method:method,p_is_parametric:isParametric,p_scalar_b_val:useScalarB?scalarB:null,p_normalize_percent:normalizePct,p_debug:false};
-    const {data:idRes,error}=await supabase.rpc("create_derived_dataset_v2",args);
-    if(error){alert("Save failed: "+error.message);return;}
-    const newId = Array.isArray(idRes)?idRes[0]:idRes;
-    if(newId){
-      await supabase.from("derived_dataset_metadata").update({description:desc,taxonomy_categories:cats,taxonomy_terms:terms}).eq("id",newId);
-    }
-    alert("✅ Saved."); onClose();
-  }
-
-  if(!open)return null;
-  const cats=Object.keys(taxMap);
-
-  return (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-2xl p-5 w-[95%] max-w-5xl max-h-[92vh] overflow-y-auto text-sm">
-      <div className="flex items-start gap-2">
-        <h2 className="text-lg font-semibold">{editDataset?"Edit Derived Dataset":"Create Derived Dataset"}</h2>
-        <div className="ml-auto flex items-center gap-2">
-          <label className="text-xs flex items-center gap-1 border rounded px-2 py-1">
-            <input type="checkbox" checked={isParametric} onChange={e=>setIsParametric(e.target.checked)}/> Parametric
-          </label>
-          <button onClick={onClose} className="px-3 py-1 border rounded">Close</button>
-        </div>
-      </div>
-
-      {/* Title/Desc/Level */}
-      <div className="flex gap-2 mt-3">
-        <input className="border p-1 rounded flex-1" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)}/>
-        <input className="border p-1 rounded flex-1" placeholder="Description" value={desc} onChange={e=>setDesc(e.target.value)}/>
-        <select className="border p-1 rounded" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>
-          {["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}
-        </select>
-      </div>
-
-      {/* Dataset selectors */}
-      <div className="flex gap-2 mt-3">
-        {(["A","B"] as const).map(label=>!useScalarB||label==="A"?(
-          <select key={label} className="border p-1 rounded flex-1"
-            value={(label==="A"?datasetA:datasetB)?.id||""}
-            onChange={e=>{const ds=datasets.find(d=>d.id===e.target.value)||null; (label==="A"?setDatasetA:setDatasetB)(ds);}}>
-            <option value="">{`Select Dataset ${label}`}</option>
-            {(["core","gis","other","derived"] as Source[]).map(group=>{
-              const opts=datasets.filter(d=>d.source===group);
-              return opts.length?(
-                <optgroup key={group} label={group.toUpperCase()}>
-                  {opts.map(d=><option key={d.id} value={d.id}>{d.title}</option>)}
-                </optgroup>
-              ):null;
-            })}
-          </select>
-        ):<div key={label}/>)}
-      </div>
-
-      {/* Columns / Scalar / Decimals */}
-      <div className="flex gap-2 mt-3 items-center">
-        <input className="border p-1 rounded w-40" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column A"/>
-        {!useScalarB&&(
-          <input className="border p-1 rounded w-40" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column B"/>
-        )}
-        <label className="text-xs flex items-center gap-1 ml-auto">
-          <input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)}/> Use Scalar B
-        </label>
-        {useScalarB&&(
-          <input type="number" className="border p-1 rounded w-24 text-right" value={scalarB} onChange={e=>setScalarB(parseFloat(e.target.value||"0"))}/>
-        )}
-        <select className="border rounded text-xs p-1" value={decimals} onChange={e=>setDecimals(parseInt(e.target.value))}>
-          {[0,1,2,3].map(d=><option key={d} value={d}>{d} dec</option>)}
-        </select>
-      </div>
-
-      {/* Method / Normalize / Preview */}
-      <div className="flex items-center gap-2 mt-3">
-        {(["ratio","multiply","sum","difference"] as Method[]).map(m=>(
-          <button key={m} onClick={()=>setMethod(m)} className={`px-2 py-1 border rounded ${method===m?"text-white":""}`} style={{background:method===m?ACCENT:"transparent",borderColor:"#e5e7eb"}}>{m}</button>
-        ))}
-        <label className="text-xs flex items-center gap-1 ml-2">
-          <input type="checkbox" checked={normalizePct} onChange={e=>setNormalizePct(e.target.checked)}/> Normalize % (divide B by 100)
-        </label>
-        <button onClick={doPreview} className="ml-auto px-3 py-1 text-white rounded" style={{background:ACCENT}}>
-          {loadingPreview?"Loading...":"Preview"}
-        </button>
-      </div>
-
-      <p className="text-xs italic mt-2">Derived = {formula}</p>
-
-      {/* Preview (bounded height + scroll) */}
-      <div className="max-h-64 overflow-y-auto border rounded text-xs mt-2">
-        <table className="w-full">
-          <thead className="bg-gray-100 sticky top-0">
-            <tr>{["Pcode","Name","A","B","Derived"].map(h=><th key={h} className="p-1 text-left">{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {preview.map((r:any,i:number)=>(
-              <tr key={i} className="border-t">
-                <td className="p-1">{r.join_key}</td>
-                <td className="p-1">{r.place_name}</td>
-                <td className="p-1 text-right">{fmt(r.a)}</td>
-                <td className="p-1 text-right">{fmt(r.b)}</td>
-                <td className="p-1 text-right font-medium">{fmt(r.derived)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Taxonomy (single-row wrap, narrow columns) */}
-      <h3 className="text-sm font-semibold mt-4 mb-1">Assign Taxonomy</h3>
-      <div className="flex flex-wrap gap-2">
-        {cats.map(cat=>{
-          const checked=!!taxSel[cat];
-          return (
-            <div key={cat} className="border rounded p-2 max-w-[220px]">
-              <label className="flex items-center gap-1 text-xs font-medium">
-                <input type="checkbox" checked={checked} onChange={e=>{
-                  setTaxSel(prev=>{const next={...prev}; if(e.target.checked){next[cat]=next[cat]||new Set<string>();} else {delete next[cat];} return next;});
-                }}/> {cat}
-              </label>
-              {checked&&(
-                <div className="mt-1 max-h-28 overflow-y-auto pr-1">
-                  {taxMap[cat].map(term=>(
-                    <label key={term} className="flex items-center gap-1 text-xs">
-                      <input type="checkbox" checked={!!taxSel[cat]?.has(term)} onChange={e=>{
-                        setTaxSel(prev=>{const next={...prev}; if(!next[cat]) next[cat]=new Set<string>(); if(e.target.checked) next[cat]!.add(term); else next[cat]!.delete(term); return next;});
-                      }}/> {term}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Footer */}
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-        <button onClick={doSave} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>
-          {editDataset?"Save Changes":"Save Derived"}
-        </button>
-      </div>
-    </div>
-  </div>);
-}
+"use client";import {useEffect,useMemo,useState} from "react";import {supabaseBrowser as supabase} from "@/lib/supabase/supabaseBrowser";
+type Source="core"|"gis"|"other"|"derived";type Method="ratio"|"multiply"|"sum"|"difference";type DatasetOption={id:string;title:string;source:Source;table:string;defaultCol?:string|null;adminLevel?:string|null};type TaxoMap=Record<string,string[]>;type Props={open:boolean;onClose:()=>void;countryIso:string;editDataset?:any|null};const ACCENT="#640811";
+export default function DerivedDatasetWizard({open,onClose,countryIso,editDataset=null}:Props){const[loading,setLoading]=useState(false);const[datasets,setDatasets]=useState<DatasetOption[]>([]);const[datasetA,setDatasetA]=useState<DatasetOption|null>(null);const[datasetB,setDatasetB]=useState<DatasetOption|null>(null);const[colA,setColA]=useState("");const[colB,setColB]=useState("");const[method,setMethod]=useState<Method>("ratio");const[useScalarB,setUseScalarB]=useState(false);const[scalarB,setScalarB]=useState<number>(1);const[normalizePct,setNormalizePct]=useState(false);const[isParametric,setIsParametric]=useState(true);const[title,setTitle]=useState("");const[desc,setDesc]=useState("");const[targetLevel,setTargetLevel]=useState("ADM3");const[decimals,setDecimals]=useState(2);const[preview,setPreview]=useState<any[]>([]);const[loadingPreview,setLoadingPreview]=useState(false);const[taxoMap,setTaxoMap]=useState<TaxoMap>({});const[taxonomy,setTaxonomy]=useState<Record<string,Set<string>>>({});const groupOrder:Source[]=["core","gis","other","derived"];
+// load datasets
+useEffect(()=>{if(!open)return;setLoading(true);(async()=>{try{const base:DatasetOption[]=[{id:"core-pop",title:"Population Data",source:"core",table:"population_data",defaultCol:"population",adminLevel:"ADM4"},{id:"core-gis",title:"GIS Features",source:"gis",table:"gis_features",defaultCol:"area_sqkm",adminLevel:"ADM3"}];const {data:others,error:oErr}=await supabase.from("dataset_metadata").select("id,title,country_iso,admin_level").eq("country_iso",countryIso);if(!oErr&&others){others.forEach((r:any)=>base.push({id:r.id,title:r.title,source:"other",table:`dataset_${r.id}`,defaultCol:null,adminLevel:r.admin_level??null}))}const {data:ders,error:dErr}=await supabase.from("derived_dataset_metadata").select("id,title,country_iso").eq("country_iso",countryIso);if(!dErr&&ders){ders.forEach((r:any)=>base.push({id:r.id,title:r.title,source:"derived",table:`derived_${r.id}`,defaultCol:"derived",adminLevel:null}))}setDatasets(base)}finally{setLoading(false)}})()},[open,countryIso]);
+// load taxonomy (flat categories with terms)
+useEffect(()=>{if(!open)return;(async()=>{const {data}=await supabase.from("taxonomy_terms").select("category,name");if(!data){setTaxoMap({});return}const grouped:TaxoMap={};data.forEach((t:any)=>{grouped[t.category]=grouped[t.category]||[];if(!grouped[t.category].includes(t.name))grouped[t.category].push(t.name)});setTaxoMap(grouped)})()},[open]);
+// hydrate on edit
+useEffect(()=>{if(!open)return;if(!editDataset){setTitle("");setDesc("");setTargetLevel("ADM3");setMethod("ratio");setUseScalarB(false);setScalarB(1);setNormalizePct(false);setIsParametric(true);setColA("");setColB("");setDecimals(2);setDatasetA(null);setDatasetB(null);setPreview([]);setTaxonomy({});return}setTitle(editDataset.title??"");setDesc(editDataset.description??"");setTargetLevel(editDataset.target_level||editDataset.admin_level||"ADM3");setMethod(((editDataset.method||"ratio") as Method));setUseScalarB(!!editDataset.use_scalar_b);setScalarB(editDataset.scalar_b_val??1);setNormalizePct(!!editDataset.normalize_percent);setIsParametric(editDataset.is_parametric??true);setColA(editDataset.col_a||"");setColB(editDataset.col_b||"");setDecimals(editDataset.decimals??2);const cats:string[]=Array.isArray(editDataset.taxonomy_categories)?editDataset.taxonomy_categories:[];const terms:string[]=Array.isArray(editDataset.taxonomy_terms)?editDataset.taxonomy_terms:[];const tx:Record<string,Set<string>>={};cats.forEach((c)=>{tx[c]=new Set<string>(terms.filter(t=> (taxoMap[c]||[]).includes(t))) });setTaxonomy(tx)} ,[open,editDataset, taxoMap]);
+// once datasets loaded, finish hydrating A/B
+useEffect(()=>{if(!open||!editDataset||datasets.length===0)return;const matchByTable=(tbl:string|undefined|null)=>datasets.find(d=>d.table===tbl)||null;setDatasetA(matchByTable(editDataset.table_a));if(!editDataset.use_scalar_b)setDatasetB(matchByTable(editDataset.table_b));},[open,editDataset,datasets]);
+// auto-fill columns when dataset changes
+useEffect(()=>{if(datasetA&&(!colA||colA.trim()===""))setColA(datasetA.defaultCol||"value")},[datasetA]);useEffect(()=>{if(datasetB&&!useScalarB&&(!colB||colB.trim()===""))setColB(datasetB.defaultCol||"value")},[datasetB,useScalarB]);
+// helpers
+const methodSymbol=useMemo(()=>({ratio:"÷",multiply:"×",sum:"+",difference:"−"}[method]),[method]);const computedFormula=useMemo(()=>{const rhs=useScalarB?String(scalarB):`B.${colB||"value"}`;return `A.${colA||"value"} ${methodSymbol} ${rhs}`},[useScalarB,scalarB,colA,colB,methodSymbol]);const formatNumber=(v:number|null)=>v==null||isNaN(v as any)?"":Number(v).toLocaleString(undefined,{maximumFractionDigits:decimals});
+// preview
+async function doPreview(){if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or a scalar).");return}setLoadingPreview(true);const {data,error}=await supabase.rpc("simulate_join_preview_autoaggregate",{p_table_a:datasetA.table,p_table_b:useScalarB?null:datasetB?.table??null,p_col_a:colA||"value",p_col_b:useScalarB?null:colB||"value",p_country_iso:countryIso,p_method:method,p_target_level:targetLevel,p_use_scalar_b:useScalarB,p_scalar_b_val:useScalarB?scalarB:null,p_limit:200,p_normalize_percent:normalizePct});setLoadingPreview(false);if(error){alert("Preview error: "+error.message);return}setPreview(data||[])}
+// save
+async function doSave(){if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or a scalar).");return}const catKeys=Object.keys(taxonomy);const termVals=catKeys.flatMap(c=>Array.from(taxonomy[c]||[]));const {error}=await supabase.rpc("create_derived_dataset_v2",{p_title:title||`Derived (${targetLevel})`,p_table_a:datasetA.table,p_table_b:useScalarB?null:datasetB?.table??null,p_col_a:colA||"value",p_col_b:useScalarB?null:colB||"value",p_admin_level:targetLevel,p_method:method,p_is_parametric:isParametric,p_scalar_b_val:useScalarB?scalarB:null,p_normalize_percent:normalizePct,p_debug:false});if(error){alert("Save failed: "+error.message);return}alert(editDataset?"✅ Changes saved.":"✅ Derived dataset created.");onClose()}
+// taxonomy cell
+function TaxoBlock(){const cats=Object.keys(taxoMap);if(cats.length===0)return null;return(<div className="space-y-2">{cats.map((cat)=>{const checked=!!taxonomy[cat];return(<div key={cat} className="border rounded p-2"><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={checked} onChange={e=>{setTaxonomy(prev=>{const next={...prev};if(e.target.checked){if(!next[cat])next[cat]=new Set<string>();}else{delete next[cat]}return next})}}/>{cat}</label>{checked&&(<div className="mt-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-x-3 gap-y-1 max-h-40 overflow-y-auto pr-1">{(taxoMap[cat]||[]).map(term=>(<label key={term} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!taxonomy[cat]?.has(term)} onChange={e=>{setTaxonomy(prev=>{const n={...prev};if(!n[cat])n[cat]=new Set<string>();if(e.target.checked)n[cat]!.add(term);else n[cat]!.delete(term);return n})}}/>{term}</label>))}</div>)}</div>)})}</div>)}
+// grouped dataset options
+const grouped=useMemo(()=>{const by:Record<Source,DatasetOption[]>= {core:[],gis:[],other:[],derived:[]};datasets.forEach(d=>by[d.source].push(d));groupOrder.forEach(g=>by[g].sort((a,b)=>a.title.localeCompare(b.title)));return by},[datasets]);
+if(!open)return null;
+return(<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white rounded-2xl p-5 w-[96%] max-w-5xl max-h-[92vh] overflow-y-auto text-sm">
+<div className="flex items-center gap-3 mb-3"><h2 className="text-lg font-semibold">{editDataset?"Edit Derived Dataset":"Create Derived Dataset"}</h2><span className="text-xs opacity-60">{loading?"loading…":""}</span></div>
+<div className="flex flex-col gap-2 mb-3 md:flex-row">
+<input className="border p-1 rounded flex-1" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)}/>
+<input className="border p-1 rounded flex-1" placeholder="Description" value={desc} onChange={e=>setDesc(e.target.value)}/>
+<select className="border p-1 rounded w-28" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>{["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}</select>
+<select className="border p-1 rounded w-28" value={decimals} onChange={e=>setDecimals(parseInt(e.target.value))}>{[0,1,2,3].map(d=><option key={d} value={d}>{d} dec</option>)}</select>
+</div>
+<div className="flex gap-2 mb-2 items-center">
+{(["ratio","multiply","sum","difference"] as Method[]).map(m=>(<button key={m} onClick={()=>setMethod(m)} className={`px-2 py-1 border rounded ${method===m?"text-white":""}`} style={{background:method===m?ACCENT:"transparent",borderColor:"#e5e7eb"}}>{m}</button>))}
+<div className="ml-auto flex items-center gap-4">
+<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={isParametric} onChange={e=>setIsParametric(e.target.checked)}/>Parametric</label>
+<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={normalizePct} onChange={e=>setNormalizePct(e.target.checked)}/>Normalize %</label>
+</div>
+</div>
+<div className="flex gap-2 mb-3">{[["A",datasetA,setDatasetA],["B",datasetB,setDatasetB]].map(([label,ds,setter],i)=>!useScalarB||label==="A"?(<select key={label as string} className="border p-1 rounded flex-1" value={(ds as any)?.id||""} onChange={e=>(setter as any)(datasets.find(d=>d.id===e.target.value)||null)} disabled={!!editDataset}><option value="">{`Select Dataset ${label}`}</option>{groupOrder.map(g=>(<optgroup key={g} label={g.toUpperCase()}>{grouped[g].map(d=> <option key={d.id} value={d.id}>{d.title}</option>)}</optgroup>))}</select>):null)}
+<label className="text-xs flex items-center gap-1 ml-auto"><input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)}/>Use Scalar B</label>{useScalarB&&(<input type="number" className="border p-1 rounded w-28 text-right" value={scalarB} onChange={e=>setScalarB(parseFloat(e.target.value||"0"))}/>)}
+</div>
+<div className="flex gap-2 mb-3 items-center">
+<input className="border p-1 rounded w-44" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column A"/>
+{!useScalarB&&(<input className="border p-1 rounded w-44" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column B"/>)}
+<button onClick={doPreview} className="ml-auto px-3 py-1 text-white rounded" style={{background:ACCENT}}>{loadingPreview?"Loading…":"Preview"}</button>
+</div>
+<p className="text-xs italic mb-2 break-all">Derived = {computedFormula}</p>
+<div className="max-h-56 overflow-y-auto border rounded text-xs mb-4"><table className="w-full"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-1 text-left">Pcode</th><th className="p-1 text-left">Name</th><th className="p-1 text-right">A</th><th className="p-1 text-right">B</th><th className="p-1 text-right">Derived</th><th className="p-1 text-left">Join</th><th className="p-1 text-left">Src A</th><th className="p-1 text-left">Src B</th></tr></thead><tbody>{preview.map((r:any,i:number)=>(<tr key={i} className="border-t"><td className="p-1">{r.join_key}</td><td className="p-1">{r.place_name??"—"}</td><td className="p-1 text-right">{formatNumber(r.a)}</td><td className="p-1 text-right">{formatNumber(r.b)}</td><td className="p-1 text-right font-medium">{formatNumber(r.derived)}</td><td className="p-1">{r.join_status}</td><td className="p-1">{r.source_level_a}</td><td className="p-1">{r.source_level_b}</td></tr>))}</tbody></table></div>
+<h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
+<TaxoBlock/>
+<div className="flex justify-end gap-2 mt-4">
+<button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
+<button onClick={doSave} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>{editDataset?"Save Changes":"Save Derived"}</button>
+</div>
+</div></div>)}
