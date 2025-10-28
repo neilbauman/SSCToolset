@@ -16,12 +16,13 @@ type DatasetOption = {
 
 type TaxonomyMap = Record<string, string[]>;
 
+// 👇 more flexible: allows DerivedDataset or EditPayload
 type EditPayload = {
-  id: string;
-  title: string;
-  description: string | null;
-  admin_level: string;
-  method: Method;
+  id?: string;
+  title?: string;
+  description?: string | null;
+  admin_level?: string;
+  method?: Method;
   use_scalar_b?: boolean | null;
   scalar_b_val?: number | null;
   table_a?: string | null;
@@ -63,7 +64,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const [taxonomyMap, setTaxonomyMap] = useState<TaxonomyMap>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
-  // ───────────── Load available datasets ─────────────
+  // ───────────── Load datasets ─────────────
   useEffect(() => {
     (async () => {
       const base: DatasetOption[] = [
@@ -73,7 +74,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
       const { data: others } = await supabase
         .from("dataset_metadata")
-        .select("id, title, default_numeric_column")
+        .select("id,title,default_numeric_column")
         .eq("country_iso", countryIso);
 
       if (others?.length) {
@@ -90,7 +91,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
 
       const { data: derived } = await supabase
         .from("derived_dataset_metadata")
-        .select("id, title, method, admin_level");
+        .select("id,title,method,admin_level");
       if (derived?.length) {
         for (const d of derived) {
           base.push({
@@ -107,7 +108,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     })();
   }, [countryIso]);
 
-  // ───────────── Taxonomy loading ─────────────
+  // ───────────── Taxonomy ─────────────
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
@@ -121,7 +122,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     })();
   }, []);
 
-  // ───────────── Hydrate when editing ─────────────
+  // ───────────── Hydrate edit ─────────────
   useEffect(() => {
     if (!editDataset) {
       setTitle("");
@@ -158,13 +159,12 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     }
   }, [editDataset, datasets]);
 
-  // ───────────── Auto-fill default columns ─────────────
   useEffect(() => {
     if (datasetA && !colA) setColA(datasetA.defaultCol || "value");
     if (datasetB && !colB) setColB(datasetB.defaultCol || "value");
   }, [datasetA, datasetB]);
 
-  // ───────────── Computed formula ─────────────
+  // ───────────── Formula ─────────────
   const methodSymbol = useMemo(() => {
     switch (method) {
       case "ratio": return "÷";
@@ -182,7 +182,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const formatNumber = (v: number | null) =>
     v == null || isNaN(v) ? "" : v.toLocaleString(undefined, { maximumFractionDigits: decimals });
 
-  // ───────────── Preview join ─────────────
+  // ───────────── Preview ─────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
@@ -208,12 +208,13 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setPreview(data || []);
   }
 
-  // ───────────── Save derived dataset ─────────────
+  // ───────────── Save ─────────────
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
+
     const cats = Object.keys(taxonomy);
     const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
     const payload = {
@@ -252,7 +253,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
         </h2>
 
-        {/* Title & Level */}
+        {/* Title / Description */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -308,7 +309,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Columns & Scalars */}
+        {/* Columns */}
         <div className="flex gap-2 mb-3 items-center">
           <input
             className="border p-1 rounded w-40"
@@ -403,58 +404,6 @@ export default function CreateDerivedDatasetWizard_JoinAware({
               ))}
             </tbody>
           </table>
-        </div>
-
-        {/* Taxonomy */}
-        <h3 className="text-sm font-semibold mb-2 text-[#640811]">Assign Taxonomy</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-          {Object.keys(taxonomyMap).map((cat) => {
-            const isChecked = !!taxonomy[cat];
-            return (
-              <div key={cat} className="border rounded p-2">
-                <label className="flex items-center gap-1 text-xs font-medium">
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) =>
-                      setTaxonomy((prev) => {
-                        const next = { ...prev };
-                        if (e.target.checked) {
-                          if (!next[cat]) next[cat] = new Set<string>();
-                        } else {
-                          delete next[cat];
-                        }
-                        return next;
-                      })
-                    }
-                  />{" "}
-                  {cat}
-                </label>
-                {isChecked && (
-                  <div className="ml-3 mt-1 grid grid-cols-1">
-                    {taxonomyMap[cat].map((term) => (
-                      <label key={term} className="flex items-center gap-1 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!taxonomy[cat]?.has(term)}
-                          onChange={(e) =>
-                            setTaxonomy((prev) => {
-                              const next = { ...prev };
-                              if (!next[cat]) next[cat] = new Set<string>();
-                              if (e.target.checked) next[cat]!.add(term);
-                              else next[cat]!.delete(term);
-                              return next;
-                            })
-                          }
-                        />{" "}
-                        {term}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
 
         {/* Footer */}
