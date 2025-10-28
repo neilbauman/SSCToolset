@@ -127,6 +127,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
         <h2 className="text-lg font-semibold mb-3">{editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}</h2>
+
         <div className="flex gap-2 mb-3">
           <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
           <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={e => setDesc(e.target.value)} />
@@ -174,12 +175,14 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
           <table className="w-full">
             <thead className="bg-gray-100"><tr>{preview[0] && Object.keys(preview[0]).map(k => <th key={k} className="p-1 text-left">{k}</th>)}</tr></thead>
             <tbody>
-              {preview.length===0 ? (
-                <tr><td className="text-center italic text-gray-500 py-2" colSpan={6}>No preview data</td></tr>
+              {preview.length === 0 ? (
+                <tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>
               ) : (
                 preview.map((r,i)=>(
                   <tr key={i} className="border-t">
-                    {Object.entries(r).map(([k,v],j)=>(<td key={j} className="p-1">{v ?? "—"}</td>))}
+                    {Object.entries(r).map(([k,v],j)=>(
+                      <td key={j} className="p-1">{v ?? "—"}</td>
+                    ))}
                   </tr>
                 ))
               )}
