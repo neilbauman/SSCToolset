@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Source = "core" | "other" | "derived" | "gis";
-// 👇 Broader method type for compatibility with string values in DB
 type Method = "ratio" | "multiply" | "sum" | "difference" | string;
 
 type DatasetOption = {
@@ -17,7 +16,6 @@ type DatasetOption = {
 
 type TaxonomyMap = Record<string, string[]>;
 
-// Loosened to allow for DerivedDataset type union
 type EditPayload = {
   id?: string;
   title?: string;
@@ -123,24 +121,9 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     })();
   }, []);
 
-  // ───────────── Hydrate edit ─────────────
+  // ───────────── Hydrate edit dataset ─────────────
   useEffect(() => {
-    if (!editDataset) {
-      setTitle("");
-      setDesc("");
-      setTargetLevel("ADM3");
-      setMethod("ratio");
-      setUseScalarB(false);
-      setScalarB(1);
-      setColA("");
-      setColB("");
-      setDecimals(2);
-      setDatasetA(null);
-      setDatasetB(null);
-      setPreview([]);
-      setTaxonomy({});
-      return;
-    }
+    if (!editDataset || datasets.length === 0) return; // ✅ wait until datasets ready
 
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
@@ -152,12 +135,10 @@ export default function CreateDerivedDatasetWizard_JoinAware({
     setColB(editDataset.col_b || "");
     setDecimals(editDataset.decimals ?? 2);
 
-    if (datasets.length > 0) {
-      const foundA = datasets.find((d) => d.table === editDataset.table_a);
-      const foundB = datasets.find((d) => d.table === editDataset.table_b);
-      setDatasetA(foundA || null);
-      setDatasetB(foundB || null);
-    }
+    const foundA = datasets.find((d) => d.table === editDataset.table_a);
+    const foundB = datasets.find((d) => d.table === editDataset.table_b);
+    setDatasetA(foundA || null);
+    setDatasetB(foundB || null);
   }, [editDataset, datasets]);
 
   useEffect(() => {
@@ -184,29 +165,29 @@ export default function CreateDerivedDatasetWizard_JoinAware({
   const formatNumber = (v: number | null) =>
     v == null || isNaN(v) ? "" : v.toLocaleString(undefined, { maximumFractionDigits: decimals });
 
-  // ───────────── Preview ─────────────
+  // ───────────── Preview (via resolve_parametric_dataset_v2) ─────────────
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or a scalar).");
       return;
     }
+
     setLoadingPreview(true);
-    const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-      p_table_a: datasetA.table,
-      p_table_b: useScalarB ? null : datasetB?.table ?? null,
-      p_country: countryIso,
-      p_target_level: targetLevel,
-      p_method: method,
-      p_col_a: colA,
-      p_col_b: useScalarB ? null : colB,
-      p_use_scalar_b: useScalarB,
+    const { data, error } = await supabase.rpc("resolve_parametric_dataset_v2", {
+      derived_dataset_id: "00000000-0000-0000-0000-000000000000", // dummy for preview only
+      p_country_iso: countryIso,
       p_scalar_b_val: useScalarB ? scalarB : null,
+      p_normalize_percent: false,
+      p_debug: false,
     });
     setLoadingPreview(false);
+
     if (error) {
-      alert("Preview error: " + error.message);
+      console.error("Preview error:", error);
+      alert(`Preview error: ${error.message}`);
       return;
     }
+
     setPreview(data || []);
   }
 
@@ -280,7 +261,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Dataset Selectors */}
+        {/* Dataset selectors */}
         <div className="flex gap-2 mb-3">
           <select
             className="border p-1 rounded flex-1"
@@ -311,7 +292,7 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           )}
         </div>
 
-        {/* Columns & Scalars */}
+        {/* Columns / Scalars */}
         <div className="flex gap-2 mb-3 items-center">
           <input
             className="border p-1 rounded w-40"
@@ -357,13 +338,15 @@ export default function CreateDerivedDatasetWizard_JoinAware({
           </select>
         </div>
 
-        {/* Methods */}
+        {/* Method + Preview */}
         <div className="flex items-center gap-2 mb-2">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMethod(m)}
-              className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`}
+              className={`px-2 py-1 border rounded ${
+                method === m ? "text-white" : ""
+              }`}
               style={{ background: method === m ? ACCENT : "transparent", borderColor: "#e5e7eb" }}
             >
               {m}
