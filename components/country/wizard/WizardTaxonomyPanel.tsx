@@ -3,7 +3,9 @@
 type Props = {
   taxonomyMap: Record<string, string[]>;
   taxonomy: Record<string, Set<string>>;
-  setTaxonomy: (v: Record<string, Set<string>>) => void;
+  setTaxonomy: React.Dispatch<
+    React.SetStateAction<Record<string, Set<string>>>
+  >;
 };
 
 export default function WizardTaxonomyPanel({
