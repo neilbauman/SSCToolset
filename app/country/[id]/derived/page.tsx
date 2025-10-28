@@ -12,14 +12,14 @@ import {
   RefreshCw,
   ChevronUp,
   ChevronDown,
-  Loader2,
 } from "lucide-react";
-import CreateDerivedDatasetWizard_JoinAware from "@/components/country/wizard";
+import DerivedDatasetWizard from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
 
 type DerivedDataset = {
   id: string;
   title: string;
+  description?: string | null;
   admin_level: string;
   method: string;
   created_at: string;
@@ -27,24 +27,28 @@ type DerivedDataset = {
   is_index_ready?: boolean;
 };
 
-export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
+export default function DerivedDatasetsPage({
+  params,
+}: {
+  params: CountryParams;
+}) {
   const countryIso = params.id;
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
-  const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
+  const [sortField, setSortField] =
+    useState<keyof DerivedDataset>("created_at");
   const [sortAsc, setSortAsc] = useState(false);
-  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
+  const [selectedDataset, setSelectedDataset] =
+    useState<DerivedDataset | null>(null);
   const [openWizard, setOpenWizard] = useState(false);
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [healthSummary, setHealthSummary] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
 
-  // 🔹 Load datasets
   const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select("id, title, admin_level, method, created_at, taxonomy_categories, is_index_ready")
+      .select("*")
       .eq("country_iso", countryIso)
       .order(sortField, { ascending: sortAsc });
 
@@ -67,18 +71,40 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   };
 
-  // 🔹 View dataset
   const viewDataset = async (dataset: DerivedDataset) => {
     setSelectedDataset(dataset);
     setPreviewData([]);
-    setLoadingPreview(true);
     const tableName = `derived_${dataset.id}`;
 
-    // Check if table exists
-    const { error: existsErr } = await supabase.from(tableName).select("pcode").limit(1);
+    const { error: existsErr } = await supabase
+      .from(tableName)
+      .select("pcode")
+      .limit(1);
     if (existsErr) {
-      alert(`⚠️ Dataset not yet computed or missing (${tableName}).`);
-      setLoadingPreview(false);
+      console.warn("Dataset table missing, attempting dynamic preview...");
+      const { data, error } = await supabase.rpc(
+        "simulate_join_preview_autoaggregate",
+        {
+          p_table_a: "population_data",
+          p_table_b: "gis_features",
+          p_country: countryIso,
+          p_target_level: dataset.admin_level,
+          p_method: "ratio",
+          p_col_a: "population",
+          p_col_b: "area_sqkm",
+          p_use_scalar_b: false,
+          p_scalar_b_val: null,
+        }
+      );
+      if (error) {
+        console.error("Preview RPC failed:", error);
+        setPreviewData([]);
+        setHealthSummary(null);
+        alert(`⚠️ Dataset not yet computed or missing (${tableName}).`);
+        return;
+      }
+      setPreviewData(data || []);
+      summarizeHealth(data);
       return;
     }
 
@@ -86,24 +112,22 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     if (error) {
       console.error("Preview error:", error);
       alert("Failed to load preview");
-      setLoadingPreview(false);
       return;
     }
     setPreviewData(data || []);
     summarizeHealth(data);
-    setLoadingPreview(false);
   };
 
-  // 🔹 Data health
   const summarizeHealth = (data: any[]) => {
     if (!data || data.length === 0) return setHealthSummary(null);
     const total = data.length;
     const missing = data.filter((r) => r.join_status === "missing_gis").length;
     const pct = ((missing / total) * 100).toFixed(1);
-    setHealthSummary(`Data health: ${total - missing}/${total} matched (${pct}% missing GIS)`);
+    setHealthSummary(
+      `Data health: ${total - missing}/${total} matched (${pct}% missing GIS)`
+    );
   };
 
-  // 🔹 Delete dataset
   const deleteDataset = async (dataset: DerivedDataset) => {
     if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
     const { error } = await supabase
@@ -111,10 +135,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       .delete()
       .eq("id", dataset.id);
     if (error) {
+      console.error("Delete failed:", error);
       alert("Delete failed: " + error.message);
       return;
     }
-    await supabase.from("derived_dataset_records").delete().eq("derived_dataset_id", dataset.id);
+    await supabase.rpc("drop_derived_dataset_table", { p_dataset_id: dataset.id });
     alert("🗑️ Dataset deleted");
     loadDatasets();
   };
@@ -123,6 +148,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setRefreshing(true);
     await loadDatasets();
     setRefreshing(false);
+  };
+
+  const formatNumber = (v: any) => {
+    if (v == null || isNaN(v)) return "—";
+    return Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
   };
 
   return (
@@ -143,7 +173,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       }}
     >
       <div className="p-6 space-y-5">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <div className="flex gap-2">
@@ -165,7 +194,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </div>
         </div>
 
-        {/* Dataset Table */}
         <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
@@ -173,7 +201,8 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 {[
                   ["title", "Title"],
                   ["admin_level", "Admin"],
-                  ["method", "Method"],
+                  ["taxonomy_categories", "Taxonomy"],
+                  ["is_index_ready", "Index Ready"],
                   ["created_at", "Created"],
                 ].map(([field, label]) => (
                   <th
@@ -209,9 +238,18 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                     className="border-b hover:bg-gray-50 cursor-pointer"
                     onClick={() => viewDataset(ds)}
                   >
-                    <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
+                    <td className="px-3 py-2 text-[#640811] font-medium">
+                      {ds.title}
+                    </td>
                     <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2">{ds.method}</td>
+                    <td className="px-3 py-2">
+                      {ds.taxonomy_categories?.length
+                        ? ds.taxonomy_categories.join(", ")
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {ds.is_index_ready ? "✅" : "—"}
+                    </td>
                     <td className="px-3 py-2">
                       {new Date(ds.created_at).toLocaleDateString()}
                     </td>
@@ -253,7 +291,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
-        {/* Dataset Preview */}
         {selectedDataset && (
           <div className="mt-6 bg-white border rounded-md shadow p-4">
             <div className="flex justify-between items-center mb-3">
@@ -281,6 +318,14 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <span className="font-medium text-gray-700">Index Ready:</span>{" "}
                 {selectedDataset.is_index_ready ? "✅ Yes" : "—"}
               </div>
+              {selectedDataset.taxonomy_categories && (
+                <div className="col-span-3">
+                  <span className="font-medium text-gray-700">Taxonomy:</span>{" "}
+                  {selectedDataset.taxonomy_categories.length > 0
+                    ? selectedDataset.taxonomy_categories.join(", ")
+                    : "—"}
+                </div>
+              )}
               {healthSummary && (
                 <div className="col-span-3 text-[#640811] font-medium">
                   {healthSummary}
@@ -288,71 +333,59 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               )}
             </div>
 
-            {loadingPreview ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
-                <span className="ml-2 text-gray-500 text-sm">Loading preview...</span>
-              </div>
-            ) : (
-              <div className="max-h-80 overflow-y-auto text-xs border rounded">
-                <table className="w-full">
-                  <thead className="bg-gray-100">
+            <div className="max-h-80 overflow-y-auto text-xs border rounded">
+              <table className="w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    {previewData.length > 0 &&
+                      Object.keys(previewData[0]).map((k) => (
+                        <th key={k} className="p-1 text-left">
+                          {k}
+                        </th>
+                      ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.length === 0 ? (
                     <tr>
-                      {previewData.length > 0 &&
-                        Object.keys(previewData[0]).map((k) => (
-                          <th key={k} className="p-1 text-left">
-                            {k}
-                          </th>
-                        ))}
+                      <td
+                        colSpan={6}
+                        className="text-center italic text-gray-500 py-2"
+                      >
+                        No preview data
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {previewData.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="text-center italic text-gray-500 py-2"
-                        >
-                          No preview data
-                        </td>
+                  ) : (
+                    previewData.map((r, i) => (
+                      <tr key={i} className="border-t">
+                        {Object.entries(r).map(([k, v], j) => (
+                          <td key={j} className="p-1">
+                            {typeof v === "number"
+                              ? Number(v).toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })
+                              : v?.toString() ?? "—"}
+                          </td>
+                        ))}
                       </tr>
-                    ) : (
-                      previewData.map((r, i) => (
-                        <tr key={i} className="border-t">
-                          {Object.entries(r).map(([k, v], j) => (
-                            <td key={j} className="p-1">
-                              {typeof v === "number"
-                                ? Number(v).toLocaleString(undefined, {
-                                    maximumFractionDigits: 2,
-                                  })
-                                : v?.toString() ?? "—"}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        {/* Wizard Modal */}
         {openWizard && (
-  <DerivedDatasetWizard
-    countryIso={countryIso}
-    onClose={() => {
-      setOpenWizard(false);
-      loadDatasets();
-    }}
-    editDataset={
-      editDataset
-        ? (editDataset as any) // ✅ quick cast to avoid TS narrowing
-        : null
-    }
-  />
-)}
+          <DerivedDatasetWizard
+            countryIso={countryIso}
+            onClose={() => {
+              setOpenWizard(false);
+              loadDatasets();
+            }}
+            editDataset={editDataset ? (editDataset as any) : null}
+          />
+        )}
       </div>
     </SidebarLayout>
   );
