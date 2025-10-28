@@ -7,14 +7,12 @@ type Source = "core" | "other" | "derived" | "gis";
 type Method = "ratio" | "multiply" | "sum" | "difference";
 
 type DatasetOption = {
-  id: string; // can be UUID or 'core-*'
+  id: string; // UUID or "core-*"
   title: string;
   source: Source;
   table: string;
   defaultCol?: string | null;
 };
-
-type TaxonomyMap = Record<string, string[]>;
 
 type EditPayload = {
   id: string;
@@ -50,14 +48,12 @@ export default function DerivedDatasetWizard({
   const [colB, setColB] = useState("");
   const [method, setMethod] = useState<Method>("ratio");
   const [targetLevel, setTargetLevel] = useState("ADM3");
-  const [decimals, setDecimals] = useState(2);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [taxonomyMap, setTaxonomyMap] = useState<TaxonomyMap>({});
-  const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
   // ───────────── Load datasets ─────────────
   useEffect(() => {
+    if (!countryIso) return;
     (async () => {
       const base: DatasetOption[] = [
         {
@@ -76,47 +72,50 @@ export default function DerivedDatasetWizard({
         },
       ];
 
-      const { data: others } = await supabase
-        .from("dataset_metadata")
-        .select("id, title, default_numeric_column")
-        .eq("country_iso", countryIso);
+      try {
+        const { data, error } = await supabase
+          .from("dataset_metadata")
+          .select("id, title, default_numeric_column, country_iso")
+          .eq("country_iso", countryIso);
 
-      if (others?.length) {
-        for (const d of others) {
-          base.push({
-            id: d.id,
-            title: d.title,
-            source: "other",
-            table: `dataset_${d.id}`,
-            defaultCol: d.default_numeric_column || null,
+        if (error) {
+          console.warn("⚠️ Supabase error loading datasets:", error.message);
+        }
+
+        if (data?.length) {
+          data.forEach((d) => {
+            base.push({
+              id: d.id,
+              title: d.title,
+              source: "other",
+              table: `dataset_${d.id}`,
+              defaultCol: d.default_numeric_column || "value",
+            });
           });
         }
+      } catch (err: any) {
+        console.error("Dataset load failed:", err.message);
       }
+
       setDatasets(base);
     })();
   }, [countryIso]);
 
-  // ───────────── Load taxonomy ─────────────
+  // ───────────── Hydrate edit mode ─────────────
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("taxonomy_terms").select("category,name");
-      if (!data) return;
-      const grouped: TaxonomyMap = {};
-      data.forEach(({ category, name }) => {
-        if (!grouped[category]) grouped[category] = [];
-        grouped[category].push(name);
-      });
-      setTaxonomyMap(grouped);
-    })();
-  }, []);
+    if (!editDataset || datasets.length === 0) return;
+    const foundA = datasets.find((d) => d.table === editDataset.table_a) || null;
+    const foundB = datasets.find((d) => d.table === editDataset.table_b) || null;
 
-  // ───────────── Auto column defaults ─────────────
-  useEffect(() => {
-    if (datasetA && !colA) setColA(datasetA.defaultCol || "value");
-    if (datasetB && !colB) setColB(datasetB.defaultCol || "value");
-  }, [datasetA, datasetB]);
+    setDatasetA(foundA);
+    setDatasetB(foundB);
+    setColA(editDataset.col_a || foundA?.defaultCol || "");
+    setColB(editDataset.col_b || foundB?.defaultCol || "");
+    setMethod(editDataset.method || "ratio");
+    setTargetLevel(editDataset.admin_level || "ADM3");
+  }, [editDataset, datasets]);
 
-  // ───────────── Compute formula ─────────────
+  // ───────────── Formula ─────────────
   const methodSymbol = useMemo(() => {
     switch (method) {
       case "ratio":
@@ -131,18 +130,17 @@ export default function DerivedDatasetWizard({
   }, [method]);
 
   const computedFormula = useMemo(() => {
-    return `A.${colA} ${methodSymbol} B.${colB}`;
+    return `A.${colA || "value"} ${methodSymbol} B.${colB || "value"}`;
   }, [colA, colB, methodSymbol]);
 
   // ───────────── Preview ─────────────
   async function previewJoin() {
     if (!datasetA || !datasetB) {
-      alert("Select both Dataset A and B.");
+      alert("Select both Dataset A and B before previewing.");
       return;
     }
 
     setLoadingPreview(true);
-
     const isCoreA = datasetA.id.startsWith("core-");
     const isCoreB = datasetB.id.startsWith("core-");
 
@@ -160,6 +158,7 @@ export default function DerivedDatasetWizard({
       setPreview(data || []);
     } catch (err: any) {
       alert("Preview failed: " + err.message);
+      console.error(err);
     } finally {
       setLoadingPreview(false);
     }
@@ -168,12 +167,9 @@ export default function DerivedDatasetWizard({
   // ───────────── Save ─────────────
   async function saveDerived() {
     if (!datasetA || !datasetB) {
-      alert("Select both datasets first.");
+      alert("Select both datasets before saving.");
       return;
     }
-
-    const cats = Object.keys(taxonomy);
-    const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
 
     const payload = {
       p_country: countryIso,
@@ -185,8 +181,6 @@ export default function DerivedDatasetWizard({
       p_col_a: colA,
       p_col_b: colB,
       p_formula: computedFormula,
-      p_taxonomy_categories: cats,
-      p_taxonomy_terms: terms,
     };
 
     const { error } = await supabase.rpc("create_derived_dataset_v2", payload);
@@ -194,6 +188,7 @@ export default function DerivedDatasetWizard({
       alert("Save failed: " + error.message);
       return;
     }
+
     alert("✅ Derived dataset created.");
     onClose();
   }
@@ -208,7 +203,7 @@ export default function DerivedDatasetWizard({
           {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
         </h2>
 
-        {/* Datasets */}
+        {/* Dataset selectors */}
         <div className="flex gap-2 mb-3">
           <select
             className="border p-1 rounded flex-1"
@@ -253,7 +248,7 @@ export default function DerivedDatasetWizard({
           />
         </div>
 
-        {/* Method and preview */}
+        {/* Method + Preview */}
         <div className="flex items-center gap-2 mb-3">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
@@ -314,69 +309,16 @@ export default function DerivedDatasetWizard({
                   <tr key={i} className="border-t">
                     <td className="p-1">{r.pcode}</td>
                     <td className="p-1">{r.name}</td>
-                    <td className="p-1 text-right">
-                      {Number(r.a)?.toLocaleString()}
-                    </td>
-                    <td className="p-1 text-right">
-                      {Number(r.b)?.toLocaleString()}
-                    </td>
+                    <td className="p-1 text-right">{r.a?.toLocaleString()}</td>
+                    <td className="p-1 text-right">{r.b?.toLocaleString()}</td>
                     <td className="p-1 text-right font-medium text-[#640811]">
-                      {Number(r.derived)?.toLocaleString()}
+                      {r.derived?.toLocaleString()}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* Taxonomy */}
-        <h3 className="text-sm font-semibold mb-2 text-[#640811]">Assign Taxonomy</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-          {Object.keys(taxonomyMap).map((cat) => {
-            const isChecked = !!taxonomy[cat];
-            return (
-              <div key={cat} className="border rounded p-2">
-                <label className="flex items-center gap-1 text-xs font-medium">
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) =>
-                      setTaxonomy((prev) => {
-                        const next = { ...prev };
-                        if (e.target.checked) next[cat] = new Set<string>();
-                        else delete next[cat];
-                        return next;
-                      })
-                    }
-                  />{" "}
-                  {cat}
-                </label>
-                {isChecked && (
-                  <div className="ml-3 mt-1 grid grid-cols-1">
-                    {taxonomyMap[cat].map((term) => (
-                      <label key={term} className="flex items-center gap-1 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!taxonomy[cat]?.has(term)}
-                          onChange={(e) =>
-                            setTaxonomy((prev) => {
-                              const next = { ...prev };
-                              if (!next[cat]) next[cat] = new Set<string>();
-                              if (e.target.checked) next[cat]!.add(term);
-                              else next[cat]!.delete(term);
-                              return next;
-                            })
-                          }
-                        />{" "}
-                        {term}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
 
         {/* Footer */}
