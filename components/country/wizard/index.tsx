@@ -32,8 +32,9 @@ type EditPayload = {
   target_level?: string | null;
   taxonomy_categories?: string[];
   taxonomy_terms?: string[];
+  is_parametric?: boolean | null;          // ✅ Added
+  normalize_percent?: boolean | null;      // ✅ Added
 };
-
 type Props = {
   open: boolean;
   onClose: () => void;
