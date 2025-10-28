@@ -340,25 +340,19 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
 
         {/* Wizard Modal */}
         {openWizard && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg shadow-lg max-w-6xl w-full h-[90vh] overflow-y-auto relative">
-              <button
-                onClick={() => setOpenWizard(false)}
-                className="absolute top-3 right-3 text-gray-500 hover:text-gray-800"
-              >
-                ✕
-              </button>
-              <CreateDerivedDatasetWizard_JoinAware
-                countryIso={countryIso}
-                onClose={() => {
-                  setOpenWizard(false);
-                  loadDatasets();
-                }}
-                editDataset={editDataset}
-              />
-            </div>
-          </div>
-        )}
+  <DerivedDatasetWizard
+    countryIso={countryIso}
+    onClose={() => {
+      setOpenWizard(false);
+      loadDatasets();
+    }}
+    editDataset={
+      editDataset
+        ? (editDataset as any) // ✅ quick cast to avoid TS narrowing
+        : null
+    }
+  />
+)}
       </div>
     </SidebarLayout>
   );
