@@ -53,12 +53,30 @@ export default function DerivedDatasetWizard({ countryIso, onClose, editDataset 
   const computedFormula = useMemo(() => `A.${colA} ${methodSymbol} ${useScalarB ? scalarB : `B.${colB}`}`, [colA, colB, methodSymbol, scalarB, useScalarB]);
   const fmt = (v: number | null) => v == null || isNaN(v) ? "" : v.toLocaleString(undefined, { maximumFractionDigits: decimals });
 
-  async function previewJoin() {
-    if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or a scalar).");
-    setLoadingPreview(true);
-    const { data, error } = await supabase.rpc("resolve_parametric_dataset_v2", { p_derived_dataset_id: "00000000-0000-0000-0000-000000000000", p_country_iso: countryIso, p_scalar_b_val: useScalarB ? scalarB : null, p_normalize_percent: false, p_use_scalar_b: useScalarB });
-    setLoadingPreview(false); if (error) return alert("Preview failed: " + error.message); setPreview(data || []);
+ async function previewJoin() {
+  if (!datasetA || (!datasetB && !useScalarB)) {
+    alert("Select Dataset A and (Dataset B or a scalar).");
+    return;
   }
+
+  setLoadingPreview(true);
+  const { data, error } = await supabase.rpc("resolve_parametric_dataset_v3", {
+    p_country_iso: countryIso,
+    p_table_a: datasetA.id,   // must be UUIDs of dataset_metadata entries
+    p_table_b: datasetB?.id || null,
+    p_method: method,
+    p_normalize_percent: false,
+    p_target_admin_level: targetLevel
+  });
+
+  setLoadingPreview(false);
+  if (error) {
+    console.error(error);
+    alert("Preview failed: " + error.message);
+    return;
+  }
+  setPreview(data || []);
+}
 
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or a scalar).");
