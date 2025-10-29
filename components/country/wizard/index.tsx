@@ -83,7 +83,7 @@ export default function DerivedDatasetWizard({
     })();
   }, [open]);
 
-  // Hydrate when editing
+  // Hydrate on edit
   useEffect(() => {
     if (!editDataset || datasets.length === 0) return;
     setTitle(editDataset.title || "");
@@ -117,6 +117,13 @@ export default function DerivedDatasetWizard({
     return `A.${left} ${methodSymbol} ${right}`;
   }, [colA, colB, methodSymbol, useScalarB, scalarB]);
 
+  function resolveTableId(id: string | null): string | null {
+    if (!id) return null;
+    if (id === "core-pop") return "dataset_population";
+    if (id === "core-gis") return "dataset_gis";
+    return id;
+  }
+
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or scalar).");
@@ -124,8 +131,8 @@ export default function DerivedDatasetWizard({
     }
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-      p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
+      p_table_a: resolveTableId(datasetA.id),
+      p_table_b: useScalarB ? null : resolveTableId(datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : (colB || "value"),
       p_country_iso: countryIso,
@@ -159,8 +166,8 @@ export default function DerivedDatasetWizard({
       p_method: method,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
-      p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
+      p_table_a: resolveTableId(datasetA.id),
+      p_table_b: useScalarB ? null : resolveTableId(datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : (colB || "value"),
       p_formula: formula,
