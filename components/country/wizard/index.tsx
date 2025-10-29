@@ -310,9 +310,7 @@ export default function DerivedDatasetWizard({
                 preview.map((r, i) => (
                   <tr key={i} className="border-t">
                     {Object.entries(r).map(([k, v], j) => (
-                      <td key={j} className="p-1">
-                        {v ?? "—"}
-                      </td>
+                      <td key={j} className="p-1">{v ?? "-"}</td>
                     ))}
                   </tr>
                 ))
