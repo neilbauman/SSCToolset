@@ -43,14 +43,14 @@ export default function DerivedDatasetWizard({
         .from("dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
-      base?.forEach(d =>
+      base?.forEach((d) =>
         opts.push({ id: d.id, title: d.title, source: "other", defaultCol: "value" })
       );
       const { data: drv } = await supabase
         .from("derived_dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
-      drv?.forEach(d =>
+      drv?.forEach((d) =>
         opts.push({ id: d.id, title: d.title, source: "derived", defaultCol: "derived" })
       );
       setDatasets(opts.sort((a, b) => a.title.localeCompare(b.title)));
@@ -82,7 +82,8 @@ export default function DerivedDatasetWizard({
   );
 
   async function previewJoin() {
-    if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB))
+      return alert("Select Dataset A and (Dataset B or scalar).");
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.id,
@@ -106,9 +107,10 @@ export default function DerivedDatasetWizard({
   }
 
   async function saveDerived() {
-    if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB))
+      return alert("Select Dataset A and (Dataset B or scalar).");
     const cats = Object.keys(taxonomy);
-    const terms = cats.flatMap(c => Array.from(taxonomy[c] || []));
+    const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
     const { error } = await supabase.rpc("create_derived_dataset_v2", {
       p_country: countryIso,
       p_title: title || `Derived (${targetLevel})`,
@@ -140,34 +142,63 @@ export default function DerivedDatasetWizard({
 
         {/* Title / Level */}
         <div className="flex gap-2 mb-3">
-          <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-          <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={e => setDesc(e.target.value)} />
-          <select className="border p-1 rounded" value={targetLevel} onChange={e => setTargetLevel(e.target.value)}>
-            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map(l => <option key={l}>{l}</option>)}
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="border p-1 flex-1 rounded"
+            placeholder="Description"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+          />
+          <select
+            className="border p-1 rounded"
+            value={targetLevel}
+            onChange={(e) => setTargetLevel(e.target.value)}
+          >
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((l) => (
+              <option key={l}>{l}</option>
+            ))}
           </select>
         </div>
 
-        {/* Datasets */}
+        {/* Dataset Selectors */}
         <div className="flex gap-2 mb-3">
-          {(["A", "B"] as const).map(lbl =>
+          {(["A", "B"] as const).map((lbl) =>
             !useScalarB || lbl === "A" ? (
-              <select key={lbl} className="border p-1 rounded flex-1"
+              <select
+                key={lbl}
+                className="border p-1 rounded flex-1"
                 value={(lbl === "A" ? datasetA : datasetB)?.id || ""}
-                onChange={e => {
-                  const d = datasets.find(x => x.id === e.target.value) || null;
-                  if (lbl === "A") setDatasetA(d); else setDatasetB(d);
-                  if (d?.defaultCol) lbl === "A" ? setColA(d.defaultCol) : setColB(d.defaultCol);
-                }}>
+                onChange={(e) => {
+                  const d = datasets.find((x) => x.id === e.target.value) || null;
+                  if (lbl === "A") setDatasetA(d);
+                  else setDatasetB(d);
+                  if (d?.defaultCol)
+                    lbl === "A" ? setColA(d.defaultCol) : setColB(d.defaultCol);
+                }}
+              >
                 <option value="">Select Dataset {lbl}</option>
                 <optgroup label="Base datasets">
-                  {datasets.filter(d => d.source === "other").map(d =>
-                    <option key={d.id} value={d.id}>{d.title}</option>
-                  )}
+                  {datasets
+                    .filter((d) => d.source === "other")
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
                 </optgroup>
                 <optgroup label="Derived datasets">
-                  {datasets.filter(d => d.source === "derived").map(d =>
-                    <option key={d.id} value={d.id}>{d.title}</option>
-                  )}
+                  {datasets
+                    .filter((d) => d.source === "derived")
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
                 </optgroup>
               </select>
             ) : null
@@ -176,57 +207,106 @@ export default function DerivedDatasetWizard({
 
         {/* Columns */}
         <div className="flex gap-2 mb-3">
-          <input className="border p-1 rounded w-40" value={colA} onChange={e => setColA(e.target.value)} placeholder="Column A" />
+          <input
+            className="border p-1 rounded w-40"
+            value={colA}
+            onChange={(e) => setColA(e.target.value)}
+            placeholder="Column A"
+          />
           {!useScalarB && (
-            <input className="border p-1 rounded w-40" value={colB} onChange={e => setColB(e.target.value)} placeholder="Column B" />
+            <input
+              className="border p-1 rounded w-40"
+              value={colB}
+              onChange={(e) => setColB(e.target.value)}
+              placeholder="Column B"
+            />
           )}
           <label className="text-xs flex items-center gap-1 ml-auto">
-            <input type="checkbox" checked={useScalarB} onChange={e => setUseScalarB(e.target.checked)} /> Use Scalar B
+            <input
+              type="checkbox"
+              checked={useScalarB}
+              onChange={(e) => setUseScalarB(e.target.checked)}
+            />{" "}
+            Use Scalar B
           </label>
           {useScalarB && (
-            <input type="number" className="border p-1 rounded w-24 text-right"
-              value={scalarB} onChange={e => setScalarB(parseFloat(e.target.value || "0"))} />
+            <input
+              type="number"
+              className="border p-1 rounded w-24 text-right"
+              value={scalarB}
+              onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))}
+            />
           )}
         </div>
 
         {/* Methods */}
         <div className="flex gap-2 mb-2">
-          {(["ratio", "multiply", "sum", "difference"] as const).map(m => (
-            <button key={m} onClick={() => setMethod(m)}
-              className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`}
-              style={{ background: method === m ? ACCENT : "transparent", borderColor: "#e5e7eb" }}>
+          {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMethod(m)}
+              className={`px-2 py-1 border rounded ${
+                method === m ? "text-white" : ""
+              }`}
+              style={{
+                background: method === m ? ACCENT : "transparent",
+                borderColor: "#e5e7eb",
+              }}
+            >
               {m}
             </button>
           ))}
           <label className="text-xs flex items-center gap-1 ml-3">
-            <input type="checkbox" checked={normalizePercent} onChange={e => setNormalizePercent(e.target.checked)} /> Normalize %
+            <input
+              type="checkbox"
+              checked={normalizePercent}
+              onChange={(e) => setNormalizePercent(e.target.checked)}
+            />{" "}
+            Normalize %
           </label>
-          <button onClick={previewJoin} className="ml-auto px-3 py-1 text-white rounded" style={{ background: ACCENT }}>
+          <button
+            onClick={previewJoin}
+            className="ml-auto px-3 py-1 text-white rounded"
+            style={{ background: ACCENT }}
+          >
             {loadingPreview ? "Loading..." : "Preview"}
           </button>
         </div>
 
         <p className="text-xs italic mb-2">Derived = {formula}</p>
 
-        {/* Preview table — ✅ Correct {v ?? "—"} syntax */}
+        {/* Preview table */}
         <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr>
-                {(preview[0] ? Object.keys(preview[0]) : ["join_key", "place_name", "a", "b", "derived"])
-                  .map((k: string) => (
-                    <th key={k} className="p-1 text-left">{k}</th>
-                  ))}
+                {(preview[0]
+                  ? Object.keys(preview[0])
+                  : ["join_key", "place_name", "a", "b", "derived"]
+                ).map((k: string) => (
+                  <th key={k} className="p-1 text-left">
+                    {k}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {preview.length === 0 ? (
-                <tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="text-center italic text-gray-500 py-2"
+                  >
+                    No preview data
+                  </td>
+                </tr>
               ) : (
                 preview.map((r, i) => (
                   <tr key={i} className="border-t">
                     {Object.entries(r).map(([k, v], j) => (
-                      <td key={j} className="p-1">{v ?? "—"}</td>
+                      <td key={j} className="p-1">
+                        {v ?? "—"}
+                      </td>
                     ))}
                   </tr>
                 ))
@@ -235,9 +315,18 @@ export default function DerivedDatasetWizard({
           </table>
         </div>
 
+        {/* Actions */}
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{ background: ACCENT }}>Save</button>
+          <button onClick={onClose} className="px-3 py-1 border rounded">
+            Cancel
+          </button>
+          <button
+            onClick={saveDerived}
+            className="px-3 py-1 text-white rounded"
+            style={{ background: ACCENT }}
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>
