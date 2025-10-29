@@ -208,7 +208,7 @@ export default function DerivedDatasetWizard({
 
         <p className="text-xs italic mb-2">Derived = {formula}</p>
 
-        {/* Preview table — ✅ correct nullish coalescing */}
+        {/* Preview table — ✅ Correct {v ?? "—"} syntax */}
         <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
             <thead className="bg-gray-100">
