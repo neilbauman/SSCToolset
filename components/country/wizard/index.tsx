@@ -57,7 +57,7 @@ export default function DerivedDatasetWizard({
     })();
   }, [open, countryIso]);
 
-  // Taxonomy
+  // Load taxonomy
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -82,12 +82,14 @@ export default function DerivedDatasetWizard({
   );
 
   async function previewJoin() {
-    if (!datasetA || (!datasetB && !useScalarB))
-      return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB)) {
+      alert("Select Dataset A and (Dataset B or scalar).");
+      return;
+    }
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id null,
+      p_table_b: useScalarB ? null : datasetB?.id ?? null,
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : colB || "value",
       p_country_iso: countryIso,
@@ -107,8 +109,10 @@ export default function DerivedDatasetWizard({
   }
 
   async function saveDerived() {
-    if (!datasetA || (!datasetB && !useScalarB))
-      return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB)) {
+      alert("Select Dataset A and (Dataset B or scalar).");
+      return;
+    }
     const cats = Object.keys(taxonomy);
     const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
     const { error } = await supabase.rpc("create_derived_dataset_v2", {
@@ -120,7 +124,7 @@ export default function DerivedDatasetWizard({
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id  null,
+      p_table_b: useScalarB ? null : datasetB?.id ?? null,
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : colB || "value",
       p_formula: formula,
@@ -129,12 +133,16 @@ export default function DerivedDatasetWizard({
       p_taxonomy_terms: terms,
       p_decimals: decimals,
     });
-    if (error) return alert("Save failed: " + error.message);
+    if (error) {
+      alert("Save failed: " + error.message);
+      return;
+    }
     alert("✅ Derived dataset saved.");
     onClose();
   }
 
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
@@ -245,9 +253,7 @@ export default function DerivedDatasetWizard({
             <button
               key={m}
               onClick={() => setMethod(m)}
-              className={`px-2 py-1 border rounded ${
-                method === m ? "text-white" : ""
-              }`}
+              className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`}
               style={{
                 background: method === m ? ACCENT : "transparent",
                 borderColor: "#e5e7eb",
