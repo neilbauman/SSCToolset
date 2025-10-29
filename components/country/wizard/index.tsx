@@ -41,7 +41,11 @@ export default function DerivedDatasetWizard({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const opts: DatasetOption[] = [];
+      const core: DatasetOption[] = [
+        { id: "core-pop", title: "Population [core]", source: "other", defaultCol: "population" },
+        { id: "core-gis", title: "GIS Features [core]", source: "other", defaultCol: "area_sqkm" },
+      ];
+      const opts: DatasetOption[] = [...core];
       const { data: base } = await supabase
         .from("dataset_metadata")
         .select("id,title,country_iso")
@@ -78,6 +82,29 @@ export default function DerivedDatasetWizard({
       setTaxonomyMap(grouped);
     })();
   }, [open]);
+
+  // Hydrate when editing
+  useEffect(() => {
+    if (!editDataset || datasets.length === 0) return;
+    setTitle(editDataset.title || "");
+    setDesc(editDataset.description || "");
+    setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
+    setMethod(editDataset.method || "ratio");
+    setUseScalarB(!!editDataset.use_scalar_b);
+    setScalarB(editDataset.scalar_b_val ?? 1);
+    setColA(editDataset.col_a || "");
+    setColB(editDataset.col_b || "");
+    setDecimals(editDataset.decimals ?? 2);
+    setNormalizePercent(!!editDataset.normalize_percent);
+    const foundA =
+      datasets.find((d) => d.id === editDataset.table_a || d.id === editDataset.table_a?.id) ||
+      null;
+    const foundB =
+      datasets.find((d) => d.id === editDataset.table_b || d.id === editDataset.table_b?.id) ||
+      null;
+    setDatasetA(foundA);
+    setDatasetB(foundB);
+  }, [editDataset, datasets]);
 
   const methodSymbol = useMemo(
     () => ({ ratio: "÷", multiply: "×", sum: "+", difference: "−" }[method]),
@@ -157,7 +184,6 @@ export default function DerivedDatasetWizard({
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
         <h2 className="text-lg font-semibold mb-3">Create Derived Dataset</h2>
 
-        {/* Title / Level */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -182,7 +208,6 @@ export default function DerivedDatasetWizard({
           </select>
         </div>
 
-        {/* Dataset selectors */}
         <div className="flex gap-2 mb-3">
           {(["A", "B"] as const).map((lbl) =>
             !useScalarB || lbl === "A" ? (
@@ -224,7 +249,6 @@ export default function DerivedDatasetWizard({
           )}
         </div>
 
-        {/* Columns and scalar */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 rounded w-40"
@@ -258,7 +282,6 @@ export default function DerivedDatasetWizard({
           )}
         </div>
 
-        {/* Method buttons */}
         <div className="flex gap-2 mb-2">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
@@ -292,7 +315,6 @@ export default function DerivedDatasetWizard({
 
         <p className="text-xs italic mb-2">Derived = {formula}</p>
 
-        {/* Preview table */}
         <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
             <thead className="bg-gray-100">
@@ -329,7 +351,54 @@ export default function DerivedDatasetWizard({
           </table>
         </div>
 
-        {/* Footer actions */}
+        <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+          {Object.keys(taxonomyMap).map((cat) => {
+            const checked = !!taxonomy[cat];
+            return (
+              <div key={cat} className="border rounded p-2 max-h-32 overflow-y-auto">
+                <label className="flex items-center gap-1 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      setTaxonomy((prev) => {
+                        const next = { ...prev };
+                        if (e.target.checked) next[cat] = new Set<string>();
+                        else delete next[cat];
+                        return next;
+                      });
+                    }}
+                  />
+                  {cat}
+                </label>
+                {checked && (
+                  <div className="ml-3 mt-1 flex flex-col gap-1">
+                    {taxonomyMap[cat].map((term) => (
+                      <label key={term} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={!!taxonomy[cat]?.has(term)}
+                          onChange={(e) => {
+                            setTaxonomy((prev) => {
+                              const next = { ...prev };
+                              if (!next[cat]) next[cat] = new Set<string>();
+                              if (e.target.checked) next[cat].add(term);
+                              else next[cat].delete(term);
+                              return next;
+                            });
+                          }}
+                        />
+                        {term}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
