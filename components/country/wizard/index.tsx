@@ -43,16 +43,20 @@ export default function DerivedDatasetWizard({
         .from("dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
-      base?.forEach((d) =>
-        opts.push({ id: d.id, title: d.title, source: "other", defaultCol: "value" })
-      );
+      if (base) {
+        base.forEach((d) =>
+          opts.push({ id: d.id, title: d.title, source: "other", defaultCol: "value" })
+        );
+      }
       const { data: drv } = await supabase
         .from("derived_dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
-      drv?.forEach((d) =>
-        opts.push({ id: d.id, title: d.title, source: "derived", defaultCol: "derived" })
-      );
+      if (drv) {
+        drv.forEach((d) =>
+          opts.push({ id: d.id, title: d.title, source: "derived", defaultCol: "derived" })
+        );
+      }
       setDatasets(opts.sort((a, b) => a.title.localeCompare(b.title)));
     })();
   }, [open, countryIso]);
@@ -76,10 +80,12 @@ export default function DerivedDatasetWizard({
     () => ({ ratio: "÷", multiply: "×", sum: "+", difference: "−" }[method]),
     [method]
   );
-  const formula = useMemo(
-    () => `A.${colA || "?"} ${methodSymbol} ${useScalarB ? scalarB : `B.${colB || "?"}`}`,
-    [colA, colB, methodSymbol, useScalarB, scalarB]
-  );
+
+  const formula = useMemo(() => {
+    const left = colA || "?";
+    const right = useScalarB ? scalarB.toString() : `B.${colB || "?"}`;
+    return `A.${left} ${methodSymbol} ${right}`;
+  }, [colA, colB, methodSymbol, useScalarB, scalarB]);
 
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
@@ -89,9 +95,9 @@ export default function DerivedDatasetWizard({
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id ?? null,
+      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
-      p_col_b: useScalarB ? null : colB || "value",
+      p_col_b: useScalarB ? null : (colB || "value"),
       p_country_iso: countryIso,
       p_method: method,
       p_target_level: targetLevel,
@@ -124,9 +130,9 @@ export default function DerivedDatasetWizard({
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id ?? null,
+      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
-      p_col_b: useScalarB ? null : colB || "value",
+      p_col_b: useScalarB ? null : (colB || "value"),
       p_formula: formula,
       p_target_level: targetLevel,
       p_taxonomy_categories: cats,
@@ -167,13 +173,13 @@ export default function DerivedDatasetWizard({
             value={targetLevel}
             onChange={(e) => setTargetLevel(e.target.value)}
           >
-            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((l) => (
-              <option key={l}>{l}</option>
+            {["ADM0", "ADM1", "ADM2", "ADM3", "ADM4"].map((lvl) => (
+              <option key={lvl}>{lvl}</option>
             ))}
           </select>
         </div>
 
-        {/* Dataset Selectors */}
+        {/* Dataset selectors */}
         <div className="flex gap-2 mb-3">
           {(["A", "B"] as const).map((lbl) =>
             !useScalarB || lbl === "A" ? (
@@ -185,8 +191,10 @@ export default function DerivedDatasetWizard({
                   const d = datasets.find((x) => x.id === e.target.value) || null;
                   if (lbl === "A") setDatasetA(d);
                   else setDatasetB(d);
-                  if (d?.defaultCol)
-                    lbl === "A" ? setColA(d.defaultCol) : setColB(d.defaultCol);
+                  if (d && d.defaultCol) {
+                    if (lbl === "A") setColA(d.defaultCol);
+                    else setColB(d.defaultCol);
+                  }
                 }}
               >
                 <option value="">Select Dataset {lbl}</option>
@@ -213,7 +221,7 @@ export default function DerivedDatasetWizard({
           )}
         </div>
 
-        {/* Columns */}
+        {/* Columns and scalar */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 rounded w-40"
@@ -247,7 +255,7 @@ export default function DerivedDatasetWizard({
           )}
         </div>
 
-        {/* Methods */}
+        {/* Method buttons */}
         <div className="flex gap-2 mb-2">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
@@ -299,10 +307,7 @@ export default function DerivedDatasetWizard({
             <tbody>
               {preview.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="text-center italic text-gray-500 py-2"
-                  >
+                  <td colSpan={6} className="text-center italic text-gray-500 py-2">
                     No preview data
                   </td>
                 </tr>
@@ -310,7 +315,9 @@ export default function DerivedDatasetWizard({
                 preview.map((r, i) => (
                   <tr key={i} className="border-t">
                     {Object.entries(r).map(([k, v], j) => (
-                      <td key={j} className="p-1">{v ?? "-"}</td>
+                      <td key={j} className="p-1">
+                        {v !== null && v !== undefined ? v : "-"}
+                      </td>
                     ))}
                   </tr>
                 ))
@@ -319,7 +326,7 @@ export default function DerivedDatasetWizard({
           </table>
         </div>
 
-        {/* Actions */}
+        {/* Footer actions */}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
