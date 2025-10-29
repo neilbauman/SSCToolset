@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Method = "ratio" | "multiply" | "sum" | "difference";
-type Source = "other" | "derived";
+type Source = "core" | "other" | "derived";
 type DatasetOption = { id: string; title: string; source: Source; defaultCol?: string | null };
 type TaxonomyMap = Record<string, string[]>;
 
@@ -41,10 +41,12 @@ export default function DerivedDatasetWizard({
   useEffect(() => {
     if (!open) return;
     (async () => {
+      // Core datasets (real tables)
       const core: DatasetOption[] = [
-        { id: "core-pop", title: "Population [core]", source: "other", defaultCol: "population" },
-        { id: "core-gis", title: "GIS Features [core]", source: "other", defaultCol: "area_sqkm" },
+        { id: "population_data", title: "Population [core]", source: "core", defaultCol: "population" },
+        { id: "gis_features", title: "GIS Features [core]", source: "core", defaultCol: "area_sqkm" },
       ];
+
       const opts: DatasetOption[] = [...core];
       const { data: base } = await supabase
         .from("dataset_metadata")
@@ -83,7 +85,7 @@ export default function DerivedDatasetWizard({
     })();
   }, [open]);
 
-  // Hydrate on edit
+  // Hydrate when editing
   useEffect(() => {
     if (!editDataset || datasets.length === 0) return;
     setTitle(editDataset.title || "");
@@ -117,13 +119,6 @@ export default function DerivedDatasetWizard({
     return `A.${left} ${methodSymbol} ${right}`;
   }, [colA, colB, methodSymbol, useScalarB, scalarB]);
 
-  function resolveTableId(id: string | null): string | null {
-    if (!id) return null;
-    if (id === "core-pop") return "dataset_population";
-    if (id === "core-gis") return "dataset_gis";
-    return id;
-  }
-
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or scalar).");
@@ -131,8 +126,8 @@ export default function DerivedDatasetWizard({
     }
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
-      p_table_a: resolveTableId(datasetA.id),
-      p_table_b: useScalarB ? null : resolveTableId(datasetB ? datasetB.id : null),
+      p_table_a: datasetA.id,
+      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : (colB || "value"),
       p_country_iso: countryIso,
@@ -166,8 +161,8 @@ export default function DerivedDatasetWizard({
       p_method: method,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
-      p_table_a: resolveTableId(datasetA.id),
-      p_table_b: useScalarB ? null : resolveTableId(datasetB ? datasetB.id : null),
+      p_table_a: datasetA.id,
+      p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : (colB || "value"),
       p_formula: formula,
@@ -233,6 +228,17 @@ export default function DerivedDatasetWizard({
                 }}
               >
                 <option value="">Select Dataset {lbl}</option>
+
+                <optgroup label="Core datasets">
+                  {datasets
+                    .filter((d) => d.source === "core")
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
+                </optgroup>
+
                 <optgroup label="Base datasets">
                   {datasets
                     .filter((d) => d.source === "other")
@@ -242,6 +248,7 @@ export default function DerivedDatasetWizard({
                       </option>
                     ))}
                 </optgroup>
+
                 <optgroup label="Derived datasets">
                   {datasets
                     .filter((d) => d.source === "derived")
