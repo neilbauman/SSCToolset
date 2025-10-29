@@ -1,11 +1,40 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 type Method = "ratio" | "multiply" | "sum" | "difference";
-type Source = "core" | "other" | "derived";
-type DatasetOption = { id: string; title: string; source: Source; defaultCol?: string | null };
+type Source = "core" | "base" | "derived";
+
+type DatasetOption = {
+  id: string;          // Either a UUID from dataset_metadata / derived_dataset_metadata, or a real table name for core
+  title: string;
+  source: Source;
+  defaultCol?: string | null;
+};
+
 type TaxonomyMap = Record<string, string[]>;
+
+type EditPayload = {
+  id: string;
+  title: string;
+  description?: string | null;
+  admin_level?: string | null;
+  method?: Method | null;
+  use_scalar_b?: boolean | null;
+  scalar_b_val?: number | null;
+  table_a?: string | null;
+  table_b?: string | null;
+  col_a?: string | null;
+  col_b?: string | null;
+  formula?: string | null;
+  target_level?: string | null;
+  decimals?: number | null;
+  taxonomy_categories?: string[] | null;
+  taxonomy_terms?: string[] | null;
+  is_parametric?: boolean | null;
+  normalize_percent?: boolean | null;
+};
 
 export default function DerivedDatasetWizard({
   open,
@@ -16,109 +45,173 @@ export default function DerivedDatasetWizard({
   open: boolean;
   onClose: () => void;
   countryIso: string;
-  editDataset?: any;
+  editDataset?: EditPayload | null;
 }) {
+  const ACCENT = "#640811";
+
+  // State
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
-  const [colA, setColA] = useState("");
-  const [colB, setColB] = useState("");
+  const [colA, setColA] = useState<string>("");
+  const [colB, setColB] = useState<string>("");
+
   const [method, setMethod] = useState<Method>("ratio");
-  const [useScalarB, setUseScalarB] = useState(false);
-  const [scalarB, setScalarB] = useState(1);
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [targetLevel, setTargetLevel] = useState("ADM3");
-  const [decimals, setDecimals] = useState(2);
-  const [normalizePercent, setNormalizePercent] = useState(false);
+  const [useScalarB, setUseScalarB] = useState<boolean>(false);
+  const [scalarB, setScalarB] = useState<number>(1);
+
+  const [title, setTitle] = useState<string>("");
+  const [desc, setDesc] = useState<string>("");
+  const [targetLevel, setTargetLevel] = useState<string>("ADM3");
+  const [decimals, setDecimals] = useState<number>(2);
+  const [normalizePercent, setNormalizePercent] = useState<boolean>(false);
+
   const [preview, setPreview] = useState<any[]>([]);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
+
   const [taxonomyMap, setTaxonomyMap] = useState<TaxonomyMap>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
-  const ACCENT = "#640811";
 
-  // Load datasets
+  // Load dataset choices (Core -> Base -> Derived)
   useEffect(() => {
     if (!open) return;
     (async () => {
-      // Core datasets (real tables)
+      // Core datasets: use real table names
       const core: DatasetOption[] = [
         { id: "population_data", title: "Population [core]", source: "core", defaultCol: "population" },
         { id: "gis_features", title: "GIS Features [core]", source: "core", defaultCol: "area_sqkm" },
       ];
 
-      const opts: DatasetOption[] = [...core];
+      const options: DatasetOption[] = [...core];
+
+      // Base (uploaded) datasets
       const { data: base } = await supabase
         .from("dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
+
       if (base) {
-        base.forEach((d) =>
-          opts.push({ id: d.id, title: d.title, source: "other", defaultCol: "value" })
+        base.forEach((d: any) =>
+          options.push({ id: d.id, title: d.title, source: "base", defaultCol: "value" })
         );
       }
-      const { data: drv } = await supabase
+
+      // Derived datasets
+      const { data: derived } = await supabase
         .from("derived_dataset_metadata")
         .select("id,title,country_iso")
         .eq("country_iso", countryIso);
-      if (drv) {
-        drv.forEach((d) =>
-          opts.push({ id: d.id, title: d.title, source: "derived", defaultCol: "derived" })
+
+      if (derived) {
+        derived.forEach((d: any) =>
+          options.push({ id: d.id, title: d.title, source: "derived", defaultCol: "derived" })
         );
       }
-      setDatasets(opts.sort((a, b) => a.title.localeCompare(b.title)));
+
+      // Sort alphabetically within the compiled list
+      options.sort((a, b) => a.title.localeCompare(b.title));
+      setDatasets(options);
     })();
   }, [open, countryIso]);
 
-  // Load taxonomy
+  // Load taxonomy (compact)
   useEffect(() => {
     if (!open) return;
     (async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
       if (!data) return;
       const grouped: TaxonomyMap = {};
-      data.forEach((x: any) => {
-        if (!grouped[x.category]) grouped[x.category] = [];
-        grouped[x.category].push(x.name);
-      });
+      for (const row of data as any[]) {
+        const cat = row.category as string;
+        const name = row.name as string;
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(name);
+      }
+      // Optional: sort terms per category for compact UI
+      for (const k of Object.keys(grouped)) grouped[k].sort((a, b) => a.localeCompare(b));
       setTaxonomyMap(grouped);
     })();
   }, [open]);
 
-  // Hydrate when editing
+  // Hydrate fields when editing
   useEffect(() => {
-    if (!editDataset || datasets.length === 0) return;
+    if (!open) return;
+    if (!editDataset) {
+      // fresh state
+      setTitle("");
+      setDesc("");
+      setTargetLevel("ADM3");
+      setMethod("ratio");
+      setUseScalarB(false);
+      setScalarB(1);
+      setColA("");
+      setColB("");
+      setDecimals(2);
+      setNormalizePercent(false);
+      setDatasetA(null);
+      setDatasetB(null);
+      setPreview([]);
+      setTaxonomy({});
+      return;
+    }
+
+    // When datasets load, map table_a/table_b to options by id
+    if (datasets.length === 0) return;
+
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
     setTargetLevel(editDataset.target_level || editDataset.admin_level || "ADM3");
-    setMethod(editDataset.method || "ratio");
+    setMethod((editDataset.method || "ratio") as Method);
     setUseScalarB(!!editDataset.use_scalar_b);
     setScalarB(editDataset.scalar_b_val ?? 1);
     setColA(editDataset.col_a || "");
     setColB(editDataset.col_b || "");
     setDecimals(editDataset.decimals ?? 2);
     setNormalizePercent(!!editDataset.normalize_percent);
+
     const foundA =
-      datasets.find((d) => d.id === editDataset.table_a || d.id === editDataset.table_a?.id) ||
-      null;
+      datasets.find((d) => d.id === (editDataset.table_a || "")) || null;
     const foundB =
-      datasets.find((d) => d.id === editDataset.table_b || d.id === editDataset.table_b?.id) ||
-      null;
+      datasets.find((d) => d.id === (editDataset.table_b || "")) || null;
+
     setDatasetA(foundA);
     setDatasetB(foundB);
-  }, [editDataset, datasets]);
 
+    // Taxonomy hydration (compact)
+    const cats = (editDataset.taxonomy_categories || []) as string[];
+    const terms = (editDataset.taxonomy_terms || []) as string[];
+    if (cats.length > 0) {
+      const next: Record<string, Set<string>> = {};
+      cats.forEach((c) => (next[c] = new Set<string>()));
+      terms.forEach((t) => {
+        // Try to place term into the first category containing it
+        const cat = Object.keys(taxonomyMap).find((c) =>
+          (taxonomyMap[c] || []).includes(t)
+        );
+        if (cat) {
+          if (!next[cat]) next[cat] = new Set<string>();
+          next[cat].add(t);
+        }
+      });
+      setTaxonomy(next);
+    }
+  }, [open, editDataset, datasets, taxonomyMap]);
+
+  // Display formula
   const methodSymbol = useMemo(
     () => ({ ratio: "÷", multiply: "×", sum: "+", difference: "−" }[method]),
     [method]
   );
 
   const formula = useMemo(() => {
-    const left = colA || "?";
-    const right = useScalarB ? scalarB.toString() : `B.${colB || "?"}`;
+    const left = colA || (datasetA?.defaultCol || "?");
+    const right = useScalarB
+      ? String(scalarB)
+      : `B.${colB || (datasetB?.defaultCol || "?")}`;
     return `A.${left} ${methodSymbol} ${right}`;
-  }, [colA, colB, methodSymbol, useScalarB, scalarB]);
+  }, [colA, colB, methodSymbol, useScalarB, scalarB, datasetA, datasetB]);
 
+  // Preview
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or scalar).");
@@ -128,8 +221,8 @@ export default function DerivedDatasetWizard({
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.id,
       p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
-      p_col_a: colA || "value",
-      p_col_b: useScalarB ? null : (colB || "value"),
+      p_col_a: (colA || datasetA.defaultCol || "value"),
+      p_col_b: useScalarB ? null : (colB || datasetB?.defaultCol || "value"),
       p_country_iso: countryIso,
       p_method: method,
       p_target_level: targetLevel,
@@ -146,6 +239,7 @@ export default function DerivedDatasetWizard({
     setPreview(data || []);
   }
 
+  // Save
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) {
       alert("Select Dataset A and (Dataset B or scalar).");
@@ -163,8 +257,8 @@ export default function DerivedDatasetWizard({
       p_scalar_b_val: useScalarB ? scalarB : null,
       p_table_a: datasetA.id,
       p_table_b: useScalarB ? null : (datasetB ? datasetB.id : null),
-      p_col_a: colA || "value",
-      p_col_b: useScalarB ? null : (colB || "value"),
+      p_col_a: (colA || datasetA.defaultCol || "value"),
+      p_col_b: useScalarB ? null : (colB || datasetB?.defaultCol || "value"),
       p_formula: formula,
       p_target_level: targetLevel,
       p_taxonomy_categories: cats,
@@ -181,11 +275,69 @@ export default function DerivedDatasetWizard({
 
   if (!open) return null;
 
+  // Helpers
+  function renderDatasetSelect(label: "A" | "B") {
+    const ds = label === "A" ? datasetA : datasetB;
+    const setDs = label === "A" ? setDatasetA : setDatasetB;
+
+    if (useScalarB && label === "B") return null;
+
+    return (
+      <select
+        className="border p-1 rounded flex-1"
+        value={ds?.id || ""}
+        onChange={(e) => {
+          const pick = datasets.find((d) => d.id === e.target.value) || null;
+          setDs(pick);
+          if (pick?.defaultCol) {
+            if (label === "A") setColA((prev) => prev || pick.defaultCol || "");
+            else setColB((prev) => prev || pick.defaultCol || "");
+          }
+        }}
+      >
+        <option value="">Select Dataset {label}</option>
+
+        <optgroup label="Core datasets">
+          {datasets
+            .filter((d) => d.source === "core")
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+        </optgroup>
+
+        <optgroup label="Base datasets">
+          {datasets
+            .filter((d) => d.source === "base")
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+        </optgroup>
+
+        <optgroup label="Derived datasets">
+          {datasets
+            .filter((d) => d.source === "derived")
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+        </optgroup>
+      </select>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
-        <h2 className="text-lg font-semibold mb-3">Create Derived Dataset</h2>
+        <h2 className="text-lg font-semibold mb-3">
+          {editDataset ? "Edit Derived Dataset" : "Create Derived Dataset"}
+        </h2>
 
+        {/* Top meta row */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 flex-1 rounded"
@@ -208,74 +360,40 @@ export default function DerivedDatasetWizard({
               <option key={lvl}>{lvl}</option>
             ))}
           </select>
+          <select
+            className="border rounded text-xs p-1"
+            value={decimals}
+            onChange={(e) => setDecimals(parseInt(e.target.value))}
+            title="Decimal places for derived values"
+          >
+            {[0, 1, 2, 3].map((d) => (
+              <option key={d} value={d}>
+                {d} dec
+              </option>
+            ))}
+          </select>
         </div>
 
+        {/* Dataset pickers */}
         <div className="flex gap-2 mb-3">
-          {(["A", "B"] as const).map((lbl) =>
-            !useScalarB || lbl === "A" ? (
-              <select
-                key={lbl}
-                className="border p-1 rounded flex-1"
-                value={(lbl === "A" ? datasetA : datasetB)?.id || ""}
-                onChange={(e) => {
-                  const d = datasets.find((x) => x.id === e.target.value) || null;
-                  if (lbl === "A") setDatasetA(d);
-                  else setDatasetB(d);
-                  if (d && d.defaultCol) {
-                    if (lbl === "A") setColA(d.defaultCol);
-                    else setColB(d.defaultCol);
-                  }
-                }}
-              >
-                <option value="">Select Dataset {lbl}</option>
-
-                <optgroup label="Core datasets">
-                  {datasets
-                    .filter((d) => d.source === "core")
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                </optgroup>
-
-                <optgroup label="Base datasets">
-                  {datasets
-                    .filter((d) => d.source === "other")
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                </optgroup>
-
-                <optgroup label="Derived datasets">
-                  {datasets
-                    .filter((d) => d.source === "derived")
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                </optgroup>
-              </select>
-            ) : null
-          )}
+          {renderDatasetSelect("A")}
+          {renderDatasetSelect("B")}
         </div>
 
+        {/* Columns + scalar */}
         <div className="flex gap-2 mb-3">
           <input
             className="border p-1 rounded w-40"
             value={colA}
             onChange={(e) => setColA(e.target.value)}
-            placeholder="Column A"
+            placeholder={`Column A${datasetA?.defaultCol ? ` (e.g. ${datasetA.defaultCol})` : ""}`}
           />
           {!useScalarB && (
             <input
               className="border p-1 rounded w-40"
               value={colB}
               onChange={(e) => setColB(e.target.value)}
-              placeholder="Column B"
+              placeholder={`Column B${datasetB?.defaultCol ? ` (e.g. ${datasetB.defaultCol})` : ""}`}
             />
           )}
           <label className="text-xs flex items-center gap-1 ml-auto">
@@ -283,29 +401,27 @@ export default function DerivedDatasetWizard({
               type="checkbox"
               checked={useScalarB}
               onChange={(e) => setUseScalarB(e.target.checked)}
-            />{" "}
+            />
             Use Scalar B
           </label>
           {useScalarB && (
             <input
               type="number"
               className="border p-1 rounded w-24 text-right"
-              value={scalarB}
+              value={Number.isFinite(scalarB) ? scalarB : 0}
               onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))}
             />
           )}
         </div>
 
+        {/* Method row */}
         <div className="flex gap-2 mb-2">
           {(["ratio", "multiply", "sum", "difference"] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMethod(m)}
               className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`}
-              style={{
-                background: method === m ? ACCENT : "transparent",
-                borderColor: "#e5e7eb",
-              }}
+              style={{ background: method === m ? ACCENT : "transparent", borderColor: "#e5e7eb" }}
             >
               {m}
             </button>
@@ -315,7 +431,7 @@ export default function DerivedDatasetWizard({
               type="checkbox"
               checked={normalizePercent}
               onChange={(e) => setNormalizePercent(e.target.checked)}
-            />{" "}
+            />
             Normalize %
           </label>
           <button
@@ -327,17 +443,18 @@ export default function DerivedDatasetWizard({
           </button>
         </div>
 
-        <p className="text-xs italic mb-2">Derived = {formula}</p>
+        <p className="text-xs italic mb-2 break-all">Derived = {formula}</p>
 
-        <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
+        {/* Preview: compact vertically with scroll */}
+        <div className="max-h-56 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
-            <thead className="bg-gray-100">
+            <thead className="bg-gray-100 sticky top-0">
               <tr>
                 {(preview[0]
                   ? Object.keys(preview[0])
                   : ["join_key", "place_name", "a", "b", "derived"]
                 ).map((k: string) => (
-                  <th key={k} className="p-1 text-left">
+                  <th key={k} className="p-1 text-left whitespace-nowrap">
                     {k}
                   </th>
                 ))}
@@ -354,7 +471,7 @@ export default function DerivedDatasetWizard({
                 preview.map((r, i) => (
                   <tr key={i} className="border-t">
                     {Object.entries(r).map(([k, v], j) => (
-                      <td key={j} className="p-1">
+                      <td key={j} className="p-1 whitespace-nowrap">
                         {v !== null && v !== undefined ? String(v) : "-"}
                       </td>
                     ))}
@@ -365,13 +482,14 @@ export default function DerivedDatasetWizard({
           </table>
         </div>
 
+        {/* Taxonomy: compact grid with internal scroll per category */}
         <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
           {Object.keys(taxonomyMap).map((cat) => {
             const checked = !!taxonomy[cat];
             return (
               <div key={cat} className="border rounded p-2 max-h-32 overflow-y-auto">
-                <label className="flex items-center gap-1 text-xs font-medium">
+                <label className="flex items-center gap-1 text-xs font-medium mb-1">
                   <input
                     type="checkbox"
                     checked={checked}
@@ -387,8 +505,8 @@ export default function DerivedDatasetWizard({
                   {cat}
                 </label>
                 {checked && (
-                  <div className="ml-3 mt-1 flex flex-col gap-1">
-                    {taxonomyMap[cat].map((term) => (
+                  <div className="ml-3 space-y-1">
+                    {(taxonomyMap[cat] || []).map((term) => (
                       <label key={term} className="flex items-center gap-1 text-xs">
                         <input
                           type="checkbox"
@@ -413,6 +531,7 @@ export default function DerivedDatasetWizard({
           })}
         </div>
 
+        {/* Actions */}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1 border rounded">
             Cancel
