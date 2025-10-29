@@ -21,12 +21,15 @@ export default function DerivedDatasetWizard({
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
   const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
-  const [colA, setColA] = useState(""), [colB, setColB] = useState("");
+  const [colA, setColA] = useState("");
+  const [colB, setColB] = useState("");
   const [method, setMethod] = useState<Method>("ratio");
   const [useScalarB, setUseScalarB] = useState(false);
   const [scalarB, setScalarB] = useState(1);
-  const [title, setTitle] = useState(""), [desc, setDesc] = useState("");
-  const [targetLevel, setTargetLevel] = useState("ADM3"), [decimals, setDecimals] = useState(2);
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [targetLevel, setTargetLevel] = useState("ADM3");
+  const [decimals, setDecimals] = useState(2);
   const [normalizePercent, setNormalizePercent] = useState(false);
   const [preview, setPreview] = useState<any[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -316,7 +319,7 @@ export default function DerivedDatasetWizard({
                   <tr key={i} className="border-t">
                     {Object.entries(r).map(([k, v], j) => (
                       <td key={j} className="p-1">
-                        {v !== null && v !== undefined ? v : "-"}
+                        {v !== null && v !== undefined ? String(v) : "-"}
                       </td>
                     ))}
                   </tr>
