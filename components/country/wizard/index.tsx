@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState, ReactNode } from "react";
+import React, { useEffect, useMemo, useState, ReactNode, ChangeEvent } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { X } from "lucide-react";
 
@@ -34,7 +34,6 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   const [taxonomyMap,setTaxonomyMap]=useState<Record<string,string[]>>({});
   const [taxonomy,setTaxonomy]=useState<Record<string,Set<string>>>({});
 
-  // load datasets
   useEffect(()=>{ if(!open)return;
     (async()=>{
       const base:DatasetOption[]=[
@@ -49,27 +48,21 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     })();
   },[open,countryIso]);
 
-  // taxonomy
   useEffect(()=>{ if(!open)return;
     (async()=>{
       const {data}=await supabase.from("taxonomy_terms").select("category,name");
       if(!data)return; const grouped:Record<string,string[]>={};
-      data.forEach(({category,name})=>{
-        if(!grouped[category])grouped[category]=[];
-        grouped[category].push(name);
-      });
+      for(const {category,name} of data){ if(!grouped[category])grouped[category]=[]; grouped[category].push(name);}
       setTaxonomyMap(grouped);
     })();
   },[open]);
 
-  // hydrate edit
   useEffect(()=>{ if(!open)return;
     if(!editDataset){
       setTitle("");setDesc("");setTargetLevel("ADM3");setMethod("ratio");
       setUseScalarB(false);setScalarB(1);setColA("");setColB("");setDecimals(2);
       setDatasetA(null);setDatasetB(null);setPreview([]);setTaxonomy({});
-      setIsParametric(true);setNormalizePercent(false);
-      return;
+      setIsParametric(true);setNormalizePercent(false);return;
     }
     setTitle(editDataset.title||"");setDesc(editDataset.description||"");
     setTargetLevel(editDataset.target_level||"ADM3");setMethod(editDataset.method as Method||"ratio");
@@ -84,8 +77,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
       const next:Record<string,Set<string>>={};
       editDataset.taxonomy_categories.forEach(cat=>{
         next[cat]=new Set(editDataset.taxonomy_terms?.filter(t=>taxonomyMap[cat]?.includes(t))||[]);
-      });
-      setTaxonomy(next);
+      }); setTaxonomy(next);
     }
   },[open,editDataset,datasets,taxonomyMap]);
 
@@ -121,7 +113,11 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
 
   if(!open) return null;
 
-  // -------- PURE REACT.CREATEELEMENT RENDER -----------
+  // Explicitly typed handlers
+  const handleTitle = (e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value);
+  const handleDesc = (e: ChangeEvent<HTMLInputElement>) => setDesc(e.target.value);
+  const handleTarget = (e: ChangeEvent<HTMLSelectElement>) => setTargetLevel(e.target.value);
+
   return React.createElement("div",{className:"fixed inset-0 bg-black/50 flex items-center justify-center z-50"},
     React.createElement("div",{className:"bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm"},
       React.createElement("div",{className:"flex justify-between items-center mb-3"},
@@ -129,30 +125,10 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
         React.createElement("button",{onClick:onClose},React.createElement(X,{className:"w-4 h-4 text-gray-500"}))
       ),
       React.createElement("div",{className:"flex gap-2 mb-3"},
-        React.createElement("input",{className:"border p-1 flex-1 rounded",placeholder:"Title",value:title,onChange:e=>setTitle(e.target.value)}),
-        React.createElement("input",{className:"border p-1 flex-1 rounded",placeholder:"Description",value:desc,onChange:e=>setDesc(e.target.value)}),
-        React.createElement("select",{className:"border p-1 rounded",value:targetLevel,onChange:e=>setTargetLevel(e.target.value)},
+        React.createElement("input",{className:"border p-1 flex-1 rounded",placeholder:"Title",value:title,onChange:handleTitle}),
+        React.createElement("input",{className:"border p-1 flex-1 rounded",placeholder:"Description",value:desc,onChange:handleDesc}),
+        React.createElement("select",{className:"border p-1 rounded",value:targetLevel,onChange:handleTarget},
           ["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=>React.createElement("option",{key:l},l))
-        )
-      ),
-      React.createElement("div",{className:"flex gap-2 mb-3"},
-        ["A","B"].map((label,i)=>
-          (!useScalarB||label==="A") &&
-          React.createElement("select",{key:i,className:"border p-1 rounded flex-1",
-            value:(label==="A"?datasetA?.id:datasetB?.id)||"",
-            onChange:e=>label==="A"
-              ?setDatasetA(datasets.find(d=>d.id===e.target.value)||null)
-              :setDatasetB(datasets.find(d=>d.id===e.target.value)||null),
-            disabled:!!editDataset},
-            React.createElement("option",{value:""},"Select Dataset "+label),
-            ["core","gis","other","derived"].map(g=>
-              React.createElement("optgroup",{key:g,label:g.toUpperCase()},
-                datasets.filter(d=>d.source===g).map(d=>
-                  React.createElement("option",{key:d.id,value:d.id},d.title)
-                )
-              )
-            )
-          )
         )
       ),
       React.createElement("div",{className:"flex justify-end gap-2 mt-4"},
