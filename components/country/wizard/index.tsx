@@ -87,7 +87,7 @@ export default function DerivedDatasetWizard({
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate", {
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id ?? null,
+      p_table_b: useScalarB ? null : datasetB?.id null,
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : colB || "value",
       p_country_iso: countryIso,
@@ -120,7 +120,7 @@ export default function DerivedDatasetWizard({
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
       p_table_a: datasetA.id,
-      p_table_b: useScalarB ? null : datasetB?.id ?? null,
+      p_table_b: useScalarB ? null : datasetB?.id  null,
       p_col_a: colA || "value",
       p_col_b: useScalarB ? null : colB || "value",
       p_formula: formula,
