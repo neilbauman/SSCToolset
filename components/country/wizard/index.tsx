@@ -17,59 +17,56 @@ interface Props { open: boolean; onClose: () => void; countryIso: string; editDa
 const ACCENT = "#640811";
 
 export default function DerivedDatasetWizard({ open, onClose, countryIso, editDataset=null }: Props) {
-  const [datasets, setDatasets] = useState<DatasetOption[]>([]);
-  const [datasetA, setDatasetA] = useState<DatasetOption | null>(null);
-  const [datasetB, setDatasetB] = useState<DatasetOption | null>(null);
-  const [colA, setColA] = useState(""), [colB, setColB] = useState("");
-  const [method, setMethod] = useState<Method>("ratio");
-  const [useScalarB, setUseScalarB] = useState(false);
-  const [scalarB, setScalarB] = useState(1);
-  const [title, setTitle] = useState(""), [desc, setDesc] = useState("");
-  const [targetLevel, setTargetLevel] = useState("ADM3");
-  const [decimals, setDecimals] = useState(2);
-  const [isParametric, setIsParametric] = useState(true);
-  const [normalizePercent, setNormalizePercent] = useState(false);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [taxonomyMap, setTaxonomyMap] = useState<Record<string, string[]>>({});
-  const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
+  const [datasets,setDatasets]=useState<DatasetOption[]>([]);
+  const [datasetA,setDatasetA]=useState<DatasetOption|null>(null);
+  const [datasetB,setDatasetB]=useState<DatasetOption|null>(null);
+  const [colA,setColA]=useState(""),[colB,setColB]=useState("");
+  const [method,setMethod]=useState<Method>("ratio");
+  const [useScalarB,setUseScalarB]=useState(false);
+  const [scalarB,setScalarB]=useState(1);
+  const [title,setTitle]=useState(""),[desc,setDesc]=useState("");
+  const [targetLevel,setTargetLevel]=useState("ADM3");
+  const [decimals,setDecimals]=useState(2);
+  const [isParametric,setIsParametric]=useState(true);
+  const [normalizePercent,setNormalizePercent]=useState(false);
+  const [preview,setPreview]=useState<any[]>([]);
+  const [loadingPreview,setLoadingPreview]=useState(false);
+  const [taxonomyMap,setTaxonomyMap]=useState<Record<string,string[]>>({});
+  const [taxonomy,setTaxonomy]=useState<Record<string,Set<string>>>({});
 
-  // Load datasets
-  useEffect(() => { if (!open) return;
-    (async () => {
-      const base: DatasetOption[] = [
-        { id:"core-pop", title:"Population Data [core]", source:"core", table:"population_data", defaultCol:"population" },
-        { id:"core-gis", title:"GIS Features [core]", source:"gis", table:"gis_features", defaultCol:"area_sqkm" }
+  useEffect(()=>{ if(!open)return;
+    (async()=>{
+      const base:DatasetOption[]=[
+        {id:"core-pop",title:"Population Data [core]",source:"core",table:"population_data",defaultCol:"population"},
+        {id:"core-gis",title:"GIS Features [core]",source:"gis",table:"gis_features",defaultCol:"area_sqkm"}
       ];
-      const { data: others } = await supabase.from("dataset_metadata").select("id,title");
-      others?.forEach(d=>base.push({ id:d.id, title:d.title, source:"other", table:`dataset_values_${d.id}`, defaultCol:"value" }));
-      const { data: derived } = await supabase.from("derived_dataset_metadata").select("id,title");
-      derived?.forEach(d=>base.push({ id:d.id, title:d.title, source:"derived", table:`derived_${d.id}`, defaultCol:"derived" }));
+      const {data:others}=await supabase.from("dataset_metadata").select("id,title");
+      others?.forEach(d=>base.push({id:d.id,title:d.title,source:"other",table:`dataset_values_${d.id}`,defaultCol:"value"}));
+      const {data:derived}=await supabase.from("derived_dataset_metadata").select("id,title");
+      derived?.forEach(d=>base.push({id:d.id,title:d.title,source:"derived",table:`derived_${d.id}`,defaultCol:"derived"}));
       setDatasets(base);
     })();
-  }, [open,countryIso]);
+  },[open,countryIso]);
 
-  // Load taxonomy
-  useEffect(() => { if (!open) return;
-    (async () => {
-      const { data } = await supabase.from("taxonomy_terms").select("category,name"); if(!data)return;
+  useEffect(()=>{ if(!open)return;
+    (async()=>{
+      const {data}=await supabase.from("taxonomy_terms").select("category,name"); if(!data)return;
       const grouped:Record<string,string[]>={}; data.forEach(({category,name})=>{
-        if(!grouped[category]) grouped[category]=[]; grouped[category].push(name);
+        if(!grouped[category])grouped[category]=[]; grouped[category].push(name);
       }); setTaxonomyMap(grouped);
     })();
-  }, [open]);
+  },[open]);
 
-  // Hydrate edit
-  useEffect(() => { if (!open) return;
-    if(!editDataset){ setTitle("");setDesc("");setTargetLevel("ADM3");setMethod("ratio");setUseScalarB(false);
-      setScalarB(1);setColA("");setColB("");setDecimals(2);setDatasetA(null);setDatasetB(null);
-      setPreview([]);setTaxonomy({});setIsParametric(true);setNormalizePercent(false);return;}
-    setTitle(editDataset.title||""); setDesc(editDataset.description||""); setTargetLevel(editDataset.target_level||"ADM3");
-    setMethod(editDataset.method as Method||"ratio"); setUseScalarB(!!editDataset.use_scalar_b);
-    setScalarB(editDataset.scalar_b_val??1); setColA(editDataset.col_a||""); setColB(editDataset.col_b||"");
-    setDecimals(editDataset.decimals??2); setIsParametric(!!editDataset.is_parametric); setNormalizePercent(!!editDataset.normalize_percent);
-    if(datasets.length>0){ setDatasetA(datasets.find(d=>d.table===editDataset.table_a)||null);
-      setDatasetB(datasets.find(d=>d.table===editDataset.table_b)||null); }
+  useEffect(()=>{ if(!open)return;
+    if(!editDataset){ setTitle("");setDesc("");setTargetLevel("ADM3");setMethod("ratio");
+      setUseScalarB(false);setScalarB(1);setColA("");setColB("");setDecimals(2);
+      setDatasetA(null);setDatasetB(null);setPreview([]);setTaxonomy({});setIsParametric(true);setNormalizePercent(false);return;}
+    setTitle(editDataset.title||"");setDesc(editDataset.description||"");setTargetLevel(editDataset.target_level||"ADM3");
+    setMethod(editDataset.method as Method||"ratio");setUseScalarB(!!editDataset.use_scalar_b);
+    setScalarB(editDataset.scalar_b_val??1);setColA(editDataset.col_a||"");setColB(editDataset.col_b||"");
+    setDecimals(editDataset.decimals??2);setIsParametric(!!editDataset.is_parametric);setNormalizePercent(!!editDataset.normalize_percent);
+    if(datasets.length>0){setDatasetA(datasets.find(d=>d.table===editDataset.table_a)||null);
+      setDatasetB(datasets.find(d=>d.table===editDataset.table_b)||null);}
     if(editDataset.taxonomy_categories&&editDataset.taxonomy_terms){
       const next:Record<string,Set<string>>={};
       editDataset.taxonomy_categories.forEach(cat=>{
@@ -78,8 +75,8 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     }
   },[open,editDataset,datasets,taxonomyMap]);
 
-  const methodSymbol = useMemo(()=>method==="ratio"?"÷":method==="multiply"?"×":method==="sum"?"+":"−",[method]);
-  const computedFormula = useMemo(()=>`A.${colA} ${methodSymbol} ${useScalarB?scalarB:`B.${colB}`}`,[colA,colB,methodSymbol,useScalarB,scalarB]);
+  const methodSymbol=useMemo(()=>method==="ratio"?"÷":method==="multiply"?"×":method==="sum"?"+":"−",[method]);
+  const computedFormula=useMemo(()=>`A.${colA} ${methodSymbol} ${useScalarB?scalarB:`B.${colB}`}`,[colA,colB,methodSymbol,useScalarB,scalarB]);
 
   async function previewJoin(){
     if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or scalar).");return;}
@@ -90,98 +87,101 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
       p_country_iso:countryIso,p_method:method,p_target_level:targetLevel,
       p_use_scalar_b:useScalarB,p_scalar_b_val:useScalarB?scalarB:null,p_normalize_percent:normalizePercent
     });
-    setLoadingPreview(false); if(error){alert("Preview error: "+error.message);return;} setPreview(data||[]);
+    setLoadingPreview(false);
+    if(error){alert("Preview error: "+error.message);return;}
+    setPreview(data||[]);
   }
 
   async function saveDerived(){
     if(!datasetA||(!datasetB&&!useScalarB)){alert("Select Dataset A and (Dataset B or scalar).");return;}
     const cats=Object.keys(taxonomy),terms=cats.flatMap(c=>Array.from(taxonomy[c]||[]));
-    const payload={ p_country:countryIso,p_title:title||`Derived (${targetLevel})`,p_description:desc||null,p_admin_level:targetLevel,
-      p_method:method,p_use_scalar_b:useScalarB,p_scalar_b_val:useScalarB?scalarB:null,
+    const payload={p_country:countryIso,p_title:title||`Derived (${targetLevel})`,p_description:desc||null,
+      p_admin_level:targetLevel,p_method:method,p_use_scalar_b:useScalarB,p_scalar_b_val:useScalarB?scalarB:null,
       p_table_a:datasetA.table,p_table_b:useScalarB?null:datasetB?.table??null,p_col_a:colA||datasetA.defaultCol,
       p_col_b:useScalarB?null:colB||datasetB?.defaultCol,p_formula:computedFormula,p_target_level:targetLevel,
-      p_taxonomy_categories:cats,p_taxonomy_terms:terms,p_decimals:decimals };
+      p_taxonomy_categories:cats,p_taxonomy_terms:terms,p_decimals:decimals};
     const {error}=await supabase.rpc("create_derived_dataset_v2",payload);
     if(error){alert("Save failed: "+error.message);return;} alert("✅ Derived dataset saved."); onClose();
   }
 
-  if(!open)return null;
-  return(
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-lg font-semibold">{editDataset?"Edit Derived Dataset":"Create Derived Dataset"}</h2>
-        <button onClick={onClose}><X className="w-4 h-4 text-gray-500"/></button>
-      </div>
+  if(!open) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">{editDataset?"Edit Derived Dataset":"Create Derived Dataset"}</h2>
+          <button onClick={onClose}><X className="w-4 h-4 text-gray-500"/></button>
+        </div>
 
-      <div className="flex gap-2 mb-3">
-        <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)}/>
-        <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={e=>setDesc(e.target.value)}/>
-        <select className="border p-1 rounded" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>
-          {["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}
-        </select>
-      </div>
+        <div className="flex gap-2 mb-3">
+          <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)}/>
+          <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={e=>setDesc(e.target.value)}/>
+          <select className="border p-1 rounded" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>
+            {["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}
+          </select>
+        </div>
 
-      <div className="flex gap-2 mb-3">
-        {(["A","B"] as const).map((label,i)=>!useScalarB||label==="A"?(
-          <select key={i} className="border p-1 rounded flex-1"
-            value={(label==="A"?datasetA?.id:datasetB?.id)||""}
-            onChange={e=>label==="A"?setDatasetA(datasets.find(d=>d.id===e.target.value)||null)
-              :setDatasetB(datasets.find(d=>d.id===e.target.value)||null)}
-            disabled={!!editDataset}>
-            <option value="">Select Dataset {label}</option>
-            {["core","gis","other","derived"].map(g=>(
-              <optgroup key={g} label={g.toUpperCase()}>
-                {datasets.filter(d=>d.source===g).map(d=><option key={d.id} value={d.id}>{d.title}</option>)}
-              </optgroup>))}
-          </select>):null)}
-      </div>
+        <div className="flex gap-2 mb-3">
+          {(["A","B"] as const).map((label,i)=>!useScalarB||label==="A"?(
+            <select key={i} className="border p-1 rounded flex-1"
+              value={(label==="A"?datasetA?.id:datasetB?.id)||""}
+              onChange={e=>label==="A"?setDatasetA(datasets.find(d=>d.id===e.target.value)||null)
+                :setDatasetB(datasets.find(d=>d.id===e.target.value)||null)}
+              disabled={!!editDataset}>
+              <option value="">Select Dataset {label}</option>
+              {["core","gis","other","derived"].map(g=>(
+                <optgroup key={g} label={g.toUpperCase()}>
+                  {datasets.filter(d=>d.source===g).map(d=><option key={d.id} value={d.id}>{d.title}</option>)}
+                </optgroup>))}
+            </select>):null)}
+        </div>
 
-      <div className="flex flex-wrap gap-2 mb-3 items-center">
-        <input className="border p-1 rounded w-40" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column A"/>
-        {!useScalarB&&<input className="border p-1 rounded w-40" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column B"/>}
-        <label className="text-xs flex items-center gap-1 ml-auto"><input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)}/> Use Scalar B</label>
-        {useScalarB&&<input type="number" className="border p-1 rounded w-24 text-right" value={scalarB} onChange={e=>setScalarB(parseFloat(e.target.value||"0"))}/>}
-        <select className="border rounded text-xs p-1" value={decimals} onChange={e=>setDecimals(parseInt(e.target.value))}>{[0,1,2,3].map(d=><option key={d}>{d} dec</option>)}</select>
-      </div>
+        <div className="flex flex-wrap gap-2 mb-3 items-center">
+          <input className="border p-1 rounded w-40" value={colA} onChange={e=>setColA(e.target.value)} placeholder="Column A"/>
+          {!useScalarB&&<input className="border p-1 rounded w-40" value={colB} onChange={e=>setColB(e.target.value)} placeholder="Column B"/>}
+          <label className="text-xs flex items-center gap-1 ml-auto"><input type="checkbox" checked={useScalarB} onChange={e=>setUseScalarB(e.target.checked)}/> Use Scalar B</label>
+          {useScalarB&&<input type="number" className="border p-1 rounded w-24 text-right" value={scalarB} onChange={e=>setScalarB(parseFloat(e.target.value||"0"))}/>}
+          <select className="border rounded text-xs p-1" value={decimals} onChange={e=>setDecimals(parseInt(e.target.value))}>{[0,1,2,3].map(d=><option key={d}>{d} dec</option>)}</select>
+        </div>
 
-      <div className="flex gap-2 mb-2 items-center flex-wrap">
-        {(["ratio","multiply","sum","difference"] as const).map(m=>(
-          <button key={m} onClick={()=>setMethod(m)} className={`px-2 py-1 border rounded ${method===m?"text-white":""}`} style={{background:method===m?ACCENT:"transparent",borderColor:"#e5e7eb"}}>{m}</button>))}
-        <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={isParametric} onChange={e=>setIsParametric(e.target.checked)}/> Parametric</label>
-        <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={normalizePercent} onChange={e=>setNormalizePercent(e.target.checked)}/> Normalize %</label>
-        <button onClick={previewJoin} className="ml-auto px-3 py-1 text-white rounded" style={{background:ACCENT}}>{loadingPreview?"Loading...":"Preview"}</button>
-      </div>
+        <div className="flex gap-2 mb-2 items-center flex-wrap">
+          {(["ratio","multiply","sum","difference"] as const).map(m=>(
+            <button key={m} onClick={()=>setMethod(m)} className={`px-2 py-1 border rounded ${method===m?"text-white":""}`} style={{background:method===m?ACCENT:"transparent",borderColor:"#e5e7eb"}}>{m}</button>))}
+          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={isParametric} onChange={e=>setIsParametric(e.target.checked)}/> Parametric</label>
+          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={normalizePercent} onChange={e=>setNormalizePercent(e.target.checked)}/> Normalize %</label>
+          <button onClick={previewJoin} className="ml-auto px-3 py-1 text-white rounded" style={{background:ACCENT}}>{loadingPreview?"Loading...":"Preview"}</button>
+        </div>
 
-      <p className="text-xs italic mb-2">Derived = {computedFormula}</p>
-      <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
-        <table className="w-full"><thead className="bg-gray-100 sticky top-0"><tr>{preview[0]&&Object.keys(preview[0]).map(k=><th key={k} className="p-1 text-left">{k}</th>)}</tr></thead>
-          <tbody>{preview.length===0?<tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>:
-            preview.map((r,i)=><tr key={i} className="border-t hover:bg-gray-50">{Object.entries(r).map(([k,v],j)=><td key={j} className="p-1">{v??"—"}</td>)}</tr>)}</tbody>
-        </table></div>
+        <p className="text-xs italic mb-2">Derived = {computedFormula}</p>
+        <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
+          <table className="w-full"><thead className="bg-gray-100 sticky top-0"><tr>{preview[0]&&Object.keys(preview[0]).map(k=><th key={k} className="p-1 text-left">{k}</th>)}</tr></thead>
+            <tbody>{preview.length===0?<tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>:
+              preview.map((r,i)=><tr key={i} className="border-t hover:bg-gray-50">{Object.entries(r).map(([k,v],j)=><td key={j} className="p-1">{v??"—"}</td>)}</tr>)}</tbody>
+          </table></div>
 
-      <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
-      <div className="overflow-x-auto mb-4"><div className="flex gap-3 min-w-max">
-        {Object.keys(taxonomyMap).map(cat=>{
-          const checked=!!taxonomy[cat];
-          return(<div key={cat} className="border rounded p-2 min-w-[150px]">
-            <label className="flex items-center gap-1 text-xs font-medium">
-              <input type="checkbox" checked={checked} onChange={e=>setTaxonomy(p=>{const n={...p};if(e.target.checked)n[cat]=new Set<string>();else delete n[cat];return n;});}/> {cat}
-            </label>
-            {checked&&(<div className="ml-2 mt-1 grid grid-cols-1">
-              {taxonomyMap[cat].map(term=>(
-                <label key={term} className="flex items-center gap-1 text-xs">
-                  <input type="checkbox" checked={!!taxonomy[cat]?.has(term)} onChange={e=>setTaxonomy(p=>{const n={...p};if(!n[cat])n[cat]=new Set<string>();if(e.target.checked)n[cat]!.add(term);else n[cat]!.delete(term);return n;});}/> {term}
-                </label>))}
-            </div>)}
-          </div>);
-        })}
-      </div></div>
+        <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
+        <div className="overflow-x-auto mb-4"><div className="flex gap-3 min-w-max">
+          {Object.keys(taxonomyMap).map(cat=>{
+            const checked=!!taxonomy[cat];
+            return(<div key={cat} className="border rounded p-2 min-w-[150px]">
+              <label className="flex items-center gap-1 text-xs font-medium">
+                <input type="checkbox" checked={checked} onChange={e=>setTaxonomy(p=>{const n={...p};if(e.target.checked)n[cat]=new Set<string>();else delete n[cat];return n;});}/> {cat}
+              </label>
+              {checked&&(<div className="ml-2 mt-1 grid grid-cols-1">
+                {taxonomyMap[cat].map(term=>(
+                  <label key={term} className="flex items-center gap-1 text-xs">
+                    <input type="checkbox" checked={!!taxonomy[cat]?.has(term)} onChange={e=>setTaxonomy(p=>{const n={...p};if(!n[cat])n[cat]=new Set<string>();if(e.target.checked)n[cat]!.add(term);else n[cat]!.delete(term);return n;});}/> {term}
+                  </label>))}
+              </div>)}
+            </div>);
+          })}
+        </div></div>
 
-      <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-        <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>Save</button>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
+          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>Save</button>
+        </div>
       </div>
     </div>
-  </div>);
+  );
 }
