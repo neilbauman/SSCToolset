@@ -6,7 +6,10 @@ import{supabaseBrowser as supabase}from"@/lib/supabase/supabaseBrowser";
 type Method="ratio"|"multiply"|"sum"|"difference";
 type Source="core"|"gis"|"other"|"derived";
 interface DatasetOption{id:string;title:string;source:Source;table:string;defaultCol?:string;}
-interface EditPayload{id:string;title:string;description:string|null;admin_level:string;method:Method;use_scalar_b?:boolean|null;scalar_b_val?:number|null;table_a?:string|null;table_b?:string|null;col_a?:string|null;col_b?:string|null;decimals?:number|null;formula?:string|null;target_level?:string|null;taxonomy_categories?:string[];taxonomy_terms?:string[];is_parametric?:boolean|null;normalize_percent?:boolean|null;}
+interface EditPayload{id:string;title:string;description:string|null;admin_level:string;method:Method;
+use_scalar_b?:boolean|null;scalar_b_val?:number|null;table_a?:string|null;table_b?:string|null;
+col_a?:string|null;col_b?:string|null;decimals?:number|null;formula?:string|null;target_level?:string|null;
+taxonomy_categories?:string[];taxonomy_terms?:string[];is_parametric?:boolean|null;normalize_percent?:boolean|null;}
 interface Props{open:boolean;onClose:()=>void;countryIso:string;editDataset?:EditPayload|null;}
 const ACCENT="#640811";
 
@@ -22,6 +25,7 @@ const[title,setTitle]=useState(""),[desc,setDesc]=useState("");
 const[targetLevel,setTargetLevel]=useState("ADM3");
 const[decimals,setDecimals]=useState(2);
 const[normalizePercent,setNormalizePercent]=useState(false);
+const[isParametric,setIsParametric]=useState(false);
 const[preview,setPreview]=useState<any[]>([]),[loadingPreview,setLoadingPreview]=useState(false);
 const[taxonomyMap,setTaxonomyMap]=useState<Record<string,string[]>>({});
 const[taxonomy,setTaxonomy]=useState<Record<string,Set<string>>>({});
@@ -39,24 +43,26 @@ setDatasets(base);
 
 useEffect(()=>{if(!open)return;(async()=>{
 const{data}=await supabase.from("taxonomy_terms").select("category,name");
-if(!data)return;
-const g:Record<string,string[]>={};data.forEach(({category,name})=>{if(!g[category])g[category]=[];g[category].push(name)});
+if(!data)return;const g:Record<string,string[]>={};
+data.forEach(({category,name})=>{if(!g[category])g[category]=[];g[category].push(name)});
 setTaxonomyMap(g);
 })()},[open]);
 
-useEffect(()=>{if(!open)return;
+// Hydrate on open or dataset change
+useEffect(()=>{
+if(!open)return;
 if(!editDataset){
 setTitle("");setDesc("");setTargetLevel("ADM3");setMethod("ratio");
 setUseScalarB(false);setScalarB(1);setColA("");setColB("");
 setDecimals(2);setDatasetA(null);setDatasetB(null);
-setPreview([]);setTaxonomy({});
-return;
+setPreview([]);setTaxonomy({});setIsParametric(false);return;
 }
 setTitle(editDataset.title||"");setDesc(editDataset.description||"");
 setTargetLevel(editDataset.target_level||"ADM3");
 setMethod(editDataset.method as Method||"ratio");
 setUseScalarB(!!editDataset.use_scalar_b);
 setScalarB(editDataset.scalar_b_val??1);
+setIsParametric(!!editDataset.is_parametric);
 if(datasets.length>0){
 const da=datasets.find(d=>d.table===editDataset.table_a)||null;
 const db=datasets.find(d=>d.table===editDataset.table_b)||null;
@@ -68,8 +74,7 @@ if(editDataset.taxonomy_categories&&editDataset.taxonomy_terms){
 const n:Record<string,Set<string>>={};
 editDataset.taxonomy_categories.forEach(cat=>{
 n[cat]=new Set(editDataset.taxonomy_terms?.filter(t=>taxonomyMap[cat]?.includes(t))||[]);
-});
-setTaxonomy(n);
+});setTaxonomy(n);
 }},[open,editDataset,datasets,taxonomyMap]);
 
 const symbol=useMemo(()=>method==="ratio"?"÷":method==="multiply"?"×":method==="sum"?"+":"−",[method]);
@@ -84,10 +89,8 @@ p_dataset_b:useScalarB?null:(datasetB?.id.includes("core")?datasetB.table:datase
 p_col_a:colA||datasetA.defaultCol,
 p_col_b:useScalarB?null:(colB||datasetB?.defaultCol),
 p_country_iso:countryIso,
-p_method:method,
-p_target_level:targetLevel,
-p_use_scalar_b:useScalarB,
-p_scalar_b_val:useScalarB?scalarB:null
+p_method:method,p_target_level:targetLevel,
+p_use_scalar_b:useScalarB,p_scalar_b_val:useScalarB?scalarB:null
 });
 setLoadingPreview(false);
 if(error)return alert("Preview error: "+error.message);
@@ -103,8 +106,8 @@ p_admin_level:targetLevel,p_method:method,p_use_scalar_b:useScalarB,p_scalar_b_v
 p_dataset_a:datasetA.id.includes("core")?datasetA.table:datasetA.id,
 p_dataset_b:useScalarB?null:(datasetB?.id.includes("core")?datasetB.table:datasetB?.id??null),
 p_col_a:colA||datasetA.defaultCol,p_col_b:useScalarB?null:(colB||datasetB?.defaultCol),
-p_formula:formula,p_target_level:targetLevel,p_taxonomy_categories:cats,p_taxonomy_terms:terms,p_decimals:decimals,p_normalize_percent:normalizePercent
-};
+p_formula:formula,p_target_level:targetLevel,p_taxonomy_categories:cats,p_taxonomy_terms:terms,
+p_decimals:decimals,p_normalize_percent:normalizePercent,p_is_parametric:isParametric};
 const{error}=await supabase.rpc("create_derived_dataset_v2",payload);
 if(error)return alert("Save failed: "+error.message);
 alert("✅ Saved.");onClose();
@@ -120,7 +123,7 @@ return(<div className="fixed inset-0 bg-black/50 flex items-center justify-cente
 <div className="flex gap-2 mb-3">
 <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={(e:ChangeEvent<HTMLInputElement>)=>setTitle(e.target.value)}/>
 <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={(e:ChangeEvent<HTMLInputElement>)=>setDesc(e.target.value)}/>
-<select className="border p-1 rounded" value={targetLevel} onChange={(e:ChangeEvent<HTMLSelectElement>)=>setTargetLevel(e.target.value)}>{["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}</select>
+<select className="border p-1 rounded" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>{["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}</select>
 </div>
 
 <div className="flex gap-2 mb-3">
@@ -145,6 +148,7 @@ else{setDatasetB(sel);setColB(sel?.defaultCol||"");}
 <label className="text-xs flex items-center gap-1 ml-auto"><input type="checkbox"checked={useScalarB}onChange={e=>setUseScalarB(e.target.checked)}/>Scalar B</label>
 {useScalarB&&<input type="number"className="border p-1 rounded w-24 text-right"value={scalarB}onChange={e=>setScalarB(parseFloat(e.target.value||"0"))}/>}
 <select className="border rounded text-xs p-1"value={decimals}onChange={e=>setDecimals(parseInt(e.target.value))}>{[0,1,2,3].map(d=><option key={d}>{d} dec</option>)}</select>
+<label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox"checked={isParametric}onChange={e=>setIsParametric(e.target.checked)}/>Parametric</label>
 </div>
 
 <div className="flex gap-2 mb-2 items-center flex-wrap">
