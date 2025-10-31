@@ -231,6 +231,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
       p_decimals: decimals,
       p_normalize_percent: normalizePercent,
       p_is_parametric: isParametric,
+      p_existing_id: editDataset?.id ?? null,
     };
 
     const { error } = await supabase.rpc("create_derived_dataset_v2", payload);
