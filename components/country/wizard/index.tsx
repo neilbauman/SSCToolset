@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState, ChangeEvent } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
@@ -62,6 +62,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   const [taxonomyMap, setTaxonomyMap] = useState<Record<string, string[]>>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
+  // Load datasets
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -77,26 +78,29 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     })();
   }, [open, countryIso]);
 
+  // Load taxonomy
   useEffect(() => {
     if (!open) return;
     (async () => {
       const { data } = await supabase.from("taxonomy_terms").select("category,name");
       if (!data) return;
-      const g: Record<string, string[]> = {};
+      const grouped: Record<string, string[]> = {};
       data.forEach(({ category, name }) => {
-        if (!g[category]) g[category] = [];
-        g[category].push(name);
+        if (!grouped[category]) grouped[category] = [];
+        grouped[category].push(name);
       });
-      setTaxonomyMap(g);
+      setTaxonomyMap(grouped);
     })();
   }, [open]);
 
+  // Load edit mode data
   useEffect(() => {
     if (!open) return;
     if (!editDataset) {
-      setTitle(""); setDesc(""); setTargetLevel("ADM3"); setMethod("ratio");
-      setUseScalarB(false); setScalarB(1); setColA(""); setColB("");
-      setDecimals(2); setDatasetA(null); setDatasetB(null); setPreview([]);
+      setTitle(""); setDesc(""); setTargetLevel("ADM3");
+      setMethod("ratio"); setUseScalarB(false); setScalarB(1);
+      setColA(""); setColB(""); setDecimals(2);
+      setDatasetA(null); setDatasetB(null); setPreview([]);
       setTaxonomy({}); setIsParametric(false); return;
     }
     setTitle(editDataset.title || ""); setDesc(editDataset.description || "");
@@ -123,12 +127,13 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   const symbol = useMemo(() => method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "−", [method]);
   const formula = useMemo(() => `A.${colA} ${symbol} ${useScalarB ? scalarB : `B.${colB}`}`, [colA, colB, symbol, useScalarB, scalarB]);
 
+  // PREVIEW
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate_simple", {
-      p_table_a: datasetA.table,
-      p_table_b: useScalarB ? null : datasetB?.table ?? null,
+      p_dataset_a: datasetA.table,
+      p_dataset_b: useScalarB ? null : datasetB?.table ?? null,
       p_col_a: colA || datasetA.defaultCol,
       p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
       p_country_iso: countryIso,
@@ -142,6 +147,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     setPreview(data || []);
   }
 
+  // SAVE
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
     const cats = Object.keys(taxonomy);
@@ -154,8 +160,8 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
       p_method: method,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
-      p_table_a: datasetA.table,
-      p_table_b: useScalarB ? null : datasetB?.table ?? null,
+      p_dataset_a: datasetA.table,
+      p_dataset_b: useScalarB ? null : datasetB?.table ?? null,
       p_col_a: colA || datasetA.defaultCol,
       p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
       p_formula: formula,
@@ -210,44 +216,44 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
           {!useScalarB && <input className="border p-1 rounded w-40" value={colB} onChange={(e) => setColB(e.target.value)} placeholder="Column B" />}
           <label className="text-xs flex items-center gap-1 ml-auto"><input type="checkbox" checked={useScalarB} onChange={(e) => setUseScalarB(e.target.checked)} />Scalar B</label>
           {useScalarB && <input type="number" className="border p-1 rounded w-24 text-right" value={scalarB} onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))} />}
-          <select className="border rounded text-xs p-1" value={decimals} onChange={(e) => setDecimals(parseInt(e.target.value))}>{[0, 1, 2, 3].map(d => <option key={d}>{d} dec</option>)}</select>
+          <select className="border rounded text-xs p-1" value={decimals} onChange={(e) => setDecimals(parseInt(e.target.value))}>{[0,1,2,3].map(d => <option key={d}>{d} dec</option>)}</select>
         </div>
 
         <div className="flex gap-2 mb-2 items-center flex-wrap">
-          {(["ratio", "multiply", "sum", "difference"] as const).map(m => (
-            <button key={m} onClick={() => setMethod(m)} className={`px-2 py-1 border rounded ${method === m ? "text-white" : ""}`} style={{ background: method === m ? ACCENT : "transparent", borderColor: "#e5e7eb" }}>{m}</button>
+          {(["ratio","multiply","sum","difference"] as const).map(m => (
+            <button key={m} onClick={() => setMethod(m)} className={`px-2 py-1 border rounded ${method===m?"text-white":""}`} style={{background:method===m?ACCENT:"transparent",borderColor:"#e5e7eb"}}>{m}</button>
           ))}
-          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={normalizePercent} onChange={(e) => setNormalizePercent(e.target.checked)} />Normalize %</label>
-          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={isParametric} onChange={(e) => setIsParametric(e.target.checked)} />Parametric</label>
-          <button onClick={previewJoin} className="ml-auto px-3 py-1 text-white rounded" style={{ background: ACCENT }}>{loadingPreview ? "Loading..." : "Preview"}</button>
+          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={normalizePercent} onChange={(e)=>setNormalizePercent(e.target.checked)} />Normalize %</label>
+          <label className="text-xs flex items-center gap-1 ml-3"><input type="checkbox" checked={isParametric} onChange={(e)=>setIsParametric(e.target.checked)} />Parametric</label>
+          <button onClick={previewJoin} className="ml-auto px-3 py-1 text-white rounded" style={{background:ACCENT}}>{loadingPreview?"Loading…":"Preview"}</button>
         </div>
 
         <p className="text-xs italic mb-2">Derived = {formula}</p>
         <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
-            <thead className="bg-gray-100 sticky top-0"><tr>{preview[0] && Object.keys(preview[0]).map(k => <th key={k} className="p-1 text-left">{k}</th>)}</tr></thead>
-            <tbody>{preview.length === 0 ? <tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr> :
-              preview.map((r, i) => <tr key={i} className="border-t hover:bg-gray-50">{Object.entries(r).map(([k, v], j) => <td key={j} className="p-1">{v == null ? "—" : String(v)}</td>)}</tr>)}</tbody>
+            <thead className="bg-gray-100 sticky top-0"><tr>{preview[0]&&Object.keys(preview[0]).map(k=><th key={k} className="p-1 text-left">{k}</th>)}</tr></thead>
+            <tbody>{preview.length===0?<tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>:
+              preview.map((r,i)=><tr key={i} className="border-t hover:bg-gray-50">{Object.entries(r).map(([k,v],j)=><td key={j} className="p-1">{v==null?"—":String(v)}</td>)}</tr>)}</tbody>
           </table>
         </div>
 
         <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
         <div className="overflow-x-auto mb-4"><div className="flex gap-3 min-w-max">
-          {Object.keys(taxonomyMap).map(cat => {
-            const checked = !!taxonomy[cat];
-            return (
+          {Object.keys(taxonomyMap).map(cat=>{
+            const checked=!!taxonomy[cat];
+            return(
               <div key={cat} className="border rounded p-2 min-w-[150px]">
                 <label className="flex items-center gap-1 text-xs font-medium"><input type="checkbox" checked={checked}
-                  onChange={(e) => setTaxonomy(p => { const n = { ...p }; if (e.target.checked) n[cat] = new Set<string>(); else delete n[cat]; return n; })} /> {cat}</label>
-                {checked && <div className="ml-2 mt-1 grid grid-cols-1">{taxonomyMap[cat].map(term =>
+                  onChange={(e)=>setTaxonomy(p=>{const n={...p};if(e.target.checked)n[cat]=new Set<string>();else delete n[cat];return n;})}/> {cat}</label>
+                {checked&&<div className="ml-2 mt-1 grid grid-cols-1">{taxonomyMap[cat].map(term=>
                   <label key={term} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!taxonomy[cat]?.has(term)}
-                    onChange={(e) => setTaxonomy(p => { const n = { ...p }; if (!n[cat]) n[cat] = new Set<string>(); if (e.target.checked) n[cat]!.add(term); else n[cat]!.delete(term); return n; })} /> {term}</label>)}</div>}
+                    onChange={(e)=>setTaxonomy(p=>{const n={...p};if(!n[cat])n[cat]=new Set<string>();if(e.target.checked)n[cat]!.add(term);else n[cat]!.delete(term);return n;})}/> {term}</label>)}</div>}
               </div>);
           })}
         </div></div>
 
         <div className="flex justify-end gap-2"><button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{ background: ACCENT }}>Save</button></div>
+          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>Save</button></div>
       </div>
     </div>
   );
