@@ -13,7 +13,6 @@ interface DatasetOption {
   table: string;
   defaultCol?: string;
 }
-
 interface EditPayload {
   id: string;
   title: string;
@@ -34,7 +33,6 @@ interface EditPayload {
   normalize_percent?: boolean | null;
   is_parametric?: boolean | null;
 }
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -77,10 +75,14 @@ export default function DerivedDatasetWizard({
         { id: "core-pop", title: "Population [core]", source: "core", table: "population_data", defaultCol: "population" },
         { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features", defaultCol: "area_sqkm" },
       ];
-      const { data: others } = await supabase.from("dataset_metadata").select("id, title");
-      others?.forEach((d) => base.push({ id: d.id, title: d.title, source: "other", table: `dataset_values_${d.id}`, defaultCol: "value" }));
-      const { data: derived } = await supabase.from("derived_dataset_metadata").select("id, title");
-      derived?.forEach((d) => base.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}`, defaultCol: "derived" }));
+      const { data: others } = await supabase.from("dataset_metadata").select("id,title");
+      others?.forEach((d) =>
+        base.push({ id: d.id, title: d.title, source: "other", table: `dataset_values_${d.id}`, defaultCol: "value" })
+      );
+      const { data: derived } = await supabase.from("derived_dataset_metadata").select("id,title");
+      derived?.forEach((d) =>
+        base.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}`, defaultCol: "derived" })
+      );
       setDatasets(base);
     })();
   }, [open, countryIso]);
@@ -89,14 +91,14 @@ export default function DerivedDatasetWizard({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data } = await supabase.from("taxonomy_terms").select("category, name");
+      const { data } = await supabase.from("taxonomy_terms").select("category,name");
       if (!data) return;
-      const grouped: Record<string, string[]> = {};
+      const g: Record<string, string[]> = {};
       data.forEach(({ category, name }) => {
-        if (!grouped[category]) grouped[category] = [];
-        grouped[category].push(name);
+        if (!g[category]) g[category] = [];
+        g[category].push(name);
       });
-      setTaxonomyMap(grouped);
+      setTaxonomyMap(g);
     })();
   }, [open]);
 
@@ -131,28 +133,41 @@ export default function DerivedDatasetWizard({
     setDecimals(editDataset.decimals ?? 2);
     setIsParametric(!!editDataset.is_parametric);
     if (datasets.length > 0) {
-      setDatasetA(datasets.find((d) => d.table === editDataset.table_a) || null);
-      setDatasetB(datasets.find((d) => d.table === editDataset.table_b) || null);
+      setDatasetA(
+        datasets.find((d) => d.table === editDataset.table_a || d.id === editDataset.table_a) || null
+      );
+      setDatasetB(
+        datasets.find((d) => d.table === editDataset.table_b || d.id === editDataset.table_b) || null
+      );
     }
     if (editDataset.taxonomy_categories && editDataset.taxonomy_terms) {
-      const tax: Record<string, Set<string>> = {};
+      const n: Record<string, Set<string>> = {};
       editDataset.taxonomy_categories.forEach((cat) => {
-        tax[cat] = new Set(editDataset.taxonomy_terms?.filter((t) => taxonomyMap[cat]?.includes(t)) || []);
+        n[cat] = new Set(
+          editDataset.taxonomy_terms?.filter((t) => taxonomyMap[cat]?.includes(t)) || []
+        );
       });
-      setTaxonomy(tax);
+      setTaxonomy(n);
     }
   }, [open, editDataset, datasets, taxonomyMap]);
 
-  const symbol = useMemo(() => (method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "−"), [method]);
-  const formula = useMemo(() => `A.${colA} ${symbol} ${useScalarB ? scalarB : `B.${colB}`}`, [colA, colB, symbol, useScalarB, scalarB]);
+  const symbol = useMemo(
+    () => (method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "−"),
+    [method]
+  );
+  const formula = useMemo(
+    () => `A.${colA} ${symbol} ${useScalarB ? scalarB : `B.${colB}`}`,
+    [colA, colB, symbol, useScalarB, scalarB]
+  );
 
   // ---------- Preview ----------
   async function previewJoin() {
-    if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB))
+      return alert("Select Dataset A and (Dataset B or scalar).");
     setLoadingPreview(true);
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate_simple", {
-      p_dataset_a: datasetA.table,
-      p_dataset_b: useScalarB ? null : datasetB?.table ?? null,
+      p_dataset_a: datasetA.id,
+      p_dataset_b: useScalarB ? null : datasetB?.id ?? null,
       p_col_a: colA || datasetA.defaultCol,
       p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
       p_country_iso: countryIso,
@@ -168,7 +183,8 @@ export default function DerivedDatasetWizard({
 
   // ---------- Save ----------
   async function saveDerived() {
-    if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
+    if (!datasetA || (!datasetB && !useScalarB))
+      return alert("Select Dataset A and (Dataset B or scalar).");
     const cats = Object.keys(taxonomy);
     const terms = cats.flatMap((c) => Array.from(taxonomy[c] || []));
     const payload = {
@@ -179,8 +195,8 @@ export default function DerivedDatasetWizard({
       p_method: method,
       p_use_scalar_b: useScalarB,
       p_scalar_b_val: useScalarB ? scalarB : null,
-      p_dataset_a: datasetA.table,
-      p_dataset_b: useScalarB ? null : datasetB?.table ?? null,
+      p_dataset_a: datasetA.id,
+      p_dataset_b: useScalarB ? null : datasetB?.id ?? null,
       p_col_a: colA || datasetA.defaultCol,
       p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
       p_formula: formula,
@@ -198,7 +214,6 @@ export default function DerivedDatasetWizard({
   }
 
   if (!open) return null;
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
@@ -231,9 +246,13 @@ export default function DerivedDatasetWizard({
                 <option value="">Select Dataset {lbl}</option>
                 {["core", "gis", "other", "derived"].map((g) => (
                   <optgroup key={g} label={g.toUpperCase()}>
-                    {datasets.filter((d) => d.source === g).map((d) => (
-                      <option key={d.id} value={d.id}>{d.title}</option>
-                    ))}
+                    {datasets
+                      .filter((d) => d.source === g)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
                   </optgroup>
                 ))}
               </select>
@@ -243,15 +262,24 @@ export default function DerivedDatasetWizard({
 
         <div className="flex flex-wrap gap-2 mb-3 items-center">
           <input className="border p-1 rounded w-40" value={colA} onChange={(e) => setColA(e.target.value)} placeholder="Column A" />
-          {!useScalarB && <input className="border p-1 rounded w-40" value={colB} onChange={(e) => setColB(e.target.value)} placeholder="Column B" />}
+          {!useScalarB && (
+            <input className="border p-1 rounded w-40" value={colB} onChange={(e) => setColB(e.target.value)} placeholder="Column B" />
+          )}
           <label className="text-xs flex items-center gap-1 ml-auto">
             <input type="checkbox" checked={useScalarB} onChange={(e) => setUseScalarB(e.target.checked)} />Scalar B
           </label>
           {useScalarB && (
-            <input type="number" className="border p-1 rounded w-24 text-right" value={scalarB} onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))} />
+            <input
+              type="number"
+              className="border p-1 rounded w-24 text-right"
+              value={scalarB}
+              onChange={(e) => setScalarB(parseFloat(e.target.value || "0"))}
+            />
           )}
           <select className="border rounded text-xs p-1" value={decimals} onChange={(e) => setDecimals(parseInt(e.target.value))}>
-            {[0, 1, 2, 3].map((d) => <option key={d}>{d} dec</option>)}
+            {[0, 1, 2, 3].map((d) => (
+              <option key={d}>{d} dec</option>
+            ))}
           </select>
         </div>
 
@@ -286,11 +314,19 @@ export default function DerivedDatasetWizard({
             </thead>
             <tbody>
               {preview.length === 0 ? (
-                <tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>
+                <tr>
+                  <td colSpan={6} className="text-center italic text-gray-500 py-2">
+                    No preview data
+                  </td>
+                </tr>
               ) : (
                 preview.map((r, i) => (
                   <tr key={i} className="border-t hover:bg-gray-50">
-                    {Object.entries(r).map(([k, v], j) => <td key={j} className="p-1">{v == null ? "—" : String(v)}</td>)}
+                    {Object.entries(r).map(([k, v], j) => (
+                      <td key={j} className="p-1">
+                        {v == null ? "—" : String(v)}
+                      </td>
+                    ))}
                   </tr>
                 ))
               )}
@@ -349,7 +385,9 @@ export default function DerivedDatasetWizard({
         </div>
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
+          <button onClick={onClose} className="px-3 py-1 border rounded">
+            Cancel
+          </button>
           <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{ background: ACCENT }}>
             Save
           </button>
