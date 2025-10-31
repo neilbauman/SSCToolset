@@ -13,8 +13,8 @@ import {
   ChevronUp,
   ChevronDown,
   Database,
-  Activity,
-  Layers,
+  Zap,
+  Trash,
 } from "lucide-react";
 import DerivedDatasetWizard from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
@@ -27,32 +27,26 @@ interface DerivedDataset {
   description: string | null;
   admin_level: string;
   method: Method;
-  is_parametric: boolean | null;
-  normalize_percent: boolean | null;
-  decimals?: number | null;
-  record_count?: number | null;
   created_at: string;
+  updated_at?: string;
+  record_count?: number;
+  storage_model?: string;
+  is_index_ready?: boolean;
 }
 
-export default function DerivedDatasetsPage({
-  params,
-}: {
-  params: CountryParams;
-}) {
+export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
   const countryIso = params.id;
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
-  const [selectedDataset, setSelectedDataset] =
-    useState<DerivedDataset | null>(null);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [sortField, setSortField] =
-    useState<keyof DerivedDataset>("created_at");
+  const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
   const [sortAsc, setSortAsc] = useState(false);
-  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
+  const [selected, setSelected] = useState<DerivedDataset | null>(null);
   const [openWizard, setOpenWizard] = useState(false);
+  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
+  const [previewData, setPreviewData] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const ACCENT = "#640811";
 
-  // --- Load metadata
   const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
@@ -60,11 +54,8 @@ export default function DerivedDatasetsPage({
       .eq("country_iso", countryIso)
       .order(sortField, { ascending: sortAsc });
 
-    if (error) {
-      console.error("Error loading derived datasets:", error);
-      return;
-    }
-    setDatasets(data || []);
+    if (error) console.error(error);
+    if (data) setDatasets(data);
   };
 
   useEffect(() => {
@@ -79,47 +70,48 @@ export default function DerivedDatasetsPage({
     }
   };
 
-  const deleteDataset = async (dataset: DerivedDataset) => {
-    if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
-    await supabase.from("derived_dataset_metadata").delete().eq("id", dataset.id);
-    loadDatasets();
-  };
-
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadDatasets();
     setRefreshing(false);
   };
 
-  // --- Load preview
-  const loadPreview = async (dataset: DerivedDataset) => {
-    if (!dataset?.id) return;
+  const deleteDataset = async (dataset: DerivedDataset) => {
+    if (!confirm(`Delete derived dataset "${dataset.title}"? This cannot be undone.`)) return;
+    await supabase.from("derived_dataset_metadata").delete().eq("id", dataset.id);
+    loadDatasets();
+  };
+
+  const materializeDataset = async (dataset: DerivedDataset) => {
+    if (!confirm(`Materialize dataset "${dataset.title}" now?`)) return;
+    const { error } = await supabase.rpc("materialize_derived_dataset", { p_dataset_id: dataset.id });
+    if (error) alert("Materialize failed: " + error.message);
+    else alert("✅ Dataset materialized successfully.");
+    loadDatasets();
+  };
+
+  const dematerializeDataset = async (dataset: DerivedDataset) => {
+    if (!confirm(`Dematerialize dataset "${dataset.title}"? This will delete stored records but keep its definition.`)) return;
+    const { error } = await supabase.rpc("dematerialize_derived_dataset", { p_dataset_id: dataset.id });
+    if (error) alert("Dematerialize failed: " + error.message);
+    else alert("🧹 Dataset dematerialized (definition retained).");
+    loadDatasets();
+  };
+
+  const viewDataset = async (dataset: DerivedDataset) => {
+    setSelected(dataset);
     setLoadingPreview(true);
     const tableName = `derived_${dataset.id}`;
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .limit(25);
-
+    const { data, error } = await supabase.rpc("execute_dynamic_sql", {
+      sql: `SELECT out_place_name, out_derived, out_join_status FROM "${tableName}" LIMIT 100`,
+    });
     setLoadingPreview(false);
     if (error) {
-      console.error("Error loading preview:", error);
-      setPreview([]);
-    } else setPreview(data || []);
-  };
-
-  // --- When selecting dataset
-  const handleSelectDataset = (ds: DerivedDataset) => {
-    setSelectedDataset(ds);
-    loadPreview(ds);
-  };
-
-  // --- Helpers for visual health indicators
-  const getHealthColor = (count?: number | null) => {
-    if (count == null) return "bg-gray-200 text-gray-600";
-    if (count > 5000) return "bg-green-100 text-green-800";
-    if (count > 1000) return "bg-yellow-100 text-yellow-700";
-    return "bg-red-100 text-red-700";
+      setPreviewData([]);
+      console.warn("No records or preview unavailable:", error.message);
+      return;
+    }
+    setPreviewData(data || []);
   };
 
   return (
@@ -139,19 +131,16 @@ export default function DerivedDatasetsPage({
         ),
       }}
     >
-      <div className="p-6 space-y-5">
-        {/* ---- Header Actions ---- */}
+      <div className="p-6 space-y-6">
+        {/* --- Header Bar --- */}
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Derived Datasets</h2>
+          <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <div className="flex gap-2">
             <button
               onClick={handleRefresh}
               className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
             >
-              <RefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-              />{" "}
-              Refresh
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
             </button>
             <button
               onClick={() => {
@@ -165,19 +154,19 @@ export default function DerivedDatasetsPage({
           </div>
         </div>
 
-        {/* ---- Dataset List ---- */}
+        {/* --- Dataset List --- */}
         <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-gray-50 border-b text-xs uppercase text-gray-600">
               <tr>
                 {[
-                  ["title", "Name"],
+                  ["title", "Title"],
+                  ["description", "Description"],
                   ["admin_level", "Admin"],
-                  ["method", "Method"],
-                  ["is_parametric", "Type"],
-                  ["normalize_percent", "Format"],
+                  ["storage_model", "Type"],
                   ["record_count", "Records"],
-                  ["created_at", "Created"],
+                  ["method", "Method"],
+                  ["updated_at", "Updated"],
                 ].map(([field, label]) => (
                   <th
                     key={field}
@@ -201,10 +190,7 @@ export default function DerivedDatasetsPage({
             <tbody>
               {datasets.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center italic text-gray-500 py-3"
-                  >
+                  <td colSpan={8} className="text-center italic text-gray-500 py-4">
                     No derived datasets found.
                   </td>
                 </tr>
@@ -212,43 +198,49 @@ export default function DerivedDatasetsPage({
                 datasets.map((ds) => (
                   <tr
                     key={ds.id}
-                    onClick={() => handleSelectDataset(ds)}
-                    className={`border-b hover:bg-gray-50 cursor-pointer ${
-                      selectedDataset?.id === ds.id ? "bg-gray-100" : ""
+                    className={`border-b hover:bg-gray-50 ${
+                      selected?.id === ds.id ? "bg-gray-100" : ""
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-[#640811]">
-                      {ds.title}
-                    </td>
+                    <td className="px-3 py-2 font-medium text-[#640811]">{ds.title}</td>
+                    <td className="px-3 py-2 text-gray-600">{ds.description || "—"}</td>
                     <td className="px-3 py-2">{ds.admin_level}</td>
+                    <td className="px-3 py-2">
+                      {ds.storage_model === "fixed" ? (
+                        <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">Fixed</span>
+                      ) : (
+                        <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs">Parametric</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{ds.record_count ?? 0}</td>
                     <td className="px-3 py-2">{ds.method}</td>
                     <td className="px-3 py-2">
-                      {ds.is_parametric ? "Parametric" : "Fixed"}
+                      {ds.updated_at ? new Date(ds.updated_at).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-3 py-2">
-                      {ds.normalize_percent ? "Percent" : "Numeric"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${getHealthColor(
-                          ds.record_count
-                        )}`}
-                      >
-                        {ds.record_count ?? 0}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      {new Date(ds.created_at).toLocaleDateString()}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex gap-2 justify-end">
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button title="View" onClick={() => viewDataset(ds)} className="text-gray-700 hover:text-[#640811]">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button title="Materialize" onClick={() => materializeDataset(ds)} className="text-gray-700 hover:text-[#640811]">
+                          <Database className="w-4 h-4" />
+                        </button>
+                        {ds.storage_model === "fixed" && (
+                          <button
+                            title="Dematerialize"
+                            onClick={() => dematerializeDataset(ds)}
+                            className="text-gray-700 hover:text-red-600"
+                          >
+                            <Trash className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           title="Edit"
                           onClick={() => {
-                            setEditDataset(ds);
+                            setEditDataset({
+                              ...ds,
+                              method: (ds.method as Method) || "ratio",
+                            });
                             setOpenWizard(true);
                           }}
                           className="text-gray-700 hover:text-[#640811]"
@@ -271,71 +263,59 @@ export default function DerivedDatasetsPage({
           </table>
         </div>
 
-        {/* ---- Preview Panel ---- */}
-        {selectedDataset && (
-          <div className="mt-6 bg-white border rounded-md shadow p-4">
+        {/* --- Preview Panel --- */}
+        {selected && (
+          <div className="bg-white border rounded-md shadow p-4 text-sm">
             <div className="flex justify-between items-center mb-3">
               <div>
-                <h3 className="text-lg font-semibold text-[#640811]">
-                  {selectedDataset.title}
-                </h3>
-                {selectedDataset.description && (
-                  <p className="text-xs text-gray-600">
-                    {selectedDataset.description}
-                  </p>
-                )}
+                <h3 className="text-base font-semibold text-[#640811]">{selected.title}</h3>
+                <p className="text-xs text-gray-600">
+                  {selected.record_count ?? 0} records · {selected.storage_model || "parametric"} ·{" "}
+                  Last updated {selected.updated_at ? new Date(selected.updated_at).toLocaleString() : "—"}
+                </p>
               </div>
-              <div className="flex gap-2 text-xs">
-                <span className="px-2 py-0.5 bg-gray-100 rounded border text-gray-700">
-                  {selectedDataset.admin_level}
-                </span>
-                <span className="px-2 py-0.5 bg-gray-100 rounded border text-gray-700">
-                  {selectedDataset.method}
-                </span>
-                <span className="px-2 py-0.5 bg-gray-100 rounded border text-gray-700">
-                  {selectedDataset.is_parametric ? "Parametric" : "Fixed"}
-                </span>
-                <span className="px-2 py-0.5 bg-gray-100 rounded border text-gray-700">
-                  {selectedDataset.normalize_percent ? "Percent" : "Numeric"}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded border ${getHealthColor(
-                    selectedDataset.record_count
-                  )}`}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => materializeDataset(selected)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-white"
+                  style={{ background: ACCENT }}
                 >
-                  {selectedDataset.record_count ?? 0} records
-                </span>
+                  <Zap className="w-3 h-3" /> Rematerialize
+                </button>
+                {selected.storage_model === "fixed" && (
+                  <button
+                    onClick={() => dematerializeDataset(selected)}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs text-red-600 border border-red-300"
+                  >
+                    <Trash className="w-3 h-3" /> Dematerialize
+                  </button>
+                )}
               </div>
             </div>
 
             {loadingPreview ? (
-              <div className="text-center text-gray-500 py-5 text-sm">
-                Loading preview...
-              </div>
-            ) : preview.length === 0 ? (
-              <div className="text-center text-gray-500 py-5 text-sm italic">
-                No data available in this derived dataset.
-              </div>
+              <p className="italic text-gray-500 text-center py-6">Loading data preview…</p>
+            ) : previewData.length === 0 ? (
+              <p className="italic text-gray-500 text-center py-6">
+                No data available. Try materializing the dataset first.
+              </p>
             ) : (
-              <div className="max-h-[60vh] overflow-auto border rounded text-xs">
-                <table className="min-w-full border-collapse">
-                  <thead className="bg-gray-50 sticky top-0">
+              <div className="max-h-80 overflow-y-auto border rounded">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-100 sticky top-0">
                     <tr>
-                      {Object.keys(preview[0] || {}).map((key) => (
-                        <th
-                          key={key}
-                          className="text-left px-2 py-1 border-b font-medium"
-                        >
-                          {key}
+                      {Object.keys(previewData[0]).map((k) => (
+                        <th key={k} className="p-1 text-left">
+                          {k}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.map((row, i) => (
+                    {previewData.map((r, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50">
-                        {Object.entries(row).map(([k, v], j) => (
-                          <td key={j} className="px-2 py-1 border-b">
+                        {Object.entries(r).map(([k, v], j) => (
+                          <td key={j} className="p-1">
                             {v == null ? "—" : String(v)}
                           </td>
                         ))}
@@ -348,7 +328,7 @@ export default function DerivedDatasetsPage({
           </div>
         )}
 
-        {/* ---- Wizard ---- */}
+        {/* --- Wizard Modal --- */}
         {openWizard && (
           <DerivedDatasetWizard
             open={openWizard}
