@@ -11,8 +11,10 @@ interface DatasetOption {
   title: string;
   source: Source;
   table: string;
-  defaultCol?: string;
+  defaultCol: string;
+  joinField: string;
 }
+
 interface EditPayload {
   id: string;
   title: string;
@@ -33,6 +35,7 @@ interface EditPayload {
   normalize_percent?: boolean | null;
   is_parametric?: boolean | null;
 }
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -62,27 +65,44 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   const [taxonomyMap, setTaxonomyMap] = useState<Record<string, string[]>>({});
   const [taxonomy, setTaxonomy] = useState<Record<string, Set<string>>>({});
 
-  // Load datasets (core, GIS, other, derived)
+  // --- Load dataset options (core + other + derived)
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const base: DatasetOption[] = [
-        { id: "core-pop", title: "Population [core]", source: "core", table: "population_data", defaultCol: "population" },
-        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features", defaultCol: "area_sqkm" },
+      const options: DatasetOption[] = [
+        { id: "core-pop", title: "Population [core]", source: "core", table: "population_data", defaultCol: "population", joinField: "pcode" },
+        { id: "core-gis", title: "GIS Features [core]", source: "gis", table: "gis_features", defaultCol: "area_sqkm", joinField: "pcode" },
       ];
-      const { data: others } = await supabase.from("dataset_metadata").select("id,title");
-      others?.forEach(d =>
-        base.push({ id: d.id, title: d.title, source: "other", table: `dataset_values_${d.id}`, defaultCol: "value" })
-      );
+
+      const { data: others } = await supabase.from("dataset_metadata").select("id,title,default_join_field");
+      others?.forEach(d => {
+        options.push({
+          id: d.id,
+          title: d.title,
+          source: "other",
+          table: `dataset_values_${d.id}`,
+          defaultCol: "value",
+          joinField: d.default_join_field || "admin_pcode",
+        });
+      });
+
       const { data: derived } = await supabase.from("derived_dataset_metadata").select("id,title");
-      derived?.forEach(d =>
-        base.push({ id: d.id, title: d.title, source: "derived", table: `derived_${d.id}`, defaultCol: "derived" })
-      );
-      setDatasets(base);
+      derived?.forEach(d => {
+        options.push({
+          id: d.id,
+          title: d.title,
+          source: "derived",
+          table: `derived_${d.id}`,
+          defaultCol: "derived",
+          joinField: "pcode",
+        });
+      });
+
+      setDatasets(options);
     })();
   }, [open, countryIso]);
 
-  // Load taxonomy
+  // --- Load taxonomy
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -97,31 +117,44 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     })();
   }, [open]);
 
-  // Edit mode hydration
+  // --- Hydrate in edit mode
   useEffect(() => {
     if (!open) return;
     if (!editDataset) {
-      setTitle(""); setDesc(""); setTargetLevel("ADM3");
-      setMethod("ratio"); setUseScalarB(false); setScalarB(1);
-      setColA(""); setColB(""); setDecimals(2);
-      setDatasetA(null); setDatasetB(null); setPreview([]);
-      setTaxonomy({}); setIsParametric(false);
+      setTitle("");
+      setDesc("");
+      setTargetLevel("ADM3");
+      setMethod("ratio");
+      setUseScalarB(false);
+      setScalarB(1);
+      setColA("");
+      setColB("");
+      setDecimals(2);
+      setDatasetA(null);
+      setDatasetB(null);
+      setPreview([]);
+      setTaxonomy({});
+      setIsParametric(false);
       return;
     }
+
     setTitle(editDataset.title || "");
     setDesc(editDataset.description || "");
     setTargetLevel(editDataset.target_level || "ADM3");
-    setMethod(editDataset.method as Method || "ratio");
+    setMethod(editDataset.method || "ratio");
     setUseScalarB(!!editDataset.use_scalar_b);
     setScalarB(editDataset.scalar_b_val ?? 1);
     setColA(editDataset.col_a || "");
     setColB(editDataset.col_b || "");
     setDecimals(editDataset.decimals ?? 2);
     setIsParametric(!!editDataset.is_parametric);
+    setNormalizePercent(!!editDataset.normalize_percent);
+
     if (datasets.length > 0) {
       setDatasetA(datasets.find(d => d.table === editDataset.table_a) || null);
       setDatasetB(datasets.find(d => d.table === editDataset.table_b) || null);
     }
+
     if (editDataset.taxonomy_categories && editDataset.taxonomy_terms) {
       const n: Record<string, Set<string>> = {};
       editDataset.taxonomy_categories.forEach(cat => {
@@ -131,19 +164,25 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     }
   }, [open, editDataset, datasets, taxonomyMap]);
 
-  const symbol = useMemo(() => method === "ratio" ? "÷" : method === "multiply" ? "×" : method === "sum" ? "+" : "−", [method]);
+  const symbol = useMemo(() => {
+    switch (method) {
+      case "ratio": return "÷";
+      case "multiply": return "×";
+      case "sum": return "+";
+      case "difference": return "−";
+      default: return "";
+    }
+  }, [method]);
+
   const formula = useMemo(() => `A.${colA} ${symbol} ${useScalarB ? scalarB : `B.${colB}`}`, [colA, colB, symbol, useScalarB, scalarB]);
 
-  // PREVIEW
+  // --- RPC Helper
+  const resolveTable = (d: DatasetOption | null) => d?.table || null;
+
+  // --- Preview
   async function previewJoin() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
     setLoadingPreview(true);
-    const resolveTable = (d: DatasetOption | null) => {
-      if (!d) return null;
-      if (d.source === "core" || d.source === "gis") return d.table;
-      if (d.source === "other" || d.source === "derived") return `dataset_values_${d.id}`;
-      return d.table;
-    };
 
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate_simple", {
       p_dataset_a: resolveTable(datasetA),
@@ -162,16 +201,9 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     setPreview(data || []);
   }
 
-  // SAVE
+  // --- Save
   async function saveDerived() {
     if (!datasetA || (!datasetB && !useScalarB)) return alert("Select Dataset A and (Dataset B or scalar).");
-    const resolveTable = (d: DatasetOption | null) => {
-      if (!d) return null;
-      if (d.source === "core" || d.source === "gis") return d.table;
-      if (d.source === "other" || d.source === "derived") return `dataset_values_${d.id}`;
-      return d.table;
-    };
-
     const cats = Object.keys(taxonomy);
     const terms = cats.flatMap(c => Array.from(taxonomy[c] || []));
     const payload = {
@@ -194,6 +226,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
       p_normalize_percent: normalizePercent,
       p_is_parametric: isParametric,
     };
+
     const { error } = await supabase.rpc("create_derived_dataset_v2", payload);
     if (error) return alert("Save failed: " + error.message);
     alert("✅ Saved successfully.");
@@ -201,6 +234,7 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
   }
 
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl p-5 w-[95%] max-w-6xl max-h-[90vh] overflow-y-auto text-sm">
@@ -210,10 +244,10 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
         </div>
 
         <div className="flex gap-2 mb-3">
-          <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} />
-          <select className="border p-1 rounded" value={targetLevel} onChange={(e) => setTargetLevel(e.target.value)}>
-            {["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l => <option key={l}>{l}</option>)}
+          <input className="border p-1 flex-1 rounded" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)} />
+          <input className="border p-1 flex-1 rounded" placeholder="Description" value={desc} onChange={e=>setDesc(e.target.value)} />
+          <select className="border p-1 rounded" value={targetLevel} onChange={e=>setTargetLevel(e.target.value)}>
+            {["ADM0","ADM1","ADM2","ADM3","ADM4"].map(l=><option key={l}>{l}</option>)}
           </select>
         </div>
 
@@ -222,8 +256,11 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
             !useScalarB||lbl==="A"?(
               <select key={i} className="border p-1 rounded flex-1"
                 value={(lbl==="A"?datasetA?.id:datasetB?.id)||""}
-                onChange={e=>lbl==="A"?setDatasetA(datasets.find(d=>d.id===e.target.value)||null)
-                                       :setDatasetB(datasets.find(d=>d.id===e.target.value)||null)}>
+                onChange={e=>{
+                  const sel = datasets.find(d=>d.id===e.target.value)||null;
+                  if(lbl==="A"){setDatasetA(sel);setColA(sel?.defaultCol||"");}
+                  else{setDatasetB(sel);setColB(sel?.defaultCol||"");}
+                }}>
                 <option value="">Select Dataset {lbl}</option>
                 {["core","gis","other","derived"].map(g=>(
                   <optgroup key={g} label={g.toUpperCase()}>
@@ -257,47 +294,67 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
         </div>
 
         <p className="text-xs italic mb-2">Derived = {formula}</p>
+
         <div className="max-h-64 overflow-y-auto border rounded text-xs mb-4">
           <table className="w-full">
             <thead className="bg-gray-100 sticky top-0">
-              <tr>{preview[0]&&Object.keys(preview[0]).map(k=><th key={k} className="p-1 text-left">{k}</th>)}</tr>
+              <tr>{preview[0] && Object.keys(preview[0]).map(k => <th key={k} className="p-1 text-left">{k}</th>)}</tr>
             </thead>
             <tbody>
-              {preview.length===0?<tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>:
-              preview.map((r,i)=>
-                <tr key={i} className="border-t hover:bg-gray-50">
-                  {Object.entries(r).map(([k,v],j)=><td key={j} className="p-1">{v==null?"—":String(v)}</td>)}
-                </tr>
+              {preview.length === 0 ? (
+                <tr><td colSpan={6} className="text-center italic text-gray-500 py-2">No preview data</td></tr>
+              ) : (
+                preview.map((r, i) => (
+                  <tr key={i} className="border-t hover:bg-gray-50">
+                    {Object.entries(r).map(([k, v], j) => <td key={j} className="p-1">{v == null ? "—" : String(v)}</td>)}
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
 
         <h3 className="text-sm font-semibold mb-2">Assign Taxonomy</h3>
-        <div className="overflow-x-auto mb-4"><div className="flex gap-3 min-w-max">
-          {Object.keys(taxonomyMap).map(cat=>{
-            const checked=!!taxonomy[cat];
-            return(
-              <div key={cat} className="border rounded p-2 min-w-[150px]">
-                <label className="flex items-center gap-1 text-xs font-medium">
-                  <input type="checkbox" checked={checked}
-                    onChange={e=>setTaxonomy(p=>{const n={...p};if(e.target.checked)n[cat]=new Set<string>();else delete n[cat];return n;})}/> {cat}
-                </label>
-                {checked&&<div className="ml-2 mt-1 grid grid-cols-1">
-                  {taxonomyMap[cat].map(term=>
-                    <label key={term} className="flex items-center gap-1 text-xs">
-                      <input type="checkbox" checked={!!taxonomy[cat]?.has(term)}
-                        onChange={e=>setTaxonomy(p=>{const n={...p};if(!n[cat])n[cat]=new Set<string>();if(e.target.checked)n[cat]!.add(term);else n[cat]!.delete(term);return n;})}/> {term}
-                    </label>)}
-                </div>}
-              </div>
-            );
-          })}
-        </div></div>
+        <div className="overflow-x-auto mb-4">
+          <div className="flex gap-3 min-w-max">
+            {Object.keys(taxonomyMap).map(cat => {
+              const checked = !!taxonomy[cat];
+              return (
+                <div key={cat} className="border rounded p-2 min-w-[150px]">
+                  <label className="flex items-center gap-1 text-xs font-medium">
+                    <input type="checkbox" checked={checked}
+                      onChange={e => setTaxonomy(p => {
+                        const n = { ...p };
+                        if (e.target.checked) n[cat] = new Set<string>();
+                        else delete n[cat];
+                        return n;
+                      })}/> {cat}
+                  </label>
+                  {checked && (
+                    <div className="ml-2 mt-1 grid grid-cols-1">
+                      {taxonomyMap[cat].map(term => (
+                        <label key={term} className="flex items-center gap-1 text-xs">
+                          <input type="checkbox" checked={!!taxonomy[cat]?.has(term)}
+                            onChange={e => setTaxonomy(p => {
+                              const n = { ...p };
+                              if (!n[cat]) n[cat] = new Set<string>();
+                              if (e.target.checked) n[cat]!.add(term);
+                              else n[cat]!.delete(term);
+                              return n;
+                            })}/> {term}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{background:ACCENT}}>Save</button>
+          <button onClick={saveDerived} className="px-3 py-1 text-white rounded" style={{ background: ACCENT }}>Save</button>
         </div>
       </div>
     </div>
