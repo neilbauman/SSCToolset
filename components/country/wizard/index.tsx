@@ -185,15 +185,21 @@ export default function DerivedDatasetWizard({ open, onClose, countryIso, editDa
     setLoadingPreview(true);
 
     const { data, error } = await supabase.rpc("simulate_join_preview_autoaggregate_simple", {
-      p_dataset_a: resolveTable(datasetA),
-      p_dataset_b: useScalarB ? null : resolveTable(datasetB),
-      p_col_a: colA || datasetA.defaultCol,
-      p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
-      p_country_iso: countryIso,
-      p_method: method,
-      p_target_level: targetLevel,
-      p_use_scalar_b: useScalarB,
-      p_scalar_b_val: useScalarB ? scalarB : null,
+      p_dataset_a: datasetA.source === "other" ? "dataset_values" : datasetA.table,
+  p_dataset_b: useScalarB ? null : datasetB?.source === "other" ? "dataset_values" : datasetB?.table ?? null,
+  p_col_a: colA || datasetA.defaultCol,
+  p_col_b: useScalarB ? null : colB || datasetB?.defaultCol,
+  p_country_iso: countryIso,
+  p_method: method,
+  p_target_level: targetLevel,
+  p_use_scalar_b: useScalarB,
+  p_scalar_b_val: useScalarB ? scalarB : null,
+  p_dataset_a_id: datasetA.source === "other" ? datasetA.id : null,
+  p_dataset_b_id: useScalarB
+    ? null
+    : datasetB?.source === "other"
+    ? datasetB.id
+    : null,
     });
 
     setLoadingPreview(false);
