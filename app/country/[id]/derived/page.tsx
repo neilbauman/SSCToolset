@@ -46,12 +46,23 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   // Load derived datasets
   const loadDatasets = async () => {
     const { data, error } = await supabase
-      .from("derived_dataset_metadata")
-      .select(
-        "id, title, description, admin_level, method, created_at, is_parametric, normalize_percent, data_format, decimals, record_count, taxonomy_categories"
-      )
-      .eq("country_iso", countryIso)
-      .order(sortField, { ascending: sortAsc });
+  .from("derived_dataset_metadata")
+  .select(`
+    id,
+    title,
+    description,
+    admin_level,
+    method,
+    created_at,
+    is_parametric,
+    normalize_percent,
+    data_format,
+    decimals,
+    record_count,
+    taxonomy_categories
+  `)
+  .eq("country_iso", countryIso)
+  .order(sortField, { ascending: sortAsc });
 
     if (!error && data) setDatasets(data);
   };
