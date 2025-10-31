@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import {
+  Eye,
+  Edit3,
+  Trash2,
+  Plus,
+  RefreshCw,
+  ChevronUp,
+  ChevronDown,
+  Layers,
+} from "lucide-react";
 import DerivedDatasetWizard from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
 
@@ -15,10 +24,14 @@ type DerivedDataset = {
   title: string;
   description: string | null;
   admin_level: string;
-  method: string;
+  method: Method;
   created_at: string;
+  is_parametric: boolean;
+  normalize_percent: boolean;
+  data_format?: string;
+  decimals?: number;
+  record_count?: number;
   taxonomy_categories?: string[];
-  is_index_ready?: boolean;
 };
 
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
@@ -26,17 +39,17 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
   const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
   const [sortAsc, setSortAsc] = useState(false);
-  const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
-  const [openWizard, setOpenWizard] = useState(false);
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [openWizard, setOpenWizard] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [healthSummary, setHealthSummary] = useState<string | null>(null);
 
+  // Load derived datasets
   const loadDatasets = async () => {
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select("*")
+      .select(
+        "id, title, description, admin_level, method, created_at, is_parametric, normalize_percent, data_format, decimals, record_count, taxonomy_categories"
+      )
       .eq("country_iso", countryIso)
       .order(sortField, { ascending: sortAsc });
 
@@ -66,6 +79,22 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     await loadDatasets();
     setRefreshing(false);
   };
+
+  const formatBadge = (ds: DerivedDataset) => {
+    if (ds.normalize_percent) return <span className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700">%</span>;
+    if (ds.data_format === "gradient") return <span className="px-2 py-0.5 text-xs rounded bg-orange-100 text-orange-700">Gradient</span>;
+    return <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-700">Numeric</span>;
+  };
+
+  const paramBadge = (flag: boolean) => (
+    <span
+      className={`px-2 py-0.5 text-xs rounded ${
+        flag ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"
+      }`}
+    >
+      {flag ? "Parametric" : "Fixed"}
+    </span>
+  );
 
   return (
     <SidebarLayout
@@ -106,14 +135,18 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </div>
         </div>
 
+        {/* Dataset List Table */}
         <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
               <tr>
                 {[
-                  ["title", "Title"],
+                  ["title", "Name"],
+                  ["description", "Description"],
                   ["admin_level", "Admin"],
                   ["method", "Method"],
+                  ["is_parametric", "Type"],
+                  ["data_format", "Format"],
                   ["created_at", "Created"],
                 ].map(([field, label]) => (
                   <th
@@ -135,29 +168,38 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {datasets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center italic text-gray-500 py-3">
+                  <td colSpan={8} className="text-center italic text-gray-500 py-3">
                     No derived datasets found.
                   </td>
                 </tr>
               ) : (
                 datasets.map((ds) => (
-                  <tr key={ds.id} className="border-b hover:bg-gray-50">
-                    <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
+                  <tr key={ds.id} className="border-b hover:bg-gray-50 transition-colors">
+                    <td className="px-3 py-2 font-medium text-[#640811]">{ds.title}</td>
+                    <td className="px-3 py-2 text-gray-700 truncate max-w-[200px]">{ds.description || "—"}</td>
                     <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2">{ds.method}</td>
+                    <td className="px-3 py-2 capitalize">{ds.method}</td>
+                    <td className="px-3 py-2">{paramBadge(ds.is_parametric)}</td>
+                    <td className="px-3 py-2">{formatBadge(ds)}</td>
                     <td className="px-3 py-2">{new Date(ds.created_at).toLocaleDateString()}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex gap-2 justify-end">
                         <button
+                          title="View data"
+                          onClick={() => alert(`Coming soon: preview for ${ds.title}`)}
+                          className="text-gray-600 hover:text-[#640811]"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
                           title="Edit"
                           onClick={() => {
-                            // Cast method to Method union to satisfy wizard
                             setEditDataset({
                               ...ds,
-                              method: (ds.method as Method) || "multiply",
                               description: ds.description ?? null,
                             });
                             setOpenWizard(true);
@@ -182,6 +224,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
+        {/* Wizard Modal */}
         {openWizard && (
           <DerivedDatasetWizard
             open={openWizard}
@@ -190,7 +233,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               loadDatasets();
             }}
             countryIso={countryIso}
-            editDataset={editDataset as any} // safe cast
+            editDataset={editDataset as any}
           />
         )}
       </div>
