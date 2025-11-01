@@ -23,13 +23,14 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [busy, setBusy] = useState<string | null>(null);
   const [loadingPrev, setLoadingPrev] = useState(false);
 
-  // ✅ FIXED: uppercase ISO so it always matches the DB
+  // ✅ Fixed: correct table + uppercase ISO + error logging
   const load = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("derived_dataset_metadata")
       .select("*, taxonomy_categories, taxonomy_terms, col_a, col_b, col_a_used, col_b_used")
       .eq("country_iso", countryIso.toUpperCase())
       .order(sortField, { ascending: sortAsc });
+    if (error) console.error("Supabase load error:", error.message);
     setDatasets(data || []);
   };
 
@@ -46,14 +47,17 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     const { data } = await supabase.from("unified_datasets").select("*").eq("dataset_id", id).maybeSingle();
     setUnified(data || null);
   };
+
   const getHealth = async (id: string) => {
     const { count } = await supabase.from("unified_dataset_values_mat").select("admin_pcode", { count: "exact", head: true }).eq("dataset_id", id);
     setValCount(count || 0);
     const lvl = selected?.target_level || selected?.admin_level;
     if (!lvl) return setTargCount(null);
-    const { count: t } = await supabase.from("admin_units").select("admin_pcode", { count: "exact", head: true }).eq("country_iso", countryIso.toUpperCase()).eq("admin_level", lvl);
+    const { count: t } = await supabase.from("admin_units").select("admin_pcode", { count: "exact", head: true })
+      .eq("country_iso", countryIso.toUpperCase()).eq("admin_level", lvl);
     setTargCount(t || 0);
   };
+
   const getPreview = async (id: string) => {
     setLoadingPrev(true);
     const { data } = await supabase.rpc("get_dataset_values", { p_dataset_id: id });
@@ -64,6 +68,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setPreview(data.map((r: any) => ({ ...r, admin_name: map[r.admin_pcode] || null })));
     setLoadingPrev(false);
   };
+
   const selectRow = async (d: any) => { setSelected(d); await getUnified(d.id); await getPreview(d.id); await getHealth(d.id); };
 
   const mat = async (d: any) => { setBusy(d.id); const { error } = await supabase.rpc("materialize_derived_dataset", { p_dataset_id: d.id }); setBusy(null); if (error) return alert(error.message); load(); if (selected?.id === d.id) getPreview(d.id); };
@@ -104,18 +109,9 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               {datasets.length===0?<tr><td colSpan={8} className="text-center py-3 text-gray-500 italic">No derived datasets found.</td></tr>:
                 datasets.map((d)=>(<tr key={d.id} className={`border-b hover:bg-gray-50 ${selected?.id===d.id?"bg-rose-50/40":""}`}>
                   <td className="px-3 py-2 text-[#640811] font-medium"><button onClick={()=>selectRow(d)}>{d.title}</button></td>
-                  <td className="px-3 py-2 text-gray-600 truncate max-w-[360px]">
-                    {d.description||"—"}
-                    {d.taxonomy_terms?.length>0&&(
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {d.taxonomy_terms.map((t:string,i:number)=>(
-                          <span key={i} className="bg-gray-100 text-gray-700 text-[10px] px-2 py-0.5 rounded-full">{t}</span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
+                  <td className="px-3 py-2 text-gray-600 truncate max-w-[360px]">{d.description||"—"}</td>
                   <td className="px-3 py-2">{level(d)}</td><td className="px-3 py-2">{fmt(d.created_at)}</td>
-                  <td className="px-3 py-2"><span className="border rounded-full px-2 py-0.5 text-[11px]">{badge(unified&&selected?.id===d.id?unified:null)}</span></td>
+                  <td className="px-3 py-2"><span className="border rounded-full px-2 py-0.5 text-[11px]">{badge(d)}</span></td>
                   <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-[11px] border ${d.storage_model==="fixed"?"border-green-300 text-green-700":"border-amber-300 text-amber-700"}`}>{fix(d)}</span></td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex gap-2 justify-end">
@@ -137,7 +133,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-semibold text-[#640811]">{selected.title}</h3>
-                    <span className="border rounded-full px-2 py-0.5 text-[11px]">{badge(unified)}</span>
+                    <span className="border rounded-full px-2 py-0.5 text-[11px]">{badge(selected)}</span>
                     <span className="border rounded-full px-2 py-0.5 text-[11px]">{fix(selected)}</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{selected.description||"—"}</p>
@@ -151,11 +147,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               </div>
             </div>
             <div className="p-4">
-              {selected.use_scalar_b ? (
+              {selected.use_scalar_b && (
                 <div className="text-xs text-gray-500 italic mb-3">
-                  This is a scalar-based derived dataset. The value <b>{selected.scalar_b_val}</b> was applied uniformly across records.
+                  This is a scalar-based derived dataset. Value <b>{selected.scalar_b_val}</b> applied uniformly.
                 </div>
-              ) : null}
+              )}
               <div className="max-h-[420px] overflow-auto border rounded">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 sticky top-0"><tr>
