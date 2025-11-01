@@ -45,7 +45,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Load metadata
   const loadDatasets = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -60,7 +59,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     loadDatasets();
   }, [countryIso]);
 
-  // Sort
   const sorted = [...datasets].sort((a, b) => {
     const av = (a[sortField] || "") as string;
     const bv = (b[sortField] || "") as string;
@@ -75,14 +73,12 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   };
 
-  // Delete
   const deleteDataset = async (ds: DerivedDataset) => {
     if (!confirm(`Delete derived dataset "${ds.title}"?`)) return;
     await supabase.from("derived_dataset_metadata").delete().eq("id", ds.id);
     loadDatasets();
   };
 
-  // Materialize
   const handleMaterialize = async (ds: DerivedDataset) => {
     if (!confirm(`Materialize dataset "${ds.title}"?`)) return;
     setLoading(true);
@@ -93,7 +89,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     loadDatasets();
   };
 
-  // Load data preview
   const handleSelect = async (ds: DerivedDataset) => {
     setSelectedDataset(ds);
     setPreviewData([]);
@@ -123,7 +118,6 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       }}
     >
       <div className="p-6 space-y-5">
-        {/* Header actions */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <div className="flex gap-2">
@@ -276,7 +270,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                 <thead className="bg-gray-100 sticky top-0">
                   <tr>
                     <th className="p-1 text-left">PCode</th>
-                    <th className="p-1 text-left">Place</th>
+                    <th className="p-1 text-left">Admin Name</th>
                     <th className="p-1 text-right">Value</th>
                   </tr>
                 </thead>
@@ -291,9 +285,11 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                     previewData.map((r, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50">
                         <td className="p-1">{r.admin_pcode || r.out_join_key}</td>
-                        <td className="p-1">{r.out_place_name || "—"}</td>
+                        <td className="p-1">{r.out_place_name || r.place_name || r.name || "—"}</td>
                         <td className="p-1 text-right">
-                          {r.value ?? r.out_derived ?? "—"}
+                          {typeof (r.value ?? r.out_derived) === "number"
+                            ? (r.value ?? r.out_derived).toFixed(1)
+                            : r.value ?? r.out_derived ?? "—"}
                         </td>
                       </tr>
                     ))
