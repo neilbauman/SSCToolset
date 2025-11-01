@@ -23,14 +23,16 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
   const [busy, setBusy] = useState<string | null>(null);
   const [loadingPrev, setLoadingPrev] = useState(false);
 
+  // ✅ FIXED: uppercase ISO so it always matches the DB
   const load = async () => {
     const { data } = await supabase
       .from("derived_dataset_metadata")
       .select("*, taxonomy_categories, taxonomy_terms, col_a, col_b, col_a_used, col_b_used")
-      .eq("country_iso", countryIso)
+      .eq("country_iso", countryIso.toUpperCase())
       .order(sortField, { ascending: sortAsc });
     setDatasets(data || []);
   };
+
   useEffect(() => { load(); }, [sortField, sortAsc, countryIso]);
 
   const fmt = (s: string) => (s ? new Date(s).toLocaleDateString() : "—");
@@ -49,7 +51,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     setValCount(count || 0);
     const lvl = selected?.target_level || selected?.admin_level;
     if (!lvl) return setTargCount(null);
-    const { count: t } = await supabase.from("admin_units").select("admin_pcode", { count: "exact", head: true }).eq("country_iso", countryIso).eq("admin_level", lvl);
+    const { count: t } = await supabase.from("admin_units").select("admin_pcode", { count: "exact", head: true }).eq("country_iso", countryIso.toUpperCase()).eq("admin_level", lvl);
     setTargCount(t || 0);
   };
   const getPreview = async (id: string) => {
