@@ -1,77 +1,86 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Plus, Pencil, Trash2, Target, Layers } from "lucide-react";
-import DeleteConfirmationModal from "@/components/common/DeleteConfirmationModal";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { CountryParams } from "@/app/country/types";
+import { Plus, Layers, RefreshCw, Clock } from "lucide-react";
 
 type Instance = {
   id: string;
-  name: string;
-  type: "baseline" | "nowcast" | "forecast" | "scenario";
-  admin_level: string | null;
-  status: "draft" | "published";
-  updated_at: string | null;
   country_iso: string;
+  title: string;
+  description: string | null;
+  type: "baseline" | "nowcast" | "forecast";
+  created_at: string;
+  updated_at: string;
 };
 
-export default function CountryInstancesPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id;
+export default function CountryInstancesPage() {
+  const { id: country_iso } = useParams<{ id: string }>();
   const [instances, setInstances] = useState<Instance[]>([]);
+  const [openAdd, setOpenAdd] = useState(false);
+  const [newInstance, setNewInstance] = useState<Partial<Instance>>({
+    type: "baseline",
+  });
   const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [toDelete, setToDelete] = useState<Instance | null>(null);
 
-  async function loadInstances() {
-    setLoading(true);
+  async function fetchInstances() {
     const { data, error } = await supabase
       .from("instances_list")
       .select("*")
-      .eq("country_iso", countryIso)
-      .order("updated_at", { ascending: false });
-    if (!error && data) setInstances(data as Instance[]);
+      .eq("country_iso", country_iso)
+      .order("created_at", { ascending: false });
+    if (!error && data) setInstances(data);
+  }
+
+  async function handleAdd() {
+    if (!newInstance.title) return;
+    setLoading(true);
+    const { error } = await supabase.from("instances_list").insert([
+      {
+        country_iso,
+        title: newInstance.title,
+        description: newInstance.description || null,
+        type: newInstance.type,
+      },
+    ]);
+    if (!error) {
+      setOpenAdd(false);
+      setNewInstance({ type: "baseline" });
+      await fetchInstances();
+    }
     setLoading(false);
   }
 
   useEffect(() => {
-    loadInstances();
-  }, [countryIso]);
-
-  async function handleDelete(row: Instance) {
-    setLoading(true);
-    const { error } = await supabase.from("instances").delete().eq("id", row.id);
-    if (!error) await loadInstances();
-    setLoading(false);
-    setToDelete(null);
-  }
+    fetchInstances();
+  }, [country_iso]);
 
   const headerProps = {
-    title: `${countryIso} – Instances`,
+    title: "Country Instances",
     group: "country-config" as const,
     description:
-      "Baselines and scenario analyses for this country. Create or explore SSC instances.",
+      "View and manage analytical instances (baseline, nowcast, forecast) for this country.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
-          { label: "Dashboard", href: "/" },
-          { label: "Country Configuration", href: "/country" },
-          { label: countryIso, href: `/country/${countryIso}` },
-          { label: "Instances", href: "#" },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: `/country` },
+          { label: country_iso, href: `/country/${country_iso}` },
+          { label: "Instances" },
         ]}
       />
     ),
     right: (
-      <Link
-        href={`/instances/new?country=${countryIso}`}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90"
+      <button
+        onClick={() => setOpenAdd(true)}
+        className="flex items-center gap-1 bg-[color:var(--gsc-green)] text-white px-3 py-1.5 rounded text-sm hover:opacity-90"
       >
-        <Plus className="w-4 h-4" />
-        New
-      </Link>
+        <Plus className="w-4 h-4" /> New Instance
+      </button>
     ),
   };
 
@@ -87,23 +96,14 @@ export default function CountryInstancesPage({ params }: { params: CountryParams
           </div>
         </div>
         <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Target className="w-6 h-6 text-[color:var(--gsc-green)]" />
-          <div>
-            <p className="text-sm text-gray-500">Published</p>
-            <p className="text-lg font-semibold">
-              {instances.filter((i) => i.status === "published").length}
-            </p>
-          </div>
-        </div>
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Pencil className="w-6 h-6 text-[color:var(--gsc-orange,#f59e0b)]" />
+          <Clock className="w-6 h-6 text-[color:var(--gsc-green)]" />
           <div>
             <p className="text-sm text-gray-500">Last Updated</p>
             <p className="text-lg font-semibold">
-              {instances.length
+              {instances.length > 0
                 ? new Date(
                     instances
-                      .map((r) => r.updated_at || "")
+                      .map((i) => i.updated_at || "")
                       .filter(Boolean)
                       .sort()
                       .reverse()[0]
@@ -112,87 +112,50 @@ export default function CountryInstancesPage({ params }: { params: CountryParams
             </p>
           </div>
         </div>
+        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
+          <RefreshCw className="w-6 h-6 text-[color:var(--gsc-orange)]" />
+          <div>
+            <p className="text-sm text-gray-500">Baselines</p>
+            <p className="text-lg font-semibold">
+              {instances.filter((i) => i.type === "baseline").length}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex justify-end items-center mb-4">
-        <button
-          onClick={() => setEditMode((v) => !v)}
-          className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm hover:bg-gray-300"
-        >
-          {editMode ? "Exit Edit Mode" : "Edit Mode"}
-        </button>
-      </div>
-
-      {/* Table */}
+      {/* Instances table */}
       <div className="overflow-x-auto border rounded-lg shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-left">
             <tr>
-              <th className="px-4 py-2 w-[30%]">Name</th>
-              <th className="px-4 py-2 w-[15%]">Type</th>
-              <th className="px-4 py-2 w-[15%]">Admin</th>
-              <th className="px-4 py-2 w-[15%]">Status</th>
-              <th className="px-4 py-2 w-[15%]">Updated</th>
-              {editMode && <th className="px-4 py-2 text-right">Actions</th>}
+              <th className="px-4 py-2 w-[40%]">Title</th>
+              <th className="px-4 py-2 w-[20%]">Type</th>
+              <th className="px-4 py-2 w-[25%]">Created</th>
+              <th className="px-4 py-2 w-[15%]">Actions</th>
             </tr>
           </thead>
           <tbody>
             {instances.map((i) => (
               <tr key={i.id} className="border-t hover:bg-gray-50">
+                <td className="px-4 py-2">{i.title}</td>
+                <td className="px-4 py-2 capitalize">{i.type}</td>
+                <td className="px-4 py-2">
+                  {new Date(i.created_at).toLocaleDateString()}
+                </td>
                 <td className="px-4 py-2">
                   <Link
-                    href={`/instances/${i.id}`}
+                    href={`/country/${country_iso}/instances/${i.id}`}
                     className="text-blue-700 hover:underline"
                   >
-                    {i.name}
+                    Open
                   </Link>
                 </td>
-                <td className="px-4 py-2 capitalize">{i.type}</td>
-                <td className="px-4 py-2">{i.admin_level || "—"}</td>
-                <td className="px-4 py-2">
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
-                      i.status === "published"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-yellow-100 text-yellow-700"
-                    }`}
-                  >
-                    {i.status}
-                  </span>
-                </td>
-                <td className="px-4 py-2">
-                  {i.updated_at
-                    ? new Date(i.updated_at).toLocaleDateString()
-                    : "—"}
-                </td>
-                {editMode && (
-                  <td className="px-4 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link
-                        href={`/instances/${i.id}/edit`}
-                        className="p-1.5 rounded hover:bg-gray-100"
-                      >
-                        <Pencil className="w-4 h-4 text-gray-600" />
-                      </Link>
-                      <button
-                        className="p-1.5 rounded hover:bg-red-50"
-                        onClick={() => setToDelete(i)}
-                      >
-                        <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
-                      </button>
-                    </div>
-                  </td>
-                )}
               </tr>
             ))}
             {instances.length === 0 && (
               <tr>
-                <td
-                  colSpan={editMode ? 6 : 5}
-                  className="px-4 py-6 text-center text-gray-500 italic"
-                >
-                  {loading ? "Loading…" : "No instances yet for this country."}
+                <td colSpan={4} className="px-4 py-6 text-center text-gray-500 italic">
+                  No instances yet. Create one to begin analysis.
                 </td>
               </tr>
             )}
@@ -200,21 +163,68 @@ export default function CountryInstancesPage({ params }: { params: CountryParams
         </table>
       </div>
 
-      {/* Delete Modal */}
-      <DeleteConfirmationModal
-        open={!!toDelete}
-        title="Delete Instance"
-        message={
-          toDelete
-            ? `Are you sure you want to delete "${toDelete.name}" (${toDelete.type})?`
-            : ""
-        }
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        loading={loading}
-        onConfirm={() => toDelete && handleDelete(toDelete)}
-        onCancel={() => setToDelete(null)}
-      />
+      {/* Add modal */}
+      {openAdd && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-[400px]">
+            <h2 className="text-lg font-semibold mb-4">New Instance</h2>
+            <label className="block mb-2 text-sm text-gray-600">Title</label>
+            <input
+              className="w-full border rounded p-2 mb-3 text-sm"
+              placeholder="Instance title"
+              value={newInstance.title || ""}
+              onChange={(e) =>
+                setNewInstance({ ...newInstance, title: e.target.value })
+              }
+            />
+            <label className="block mb-2 text-sm text-gray-600">Type</label>
+            <select
+              className="w-full border rounded p-2 mb-3 text-sm"
+              value={newInstance.type}
+              onChange={(e) =>
+                setNewInstance({
+                  ...newInstance,
+                  type: e.target.value as Instance["type"],
+                })
+              }
+            >
+              <option value="baseline">Baseline</option>
+              <option value="nowcast">Nowcast</option>
+              <option value="forecast">Forecast</option>
+            </select>
+            <label className="block mb-2 text-sm text-gray-600">
+              Description
+            </label>
+            <textarea
+              className="w-full border rounded p-2 mb-4 text-sm"
+              rows={3}
+              placeholder="Optional description"
+              value={newInstance.description || ""}
+              onChange={(e) =>
+                setNewInstance({
+                  ...newInstance,
+                  description: e.target.value,
+                })
+              }
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOpenAdd(false)}
+                className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={loading}
+                onClick={handleAdd}
+                className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SidebarLayout>
   );
 }
