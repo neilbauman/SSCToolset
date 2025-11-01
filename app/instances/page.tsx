@@ -50,8 +50,8 @@ export default function InstancesPage() {
 
   const headerProps = {
     title: "Instances",
-    description:
-      "Create and compare analyses (baseline, nowcast, forecast, scenarios).",
+    group: "country-config" as const, // ✅ required field
+    description: "Create and compare analyses (baseline, nowcast, forecast, scenarios).",
     breadcrumbs: (
       <Breadcrumbs
         items={[
