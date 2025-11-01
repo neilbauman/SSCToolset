@@ -1,230 +1,196 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { Plus, Trash2, BarChart3, RefreshCw } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus, Layers, RefreshCw, Clock } from "lucide-react";
+import type { CountryParams } from "@/app/country/types";
 
-type Instance = {
+interface Instance {
   id: string;
-  country_iso: string;
   title: string;
   description: string | null;
-  type: "baseline" | "nowcast" | "forecast";
+  type: string;
   created_at: string;
-  updated_at: string;
-};
+}
 
-export default function CountryInstancesPage() {
-  const { id: country_iso } = useParams<{ id: string }>();
+export default function InstancesPage({ params }: { params: CountryParams }) {
+  const countryIso = params.id;
   const [instances, setInstances] = useState<Instance[]>([]);
-  const [openAdd, setOpenAdd] = useState(false);
-  const [newInstance, setNewInstance] = useState<Partial<Instance>>({
-    type: "baseline",
-  });
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newType, setNewType] = useState("baseline");
+  const [newDesc, setNewDesc] = useState("");
 
-  async function fetchInstances() {
+  // Load all instances for this country
+  async function loadInstances() {
+    setLoading(true);
     const { data, error } = await supabase
       .from("instances_list")
       .select("*")
-      .eq("country_iso", country_iso)
+      .eq("country_iso", countryIso)
       .order("created_at", { ascending: false });
-    if (!error && data) setInstances(data);
-  }
-
-  async function handleAdd() {
-    if (!newInstance.title) return;
-    setLoading(true);
-    const { error } = await supabase.from("instances_list").insert([
-      {
-        country_iso,
-        title: newInstance.title,
-        description: newInstance.description || null,
-        type: newInstance.type,
-      },
-    ]);
-    if (!error) {
-      setOpenAdd(false);
-      setNewInstance({ type: "baseline" });
-      await fetchInstances();
-    }
+    if (error) console.error(error);
+    else setInstances(data || []);
     setLoading(false);
   }
 
   useEffect(() => {
-    fetchInstances();
-  }, [country_iso]);
+    loadInstances();
+  }, [countryIso]);
+
+  // Add new instance
+  async function addInstance() {
+    if (!newTitle.trim()) return alert("Enter a title for this instance.");
+    const { error } = await supabase.from("instances_list").insert({
+      country_iso: countryIso,
+      title: newTitle,
+      description: newDesc || null,
+      type: newType,
+    });
+    if (error) return alert("Error adding instance: " + error.message);
+    setNewTitle("");
+    setNewDesc("");
+    await loadInstances();
+  }
+
+  // Delete instance
+  async function deleteInstance(id: string) {
+    if (!confirm("Delete this instance?")) return;
+    const { error } = await supabase.from("instances_list").delete().eq("id", id);
+    if (error) return alert("Error deleting instance: " + error.message);
+    await loadInstances();
+  }
 
   const headerProps = {
-    title: "Country Instances",
+    title: `${countryIso} – Instances`,
     group: "country-config" as const,
     description:
-      "View and manage analytical instances (baseline, nowcast, forecast) for this country.",
+      "SSC Instances represent baseline or event-based analyses built from datasets within a country configuration.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country Configuration", href: `/country` },
-          { label: country_iso, href: `/country/${country_iso}` },
-          { label: "Instances" },
+          { label: "Dashboard", href: "/" },
+          { label: "Country Configuration", href: "/country" },
+          { label: countryIso, href: `/country/${countryIso}` },
+          { label: "Instances", href: "#" },
         ]}
       />
-    ),
-    right: (
-      <button
-        onClick={() => setOpenAdd(true)}
-        className="flex items-center gap-1 bg-[color:var(--gsc-green)] text-white px-3 py-1.5 rounded text-sm hover:opacity-90"
-      >
-        <Plus className="w-4 h-4" /> New Instance
-      </button>
     ),
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Quick stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Layers className="w-6 h-6 text-[color:var(--gsc-blue)]" />
-          <div>
-            <p className="text-sm text-gray-500">Total Instances</p>
-            <p className="text-lg font-semibold">{instances.length}</p>
-          </div>
-        </div>
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Clock className="w-6 h-6 text-[color:var(--gsc-green)]" />
-          <div>
-            <p className="text-sm text-gray-500">Last Updated</p>
-            <p className="text-lg font-semibold">
-              {instances.length > 0
-                ? new Date(
-                    instances
-                      .map((i) => i.updated_at || "")
-                      .filter(Boolean)
-                      .sort()
-                      .reverse()[0]
-                  ).toLocaleDateString()
-                : "—"}
-            </p>
-          </div>
-        </div>
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <RefreshCw className="w-6 h-6 text-[color:var(--gsc-orange)]" />
-          <div>
-            <p className="text-sm text-gray-500">Baselines</p>
-            <p className="text-lg font-semibold">
-              {instances.filter((i) => i.type === "baseline").length}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Instances table */}
-      <div className="overflow-x-auto border rounded-lg shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100 text-left">
-            <tr>
-              <th className="px-4 py-2 w-[40%]">Title</th>
-              <th className="px-4 py-2 w-[20%]">Type</th>
-              <th className="px-4 py-2 w-[25%]">Created</th>
-              <th className="px-4 py-2 w-[15%]">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {instances.map((i) => (
-              <tr key={i.id} className="border-t hover:bg-gray-50">
-                <td className="px-4 py-2">{i.title}</td>
-                <td className="px-4 py-2 capitalize">{i.type}</td>
-                <td className="px-4 py-2">
-                  {new Date(i.created_at).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-2">
-                  <Link
-                    href={`/country/${country_iso}/instances/${i.id}`}
-                    className="text-blue-700 hover:underline"
-                  >
-                    Open
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {instances.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-gray-500 italic">
-                  No instances yet. Create one to begin analysis.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add modal */}
-      {openAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-[400px]">
-            <h2 className="text-lg font-semibold mb-4">New Instance</h2>
-            <label className="block mb-2 text-sm text-gray-600">Title</label>
-            <input
-              className="w-full border rounded p-2 mb-3 text-sm"
-              placeholder="Instance title"
-              value={newInstance.title || ""}
-              onChange={(e) =>
-                setNewInstance({ ...newInstance, title: e.target.value })
-              }
-            />
-            <label className="block mb-2 text-sm text-gray-600">Type</label>
-            <select
-              className="w-full border rounded p-2 mb-3 text-sm"
-              value={newInstance.type}
-              onChange={(e) =>
-                setNewInstance({
-                  ...newInstance,
-                  type: e.target.value as Instance["type"],
-                })
-              }
+      <div className="p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Instances</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => loadInstances()}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
             >
-              <option value="baseline">Baseline</option>
-              <option value="nowcast">Nowcast</option>
-              <option value="forecast">Forecast</option>
-            </select>
-            <label className="block mb-2 text-sm text-gray-600">
-              Description
-            </label>
-            <textarea
-              className="w-full border rounded p-2 mb-4 text-sm"
-              rows={3}
-              placeholder="Optional description"
-              value={newInstance.description || ""}
-              onChange={(e) =>
-                setNewInstance({
-                  ...newInstance,
-                  description: e.target.value,
-                })
-              }
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setOpenAdd(false)}
-                className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm hover:bg-gray-300"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={loading}
-                onClick={handleAdd}
-                className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Save"}
-              </button>
-            </div>
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
           </div>
         </div>
-      )}
+
+        {/* New instance form */}
+        <div className="border rounded-lg p-3 bg-gray-50 flex flex-col sm:flex-row gap-2 items-center">
+          <input
+            type="text"
+            placeholder="Instance title (e.g., Baseline 2025 or Typhoon Egay Response)"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className="border p-2 rounded w-full sm:flex-1 text-sm"
+          />
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            className="border p-2 rounded text-sm"
+          >
+            <option value="baseline">Baseline</option>
+            <option value="forecast">Forecast</option>
+            <option value="nowcast">Nowcast</option>
+            <option value="event">Event</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Description (optional)"
+            value={newDesc}
+            onChange={(e) => setNewDesc(e.target.value)}
+            className="border p-2 rounded w-full sm:flex-1 text-sm"
+          />
+          <button
+            onClick={addInstance}
+            className="flex items-center gap-1 bg-[color:var(--gsc-green)] text-white px-3 py-2 rounded text-sm hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+
+        {/* Instances table */}
+        <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
+          <table className="min-w-full border-collapse">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-3 py-2 text-left">Title</th>
+                <th className="px-3 py-2 text-left">Type</th>
+                <th className="px-3 py-2 text-left">Description</th>
+                <th className="px-3 py-2 text-left">Created</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {instances.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center italic text-gray-500 py-3">
+                    No instances yet. Create one above.
+                  </td>
+                </tr>
+              ) : (
+                instances.map((i) => (
+                  <tr key={i.id} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2 text-[color:var(--gsc-blue)] font-medium">
+                      <Link href={`/country/${countryIso}/instances/${i.id}`}>
+                        {i.title}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 capitalize">{i.type}</td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {i.description || "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {new Date(i.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Link
+                          href={`/country/${countryIso}/instances/${i.id}/baseline`}
+                          title="View Baseline"
+                          className="text-gray-700 hover:text-[color:var(--gsc-green)]"
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                        </Link>
+                        <button
+                          title="Delete Instance"
+                          onClick={() => deleteInstance(i.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </SidebarLayout>
   );
 }
