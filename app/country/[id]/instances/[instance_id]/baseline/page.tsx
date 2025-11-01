@@ -3,235 +3,161 @@
 import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import {
-  RefreshCw,
-  FileDown,
-  Layers,
-  BarChart3,
-  AlertTriangle,
-  Home,
-} from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { CountryParams } from "@/app/country/types";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
+import { RefreshCw, Layers, Database } from "lucide-react";
 
-interface DatasetLink {
+interface DatasetLayer {
   id: string;
-  dataset_title: string;
   category: string;
   subcategory: string | null;
-  dataset_type: string;
-  admin_level: string;
+  dataset_id: string;
+  title?: string;
+  dataset_type?: string;
   record_count?: number;
+  admin_level?: string;
 }
 
-export default function BaselinePage({
+export default function InstanceBaselinePage({
   params,
 }: {
   params: { id: string; instance_id: string };
 }) {
   const countryIso = params.id;
   const instanceId = params.instance_id;
-  const [instance, setInstance] = useState<any>(null);
-  const [linked, setLinked] = useState<DatasetLink[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<any>(null);
+  const [layers, setLayers] = useState<DatasetLayer[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Load instance metadata
-  async function loadInstance() {
-    const { data } = await supabase
-      .from("instances_list")
-      .select("*")
-      .eq("id", instanceId)
-      .single();
-    setInstance(data);
-  }
-
-  // Load linked datasets for this instance
-  async function loadLinked() {
-    setRefreshing(true);
-    const { data, error } = await supabase
+  const loadBaselineLayers = async () => {
+    setLoading(true);
+    const { data: linked, error } = await supabase
       .from("instance_layer_summary")
-      .select("*")
+      .select("id, category, subcategory, dataset_id")
       .eq("instance_id", instanceId);
-    if (error) console.error(error);
-    setLinked(data || []);
-    setRefreshing(false);
-  }
+    if (error) return console.error(error);
+    if (!linked || linked.length === 0) {
+      setLayers([]);
+      setLoading(false);
+      return;
+    }
 
-  // Quick composite indicator: count by category
-  useEffect(() => {
-    if (!linked.length) return;
-    const categories = ["vulnerability", "hazard", "ssc_pillar"];
-    const summary = categories.map((c) => ({
-      name:
-        c === "vulnerability"
-          ? "Underlying Vulnerabilities"
-          : c === "hazard"
-          ? "Hazards"
-          : "SSC Pillars",
-      value: linked.filter((d) => d.category === c).length,
+    // Fetch metadata for all datasets in one go
+    const ids = linked.map((l) => l.dataset_id);
+    const { data: meta } = await supabase
+      .from("unified_datasets")
+      .select("dataset_id, title, dataset_type, record_count, admin_level")
+      .in("dataset_id", ids);
+
+    const merged = linked.map((l) => ({
+      ...l,
+      ...(meta?.find((m) => m.dataset_id === l.dataset_id) || {}),
     }));
-    setStats(summary);
-  }, [linked]);
+    setLayers(merged);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    loadInstance();
-    loadLinked();
+    loadBaselineLayers();
   }, [instanceId]);
 
-  const COLORS = ["#f59e0b", "#ef4444", "#2563eb"];
-
   const headerProps = {
-    title: `${instance?.title || "Baseline"} – Analysis`,
+    title: "Baseline Vulnerability Overview",
     group: "country-config" as const,
     description:
-      instance?.description ||
-      "Baseline analysis integrates vulnerability, hazard, and SSC pillar datasets into a national composite view.",
+      "Composite overview of the baseline instance — combining underlying vulnerabilities, hazards, and SSC pillars.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/" },
-          { label: "Country Configuration", href: "/country" },
+          { label: "Country Config", href: "/country" },
           { label: countryIso, href: `/country/${countryIso}` },
           { label: "Instances", href: `/country/${countryIso}/instances` },
-          { label: instance?.title || "Instance", href: `/country/${countryIso}/instances/${instanceId}` },
-          { label: "Baseline", href: "#" },
+          { label: "Baseline Overview" },
         ]}
       />
     ),
-    tool: "baseline",
   };
+
+  // Group datasets by category for visualization
+  const grouped = layers.reduce<Record<string, DatasetLayer[]>>((acc, l) => {
+    if (!acc[l.category]) acc[l.category] = [];
+    acc[l.category].push(l);
+    return acc;
+  }, {});
+
+  const chartData = Object.entries(grouped).map(([cat, ds]) => ({
+    category: cat,
+    count: ds.length,
+    totalRecords: ds.reduce((sum, d) => sum + (d.record_count || 0), 0),
+  }));
 
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="p-6 space-y-6">
-        {/* Overview */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {instance?.title || "Baseline"} Overview
+        {/* Header controls */}
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Layers className="w-5 h-5 text-[color:var(--gsc-blue)]" />
+            Instance Composition
           </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={loadLinked}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-            <button
-              onClick={() => alert("Export to PDF coming soon.")}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-blue)] text-white hover:opacity-90"
-            >
-              <FileDown className="w-4 h-4" />
-              Export PDF
-            </button>
-          </div>
+          <button
+            onClick={loadBaselineLayers}
+            className="flex items-center gap-2 text-sm px-3 py-1.5 bg-gray-100 rounded hover:bg-gray-200"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
         </div>
 
-        {/* Summary visualization */}
-        {stats && (
-          <div className="h-64 w-full bg-white rounded-lg shadow border flex justify-center items-center">
-            <ResponsiveContainer width="80%" height="100%">
-              <PieChart>
-                <Pie
-                  data={stats}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  dataKey="value"
-                  nameKey="name"
-                  label
-                >
-                  {stats.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index]} />
-                  ))}
-                </Pie>
+        {/* Chart summary */}
+        {chartData.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="category" />
+                <YAxis />
                 <Tooltip />
-                <Legend />
-              </PieChart>
+                <Bar dataKey="count" fill="var(--gsc-green)" name="Datasets" />
+                <Bar dataKey="totalRecords" fill="var(--gsc-blue)" name="Records" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
+        ) : (
+          <p className="text-gray-500 italic text-center py-10">
+            No datasets linked to this instance yet.
+          </p>
         )}
 
-        {/* Linked Datasets by Category */}
-        <div className="space-y-6">
-          {["vulnerability", "hazard", "ssc_pillar"].map((cat) => {
-            const label =
-              cat === "vulnerability"
-                ? "Underlying Vulnerabilities"
-                : cat === "hazard"
-                ? "Hazards"
-                : "SSC Pillars (P1–P3)";
-            const icon =
-              cat === "vulnerability" ? (
-                <Layers className="w-4 h-4 text-yellow-600" />
-              ) : cat === "hazard" ? (
-                <AlertTriangle className="w-4 h-4 text-red-600" />
-              ) : (
-                <Home className="w-4 h-4 text-blue-600" />
-              );
-            const group = linked.filter((d) => d.category === cat);
-            return (
-              <div key={cat}>
-                <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-2">
-                  {icon} {label}
-                </h3>
-                <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Dataset</th>
-                        <th className="px-3 py-2 text-left">Type</th>
-                        <th className="px-3 py-2 text-left">Level</th>
-                        <th className="px-3 py-2 text-left">Records</th>
-                        <th className="px-3 py-2 text-left">Subcategory</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="text-center italic text-gray-500 py-3"
-                          >
-                            No datasets in this category.
-                          </td>
-                        </tr>
-                      ) : (
-                        group.map((g) => (
-                          <tr key={g.id} className="border-t hover:bg-gray-50">
-                            <td className="px-3 py-2 text-[color:var(--gsc-blue)] font-medium">
-                              {g.dataset_title}
-                            </td>
-                            <td className="px-3 py-2 capitalize">
-                              {g.dataset_type}
-                            </td>
-                            <td className="px-3 py-2">{g.admin_level}</td>
-                            <td className="px-3 py-2">
-                              {g.record_count || "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {g.subcategory || "—"}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
+        {/* Dataset list */}
+        <div className="bg-white border rounded shadow-sm overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-4 py-2 text-left">Dataset</th>
+                <th className="px-4 py-2 text-left">Category</th>
+                <th className="px-4 py-2 text-left">Subcategory</th>
+                <th className="px-4 py-2 text-left">Records</th>
+                <th className="px-4 py-2 text-left">Level</th>
+                <th className="px-4 py-2 text-left">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {layers.map((l) => (
+                <tr key={l.id} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-gray-600" />
+                    {l.title || l.dataset_id}
+                  </td>
+                  <td className="px-4 py-2 capitalize">{l.category}</td>
+                  <td className="px-4 py-2">{l.subcategory || "—"}</td>
+                  <td className="px-4 py-2">{l.record_count || "—"}</td>
+                  <td className="px-4 py-2">{l.admin_level || "—"}</td>
+                  <td className="px-4 py-2">{l.dataset_type}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </SidebarLayout>
