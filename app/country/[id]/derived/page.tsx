@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown, Database, DatabaseX, Loader2, Info } from "lucide-react";
+import { Eye, Edit3, Trash2, Plus, RefreshCw, ChevronUp, ChevronDown, Database, DatabaseMinus, Loader2, Info } from "lucide-react";
 import DerivedDatasetWizard from "@/components/country/wizard";
 import type { CountryParams } from "@/app/country/types";
 
@@ -103,7 +103,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                       <button onClick={()=>selectRow(d)}><Eye className="w-4 h-4"/></button>
                       <button onClick={()=>{setEdit(d);setWizard(true);}}><Edit3 className="w-4 h-4"/></button>
                       {d.storage_model==="fixed"?
-                        <button onClick={()=>demat(d)} disabled={busy===d.id}>{busy===d.id?<Loader2 className="w-4 h-4 animate-spin"/>:<DatabaseX className="w-4 h-4"/>}</button>:
+                        <button onClick={()=>demat(d)} disabled={busy===d.id}>{busy===d.id?<Loader2 className="w-4 h-4 animate-spin"/>:<DatabaseMinus className="w-4 h-4"/>}</button>:
                         <button onClick={()=>mat(d)} disabled={busy===d.id}>{busy===d.id?<Loader2 className="w-4 h-4 animate-spin"/>:<Database className="w-4 h-4"/>}</button>}
                       <button onClick={()=>del(d)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4"/></button>
                     </div></td></tr>))}
@@ -122,7 +122,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
               <div className="flex items-center gap-4 text-xs text-gray-600">
                 <div className="flex items-center gap-1"><Info className="w-3.5 h-3.5"/>Admin: <b>{level(selected)}</b></div>
                 <div className="flex items-center gap-1"><Info className="w-3.5 h-3.5"/>Rows: <b>{valCount??"—"}</b></div>
-                <div className="flex items-center gap-1"><Info className="w-3.5 h-3.5"/>Coverage: <b>{healthPct!==null?`${healthPct}% (${valCount}/${targCount})`:"—"}</b></div>
+                <div className="flex items-center gap-1"><Info className="w-3.5 h-3.5"/>Coverage: <b>{healthPct!==null?`${healthPct}% (${valCount}/{targCount})`:"—"}</b></div>
               </div></div>
             <div className="p-4">
               <div className="max-h-[420px] overflow-auto border rounded">
