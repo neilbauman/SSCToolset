@@ -25,60 +25,47 @@ type DerivedDataset = {
   description: string | null;
   admin_level: string;
   method: string;
-  storage_model: string | null;
-  use_scalar_b?: boolean;
-  scalar_b_val?: number | null;
-  record_count?: number | null;
-  is_parametric?: boolean;
   created_at: string;
-  updated_at?: string | null;
+  taxonomy_categories?: string[];
+  taxonomy_terms?: string[];
+  storage_model?: string;
+  is_index_ready?: boolean;
+  record_count?: number;
+  is_parametric?: boolean;
 };
 
 export default function DerivedDatasetsPage({ params }: { params: CountryParams }) {
-  const countryIso = params.id.toUpperCase();
+  const countryIso = params.id;
   const [datasets, setDatasets] = useState<DerivedDataset[]>([]);
-  const [sortField, setSortField] = useState<keyof DerivedDataset>("created_at");
-  const [sortAsc, setSortAsc] = useState(false);
-  const [openWizard, setOpenWizard] = useState(false);
-  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [sortField, setSortField] = useState<keyof DerivedDataset>("title");
+  const [sortAsc, setSortAsc] = useState(true);
   const [selectedDataset, setSelectedDataset] = useState<DerivedDataset | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [openWizard, setOpenWizard] = useState(false);
+  const [editDataset, setEditDataset] = useState<DerivedDataset | null>(null);
+  const [loading, setLoading] = useState(false);
 
+  // Load metadata
   const loadDatasets = async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from("derived_dataset_metadata")
-      .select(`
-        id,
-        country_iso,
-        title,
-        description,
-        admin_level,
-        method,
-        storage_model,
-        use_scalar_b,
-        scalar_b_val,
-        created_at,
-        updated_at,
-        record_count,
-        is_parametric
-      `)
-      .eq("country_iso", countryIso)
-      .order(sortField, { ascending: sortAsc });
-
-    if (error) console.error("Supabase load error:", error.message);
-    else setDatasets(data || []);
+      .select("*")
+      .eq("country_iso", countryIso);
+    if (!error && data) setDatasets(data);
+    setLoading(false);
   };
 
-  const loadPreview = async (ds: DerivedDataset) => {
-    setLoadingPreview(true);
-    setPreviewData([]);
-    const { data, error } = await supabase.rpc("get_dataset_values", { p_dataset_id: ds.id });
-    if (error) console.error("Preview error:", error.message);
-    else setPreviewData(data || []);
-    setLoadingPreview(false);
-  };
+  useEffect(() => {
+    loadDatasets();
+  }, [countryIso]);
+
+  // Sort
+  const sorted = [...datasets].sort((a, b) => {
+    const av = (a[sortField] || "") as string;
+    const bv = (b[sortField] || "") as string;
+    return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
 
   const toggleSort = (field: keyof DerivedDataset) => {
     if (sortField === field) setSortAsc(!sortAsc);
@@ -88,21 +75,35 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
     }
   };
 
-  const deleteDataset = async (dataset: DerivedDataset) => {
-    if (!confirm(`Delete derived dataset "${dataset.title}"?`)) return;
-    await supabase.from("derived_dataset_metadata").delete().eq("id", dataset.id);
+  // Delete
+  const deleteDataset = async (ds: DerivedDataset) => {
+    if (!confirm(`Delete derived dataset "${ds.title}"?`)) return;
+    await supabase.from("derived_dataset_metadata").delete().eq("id", ds.id);
     loadDatasets();
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadDatasets();
-    setRefreshing(false);
+  // Materialize
+  const handleMaterialize = async (ds: DerivedDataset) => {
+    if (!confirm(`Materialize dataset "${ds.title}"?`)) return;
+    setLoading(true);
+    const { error } = await supabase.rpc("materialize_derived_dataset", { p_dataset_id: ds.id });
+    setLoading(false);
+    if (error) return alert("❌ Materialize error: " + error.message);
+    alert("✅ Materialized successfully.");
+    loadDatasets();
   };
 
-  useEffect(() => {
-    loadDatasets();
-  }, [sortField, sortAsc, countryIso]);
+  // Load data preview
+  const handleSelect = async (ds: DerivedDataset) => {
+    setSelectedDataset(ds);
+    setPreviewData([]);
+    const { data, error } = await supabase.rpc("get_dataset_values", { p_dataset_id: ds.id });
+    if (error) {
+      alert("Error loading data: " + error.message);
+      return;
+    }
+    setPreviewData(data || []);
+  };
 
   return (
     <SidebarLayout
@@ -122,14 +123,15 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
       }}
     >
       <div className="p-6 space-y-5">
+        {/* Header actions */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Derived Datasets</h2>
           <div className="flex gap-2">
             <button
-              onClick={handleRefresh}
+              onClick={loadDatasets}
               className="flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-[#640811] text-white hover:opacity-90"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
             <button
               onClick={() => {
@@ -143,25 +145,26 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </div>
         </div>
 
+        {/* Table */}
         <div className="bg-white border rounded-md overflow-hidden shadow text-sm">
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 border-b">
               <tr>
                 {[
                   ["title", "Title"],
-                  ["description", "Description"],
                   ["admin_level", "Admin"],
-                  ["created_at", "Created"],
-                  ["storage_model", "Type"],
-                ].map(([field, label]) => (
+                  ["method", "Method"],
+                  ["storage_model", "Model"],
+                  ["record_count", "Records"],
+                ].map(([f, l]) => (
                   <th
-                    key={field}
+                    key={f}
                     className="px-3 py-2 text-left cursor-pointer select-none"
-                    onClick={() => toggleSort(field as keyof DerivedDataset)}
+                    onClick={() => toggleSort(f as keyof DerivedDataset)}
                   >
                     <div className="flex items-center gap-1">
-                      {label}
-                      {sortField === field &&
+                      {l}
+                      {sortField === f &&
                         (sortAsc ? (
                           <ChevronUp className="w-3 h-3 text-gray-500" />
                         ) : (
@@ -170,49 +173,71 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                     </div>
                   </th>
                 ))}
+                <th className="px-3 py-2 text-left">Taxonomy</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {datasets.length === 0 ? (
+              {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center italic text-gray-500 py-3">
+                  <td colSpan={7} className="text-center italic text-gray-500 py-3">
                     No derived datasets found.
                   </td>
                 </tr>
               ) : (
-                datasets.map((ds) => (
+                sorted.map((ds) => (
                   <tr
                     key={ds.id}
-                    onClick={() => {
-                      setSelectedDataset(ds);
-                      loadPreview(ds);
-                    }}
-                    className={`border-b hover:bg-gray-50 cursor-pointer ${
+                    className={`border-b hover:bg-gray-50 ${
                       selectedDataset?.id === ds.id ? "bg-gray-100" : ""
                     }`}
                   >
-                    <td className="px-3 py-2 text-[#640811] font-medium">{ds.title}</td>
-                    <td className="px-3 py-2">{ds.description}</td>
+                    <td
+                      className="px-3 py-2 text-[#640811] font-medium cursor-pointer"
+                      onClick={() => handleSelect(ds)}
+                    >
+                      {ds.title}
+                    </td>
                     <td className="px-3 py-2">{ds.admin_level}</td>
-                    <td className="px-3 py-2">{new Date(ds.created_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-2">{ds.method}</td>
                     <td className="px-3 py-2">
-                      {ds.storage_model === "fixed" ? (
-                        <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">
-                          Fixed
-                        </span>
-                      ) : (
-                        <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs">
-                          Parametric
-                        </span>
-                      )}
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          ds.storage_model === "fixed"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-yellow-100 text-yellow-700"
+                        }`}
+                      >
+                        {ds.storage_model === "fixed" ? "Fixed" : "Parametric"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">{ds.record_count ?? 0}</td>
+                    <td className="px-3 py-2">
+                      {(ds.taxonomy_terms || [])
+                        .slice(0, 3)
+                        .map((t, i) => (
+                          <span
+                            key={i}
+                            className="inline-block bg-gray-100 text-gray-700 text-xs rounded px-2 py-0.5 mr-1"
+                          >
+                            {t}
+                          </span>
+                        ))}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex gap-2 justify-end">
+                        {ds.storage_model !== "fixed" && (
+                          <button
+                            title="Materialize"
+                            onClick={() => handleMaterialize(ds)}
+                            className="text-gray-700 hover:text-green-700"
+                          >
+                            <Database className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           title="Edit"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={() => {
                             setEditDataset(ds);
                             setOpenWizard(true);
                           }}
@@ -222,10 +247,7 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
                         </button>
                         <button
                           title="Delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteDataset(ds);
-                          }}
+                          onClick={() => deleteDataset(ds)}
                           className="text-red-600 hover:text-red-800"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -239,41 +261,50 @@ export default function DerivedDatasetsPage({ params }: { params: CountryParams 
           </table>
         </div>
 
+        {/* Inline Data Panel */}
         {selectedDataset && (
-          <div className="bg-white border rounded-md shadow p-4 text-sm">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-[#640811] font-semibold">{selectedDataset.title}</h3>
-              {loadingPreview && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+          <div className="border rounded-md bg-white shadow p-4">
+            <div className="flex justify-between mb-2">
+              <h3 className="font-semibold text-sm">
+                {selectedDataset.title} — {selectedDataset.admin_level}
+              </h3>
+              {loading && <Loader2 className="animate-spin w-4 h-4 text-gray-500" />}
             </div>
-            {previewData.length === 0 ? (
-              <p className="italic text-gray-500">No data available. Try materializing the dataset first.</p>
-            ) : (
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b">
-                    <th className="px-2 py-1 text-left">Admin</th>
-                    <th className="px-2 py-1 text-left">Value</th>
-                    <th className="px-2 py-1 text-left">Category</th>
-                    <th className="px-2 py-1 text-left">Label</th>
-                    <th className="px-2 py-1 text-left">Type</th>
+
+            <div className="max-h-72 overflow-y-auto border rounded text-xs">
+              <table className="w-full">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="p-1 text-left">PCode</th>
+                    <th className="p-1 text-left">Place</th>
+                    <th className="p-1 text-right">Value</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {previewData.map((row, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="px-2 py-1">{row.admin_pcode}</td>
-                      <td className="px-2 py-1">{row.value ?? "—"}</td>
-                      <td className="px-2 py-1">{row.category_code ?? "—"}</td>
-                      <td className="px-2 py-1">{row.category_label ?? "—"}</td>
-                      <td className="px-2 py-1">{row.dataset_type}</td>
+                  {previewData.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="text-center italic text-gray-500 py-2">
+                        No preview data
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    previewData.map((r, i) => (
+                      <tr key={i} className="border-t hover:bg-gray-50">
+                        <td className="p-1">{r.admin_pcode || r.out_join_key}</td>
+                        <td className="p-1">{r.out_place_name || "—"}</td>
+                        <td className="p-1 text-right">
+                          {r.value ?? r.out_derived ?? "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
-            )}
+            </div>
           </div>
         )}
 
+        {/* Wizard */}
         {openWizard && (
           <DerivedDatasetWizard
             open={openWizard}
