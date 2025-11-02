@@ -55,9 +55,7 @@ export default function CategorySummary({
                 className="border rounded-lg bg-white p-4 shadow-sm flex flex-col justify-between"
               >
                 <div>
-                  <div className="font-semibold text-gray-800 mb-1">
-                    {label}
-                  </div>
+                  <div className="font-semibold text-gray-800 mb-1">{label}</div>
                   <div className="text-xs text-gray-500 mb-2">
                     Datasets feeding {key.toUpperCase().replace("_", " ")}
                   </div>
