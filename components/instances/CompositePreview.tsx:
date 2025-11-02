@@ -7,6 +7,7 @@ interface Props {
   category: string;
 }
 
+
 export default function CompositePreview({ instanceId, category }: Props) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
