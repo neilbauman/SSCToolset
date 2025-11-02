@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { useEffect, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import InstanceLayersList from "@/components/instances/InstanceLayersList";
 import CompositePreview from "@/components/instances/CompositePreview";
+
+type Props = {
+  params: { id: string };
+};
 
 const CATEGORY_LABELS: Record<string, string> = {
   ssc_p1: "SSC P1 – Shelter Enclosure",
@@ -17,181 +21,95 @@ const CATEGORY_LABELS: Record<string, string> = {
   underlying_vulnerability: "Underlying Vulnerabilities",
 };
 
-export default function InstancePage({ params }: { params: { id: string } }) {
+const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
+
+export default function InstancePage({ params }: Props) {
   const instanceId = params.id;
+
   const [instanceTitle, setInstanceTitle] = useState("Instance");
-  const [targetAdm, setTargetAdm] = useState("ADM4");
-  const [disagg, setDisagg] = useState("inherit");
-  const [saving, setSaving] = useState(false);
-  const [activeCat, setActiveCat] =
-    useState<keyof typeof CATEGORY_LABELS>("underlying_vulnerability");
+  const [targetLevel, setTargetLevel] = useState<string>("…");
   const [showAddModal, setShowAddModal] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
 
-  const headerProps = useMemo(
-    () => ({
-      title: instanceTitle,
-      group: "country-config" as const,
-      description:
-        "Define analytical layers, apply methodologies, and preview composites.",
-      breadcrumbs: (
-        <Breadcrumbs
-          items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Instances", href: "/instances" },
-            { label: instanceTitle },
-          ]}
-        />
-      ),
-    }),
-    [instanceTitle]
-  );
+  const headerProps = {
+    title: instanceTitle,
+    group: "country-config" as const,
+    description: "Compose SSC composites by linking datasets and methodologies.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Instances", href: "/instances" },
+          { label: instanceTitle },
+        ]}
+      />
+    ),
+  };
 
-  // Load instance metadata
   useEffect(() => {
     (async () => {
       const { data } = await supabase
-        .from("ssc_instances")
-        .select("title, target_admin_level, disaggregation_method")
+        .from("instances_list")
+        .select("title")
         .eq("id", instanceId)
         .maybeSingle();
       if (data?.title) setInstanceTitle(data.title);
-      if (data?.target_admin_level) setTargetAdm(data.target_admin_level);
-      if (data?.disaggregation_method)
-        setDisagg(data.disaggregation_method || "inherit");
+
+      const { data: level } = await supabase.rpc("get_instance_target_level", {
+        p_instance_id: instanceId,
+      });
+      if (level) setTargetLevel(level);
     })();
   }, [instanceId]);
 
-  const saveSettings = async () => {
-    setSaving(true);
-    await supabase
-      .from("ssc_instances")
-      .update({
-        target_admin_level: targetAdm,
-        disaggregation_method: disagg,
-      })
-      .eq("id", instanceId);
-    setSaving(false);
-  };
-
-  const computeCategory = async (cat: string) => {
-    await supabase.rpc("apply_methodology_to_category", {
-      p_instance_id: instanceId,
-      p_category: cat,
-    });
-    setActiveCat(cat as keyof typeof CATEGORY_LABELS);
-  };
+  const handleChanged = () => setRefresh((r) => r + 1);
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Instance Settings */}
-        <section className="border rounded-lg p-4 bg-white">
-          <h2 className="font-semibold mb-3">Output Settings</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                Target Admin Level
-              </label>
-              <select
-                value={targetAdm}
-                onChange={(e) => setTargetAdm(e.target.value)}
-                className="border rounded px-3 py-2 w-full"
-              >
-                <option value="ADM2">ADM2</option>
-                <option value="ADM3">ADM3</option>
-                <option value="ADM4">ADM4</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                Disaggregation Method
-              </label>
-              <select
-                value={disagg}
-                onChange={(e) => setDisagg(e.target.value)}
-                className="border rounded px-3 py-2 w-full"
-              >
-                <option value="inherit">Inherit (simple copy)</option>
-                <option value="population_share">Population share</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex justify-end mt-3">
-            <button
-              onClick={saveSettings}
-              disabled={saving}
-              className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save settings"}
-            </button>
-          </div>
-        </section>
+      <div className="space-y-6 text-sm text-gray-800">
+        <div className="bg-gray-50 border rounded-lg px-3 py-2 text-xs text-gray-600">
+          <span className="font-medium text-gray-700">Target admin level:</span>{" "}
+          {targetLevel}
+        </div>
 
-        {/* Category Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
-            const active = activeCat === key;
-            return (
-              <div
-                key={key}
-                className={`border rounded-lg p-4 ${
-                  active ? "bg-green-50 border-green-400" : "bg-gray-50"
-                }`}
+        {CATEGORY_KEYS.map((cat) => (
+          <section key={cat} className="border rounded-lg p-3 bg-white shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold text-gray-800 text-base">
+                {CATEGORY_LABELS[cat]}
+              </h2>
+              <button
+                onClick={() => setShowAddModal(cat)}
+                className="px-2 py-1 text-xs rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
               >
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-semibold">{label}</h3>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowAddModal(key)}
-                      className="text-blue-600 text-sm hover:underline"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() =>
-                        setActiveCat(key as keyof typeof CATEGORY_LABELS)
-                      }
-                      className="text-gray-600 text-sm hover:underline"
-                    >
-                      View
-                    </button>
-                  </div>
-                </div>
-                <button
-                  onClick={() => computeCategory(key)}
-                  className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50"
-                >
-                  Compute / Refresh
-                </button>
-              </div>
-            );
-          })}
-        </section>
+                + Add dataset
+              </button>
+            </div>
 
-        {/* Category Detail */}
-        <section className="border rounded-lg p-4 bg-white">
-          <h2 className="font-semibold mb-3">
-            {CATEGORY_LABELS[activeCat]}
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <InstanceLayersList
-              instanceId={instanceId}
-              category={activeCat}
-              onChanged={() => computeCategory(activeCat)}
-            />
-            <CompositePreview instanceId={instanceId} category={activeCat} />
-          </div>
-        </section>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <InstanceLayersList
+                instanceId={instanceId}
+                category={cat}
+                onChanged={handleChanged}
+                key={`layers-${cat}-${refresh}`}
+              />
+              <CompositePreview
+                instanceId={instanceId}
+                category={cat}
+                key={`preview-${cat}-${refresh}`}
+              />
+            </div>
+          </section>
+        ))}
       </div>
 
-      {/* Modal */}
       {showAddModal && (
         <AddLayerModal
           open={!!showAddModal}
           onClose={() => setShowAddModal(null)}
           instanceId={instanceId}
           category={showAddModal}
-          onAdded={() => computeCategory(showAddModal)}
+          onAdded={handleChanged}
         />
       )}
     </SidebarLayout>
