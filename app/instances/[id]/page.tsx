@@ -24,36 +24,31 @@ export default function InstancePage() {
     { key: "ssc_pillar", label: "SSC Pillars" },
   ];
 
-  // Fetch instance metadata
-  useEffect(() => {
-    const fetchInstance = async () => {
-      const { data, error } = await supabase
-        .from("instances_list")
-        .select("*")
-        .eq("id", instanceId)
-        .single();
-      if (error) console.error(error);
-      setInstance(data);
-    };
-    if (instanceId) fetchInstance();
-  }, [instanceId]);
+  const fetchInstance = async () => {
+    const { data, error } = await supabase
+      .from("instances_list")
+      .select("*")
+      .eq("id", instanceId)
+      .single();
+    if (!error && data) setInstance(data);
+  };
 
-  // Fetch linked layers
   const fetchLayers = async () => {
     const { data, error } = await supabase
       .from("instance_layer_summary")
       .select("*")
       .eq("instance_id", instanceId)
       .order("created_at", { ascending: false });
-    if (error) console.error(error);
-    else setLayers(data || []);
+    if (!error && data) setLayers(data);
   };
 
   useEffect(() => {
-    if (instanceId) fetchLayers();
+    if (instanceId) {
+      fetchInstance();
+      fetchLayers();
+    }
   }, [instanceId]);
 
-  // Apply weighting or composite
   const handleComputeComposite = async (category: string) => {
     try {
       setLoadingCategory(category);
@@ -64,7 +59,6 @@ export default function InstancePage() {
       if (error) throw error;
       await fetchLayers();
     } catch (err: any) {
-      console.error(err);
       alert("Error computing composite: " + err.message);
     } finally {
       setLoadingCategory(null);
@@ -86,7 +80,7 @@ export default function InstancePage() {
     ),
   };
 
-  const renderCategorySection = (categoryKey: string, label: string) => {
+  const renderCategory = (categoryKey: string, label: string) => {
     const catLayers = layers.filter((l) => l.category === categoryKey);
 
     return (
@@ -116,9 +110,7 @@ export default function InstancePage() {
         </div>
 
         {catLayers.length === 0 ? (
-          <p className="text-gray-500 italic mb-4">
-            No datasets linked yet.
-          </p>
+          <p className="text-gray-500 italic mb-4">No datasets linked yet.</p>
         ) : (
           <div className="overflow-x-auto border rounded">
             <table className="w-full text-sm">
@@ -133,9 +125,7 @@ export default function InstancePage() {
                 {catLayers.map((l) => (
                   <tr key={l.link_id} className="border-t hover:bg-gray-50">
                     <td className="px-3 py-2">{l.dataset_title}</td>
-                    <td className="px-3 py-2">
-                      {l.methodology_name || "—"}
-                    </td>
+                    <td className="px-3 py-2">{l.methodology_name || "—"}</td>
                     <td className="px-3 py-2">
                       {l.created_at
                         ? new Date(l.created_at).toLocaleDateString()
@@ -148,7 +138,6 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* Preview */}
         <div className="mt-4">
           <CompositePreview instanceId={instanceId} category={categoryKey} />
         </div>
@@ -158,11 +147,8 @@ export default function InstancePage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      {categories.map((cat) =>
-        renderCategorySection(cat.key, cat.label)
-      )}
+      {categories.map((cat) => renderCategory(cat.key, cat.label))}
 
-      {/* Add Layer Modal */}
       {showAddModal && (
         <AddLayerModal
           open={!!showAddModal}
