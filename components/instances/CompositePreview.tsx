@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, BarChart3 } from "lucide-react";
 
 type Composite = {
@@ -21,7 +20,6 @@ export default function CompositePreview({ instanceId }: { instanceId: string })
   const [summary, setSummary] = useState<{ min: number; max: number; avg: number; count: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetch composite tables linked to this instance
   const fetchComposites = async () => {
     const { data, error } = await supabase
       .from("instance_composite_summary")
@@ -32,7 +30,6 @@ export default function CompositePreview({ instanceId }: { instanceId: string })
     setComposites(data || []);
   };
 
-  // Load summary stats for selected composite
   const fetchSummary = async (tableRef: string) => {
     setLoading(true);
     try {
@@ -53,20 +50,20 @@ export default function CompositePreview({ instanceId }: { instanceId: string })
   }, [instanceId]);
 
   return (
-    <Card className="mt-8 border rounded-lg shadow-sm">
-      <CardContent className="p-4">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[color:var(--gsc-blue)]" />
-            Composite Summary
-          </h3>
-          {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
-        </div>
+    <div className="mt-8 border rounded-lg shadow-sm bg-white">
+      <div className="p-4 border-b flex justify-between items-center">
+        <h3 className="font-semibold text-lg flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-[color:var(--gsc-blue)]" />
+          Composite Summary
+        </h3>
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+      </div>
 
+      <div className="p-4">
         {composites.length === 0 ? (
           <p className="text-gray-500 italic text-sm">No composites generated yet.</p>
         ) : (
-          <div>
+          <>
             <table className="w-full text-sm mb-4 border">
               <thead className="bg-gray-100 text-left">
                 <tr>
@@ -127,9 +124,9 @@ export default function CompositePreview({ instanceId }: { instanceId: string })
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
