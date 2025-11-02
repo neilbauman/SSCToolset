@@ -1,136 +1,123 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { X } from "lucide-react";
 
-type AddLayerModalProps = {
-  open: boolean;
-  onClose: () => void;
-  instanceId: string;
-};
-
-type Dataset = {
+interface Dataset {
   id: string;
   title: string;
   dataset_type: string;
-  country_iso: string;
-};
+  admin_level: string;
+}
 
-const CATEGORY_OPTIONS = [
-  { key: "Underlying Vulnerability", label: "Underlying Vulnerability" },
-  { key: "Hazard", label: "Hazard" },
-  { key: "Pillar 1 – Shelter", label: "Pillar 1 – Shelter" },
-  { key: "Pillar 2 – Domestic Life", label: "Pillar 2 – Domestic Life" },
-  { key: "Pillar 3 – Settlement", label: "Pillar 3 – Settlement" },
-];
+interface Props {
+  open: boolean;
+  instanceId: string;
+  onClose: () => void;
+  onAdded: () => void;
+}
 
-export default function AddLayerModal({
-  open,
-  onClose,
-  instanceId,
-}: AddLayerModalProps) {
+const ACCENT = "#640811";
+
+export default function AddLayerModal({ open, instanceId, onClose, onAdded }: Props) {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<string>("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [category, setCategory] = useState<string>("underlying_vulnerability");
   const [subcategory, setSubcategory] = useState<string>("");
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) loadDatasets();
+    if (!open) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("dataset_metadata")
+        .select("id, title, dataset_type, admin_level");
+      if (error) console.error("Dataset load error:", error);
+      else setDatasets(data || []);
+    })();
   }, [open]);
 
-  const loadDatasets = async () => {
-    const { data, error } = await supabase
-      .from("dataset_metadata")
-      .select("id, title, dataset_type, country_iso")
-      .order("title");
-    if (!error && data) setDatasets(data);
-  };
-
   const handleAdd = async () => {
-    if (!selectedDataset || !selectedCategory) return alert("Select dataset and category first.");
-    setLoading(true);
+    if (!selectedDataset || !category) {
+      alert("Please select a dataset and category.");
+      return;
+    }
+    setSaving(true);
     const { error } = await supabase.from("instance_layers").insert([
       {
         instance_id: instanceId,
         dataset_id: selectedDataset,
-        category: selectedCategory,
-        subcategory: subcategory || null,
+        category,
+        subcategory: category === "ssc_pillar" ? subcategory || "P1" : null,
       },
     ]);
-    setLoading(false);
+    setSaving(false);
     if (error) {
-      alert(`Failed to add dataset: ${error.message}`);
-      return;
+      alert("Failed to add layer: " + error.message);
+    } else {
+      onAdded();
+      onClose();
     }
-    onClose();
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-30 flex items-center justify-center">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-5 w-[95%] max-w-md">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">Add Dataset Layer</h2>
+          <button onClick={onClose}><X className="w-4 h-4 text-gray-500" /></button>
+        </div>
 
-        <h2 className="text-lg font-semibold mb-3">Add Dataset to Instance</h2>
-
-        <label className="block text-sm font-medium mb-1">Category</label>
-        <select
-          className="w-full border rounded p-2 mb-3"
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-        >
-          <option value="">Select category</option>
-          {CATEGORY_OPTIONS.map((opt) => (
-            <option key={opt.key} value={opt.key}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-
-        <label className="block text-sm font-medium mb-1">Dataset</label>
-        <select
-          className="w-full border rounded p-2 mb-3"
-          value={selectedDataset}
-          onChange={(e) => setSelectedDataset(e.target.value)}
-        >
-          <option value="">Select dataset</option>
-          {datasets.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.title} ({d.country_iso})
-            </option>
-          ))}
-        </select>
-
-        <label className="block text-sm font-medium mb-1">Subcategory (optional)</label>
-        <input
-          type="text"
-          className="w-full border rounded p-2 mb-4"
-          value={subcategory}
-          onChange={(e) => setSubcategory(e.target.value)}
-          placeholder="e.g. Structural Vulnerability"
-        />
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
+        <div className="space-y-3">
+          <select
+            className="border p-2 rounded w-full"
+            value={selectedDataset}
+            onChange={(e) => setSelectedDataset(e.target.value)}
           >
-            Cancel
-          </button>
+            <option value="">Select Dataset</option>
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title} ({d.admin_level})
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="border p-2 rounded w-full"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="underlying_vulnerability">Underlying Vulnerability</option>
+            <option value="hazard">Hazard</option>
+            <option value="ssc_pillar">SSC Pillar</option>
+          </select>
+
+          {category === "ssc_pillar" && (
+            <select
+              className="border p-2 rounded w-full"
+              value={subcategory}
+              onChange={(e) => setSubcategory(e.target.value)}
+            >
+              <option value="">Select Pillar</option>
+              <option value="P1">P1 – Shelter</option>
+              <option value="P2">P2 – Domestic Life</option>
+              <option value="P3">P3 – Settlement</option>
+            </select>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
           <button
             onClick={handleAdd}
-            disabled={loading}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+            disabled={saving}
+            className="px-3 py-1 text-white rounded"
+            style={{ background: ACCENT }}
           >
-            {loading ? "Adding…" : "Add Dataset"}
+            {saving ? "Adding..." : "Add"}
           </button>
         </div>
       </div>
