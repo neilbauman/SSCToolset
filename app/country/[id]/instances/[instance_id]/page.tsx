@@ -1,152 +1,110 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import AddLayerModal from "@/components/instances/AddLayerModal";
-import CompositePreview from "@/components/instances/CompositePreview";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Plus } from "lucide-react";
 
-interface Layer {
-  link_id: string;
-  dataset_title: string;
-  category: string;
-  methodology_name: string | null;
-  created_at: string;
-}
+import AddLayerModal from "@/components/instances/AddLayerModal";
+import InstanceLayersList from "@/components/instances/InstanceLayersList";
+import CompositePreview from "@/components/instances/CompositePreview";
 
-export default function InstancePage() {
-  const params = useParams();
-  const instanceId = params?.instance_id as string;
-  const countryId = params?.id as string;
-  const [layers, setLayers] = useState<Layer[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Props = {
+  params: { id: string; instance_id: string };
+};
 
-  // Fetch layers for this instance
-  const fetchLayers = async () => {
-    if (!instanceId) return;
-    setLoading(true);
-    setError(null);
+const CATEGORY_LABELS: Record<string, string> = {
+  ssc_p1: "SSC P1 – Shelter Enclosure",
+  ssc_p2: "SSC P2 – Interior Livability",
+  ssc_p3: "SSC P3 – Settlement & Access",
+  hazard: "Hazards",
+  underlying_vulnerability: "Underlying Vulnerabilities",
+};
 
-    try {
-      const { data, error } = await supabase
-        .from("instance_layer_summary")
-        .select("*")
-        .eq("instance_id", instanceId)
-        .order("created_at", { ascending: false });
+const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
-      if (error) throw error;
-      setLayers(data || []);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+export default function InstancePage({ params }: Props) {
+  const countryId = params.id;
+  const instanceId = params.instance_id;
+
+  const [showAddModal, setShowAddModal] = useState<string | null>(null); // holds category key when open
+  const [instanceTitle, setInstanceTitle] = useState<string>("Instance");
+
+  const headerProps = {
+    title: instanceTitle,
+    group: "country-config" as const,
+    description:
+      "Build and preview a baseline SSC composite from datasets and methodologies.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Country Configuration", href: "/country" },
+          { label: countryId, href: `/country/${countryId}` },
+          { label: "Instances", href: `/country/${countryId}/instances` },
+          { label: "Instance" },
+        ]}
+      />
+    ),
   };
 
   useEffect(() => {
-    fetchLayers();
+    (async () => {
+      const { data } = await supabase
+        .from("instances_list")
+        .select("title")
+        .eq("id", instanceId)
+        .maybeSingle();
+      if (data?.title) setInstanceTitle(data.title);
+    })();
   }, [instanceId]);
 
+  const onAnythingChanged = () => {
+    // This is passed to child components; they refresh themselves.
+  };
+
   return (
-    <SidebarLayout
-      headerProps={{
-        title: "SSC Instance",
-        group: "country-config",
-        description:
-          "Configure datasets and methodologies used for this SSC instance.",
-        breadcrumbs: (
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/" },
-              { label: "Country Configurations", href: "/country" },
-              { label: countryId.toUpperCase(), href: `/country/${countryId}` },
-              { label: "Instances", href: `/country/${countryId}/instances` },
-              { label: "Instance" },
-            ]}
-          />
-        ),
-      }}
-    >
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Analytical Layers</h2>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded"
-        >
-          <Plus className="w-4 h-4" />
-          Add Layer
-        </button>
-      </div>
+    <SidebarLayout headerProps={headerProps}>
+      <div className="space-y-6">
+        {/* Five blocks — three SSC pillars, Hazards, Underlying */}
+        {CATEGORY_KEYS.map((categoryKey) => (
+          <section key={categoryKey} className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-lg">
+                {CATEGORY_LABELS[categoryKey]}
+              </h2>
+              <button
+                onClick={() => setShowAddModal(categoryKey)}
+                className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90"
+              >
+                + Add dataset
+              </button>
+            </div>
 
-      {error && (
-        <div className="bg-red-100 text-red-700 p-2 mb-3 rounded text-sm">
-          {error}
-        </div>
-      )}
-
-      <div className="overflow-x-auto border rounded-md shadow-sm bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="text-left p-2">Dataset</th>
-              <th className="text-left p-2">Category</th>
-              <th className="text-left p-2">Methodology</th>
-              <th className="text-left p-2">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="text-center py-3 text-gray-500">
-                  Loading layers...
-                </td>
-              </tr>
-            ) : layers.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="text-center py-3 text-gray-500 italic">
-                  No analytical layers added yet.
-                </td>
-              </tr>
-            ) : (
-              layers.map((layer) => (
-                <tr
-                  key={layer.link_id}
-                  className="border-t hover:bg-gray-50 transition"
-                >
-                  <td className="p-2">{layer.dataset_title}</td>
-                  <td className="p-2 capitalize">{layer.category}</td>
-                  <td className="p-2">
-                    {layer.methodology_name || (
-                      <span className="italic text-gray-500">None</span>
-                    )}
-                  </td>
-                  <td className="p-2">
-                    {new Date(layer.created_at).toISOString().split("T")[0]}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Composite section */}
-      <div className="mt-6">
-        <CompositePreview instanceId={instanceId} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <InstanceLayersList
+                instanceId={instanceId}
+                category={categoryKey}
+                onChanged={onAnythingChanged}
+              />
+              <CompositePreview
+                instanceId={instanceId}
+                category={categoryKey}
+              />
+            </div>
+          </section>
+        ))}
       </div>
 
       {/* Add Layer Modal */}
       {showAddModal && (
         <AddLayerModal
-          open={showAddModal}
-          onClose={() => setShowAddModal(false)}
+          open={!!showAddModal}
+          onClose={() => setShowAddModal(null)}
           instanceId={instanceId}
-          onAdded={fetchLayers}
+          category={showAddModal}
+          onAdded={async () => {}}
         />
       )}
     </SidebarLayout>
