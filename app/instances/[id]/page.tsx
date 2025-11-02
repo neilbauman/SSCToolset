@@ -58,7 +58,6 @@ export default function InstancePage() {
 
   const fetchCategories = async () => {
     setLoading(true);
-    setErr(null);
     const { data, error } = await supabase.rpc("get_instance_category_summary", {
       p_instance_id: instanceId,
     });
@@ -105,7 +104,7 @@ export default function InstancePage() {
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         {err && <div className="text-red-600 text-sm">Error: {err}</div>}
 
-        {/* INSTANCE HEADER */}
+        {/* Instance header */}
         {inst ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-lg border p-4 bg-white">
@@ -129,7 +128,7 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* OUTPUT SETTINGS */}
+        {/* Output settings */}
         {inst && (
           <div className="rounded-lg border p-4 bg-white">
             <div className="text-sm font-medium mb-3">Output Settings</div>
@@ -168,7 +167,7 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* CATEGORY SUMMARY GRID */}
+        {/* Category summary grid */}
         <CategorySummary
           categories={categories}
           labels={CATEGORY_LABELS}
@@ -178,7 +177,7 @@ export default function InstancePage() {
           onPreview={(cat) => setActiveCategory(cat)}
         />
 
-        {/* COMPOSITE PREVIEW */}
+        {/* Composite preview */}
         <div className="rounded-lg border p-4 bg-white mt-6">
           <div className="flex items-center justify-between mb-3">
             <div className="font-medium">
@@ -203,10 +202,10 @@ export default function InstancePage() {
         </div>
       </div>
 
-      {/* ADD LAYER MODAL */}
+      {/* Add layer modal */}
       {showAddModal && (
         <AddLayerModal
-          open={true}
+          open
           onClose={() => setShowAddModal(null)}
           instanceId={instanceId}
           category={showAddModal}
