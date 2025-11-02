@@ -1,240 +1,149 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-
-type SummaryRow = {
-  link_id: string;
-  instance_id: string | null;
-  category: string | null;
-  subcategory: string | null;
-  dataset_title: string | null;
-  dataset_type: string | null;
-  data_type: string | null;
-  admin_level: string | null;
-  methodology_name: string | null;
-  method_type: string | null;
-  function_name: string | null;
-  created_at: string | null;
-};
-
-type Methodology = {
-  id: string;
-  name: string;
-  method_type: string | null;
-  function_name: string | null;
-  applies_to: string[] | null;
-  config: any | null;
-};
 
 type Props = {
   instanceId: string;
-  /** optional; defaults to "underlying_vulnerability" */
-  category?: string;
+  category: string;
   onChanged?: () => void;
 };
 
 export default function InstanceLayersList({
   instanceId,
-  category = "underlying_vulnerability",
+  category,
   onChanged,
 }: Props) {
-  const [rows, setRows] = useState<SummaryRow[]>([]);
-  const [methods, setMethods] = useState<Methodology[]>([]);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [layers, setLayers] = useState<any[]>([]);
+  const [methodologies, setMethodologies] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
-    setErr(null);
-    // 1) layers
-    const { data: layers, error } = await supabase
-      .from("instance_layer_summary")
+  const fetchLayers = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("instance_layers_detailed")
       .select("*")
       .eq("instance_id", instanceId)
-      .eq("category", category)
-      .order("created_at", { ascending: false });
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-    setRows(layers ?? []);
+      .eq("category", category);
+    setLoading(false);
+    if (error) setErr(error.message);
+    else setLayers(data || []);
+  };
 
-    // 2) methodologies (filter client-side by applies_to)
-    const { data: mdata, error: merror } = await supabase
-      .from("methodologies")
-      .select("id,name,method_type,function_name,applies_to,config")
-      .order("name");
-    if (merror) {
-      setErr(merror.message);
-      return;
-    }
-    setMethods(mdata ?? []);
+  const fetchMethods = async () => {
+    const { data } = await supabase.from("methodologies").select("id,name");
+    setMethodologies(data || []);
   };
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchLayers();
+    fetchMethods();
   }, [instanceId, category]);
 
-  const applicable = useMemo(() => {
-    const key = category;
-    return (methods ?? []).filter((m) => {
-      if (!m.applies_to || !Array.isArray(m.applies_to)) return true;
-      return m.applies_to.includes(key);
+  const updateMethodology = async (layerId: string, methodId: string) => {
+    await supabase
+      .from("instance_layers")
+      .update({ methodology_id: methodId })
+      .eq("id", layerId);
+    fetchLayers();
+  };
+
+  const applyMethodology = async (layerId: string) => {
+    const layer = layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    await supabase.rpc("apply_methodology_to_category", {
+      p_instance_id: instanceId,
+      p_category: category,
     });
-  }, [methods, category]);
+    fetchLayers();
+    onChanged?.();
+  };
 
-  const applyMethodology = async (linkId: string, methodologyId: string) => {
-    setSaving(linkId);
-    setErr(null);
-    try {
-      const { error } = await supabase
-        .from("instance_layers")
-        .update({ methodology_id: methodologyId })
-        .eq("id", linkId);
-      if (error) throw error;
-
-      // Apply to that layer via RPC
-      const { data, error: rerr } = await supabase.rpc(
-        "apply_methodology_to_layer",
-        { p_layer_id: linkId }
-      );
-      if (rerr) throw rerr;
-
-      // Also rebuild the category composite so the preview is fresh
-      await supabase.rpc("apply_weight", {
-        p_instance_id: instanceId,
-        p_category: category,
-      });
-
-      await load();
-      onChanged?.();
-    } catch (e: any) {
-      setErr(e?.message ?? "Failed to apply methodology");
-    } finally {
-      setSaving(null);
-    }
+  const removeLayer = async (layerId: string) => {
+    if (!confirm("Remove this dataset from the instance?")) return;
+    const { error } = await supabase
+      .from("instance_layers")
+      .delete()
+      .eq("id", layerId);
+    if (error) alert("Error removing: " + error.message);
+    fetchLayers();
+    onChanged?.();
   };
 
   return (
-    <div className="border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="border rounded-lg p-3 bg-white">
+      <div className="flex justify-between items-center mb-2">
         <h3 className="font-semibold text-gray-800">
           Datasets in {category.replaceAll("_", " ")}
         </h3>
         <button
-          onClick={load}
-          className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+          onClick={fetchLayers}
+          className="px-2 py-1 text-sm border rounded hover:bg-gray-50"
         >
           Refresh
         </button>
       </div>
+      {err && <div className="text-sm text-red-600">{err}</div>}
 
-      {err && <p className="text-sm text-red-600 mb-3">{err}</p>}
-
-      {rows.length === 0 ? (
-        <p className="text-sm text-gray-500">No datasets linked yet.</p>
+      {loading ? (
+        <div className="text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((r) => (
+        <div>
+          {layers.map((l) => (
             <div
-              key={r.link_id}
-              className="border rounded-lg px-3 py-2 flex flex-col gap-2"
+              key={l.id}
+              className="flex items-center justify-between border rounded px-3 py-2 mb-2 bg-gray-50"
             >
-              <div className="flex flex-wrap items-center gap-2 justify-between">
-                <div className="min-w-0">
-                  <div className="font-medium truncate">
-                    {r.dataset_title ?? "Untitled dataset"}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {r.admin_level} • {r.dataset_type ?? "—"}
-                  </div>
+              <div>
+                <div className="font-medium">{l.dataset_title}</div>
+                <div className="text-xs text-gray-500">
+                  {l.admin_level} • {l.dataset_type || "gradient"}
                 </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    className="text-sm border rounded px-2 py-1"
-                    defaultValue={
-                      // default the dropdown to whatever is applied (by function_name),
-                      // else try to match by name, else empty
-                      applicable.find(
-                        (m) =>
-                          m.function_name &&
-                          m.function_name === (r.function_name ?? "")
-                      )?.id ??
-                      applicable.find(
-                        (m) =>
-                          m.name &&
-                          m.name.toLowerCase() ===
-                            (r.methodology_name ?? "").toLowerCase()
-                      )?.id ??
-                      ""
-                    }
-                    onChange={(e) =>
-                      applyMethodology(r.link_id, e.currentTarget.value)
-                    }
-                  >
-                    <option value="" disabled>
-                      Choose methodology…
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={l.methodology_id || ""}
+                  onChange={(e) =>
+                    updateMethodology(l.id, e.currentTarget.value)
+                  }
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value="">Choose methodology…</option>
+                  {methodologies.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
                     </option>
-                    {applicable.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    disabled={saving === r.link_id}
-                    onClick={() =>
-                      applyMethodology(
-                        r.link_id,
-                        applicable.find(
-                          (m) =>
-                            m.function_name &&
-                            m.function_name === (r.function_name ?? "")
-                        )?.id ??
-                          applicable.find(
-                            (m) =>
-                              m.name &&
-                              m.name.toLowerCase() ===
-                                (r.methodology_name ?? "").toLowerCase()
-                          )?.id ??
-                          ""
-                      )
-                    }
-                    className="text-sm px-3 py-1 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
-                    title="Re-apply current methodology"
-                  >
-                    {saving === r.link_id ? "Applying…" : "Apply"}
-                  </button>
-                </div>
+                  ))}
+                </select>
+                <button
+                  onClick={() => applyMethodology(l.id)}
+                  className="px-3 py-1 bg-[color:var(--gsc-green)] text-white rounded text-sm"
+                >
+                  Apply
+                </button>
+                <button
+                  onClick={() => removeLayer(l.id)}
+                  className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
+                >
+                  Remove
+                </button>
               </div>
             </div>
           ))}
+
+          {layers.length === 0 && (
+            <div className="text-sm text-gray-500">No datasets added.</div>
+          )}
         </div>
       )}
 
-      <div className="mt-3 flex justify-end">
+      <div className="pt-3 flex justify-end">
         <button
-          onClick={async () => {
-            setSaving("__cat__");
-            setErr(null);
-            try {
-              await supabase.rpc("apply_weight", {
-                p_instance_id: instanceId,
-                p_category: category,
-              });
-              onChanged?.();
-            } catch (e: any) {
-              setErr(e?.message ?? "Failed to rebuild composite");
-            } finally {
-              setSaving(null);
-            }
-          }}
-          className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:opacity-90 disabled:opacity-50"
-          disabled={saving === "__cat__"}
+          onClick={() => applyMethodology("rebuild")}
+          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:opacity-90"
         >
-          {saving === "__cat__" ? "Rebuilding…" : "Rebuild Composite"}
+          Rebuild Composite
         </button>
       </div>
     </div>
