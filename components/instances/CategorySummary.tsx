@@ -1,15 +1,8 @@
 "use client";
-import { Loader2 } from "lucide-react";
 
 type CategorySummaryProps = {
-  instanceId?: string;
-  categories: {
-    category: string;
-    dataset_count: number;
-    methodology_count: number;
-    composite_exists: boolean;
-    latest_table: string | null;
-  }[];
+  instanceId: string;
+  categories: any[];
   labels: Record<string, string>;
   loading: boolean;
   onRefresh: () => void;
@@ -22,53 +15,49 @@ export default function CategorySummary({
   categories,
   labels,
   loading,
-  onRefresh,
   onAdd,
   onPreview,
 }: CategorySummaryProps) {
+  const CAT_KEYS = Object.keys(labels);
+
   if (loading)
-    return (
-      <div className="flex justify-center items-center p-6">
-        <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
-      </div>
-    );
+    return <div className="text-gray-500 text-sm">Loading categories...</div>;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {Object.keys(labels).map((key) => {
-        const found = categories.find((c) => c.category === key);
-        const count = found?.dataset_count ?? 0;
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {CAT_KEYS.map((key) => {
+        const hasData = categories.some((c) => c.category === key);
+        const label = labels[key];
         return (
           <div
             key={key}
-            className="rounded-lg border bg-white p-4 flex flex-col justify-between"
+            className={`border rounded-lg p-4 ${
+              hasData ? "bg-green-50 border-green-400" : "bg-gray-50"
+            }`}
           >
-            <div>
-              <div className="font-semibold text-sm mb-1">{labels[key]}</div>
-              {found ? (
-                <>
-                  <div className="text-xs text-gray-500 mb-2">
-                    {count} dataset{count !== 1 ? "s" : ""}
-                  </div>
-                  <div className="flex gap-2 mt-1">
-                    <button
-                      onClick={() => onPreview(key)}
-                      className="text-xs rounded border px-2 py-1 hover:bg-gray-50"
-                    >
-                      Preview
-                    </button>
-                    <button
-                      onClick={() => onAdd(key)}
-                      className="text-xs rounded border px-2 py-1 bg-gray-800 text-white"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-gray-400 italic">No data yet</div>
-              )}
-            </div>
+            <h3 className="font-semibold text-gray-800 mb-2">{label}</h3>
+
+            {hasData ? (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-green-700">Populated</span>
+                <button
+                  onClick={() => onPreview(key)} // ✅ correct prop
+                  className="text-blue-600 text-sm hover:underline"
+                >
+                  View
+                </button>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Empty</span>
+                <button
+                  onClick={() => onAdd(key)}
+                  className="text-blue-600 text-sm hover:underline"
+                >
+                  Add
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
