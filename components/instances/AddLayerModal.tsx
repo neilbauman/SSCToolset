@@ -2,114 +2,64 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2, X } from "lucide-react";
 
-interface Props {
+type DatasetMeta = {
+  dataset_id: string;
+  title: string;
+  country_iso: string;
+  admin_level: string;
+  dataset_type: string | null;
+};
+
+type Props = {
   open: boolean;
   onClose: () => void;
   instanceId: string;
-  onAdded: () => Promise<void>;
-}
-
-interface Dataset {
-  id: string;
-  title: string;
-  dataset_type: string;
-  admin_level: string;
-  record_count: number;
-}
-
-interface Methodology {
-  id: string;
-  name: string;
-  method_type: string;
-  function_name: string;
-}
+  /** optional; defaults to "underlying_vulnerability" */
+  category?: string;
+  onAdded?: () => Promise<void> | void;
+};
 
 export default function AddLayerModal({
   open,
   onClose,
   instanceId,
+  category = "underlying_vulnerability",
   onAdded,
 }: Props) {
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [methodologies, setMethodologies] = useState<Methodology[]>([]);
-  const [selectedDataset, setSelectedDataset] = useState<string>("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedMethodology, setSelectedMethodology] = useState<string>("");
-  const [loading, setLoading] = useState(false);
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
+  const [sel, setSel] = useState<string>("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const categories = [
-    { value: "underlying_vulnerability", label: "Underlying Vulnerability" },
-    { value: "hazard", label: "Hazard" },
-    { value: "ssc_pillar_p1", label: "SSC Pillar P1" },
-    { value: "ssc_pillar_p2", label: "SSC Pillar P2" },
-    { value: "ssc_pillar_p3", label: "SSC Pillar P3" },
-  ];
-
-  // Fetch datasets and methodologies on mount
   useEffect(() => {
     if (!open) return;
-
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const [datasetRes, methodologyRes] = await Promise.all([
-          supabase
-            .from("dataset_metadata")
-            .select("id, title, dataset_type, admin_level, record_count")
-            .order("title"),
-          supabase
-            .from("methodologies")
-            .select("id, name, method_type, function_name")
-            .order("name"),
-        ]);
-
-        if (datasetRes.error) throw datasetRes.error;
-        if (methodologyRes.error) throw methodologyRes.error;
-
-        setDatasets(datasetRes.data || []);
-        setMethodologies(methodologyRes.data || []);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    (async () => {
+      const { data, error } = await supabase
+        .from("unified_datasets")
+        .select(
+          "dataset_id,title,country_iso,admin_level,dataset_type"
+        )
+        .order("title", { ascending: true });
+      if (!error) setDatasets(data as any);
+    })();
   }, [open]);
 
-  const handleAdd = async () => {
-    if (!selectedDataset || !selectedCategory) {
-      setError("Please select both a dataset and a category.");
-      return;
-    }
-
+  const save = async () => {
+    if (!sel) return;
     setSaving(true);
-    setError(null);
-
     try {
-      const { error: insertError } = await supabase.from("instance_layers").insert({
+      // insert into instance_layers
+      const { error } = await supabase.from("instance_layers").insert({
         instance_id: instanceId,
-        dataset_id: selectedDataset,
-        category: selectedCategory,
-        methodology_id: selectedMethodology || null,
+        dataset_id: sel,
+        category,
+        subcategory: null,
       });
-
-      if (insertError) throw insertError;
-
-      setSelectedDataset("");
-      setSelectedCategory("");
-      setSelectedMethodology("");
+      if (error) throw error;
+      await onAdded?.();
       onClose();
-      await onAdded();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (e) {
+      console.error(e);
     } finally {
       setSaving(false);
     }
@@ -118,103 +68,45 @@ export default function AddLayerModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-start pt-24 z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg mx-2 p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <h2 className="text-lg font-semibold mb-4">Add Analytical Layer</h2>
-
-        {error && (
-          <div className="bg-red-100 text-red-700 text-sm p-2 rounded mb-3">
-            {error}
+    <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center">
+      <div className="w-full max-w-lg bg-white rounded-lg p-4 shadow-lg">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">Add dataset to {category.replaceAll("_"," ")}</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-black">
+            ✕
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Dataset</label>
+            <select
+              value={sel}
+              onChange={(e) => setSel(e.currentTarget.value)}
+              className="w-full border rounded px-3 py-2"
+            >
+              <option value="" disabled>
+                Select a dataset…
+              </option>
+              {datasets.map((d) => (
+                <option key={d.dataset_id} value={d.dataset_id}>
+                  {d.title} • {d.admin_level}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-
-        {loading ? (
-          <div className="flex justify-center items-center h-32">
-            <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={onClose} className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={!sel || saving}
+              className="px-3 py-1 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? "Adding…" : "Add"}
+            </button>
           </div>
-        ) : (
-          <>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Dataset
-                </label>
-                <select
-                  value={selectedDataset}
-                  onChange={(e) => setSelectedDataset(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">Select dataset...</option>
-                  {datasets.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.title} ({d.admin_level})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Category
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">Select category...</option>
-                  {categories.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Methodology
-                </label>
-                <select
-                  value={selectedMethodology}
-                  onChange={(e) => setSelectedMethodology(e.target.value)}
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">Select methodology (optional)...</option>
-                  {methodologies.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.method_type})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-end mt-5 gap-3">
-              <button
-                onClick={onClose}
-                className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAdd}
-                disabled={saving}
-                className="px-3 py-2 rounded bg-green-600 hover:bg-green-700 text-white text-sm flex items-center gap-2 disabled:opacity-60"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Add Layer
-              </button>
-            </div>
-          </>
-        )}
+        </div>
       </div>
     </div>
   );
