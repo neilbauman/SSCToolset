@@ -46,16 +46,19 @@ export default function InstancePage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ---- Load instance ----
   const fetchInstance = async () => {
     const { data, error } = await supabase
       .from("instances_list")
       .select("id, country_iso, type, created_at, target_admin_level, disaggregation_method")
       .eq("id", instanceId)
       .maybeSingle();
+
     if (error) setErr(error.message);
     else setInst((data as Instance) ?? null);
   };
 
+  // ---- Load categories ----
   const fetchCategories = async () => {
     setLoading(true);
     const { data, error } = await supabase.rpc("get_instance_category_summary", {
@@ -104,7 +107,7 @@ export default function InstancePage() {
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         {err && <div className="text-red-600 text-sm">Error: {err}</div>}
 
-        {/* Instance header */}
+        {/* ---- Instance header ---- */}
         {inst ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-lg border p-4 bg-white">
@@ -128,7 +131,7 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* Output settings */}
+        {/* ---- Output settings ---- */}
         {inst && (
           <div className="rounded-lg border p-4 bg-white">
             <div className="text-sm font-medium mb-3">Output Settings</div>
@@ -167,17 +170,18 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* Category summary grid */}
+        {/* ---- Category summary grid ---- */}
         <CategorySummary
+          instanceId={instanceId}
           categories={categories}
           labels={CATEGORY_LABELS}
           loading={loading}
           onRefresh={fetchCategories}
           onAdd={(cat) => setShowAddModal(cat)}
-          onPreview={(cat) => setActiveCategory(cat)}
+          onPreview={(cat) => setActiveCategory(cat)} // ✅ correct prop
         />
 
-        {/* Composite preview */}
+        {/* ---- Composite preview ---- */}
         <div className="rounded-lg border p-4 bg-white mt-6">
           <div className="flex items-center justify-between mb-3">
             <div className="font-medium">
@@ -202,7 +206,7 @@ export default function InstancePage() {
         </div>
       </div>
 
-      {/* Add layer modal */}
+      {/* ---- Add layer modal ---- */}
       {showAddModal && (
         <AddLayerModal
           open
