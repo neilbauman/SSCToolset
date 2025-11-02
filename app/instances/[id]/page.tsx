@@ -17,19 +17,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   underlying_vulnerability: "Underlying Vulnerabilities",
 };
 
-type Props = {
-  params: { id: string };
-};
-
-export default function InstancePage({ params }: Props) {
+export default function InstancePage({ params }: { params: { id: string } }) {
   const instanceId = params.id;
-
   const [instanceTitle, setInstanceTitle] = useState("Instance");
   const [targetAdm, setTargetAdm] = useState("ADM4");
   const [disagg, setDisagg] = useState("inherit");
-  const [savingSettings, setSavingSettings] = useState(false);
-
-  const [activeCategory, setActiveCategory] =
+  const [saving, setSaving] = useState(false);
+  const [activeCat, setActiveCat] =
     useState<keyof typeof CATEGORY_LABELS>("underlying_vulnerability");
   const [showAddModal, setShowAddModal] = useState<string | null>(null);
 
@@ -38,7 +32,7 @@ export default function InstancePage({ params }: Props) {
       title: instanceTitle,
       group: "country-config" as const,
       description:
-        "Define analytical layers, apply methodologies, and view composite previews.",
+        "Define analytical layers, apply methodologies, and preview composites.",
       breadcrumbs: (
         <Breadcrumbs
           items={[
@@ -55,20 +49,20 @@ export default function InstancePage({ params }: Props) {
   // Load instance metadata
   useEffect(() => {
     (async () => {
-      const { data: row } = await supabase
+      const { data } = await supabase
         .from("ssc_instances")
         .select("title, target_admin_level, disaggregation_method")
         .eq("id", instanceId)
         .maybeSingle();
-
-      if (row?.title) setInstanceTitle(row.title);
-      if (row?.target_admin_level) setTargetAdm(row.target_admin_level);
-      if (row?.disaggregation_method) setDisagg(row.disaggregation_method);
+      if (data?.title) setInstanceTitle(data.title);
+      if (data?.target_admin_level) setTargetAdm(data.target_admin_level);
+      if (data?.disaggregation_method)
+        setDisagg(data.disaggregation_method || "inherit");
     })();
   }, [instanceId]);
 
   const saveSettings = async () => {
-    setSavingSettings(true);
+    setSaving(true);
     await supabase
       .from("ssc_instances")
       .update({
@@ -76,7 +70,7 @@ export default function InstancePage({ params }: Props) {
         disaggregation_method: disagg,
       })
       .eq("id", instanceId);
-    setSavingSettings(false);
+    setSaving(false);
   };
 
   const computeCategory = async (cat: string) => {
@@ -84,13 +78,13 @@ export default function InstancePage({ params }: Props) {
       p_instance_id: instanceId,
       p_category: cat,
     });
-    setActiveCategory(cat as keyof typeof CATEGORY_LABELS);
+    setActiveCat(cat as keyof typeof CATEGORY_LABELS);
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Output Settings */}
+        {/* Instance Settings */}
         <section className="border rounded-lg p-4 bg-white">
           <h2 className="font-semibold mb-3">Output Settings</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -100,8 +94,8 @@ export default function InstancePage({ params }: Props) {
               </label>
               <select
                 value={targetAdm}
-                onChange={(e) => setTargetAdm(e.currentTarget.value)}
-                className="w-full border rounded px-3 py-2"
+                onChange={(e) => setTargetAdm(e.target.value)}
+                className="border rounded px-3 py-2 w-full"
               >
                 <option value="ADM2">ADM2</option>
                 <option value="ADM3">ADM3</option>
@@ -114,8 +108,8 @@ export default function InstancePage({ params }: Props) {
               </label>
               <select
                 value={disagg}
-                onChange={(e) => setDisagg(e.currentTarget.value)}
-                className="w-full border rounded px-3 py-2"
+                onChange={(e) => setDisagg(e.target.value)}
+                className="border rounded px-3 py-2 w-full"
               >
                 <option value="inherit">Inherit (simple copy)</option>
                 <option value="population_share">Population share</option>
@@ -125,26 +119,26 @@ export default function InstancePage({ params }: Props) {
           <div className="flex justify-end mt-3">
             <button
               onClick={saveSettings}
-              disabled={savingSettings}
-              className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+              disabled={saving}
+              className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90 disabled:opacity-50"
             >
-              {savingSettings ? "Saving…" : "Save settings"}
+              {saving ? "Saving…" : "Save settings"}
             </button>
           </div>
         </section>
 
-        {/* Category grid */}
+        {/* Category Grid */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
-            const selected = activeCategory === key;
+            const active = activeCat === key;
             return (
               <div
                 key={key}
                 className={`border rounded-lg p-4 ${
-                  selected ? "bg-green-50 border-green-400" : "bg-gray-50"
+                  active ? "bg-green-50 border-green-400" : "bg-gray-50"
                 }`}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between items-center mb-2">
                   <h3 className="font-semibold">{label}</h3>
                   <div className="flex items-center gap-2">
                     <button
@@ -155,7 +149,7 @@ export default function InstancePage({ params }: Props) {
                     </button>
                     <button
                       onClick={() =>
-                        setActiveCategory(key as keyof typeof CATEGORY_LABELS)
+                        setActiveCat(key as keyof typeof CATEGORY_LABELS)
                       }
                       className="text-gray-600 text-sm hover:underline"
                     >
@@ -163,39 +157,34 @@ export default function InstancePage({ params }: Props) {
                     </button>
                   </div>
                 </div>
-                <div className="flex justify-end mt-3">
-                  <button
-                    onClick={() => computeCategory(key)}
-                    className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50"
-                  >
-                    Compute / Refresh
-                  </button>
-                </div>
+                <button
+                  onClick={() => computeCategory(key)}
+                  className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50"
+                >
+                  Compute / Refresh
+                </button>
               </div>
             );
           })}
         </section>
 
-        {/* Active Category Details */}
+        {/* Category Detail */}
         <section className="border rounded-lg p-4 bg-white">
           <h2 className="font-semibold mb-3">
-            {CATEGORY_LABELS[activeCategory]}
+            {CATEGORY_LABELS[activeCat]}
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <InstanceLayersList
               instanceId={instanceId}
-              category={activeCategory}
-              onChanged={() => computeCategory(activeCategory)}
+              category={activeCat}
+              onChanged={() => computeCategory(activeCat)}
             />
-            <CompositePreview
-              instanceId={instanceId}
-              category={activeCategory}
-            />
+            <CompositePreview instanceId={instanceId} category={activeCat} />
           </div>
         </section>
       </div>
 
-      {/* Add dataset modal */}
+      {/* Modal */}
       {showAddModal && (
         <AddLayerModal
           open={!!showAddModal}
