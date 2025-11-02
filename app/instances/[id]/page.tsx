@@ -4,157 +4,144 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import CompositePreview from "@/components/instances/CompositePreview";
-import { Plus, Calculator } from "lucide-react";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { Plus } from "lucide-react";
+
+interface Layer {
+  link_id: string;
+  dataset_title: string;
+  category: string;
+  methodology_name: string | null;
+  created_at: string;
+}
 
 export default function InstancePage() {
-  const { id } = useParams();
-  const instanceId = id as string;
-
-  const [instance, setInstance] = useState<any>(null);
-  const [layers, setLayers] = useState<any[]>([]);
-  const [showAddModal, setShowAddModal] = useState<string | null>(null);
-  const [loadingCategory, setLoadingCategory] = useState<string | null>(null);
-
-  const categories = [
-    { key: "underlying_vulnerability", label: "Underlying Vulnerabilities" },
-    { key: "hazard", label: "Hazards" },
-    { key: "ssc_pillar", label: "SSC Pillars" },
-  ];
-
-  const fetchInstance = async () => {
-    const { data, error } = await supabase
-      .from("instances_list")
-      .select("*")
-      .eq("id", instanceId)
-      .single();
-    if (!error && data) setInstance(data);
-  };
+  const params = useParams();
+  const instanceId = params?.id as string;
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchLayers = async () => {
-    const { data, error } = await supabase
-      .from("instance_layer_summary")
-      .select("*")
-      .eq("instance_id", instanceId)
-      .order("created_at", { ascending: false });
-    if (!error && data) setLayers(data);
+    if (!instanceId) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error } = await supabase
+        .from("instance_layer_summary")
+        .select("*")
+        .eq("instance_id", instanceId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setLayers(data || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    if (instanceId) {
-      fetchInstance();
-      fetchLayers();
-    }
+    fetchLayers();
   }, [instanceId]);
 
-  const handleComputeComposite = async (category: string) => {
-    try {
-      setLoadingCategory(category);
-      const { error } = await supabase.rpc("apply_weight", {
-        p_instance_id: instanceId,
-        p_category: category,
-      });
-      if (error) throw error;
-      await fetchLayers();
-    } catch (err: any) {
-      alert("Error computing composite: " + err.message);
-    } finally {
-      setLoadingCategory(null);
-    }
-  };
-
-  const headerProps = {
-    title: instance?.title || "Instance Details",
-    group: "country-config" as const,
-    description: "Build and visualize analytical layers for this instance.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Country Configuration", href: "/country" },
-          { label: "Instances", href: "/instances" },
-          { label: instance?.title || "Instance" },
-        ]}
-      />
-    ),
-  };
-
-  const renderCategory = (categoryKey: string, label: string) => {
-    const catLayers = layers.filter((l) => l.category === categoryKey);
-
-    return (
-      <div className="border rounded-lg p-4 bg-white shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">{label}</h3>
-          <div className="flex gap-2">
-            <button
-              className="flex items-center gap-1 text-sm bg-[color:var(--gsc-green)] text-white px-2.5 py-1.5 rounded hover:opacity-90"
-              onClick={() => setShowAddModal(categoryKey)}
-            >
-              <Plus className="w-4 h-4" /> Add Dataset
-            </button>
-            {catLayers.length > 0 && (
-              <button
-                className="flex items-center gap-1 text-sm bg-[color:var(--gsc-blue)] text-white px-2.5 py-1.5 rounded hover:opacity-90"
-                onClick={() => handleComputeComposite(categoryKey)}
-                disabled={loadingCategory === categoryKey}
-              >
-                <Calculator className="w-4 h-4" />
-                {loadingCategory === categoryKey
-                  ? "Computing..."
-                  : "Compute Composite"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {catLayers.length === 0 ? (
-          <p className="text-gray-500 italic mb-4">No datasets linked yet.</p>
-        ) : (
-          <div className="overflow-x-auto border rounded">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left">Dataset</th>
-                  <th className="px-3 py-2 text-left">Methodology</th>
-                  <th className="px-3 py-2 text-left">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catLayers.map((l) => (
-                  <tr key={l.link_id} className="border-t hover:bg-gray-50">
-                    <td className="px-3 py-2">{l.dataset_title}</td>
-                    <td className="px-3 py-2">{l.methodology_name || "—"}</td>
-                    <td className="px-3 py-2">
-                      {l.created_at
-                        ? new Date(l.created_at).toLocaleDateString()
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="mt-4">
-          <CompositePreview instanceId={instanceId} category={categoryKey} />
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <SidebarLayout headerProps={headerProps}>
-      {categories.map((cat) => renderCategory(cat.key, cat.label))}
+    <SidebarLayout
+      headerProps={{
+        title: "SSC Instance",
+        group: "country-config",
+        description:
+          "Manage datasets and methodologies used for this SSC instance.",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/" },
+              { label: "Instances", href: "/instances" },
+              { label: "Instance Details" },
+            ]}
+          />
+        ),
+      }}
+    >
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">Analytical Layers</h2>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded"
+        >
+          <Plus className="w-4 h-4" />
+          Add Layer
+        </button>
+      </div>
 
+      {error && (
+        <div className="bg-red-100 text-red-700 p-2 mb-3 rounded text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="overflow-x-auto border rounded-md shadow-sm bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="text-left p-2">Dataset</th>
+              <th className="text-left p-2">Category</th>
+              <th className="text-left p-2">Methodology</th>
+              <th className="text-left p-2">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={4} className="text-center py-3 text-gray-500">
+                  Loading layers...
+                </td>
+              </tr>
+            ) : layers.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="text-center py-3 text-gray-500 italic">
+                  No analytical layers added yet.
+                </td>
+              </tr>
+            ) : (
+              layers.map((layer) => (
+                <tr
+                  key={layer.link_id}
+                  className="border-t hover:bg-gray-50 transition"
+                >
+                  <td className="p-2">{layer.dataset_title}</td>
+                  <td className="p-2 capitalize">{layer.category}</td>
+                  <td className="p-2">
+                    {layer.methodology_name || (
+                      <span className="italic text-gray-500">None</span>
+                    )}
+                  </td>
+                  <td className="p-2">
+                    {new Date(layer.created_at).toISOString().split("T")[0]}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* CompositePreview – no category prop */}
+      <div className="mt-6">
+        <CompositePreview instanceId={instanceId} />
+      </div>
+
+      {/* Modal */}
       {showAddModal && (
         <AddLayerModal
-          open={!!showAddModal}
-          category={showAddModal}
+          open={showAddModal}
+          onClose={() => setShowAddModal(false)}
           instanceId={instanceId}
-          onClose={() => setShowAddModal(null)}
           onAdded={fetchLayers}
         />
       )}
