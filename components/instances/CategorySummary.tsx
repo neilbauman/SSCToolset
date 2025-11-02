@@ -1,8 +1,8 @@
 "use client";
-
 import { Loader2 } from "lucide-react";
 
 type CategorySummaryProps = {
+  instanceId?: string;
   categories: {
     category: string;
     dataset_count: number;
@@ -15,32 +15,29 @@ type CategorySummaryProps = {
   onRefresh: () => void;
   onAdd: (category: string) => void;
   onPreview: (category: string) => void;
-  instanceId?: string; // ✅ added to match the page
 };
 
 export default function CategorySummary({
+  instanceId,
   categories,
   labels,
   loading,
   onRefresh,
   onAdd,
   onPreview,
-  instanceId, // ✅ harmless prop, used if needed later
 }: CategorySummaryProps) {
-  if (loading) {
+  if (loading)
     return (
       <div className="flex justify-center items-center p-6">
         <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
       </div>
     );
-  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {Object.keys(labels).map((key) => {
         const found = categories.find((c) => c.category === key);
         const count = found?.dataset_count ?? 0;
-
         return (
           <div
             key={key}
