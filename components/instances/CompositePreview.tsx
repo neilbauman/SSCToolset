@@ -2,155 +2,122 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Loader2 } from "lucide-react";
+import { Loader2, Beaker, Activity } from "lucide-react";
 
-/**
- * Compact, multi-category composite preview for SSC instances.
- * Displays results for all analytical categories (P1–P3, Hazard, Underlying Vulnerability).
- */
 interface Props {
   instanceId: string;
 }
 
-type CategoryKey =
-  | "ssc_p1"
-  | "ssc_p2"
-  | "ssc_p3"
-  | "hazard"
-  | "underlying_vulnerability";
-
-interface CompositeRow {
-  admin_pcode: string;
-  value: number;
+interface Layer {
+  link_id: string;
+  dataset_title: string;
+  category: string;
+  methodology_name: string | null;
+  created_at: string;
 }
 
-const CATEGORY_MAP: Record<CategoryKey, string> = {
-  ssc_p1: "SSC Pillar 1",
-  ssc_p2: "SSC Pillar 2",
-  ssc_p3: "SSC Pillar 3",
+const CATEGORY_LABELS: Record<string, string> = {
+  underlying_vulnerability: "Underlying Vulnerability",
   hazard: "Hazards",
-  underlying_vulnerability: "Underlying Vulnerabilities",
+  ssc_pillar_p1: "SSC Pillar P1",
+  ssc_pillar_p2: "SSC Pillar P2",
+  ssc_pillar_p3: "SSC Pillar P3",
 };
 
 export default function CompositePreview({ instanceId }: Props) {
-  const [data, setData] = useState<Record<CategoryKey, CompositeRow[]>>({
-    ssc_p1: [],
-    ssc_p2: [],
-    ssc_p3: [],
-    hazard: [],
-    underlying_vulnerability: [],
-  });
-
+  const [layers, setLayers] = useState<Layer[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchComposite = async (category: CategoryKey) => {
-    try {
-      const { data, error } = await supabase.rpc("get_composite_values", {
-        p_instance_id: instanceId,
-        p_category: category,
-      });
-      if (error) throw error;
-      return data || [];
-    } catch (err: any) {
-      console.warn(`No data for ${category}`, err.message);
-      return [];
-    }
-  };
-
-  const fetchAll = async () => {
+  const fetchLayers = async () => {
+    if (!instanceId) return;
     setLoading(true);
     setError(null);
     try {
-      const results = await Promise.all(
-        (Object.keys(CATEGORY_MAP) as CategoryKey[]).map(async (key) => {
-          const rows = await fetchComposite(key);
-          return [key, rows];
-        })
-      );
-      const record = Object.fromEntries(results) as Record<
-        CategoryKey,
-        CompositeRow[]
-      >;
-      setData(record);
+      const { data, error } = await supabase
+        .from("instance_layer_summary")
+        .select("*")
+        .eq("instance_id", instanceId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setLayers(data || []);
     } catch (err: any) {
-      setError(err.message || "Failed to load composite results.");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (instanceId) fetchAll();
+    fetchLayers();
   }, [instanceId]);
 
-  const renderTable = (category: CategoryKey) => {
-    const rows = data[category];
-    const hasData = rows.length > 0;
-
-    return (
-      <div
-        key={category}
-        className="bg-white border rounded-lg shadow-sm p-4 h-full flex flex-col"
-      >
-        <h3 className="text-md font-semibold mb-3">
-          {CATEGORY_MAP[category]}
-        </h3>
-
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
-          </div>
-        ) : hasData ? (
-          <div className="overflow-y-auto max-h-[220px] border rounded">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 text-gray-700 sticky top-0">
-                <tr>
-                  <th className="px-2 py-1 text-left">Admin PCode</th>
-                  <th className="px-2 py-1 text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.admin_pcode}
-                    className="border-t hover:bg-gray-50 transition"
-                  >
-                    <td className="px-2 py-1">{r.admin_pcode}</td>
-                    <td className="px-2 py-1 text-right">
-                      {Number(r.value).toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-gray-500 italic flex-1 flex items-center justify-center">
-            No data available.
-          </p>
-        )}
-      </div>
-    );
-  };
+  const categories = Object.keys(CATEGORY_LABELS);
 
   return (
     <div className="mt-6">
-      <h2 className="text-lg font-semibold mb-3">Composite Results</h2>
+      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <Beaker className="w-5 h-5 text-green-600" />
+        Composite Overview
+      </h3>
 
-      {error && (
-        <div className="bg-red-100 text-red-600 p-2 rounded mb-3 text-sm">
-          {error}
+      {loading ? (
+        <div className="flex justify-center items-center h-24">
+          <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+        </div>
+      ) : error ? (
+        <div className="bg-red-100 text-red-700 p-2 rounded text-sm">{error}</div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {categories.map((categoryKey) => {
+            const catLayers = layers.filter((l) => l.category === categoryKey);
+            const label = CATEGORY_LABELS[categoryKey];
+
+            return (
+              <div
+                key={categoryKey}
+                className="border rounded-lg bg-white shadow-sm overflow-hidden"
+              >
+                <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
+                  <h4 className="font-medium text-sm text-gray-700">{label}</h4>
+                  {catLayers.length > 0 && (
+                    <button
+                      className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      onClick={() => alert(`Methodology applied for ${label}`)}
+                    >
+                      <Activity className="w-3 h-3" />
+                      Apply Methodology
+                    </button>
+                  )}
+                </div>
+
+                {catLayers.length === 0 ? (
+                  <div className="p-3 text-sm text-gray-500 italic">
+                    No datasets added.
+                  </div>
+                ) : (
+                  <ul className="divide-y text-sm">
+                    {catLayers.map((layer) => (
+                      <li key={layer.link_id} className="p-3 hover:bg-gray-50">
+                        <div className="font-medium text-gray-800">
+                          {layer.dataset_title}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Methodology:{" "}
+                          {layer.methodology_name || (
+                            <span className="italic">None</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {renderTable("ssc_p1")}
-        {renderTable("ssc_p2")}
-        {renderTable("ssc_p3")}
-        {renderTable("hazard")}
-        {renderTable("underlying_vulnerability")}
-      </div>
     </div>
   );
 }
