@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import CompositePreview from "@/components/instances/CompositePreview";
-import { Plus, Layers, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface Layer {
@@ -26,20 +26,20 @@ export default function InstanceDetailPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [methodologies, setMethodologies] = useState<{ id: string; name: string }[]>([]);
 
-  // Load methodologies from DB
+  // Fetch methodologies
   const fetchMethodologies = async () => {
     const { data, error } = await supabase.from("methodologies").select("id, name");
     if (error) console.error(error);
     else setMethodologies(data || []);
   };
 
+  // Fetch instance layers
   const fetchLayers = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("instance_layer_summary")
       .select("*")
       .eq("instance_id", instanceId);
-
     if (error) setError(error.message);
     else setLayers(data || []);
     setLoading(false);
@@ -50,7 +50,7 @@ export default function InstanceDetailPage() {
     fetchLayers();
   }, [instanceId]);
 
-  // Update methodology
+  // Update methodology assignment
   const handleMethodChange = async (layerId: string, methodologyId: string) => {
     const { error } = await supabase
       .from("instance_layers")
@@ -63,14 +63,23 @@ export default function InstanceDetailPage() {
     }
   };
 
-  // Apply selected methodology to a layer
-  const handleRecompute = async (layerId: string) => {
-    const { data, error } = await supabase.rpc("apply_methodology_to_layer", { p_layer_id: layerId });
-    if (error) {
-      alert("Error applying methodology: " + error.message);
-    } else {
-      alert(data?.[0] || "Methodology applied successfully.");
-    }
+  // Apply methodology to a single layer
+  const handleRecomputeLayer = async (layerId: string) => {
+    const { data, error } = await supabase.rpc("apply_methodology_to_layer", {
+      p_layer_id: layerId,
+    });
+    if (error) alert("Error applying methodology: " + error.message);
+    else alert(data?.[0] || "Layer recomputed successfully.");
+  };
+
+  // Apply weight to recompute composite by category
+  const handleRecomputeCategory = async (category: string) => {
+    const { data, error } = await supabase.rpc("apply_weight", {
+      p_instance_id: instanceId,
+      p_category: category,
+    });
+    if (error) alert("Error recomputing composite: " + error.message);
+    else alert(data?.[0] || `Composite for ${category} recomputed successfully.`);
   };
 
   const headerProps = {
@@ -89,6 +98,8 @@ export default function InstanceDetailPage() {
       />
     ),
   };
+
+  const uniqueCategories = Array.from(new Set(layers.map((l) => l.category)));
 
   return (
     <SidebarLayout headerProps={headerProps}>
@@ -119,7 +130,7 @@ export default function InstanceDetailPage() {
             {layers.map((layer) => (
               <tr key={layer.link_id} className="border-t hover:bg-gray-50">
                 <td className="px-4 py-2">{layer.dataset_title}</td>
-                <td className="px-4 py-2">{layer.category}</td>
+                <td className="px-4 py-2 capitalize">{layer.category}</td>
                 <td className="px-4 py-2">{layer.dataset_type}</td>
                 <td className="px-4 py-2">{layer.subcategory || "—"}</td>
                 <td className="px-4 py-2">
@@ -138,7 +149,7 @@ export default function InstanceDetailPage() {
                 </td>
                 <td className="px-4 py-2 text-right">
                   <button
-                    onClick={() => handleRecompute(layer.link_id)}
+                    onClick={() => handleRecomputeLayer(layer.link_id)}
                     className="inline-flex items-center gap-1 text-blue-600 hover:underline text-sm"
                   >
                     <RefreshCw className="w-4 h-4" /> Recompute
@@ -157,11 +168,29 @@ export default function InstanceDetailPage() {
         </table>
       </div>
 
-      {layers.some((l) => l.category === "underlying_vulnerability") && (
-        <CompositePreview instanceId={instanceId as string} category="underlying_vulnerability" />
-      )}
+      {uniqueCategories.map((category) => (
+        <div key={category} className="mt-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold capitalize">
+              Composite Preview — {category.replaceAll("_", " ")}
+            </h2>
+            <button
+              onClick={() => handleRecomputeCategory(category)}
+              className="inline-flex items-center gap-2 text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              <RefreshCw className="w-4 h-4" /> Recompute Composite
+            </button>
+          </div>
+          <CompositePreview instanceId={instanceId as string} category={category} />
+        </div>
+      ))}
 
-      <AddLayerModal open={showAdd} onClose={() => setShowAdd(false)} instanceId={instanceId as string} />
+      <AddLayerModal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        onAdded={fetchLayers} // ✅ Fix: ensures refresh after adding
+        instanceId={instanceId as string}
+      />
     </SidebarLayout>
   );
 }
