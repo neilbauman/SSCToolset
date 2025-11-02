@@ -8,6 +8,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import CompositePreview from "@/components/instances/CompositePreview";
 import { Loader2, RefreshCw } from "lucide-react";
+import CategorySummary from "@/components/instances/CategorySummary";
 
 type Instance = {
   id: string;
@@ -18,7 +19,7 @@ type Instance = {
   disaggregation_method: string | null;
 };
 
-type CategorySummary = {
+type CategorySummaryData = {
   category: string;
   dataset_count: number;
   methodology_count: number;
@@ -39,7 +40,7 @@ export default function InstancePage() {
   const instanceId = params?.id as string;
 
   const [inst, setInst] = useState<Instance | null>(null);
-  const [categories, setCategories] = useState<CategorySummary[]>([]);
+  const [categories, setCategories] = useState<CategorySummaryData[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("underlying_vulnerability");
   const [showAddModal, setShowAddModal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,7 +63,7 @@ export default function InstancePage() {
       p_instance_id: instanceId,
     });
     if (error) setErr(error.message);
-    else setCategories(data as CategorySummary[]);
+    else setCategories(data as CategorySummaryData[]);
     setLoading(false);
   };
 
@@ -79,28 +80,25 @@ export default function InstancePage() {
     if (!error) fetchInstance();
   };
 
-  const headerProps = useMemo(() => {
-    if (!inst) return null;
-    return {
-      title: inst.type ?? "Instance",
-      group: "country-config" as const,
-      description: "Define analytical layers and compute SSC categories.",
-      breadcrumbs: (
-        <Breadcrumbs
-          items={[
-            { label: "Dashboard", href: "/" },
-            { label: "Country Configuration", href: "/country" },
-            { label: inst.country_iso ?? "Country" },
-            { label: "Instances" },
-            { label: inst.type ?? "Instance" },
-          ]}
-        />
-      ),
-    };
-  }, [inst]);
+  const headerProps = useMemo(() => ({
+    title: inst?.type ?? "Instance",
+    group: "country-config" as const,
+    description: "Define analytical layers and compute SSC categories.",
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { label: "Dashboard", href: "/" },
+          { label: "Country Configuration", href: "/country" },
+          { label: inst?.country_iso ?? "Country" },
+          { label: "Instances" },
+          { label: inst?.type ?? "Instance" },
+        ]}
+      />
+    ),
+  }), [inst]);
 
   return (
-    <SidebarLayout headerProps={headerProps ?? undefined}>
+    <SidebarLayout headerProps={headerProps}>
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         {err && <div className="text-red-600 text-sm">Error: {err}</div>}
 
@@ -167,77 +165,15 @@ export default function InstancePage() {
           </div>
         )}
 
-        {/* --- CATEGORY CARDS --- */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Analytical Categories</h2>
-          <button
-            onClick={fetchCategories}
-            className="text-gray-600 text-sm flex items-center gap-1 hover:text-gray-900"
-          >
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
-        </div>
-
-        {loading && (
-          <div className="flex justify-center items-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
-          </div>
-        )}
-
-        {!loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
-              const cat = categories.find((c) => c.category === key);
-              return (
-                <div
-                  key={key}
-                  className="border rounded-lg bg-white p-4 shadow-sm flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="font-semibold text-gray-800 mb-1">
-                      {label}
-                    </div>
-                    <div className="text-xs text-gray-500 mb-2">
-                      Datasets feeding pillar {key.toUpperCase().replace("_", " ")}
-                    </div>
-
-                    <div className="text-sm text-gray-700 grid grid-cols-3">
-                      <div>
-                        <div className="text-xs text-gray-500">Datasets</div>
-                        <div className="font-medium">{cat?.dataset_count ?? 0}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500">Methods</div>
-                        <div className="font-medium">{cat?.methodology_count ?? 0}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500">Table</div>
-                        <div className="font-mono text-xs truncate">
-                          {cat?.latest_table ?? "—"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex justify-between">
-                    <button
-                      onClick={() => setShowAddModal(key)}
-                      className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700"
-                    >
-                      + Add Dataset
-                    </button>
-                    <button
-                      onClick={() => setActiveCategory(key)}
-                      className="px-3 py-1.5 text-xs border rounded hover:bg-gray-50"
-                    >
-                      Manage / Preview
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* --- CATEGORY SUMMARY --- */}
+        <CategorySummary
+          categories={categories}
+          labels={CATEGORY_LABELS}
+          loading={loading}
+          onRefresh={fetchCategories}
+          onAdd={(cat) => setShowAddModal(cat)}
+          onPreview={(cat) => setActiveCategory(cat)}
+        />
 
         {/* --- COMPOSITE PREVIEW --- */}
         <div className="rounded-lg border p-4 bg-white mt-6">
