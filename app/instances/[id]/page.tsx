@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import SidebarLayout from "@/components/layouts/SidebarLayout";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import CategorySummary from "@/components/instances/CategorySummary";
 import CompositePreview from "@/components/instances/CompositePreview";
