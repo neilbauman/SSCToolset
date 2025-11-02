@@ -172,14 +172,14 @@ export default function InstancePage() {
 
         {/* ---- Category summary grid ---- */}
         <CategorySummary
-          instanceId={instanceId}
-          categories={categories}
-          labels={CATEGORY_LABELS}
-          loading={loading}
-          onRefresh={fetchCategories}
-          onAdd={(cat) => setShowAddModal(cat)}
-          onPreview={(cat) => setActiveCategory(cat)} // ✅ correct prop
-        />
+  instanceId={instanceId}
+  categories={categories}
+  labels={CATEGORY_LABELS}
+  loading={loading}
+  onRefresh={fetchCategories}
+  onAdd={(cat) => setShowAddModal(cat)}
+  onPreview={(cat) => setActiveCategory(cat)}   // ✅ Correct prop name
+/>
 
         {/* ---- Composite preview ---- */}
         <div className="rounded-lg border p-4 bg-white mt-6">
