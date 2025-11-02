@@ -49,36 +49,45 @@ export default function InstanceLayersList({
   }, [instanceId, category]);
 
   return (
-    <div className="rounded-lg border bg-white">
-      <div className="border-b px-4 py-2 font-semibold flex justify-between items-center">
-        <span>Datasets in {category.replaceAll("_", " ")}</span>
+    <div className="rounded-lg border bg-white text-sm">
+      <div className="border-b px-3 py-2 flex justify-between items-center">
+        <span className="font-medium text-gray-700">
+          Datasets ({layers.length})
+        </span>
+        {loading && <span className="text-xs text-gray-500">Loading…</span>}
       </div>
-      {loading ? (
-        <div className="p-4 text-sm text-gray-500">Loading…</div>
-      ) : layers.length === 0 ? (
-        <div className="p-4 text-sm text-gray-500">No datasets yet.</div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left">
+
+      {err && <div className="p-3 text-xs text-red-600">{err}</div>}
+
+      {!err && layers.length === 0 && !loading && (
+        <div className="p-3 text-xs text-gray-500">No datasets added.</div>
+      )}
+
+      {layers.length > 0 && (
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 text-gray-600">
             <tr>
-              <th className="px-3 py-2">Dataset</th>
-              <th className="px-3 py-2">Admin</th>
-              <th className="px-3 py-2">Method</th>
-              <th className="px-3 py-2 text-right">Action</th>
+              <th className="px-3 py-1.5 text-left w-1/2 font-medium">Dataset</th>
+              <th className="px-2 py-1.5 text-left font-medium">Admin</th>
+              <th className="px-2 py-1.5 text-left font-medium">Method</th>
+              <th className="px-2 py-1.5 text-right font-medium">Action</th>
             </tr>
           </thead>
           <tbody>
             {layers.map((l) => (
-              <tr key={l.id} className="border-t hover:bg-gray-50">
-                <td className="px-3 py-2">{l.dataset_title}</td>
-                <td className="px-3 py-2">{l.admin_level}</td>
-                <td className="px-3 py-2 text-gray-600">
+              <tr
+                key={l.id}
+                className="border-t hover:bg-gray-50 transition-colors"
+              >
+                <td className="px-3 py-1.5 text-gray-800 truncate">{l.dataset_title}</td>
+                <td className="px-2 py-1.5 text-gray-600">{l.admin_level}</td>
+                <td className="px-2 py-1.5 text-gray-500">
                   {l.methodology_name || "—"}
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-2 py-1.5 text-right">
                   <button
                     onClick={() => removeLayer(l.id)}
-                    className="text-red-600 text-sm hover:underline"
+                    className="text-red-600 hover:text-red-700 hover:underline"
                   >
                     Remove
                   </button>
@@ -88,7 +97,6 @@ export default function InstanceLayersList({
           </tbody>
         </table>
       )}
-      {err && <div className="p-3 text-sm text-red-600">{err}</div>}
     </div>
   );
 }
