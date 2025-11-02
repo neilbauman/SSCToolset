@@ -5,7 +5,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import CompositePreview from "@/components/instances/CompositePreview";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Layers } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
 interface Layer {
@@ -25,6 +25,7 @@ export default function InstanceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [methodologies, setMethodologies] = useState<{ id: string; name: string }[]>([]);
+  const [processingAll, setProcessingAll] = useState(false);
 
   // Fetch methodologies
   const fetchMethodologies = async () => {
@@ -72,7 +73,7 @@ export default function InstanceDetailPage() {
     else alert(data?.[0] || "Layer recomputed successfully.");
   };
 
-  // Apply weight to recompute composite by category
+  // Recompute a single category composite
   const handleRecomputeCategory = async (category: string) => {
     const { data, error } = await supabase.rpc("apply_weight", {
       p_instance_id: instanceId,
@@ -82,10 +83,31 @@ export default function InstanceDetailPage() {
     else alert(data?.[0] || `Composite for ${category} recomputed successfully.`);
   };
 
+  // Recompute ALL categories (all composites)
+  const handleRecomputeAll = async () => {
+    setProcessingAll(true);
+    try {
+      const uniqueCategories = Array.from(new Set(layers.map((l) => l.category)));
+      for (const category of uniqueCategories) {
+        const { data, error } = await supabase.rpc("apply_weight", {
+          p_instance_id: instanceId,
+          p_category: category,
+        });
+        if (error) throw error;
+        console.log(`✅ Recomputed ${category}:`, data);
+      }
+      alert("All category composites recomputed successfully!");
+    } catch (err: any) {
+      alert("Error recomputing all composites: " + err.message);
+    } finally {
+      setProcessingAll(false);
+    }
+  };
+
   const headerProps = {
     title: "Instance Configuration",
     group: "country-config" as const,
-    description: "Link datasets to define this instance’s analytical layers.",
+    description: "Link datasets and methodologies to define this instance’s analytical layers.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -103,17 +125,32 @@ export default function InstanceDetailPage() {
 
   return (
     <SidebarLayout headerProps={headerProps}>
+      {/* Top Controls */}
       <div className="flex justify-between items-center mb-4">
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
-        >
-          <Plus className="w-4 h-4" /> Add Dataset
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+          >
+            <Plus className="w-4 h-4" /> Add Dataset
+          </button>
+
+          <button
+            onClick={handleRecomputeAll}
+            disabled={processingAll}
+            className={`flex items-center gap-2 px-3 py-2 rounded text-sm text-white ${
+              processingAll ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            {processingAll ? "Processing..." : "Recompute All Layers"}
+          </button>
+        </div>
       </div>
 
       {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
 
+      {/* Layers Table */}
       <div className="overflow-x-auto border rounded-lg shadow-sm bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-left">
@@ -168,6 +205,7 @@ export default function InstanceDetailPage() {
         </table>
       </div>
 
+      {/* Category-wise Composite Previews */}
       {uniqueCategories.map((category) => (
         <div key={category} className="mt-6">
           <div className="flex justify-between items-center mb-2">
@@ -188,7 +226,7 @@ export default function InstanceDetailPage() {
       <AddLayerModal
         open={showAdd}
         onClose={() => setShowAdd(false)}
-        onAdded={fetchLayers} // ✅ Fix: ensures refresh after adding
+        onAdded={fetchLayers}
         instanceId={instanceId as string}
       />
     </SidebarLayout>
