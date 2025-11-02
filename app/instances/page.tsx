@@ -37,15 +37,17 @@ export default function InstancesPage() {
   }, []);
 
   const headerProps = {
-    title: "All Instances",
-    group: "country-config" as const,
-    description: "Explore all SSC instances by country.",
+    title: instance ? `Instance: ${instance.title}` : "Instance",
+    group: "country-config" as const, // ✅ FIXED
+    description: "Overview of this SSC instance.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Country Configuration", href: "/country" },
+          { label: instance?.country_iso?.toUpperCase() || "Country" },
           { label: "Instances" },
+          { label: instance?.title || "Instance" },
         ]}
       />
     ),
