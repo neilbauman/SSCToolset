@@ -25,16 +25,14 @@ const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
 export default function InstancePage({ params }: Props) {
   const instanceId = params.id;
-
-  const [instanceTitle, setInstanceTitle] = useState("Instance");
-  const [targetLevel, setTargetLevel] = useState<string>("…");
   const [showAddModal, setShowAddModal] = useState<string | null>(null);
-  const [refresh, setRefresh] = useState(0);
+  const [instanceTitle, setInstanceTitle] = useState<string>("Instance");
+  const [err, setErr] = useState<string | null>(null);
 
   const headerProps = {
     title: instanceTitle,
     group: "country-config" as const,
-    description: "Compose SSC composites by linking datasets and methodologies.",
+    description: "Configure datasets, apply methodologies, and view composite results.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -48,39 +46,43 @@ export default function InstancePage({ params }: Props) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("instances_list")
         .select("title")
         .eq("id", instanceId)
         .maybeSingle();
-      if (data?.title) setInstanceTitle(data.title);
 
-      const { data: level } = await supabase.rpc("get_instance_target_level", {
-        p_instance_id: instanceId,
-      });
-      if (level) setTargetLevel(level);
+      if (error) setErr(error.message);
+      else if (data?.title) setInstanceTitle(data.title);
     })();
   }, [instanceId]);
 
-  const handleChanged = () => setRefresh((r) => r + 1);
+  const onChanged = () => {
+    // Layers refresh themselves
+  };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="space-y-6 text-sm text-gray-800">
-        <div className="bg-gray-50 border rounded-lg px-3 py-2 text-xs text-gray-600">
-          <span className="font-medium text-gray-700">Target admin level:</span>{" "}
-          {targetLevel}
-        </div>
+      <div className="space-y-5">
+        {err && (
+          <div className="bg-red-50 text-red-700 px-3 py-2 rounded text-sm">
+            Error loading instance: {err}
+          </div>
+        )}
 
-        {CATEGORY_KEYS.map((cat) => (
-          <section key={cat} className="border rounded-lg p-3 bg-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold text-gray-800 text-base">
-                {CATEGORY_LABELS[cat]}
+        {/* Category sections */}
+        {CATEGORY_KEYS.map((key) => (
+          <section
+            key={key}
+            className="border rounded-lg bg-white shadow-sm p-3 space-y-3"
+          >
+            <div className="flex items-center justify-between border-b pb-2">
+              <h2 className="text-sm font-semibold text-gray-800">
+                {CATEGORY_LABELS[key]}
               </h2>
               <button
-                onClick={() => setShowAddModal(cat)}
-                className="px-2 py-1 text-xs rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
+                onClick={() => setShowAddModal(key)}
+                className="text-xs px-2 py-1 rounded bg-[color:var(--gsc-green)] text-white hover:opacity-90"
               >
                 + Add dataset
               </button>
@@ -89,15 +91,10 @@ export default function InstancePage({ params }: Props) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <InstanceLayersList
                 instanceId={instanceId}
-                category={cat}
-                onChanged={handleChanged}
-                key={`layers-${cat}-${refresh}`}
+                category={key}
+                onChanged={onChanged}
               />
-              <CompositePreview
-                instanceId={instanceId}
-                category={cat}
-                key={`preview-${cat}-${refresh}`}
-              />
+              <CompositePreview instanceId={instanceId} category={key} />
             </div>
           </section>
         ))}
@@ -109,7 +106,7 @@ export default function InstancePage({ params }: Props) {
           onClose={() => setShowAddModal(null)}
           instanceId={instanceId}
           category={showAddModal}
-          onAdded={handleChanged}
+          onAdded={onChanged}
         />
       )}
     </SidebarLayout>
