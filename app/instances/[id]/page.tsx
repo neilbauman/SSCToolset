@@ -4,182 +4,185 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import Link from "next/link";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import {
-  Activity,
-  BarChart3,
-  Layers,
-  Map,
-  Target,
-  AlertTriangle,
-  ArrowLeft,
-} from "lucide-react";
+import { Plus, Trash2, RefreshCw } from "lucide-react";
+import AddLayerModal from "@/components/instances/AddLayerModal";
 
-type InstanceMeta = {
-  id: string;
-  name: string;
-  description: string | null;
-  type: "baseline" | "nowcast" | "forecast" | "scenario";
-  status: "draft" | "published";
+type InstanceLayer = {
+  link_id: string;
+  instance_id: string;
+  category: string;
+  subcategory: string | null;
+  dataset_title: string;
+  dataset_type: string;
+  data_type: string | null;
   admin_level: string | null;
-  country_iso: string;
-  country_name?: string | null;
-  updated_at: string | null;
-  created_at: string | null;
 };
 
-export default function InstancePage() {
-  const { id } = useParams<{ id: string }>();
-  const [meta, setMeta] = useState<InstanceMeta | null>(null);
-  const [loading, setLoading] = useState(true);
+type InstanceInfo = {
+  id: string;
+  title: string;
+  description: string | null;
+  country_iso: string;
+  type: string | null;
+};
 
-  async function fetchInstance() {
+export default function InstanceDetailPage() {
+  const params = useParams();
+  const instanceId = params?.id as string;
+  const [info, setInfo] = useState<InstanceInfo | null>(null);
+  const [layers, setLayers] = useState<InstanceLayer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const loadInstance = async () => {
+    const { data, error } = await supabase
+      .from("instances")
+      .select("*")
+      .eq("id", instanceId)
+      .single();
+    if (!error && data) setInfo(data as InstanceInfo);
+  };
+
+  const loadLayers = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from("instances_list")
+      .from("instance_layer_summary")
       .select("*")
-      .eq("id", id)
-      .single();
-    if (!error && data) setMeta(data as InstanceMeta);
+      .eq("instance_id", instanceId)
+      .order("category");
+    if (!error && data) setLayers(data as InstanceLayer[]);
     setLoading(false);
-  }
+  };
+
+  const deleteLayer = async (layerId: string) => {
+    if (!confirm("Remove this dataset from the instance?")) return;
+    await supabase.from("instance_layers").delete().eq("id", layerId);
+    await loadLayers();
+  };
 
   useEffect(() => {
-    if (id) fetchInstance();
-  }, [id]);
+    if (instanceId) {
+      loadInstance();
+      loadLayers();
+    }
+  }, [instanceId]);
 
   const headerProps = {
-    title: meta ? `${meta.name}` : "Loading…",
+    title: info ? info.title : "Instance",
     group: "country-config" as const,
-    description: meta
-      ? `Instance type: ${meta.type} — Country: ${meta.country_iso}`
-      : "Loading instance details…",
+    description: info
+      ? `Analysis instance for ${info.country_iso} (${info.type ?? "unspecified"})`
+      : "Instance details",
     breadcrumbs: (
       <Breadcrumbs
         items={[
-          { label: "Dashboard", href: "/" },
-          { label: "Country Configuration", href: "/country" },
-          meta?.country_iso
-            ? { label: meta.country_iso, href: `/country/${meta.country_iso}` }
-            : null,
-          { label: "Instances", href: `/country/${meta?.country_iso}/instances` },
-          { label: meta?.name || "Instance", href: "#" },
-        ].filter(Boolean) as { label: string; href: string }[]}
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Instances", href: "/instances" },
+          { label: info?.title || "Instance", href: "#" },
+        ]}
       />
+    ),
+    right: (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={loadLayers}
+          className="px-3 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm flex items-center gap-1"
+          title="Refresh"
+        >
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm flex items-center gap-1"
+        >
+          <Plus className="w-4 h-4" /> Add Dataset
+        </button>
+      </div>
     ),
   };
 
-  if (loading) {
-    return (
-      <SidebarLayout headerProps={headerProps}>
-        <div className="flex justify-center items-center h-64 text-gray-500 italic">
-          Loading instance details…
-        </div>
-      </SidebarLayout>
-    );
-  }
-
-  if (!meta) {
-    return (
-      <SidebarLayout headerProps={headerProps}>
-        <div className="flex justify-center items-center h-64 text-gray-500 italic">
-          Instance not found.
-        </div>
-      </SidebarLayout>
-    );
-  }
-
   return (
     <SidebarLayout headerProps={headerProps}>
-      {/* Navigation back */}
-      <div className="mb-4">
-        <Link
-          href={`/country/${meta.country_iso}/instances`}
-          className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-[color:var(--gsc-blue)]"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Instances
-        </Link>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Target className="w-6 h-6 text-[color:var(--gsc-blue)]" />
-          <div>
-            <p className="text-sm text-gray-500">Instance Type</p>
-            <p className="text-lg font-semibold capitalize">{meta.type}</p>
+      {/* Instance Summary */}
+      {info && (
+        <div className="mb-6 border rounded-md p-4 bg-gray-50">
+          <h2 className="text-lg font-semibold mb-1">{info.title}</h2>
+          {info.description && (
+            <p className="text-sm text-gray-600 mb-2">{info.description}</p>
+          )}
+          <div className="text-xs text-gray-500 flex flex-wrap gap-3">
+            <span>Country: {info.country_iso}</span>
+            <span>Type: {info.type ?? "—"}</span>
+            <span>ID: {info.id}</span>
           </div>
-        </div>
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Layers className="w-6 h-6 text-[color:var(--gsc-green)]" />
-          <div>
-            <p className="text-sm text-gray-500">Admin Level</p>
-            <p className="text-lg font-semibold">{meta.admin_level || "—"}</p>
-          </div>
-        </div>
-        <div className="border rounded-lg shadow-sm p-4 flex items-center gap-3">
-          <Activity className="w-6 h-6 text-[color:var(--gsc-orange,#f59e0b)]" />
-          <div>
-            <p className="text-sm text-gray-500">Status</p>
-            <p
-              className={`text-lg font-semibold ${
-                meta.status === "published"
-                  ? "text-green-700"
-                  : "text-yellow-700"
-              }`}
-            >
-              {meta.status}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Description and metadata */}
-      {meta.description && (
-        <div className="bg-gray-50 border rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">
-            Description
-          </h3>
-          <p className="text-sm text-gray-600">{meta.description}</p>
         </div>
       )}
 
-      {/* Analysis Navigation Sections */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link
-          href={`/instances/${id}/baseline`}
-          className="border rounded-lg p-4 hover:shadow-md transition flex flex-col items-start gap-2"
-        >
-          <Map className="w-6 h-6 text-[color:var(--gsc-blue)]" />
-          <h3 className="font-semibold text-gray-800">Baseline Vulnerabilities</h3>
-          <p className="text-sm text-gray-500">
-            Explore underlying vulnerabilities (poverty, population, exposure).
-          </p>
-        </Link>
-
-        <Link
-          href={`/instances/${id}/hazards`}
-          className="border rounded-lg p-4 hover:shadow-md transition flex flex-col items-start gap-2"
-        >
-          <AlertTriangle className="w-6 h-6 text-[color:var(--gsc-orange,#f59e0b)]" />
-          <h3 className="font-semibold text-gray-800">Hazards & Risks</h3>
-          <p className="text-sm text-gray-500">
-            Overlay external hazards such as earthquakes, conflict, or typhoons.
-          </p>
-        </Link>
-
-        <Link
-          href={`/instances/${id}/ssc`}
-          className="border rounded-lg p-4 hover:shadow-md transition flex flex-col items-start gap-2"
-        >
-          <BarChart3 className="w-6 h-6 text-[color:var(--gsc-green)]" />
-          <h3 className="font-semibold text-gray-800">Shelter Severity (SSC)</h3>
-          <p className="text-sm text-gray-500">
-            Compute and visualize the composite SSC score for this instance.
-          </p>
-        </Link>
+      {/* Layer List */}
+      <div className="border rounded-lg overflow-hidden shadow-sm text-sm">
+        <table className="w-full">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="px-3 py-2 text-left">Category</th>
+              <th className="px-3 py-2 text-left">Dataset</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-left">Admin</th>
+              <th className="px-3 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr>
+                <td colSpan={5} className="px-3 py-3 text-center text-gray-500">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!loading && layers.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-3 py-3 text-center text-gray-500 italic"
+                >
+                  No datasets linked yet.
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              layers.map((l) => (
+                <tr key={l.link_id} className="border-t hover:bg-gray-50">
+                  <td className="px-3 py-2">{l.category}</td>
+                  <td className="px-3 py-2 text-[color:var(--gsc-blue)] font-medium">
+                    {l.dataset_title}
+                  </td>
+                  <td className="px-3 py-2">{l.dataset_type}</td>
+                  <td className="px-3 py-2">{l.admin_level}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => deleteLayer(l.link_id)}
+                      className="p-1.5 rounded hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4 text-[color:var(--gsc-red)]" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
+
+      {/* Add Layer Modal */}
+      {showAdd && (
+        <AddLayerModal
+          open={showAdd}
+          onClose={() => {
+            setShowAdd(false);
+            loadLayers();
+          }}
+          instanceId={instanceId}
+        />
+      )}
     </SidebarLayout>
   );
 }
