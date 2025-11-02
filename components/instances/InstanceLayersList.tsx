@@ -3,99 +3,118 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-interface LayerRow {
+type Layer = {
   id: string;
   dataset_title: string;
   admin_level: string;
-  methodology_name?: string | null;
-}
+  dataset_type: string;
+  methodology_name: string | null;
+  methodology_function: string | null;
+  category: string;
+  subcategory: string | null;
+};
 
-export default function InstanceLayersList({
-  instanceId,
-  category,
-  onChanged,
-}: {
+type Props = {
   instanceId: string;
   category: string;
-  onChanged: () => void;
-}) {
-  const [layers, setLayers] = useState<LayerRow[]>([]);
+  onChanged?: () => void;
+};
+
+export default function InstanceLayersList({ instanceId, category, onChanged }: Props) {
+  const [layers, setLayers] = useState<Layer[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const fetchLayers = async () => {
     setLoading(true);
+    setErr(null);
+
     const { data, error } = await supabase
       .from("instance_layers_view")
-      .select("id, dataset_title, admin_level, methodology_name")
+      .select("*")
       .eq("instance_id", instanceId)
       .eq("category", category)
-      .order("dataset_title", { ascending: true });
-    if (error) setErr(error.message);
-    setLayers(data || []);
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      setErr(error.message);
+      setLayers([]);
+    } else {
+      setLayers((data as Layer[]) ?? []);
+    }
+
     setLoading(false);
   };
 
-  const removeLayer = async (id: string) => {
-    if (!confirm("Remove this dataset from instance?")) return;
-    const { error } = await supabase.rpc("remove_instance_layer", { p_layer_id: id });
-    if (error) alert(error.message);
-    else await fetchLayers();
-    onChanged();
+  const removeLayer = async (layerId: string) => {
+    if (!confirm("Remove this dataset from the instance?")) return;
+    const { error } = await supabase.rpc("remove_instance_layer", { p_layer_id: layerId });
+    if (error) alert("Error removing layer: " + error.message);
+    else fetchLayers();
+    onChanged?.();
   };
 
   useEffect(() => {
     fetchLayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId, category]);
 
   return (
-    <div className="rounded-lg border bg-white text-sm">
-      <div className="border-b px-3 py-2 flex justify-between items-center">
-        <span className="font-medium text-gray-700">
-          Datasets ({layers.length})
-        </span>
-        {loading && <span className="text-xs text-gray-500">Loading…</span>}
+    <div className="rounded-md border bg-white text-sm">
+      <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+        <div className="font-medium text-gray-800">Datasets</div>
+        <div className="text-xs text-gray-500">{layers.length} total</div>
       </div>
 
-      {err && <div className="p-3 text-xs text-red-600">{err}</div>}
-
-      {!err && layers.length === 0 && !loading && (
-        <div className="p-3 text-xs text-gray-500">No datasets added.</div>
+      {loading && (
+        <div className="px-4 py-6 text-gray-500 text-sm">Loading datasets…</div>
       )}
 
-      {layers.length > 0 && (
-        <table className="w-full text-xs">
-          <thead className="bg-gray-50 text-gray-600">
-            <tr>
-              <th className="px-3 py-1.5 text-left w-1/2 font-medium">Dataset</th>
-              <th className="px-2 py-1.5 text-left font-medium">Admin</th>
-              <th className="px-2 py-1.5 text-left font-medium">Method</th>
-              <th className="px-2 py-1.5 text-right font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {layers.map((l) => (
-              <tr
-                key={l.id}
-                className="border-t hover:bg-gray-50 transition-colors"
-              >
-                <td className="px-3 py-1.5 text-gray-800 truncate">{l.dataset_title}</td>
-                <td className="px-2 py-1.5 text-gray-600">{l.admin_level}</td>
-                <td className="px-2 py-1.5 text-gray-500">
-                  {l.methodology_name || "—"}
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  <button
-                    onClick={() => removeLayer(l.id)}
-                    className="text-red-600 hover:text-red-700 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </td>
+      {!loading && err && (
+        <div className="px-4 py-3 text-red-600 text-sm">Error: {err}</div>
+      )}
+
+      {!loading && !err && layers.length === 0 && (
+        <div className="px-4 py-6 text-gray-500 text-sm">No datasets linked yet.</div>
+      )}
+
+      {!loading && !err && layers.length > 0 && (
+        <div className="overflow-auto max-h-[360px]">
+          <table className="w-full text-xs border-t">
+            <thead className="bg-gray-100 sticky top-0 text-gray-600">
+              <tr>
+                <th className="text-left px-3 py-2 w-1/3">Dataset</th>
+                <th className="text-left px-3 py-2 w-16">Level</th>
+                <th className="text-left px-3 py-2 w-24">Type</th>
+                <th className="text-left px-3 py-2 w-1/3">Methodology</th>
+                <th className="text-right px-3 py-2 w-16">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {layers.map((layer) => (
+                <tr key={layer.id} className="border-t hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium text-gray-800 truncate">
+                    {layer.dataset_title}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600">{layer.admin_level}</td>
+                  <td className="px-3 py-2 text-gray-600">{layer.dataset_type}</td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {layer.methodology_name || <span className="italic text-gray-400">None</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => removeLayer(layer.id)}
+                      className="text-red-600 hover:text-red-800"
+                      title="Remove dataset"
+                    >
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
