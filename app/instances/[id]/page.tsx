@@ -1,4 +1,3 @@
-// app/instances/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -55,6 +54,16 @@ export default function InstancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId]);
 
+  const updateSetting = async (patch: Partial<Instance>) => {
+    if (!inst) return;
+    const { error } = await supabase
+      .from("instances_list")
+      .update(patch)
+      .eq("id", inst.id);
+
+    if (!error) fetchInstance();
+  };
+
   const header = useMemo(() => {
     if (!inst) return null;
     return (
@@ -77,16 +86,6 @@ export default function InstancePage() {
     );
   }, [inst]);
 
-  const updateSetting = async (patch: Partial<Instance>) => {
-    if (!inst) return;
-    const { error } = await supabase
-      .from("instances_list")
-      .update(patch)
-      .eq("id", inst.id);
-
-    if (!error) fetchInstance();
-  };
-
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-6">
       <h1 className="text-2xl font-semibold">Instance</h1>
@@ -96,40 +95,47 @@ export default function InstancePage() {
       {header}
 
       {/* Instance settings */}
-      <div className="rounded-lg border p-4 bg-white">
-        <div className="text-sm font-medium mb-3">Output Settings</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm">
-            <div className="text-gray-600 mb-1">Target Admin Level</div>
-            <select
-              className="w-full rounded-md border px-3 py-2"
-              value={inst?.target_admin_level ?? "ADM3"}
-              onChange={(e) =>
-                updateSetting({ target_admin_level: e.target.value as any })
-              }
-            >
-              <option value="ADM4">ADM4</option>
-              <option value="ADM3">ADM3</option>
-              <option value="ADM2">ADM2</option>
-              <option value="ADM1">ADM1</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <div className="text-gray-600 mb-1">Disaggregation Method</div>
-            <select
-              className="w-full rounded-md border px-3 py-2"
-              value={inst?.disaggregation_method ?? "inherit"}
-              onChange={(e) =>
-                updateSetting({ disaggregation_method: e.target.value as any })
-              }
-            >
-              <option value="inherit">Inherit (simple copy)</option>
-              <option value="weighted" disabled>Weighted (future)</option>
-              <option value="uniform" disabled>Uniform (future)</option>
-            </select>
-          </label>
+      {inst && (
+        <div className="rounded-lg border p-4 bg-white">
+          <div className="text-sm font-medium mb-3">Output Settings</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="text-sm">
+              <div className="text-gray-600 mb-1">Target Admin Level</div>
+              <select
+                className="w-full rounded-md border px-3 py-2"
+                value={inst.target_admin_level ?? "ADM3"}
+                onChange={(e) =>
+                  updateSetting({ target_admin_level: e.target.value })
+                }
+              >
+                <option value="ADM4">ADM4</option>
+                <option value="ADM3">ADM3</option>
+                <option value="ADM2">ADM2</option>
+                <option value="ADM1">ADM1</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <div className="text-gray-600 mb-1">Disaggregation Method</div>
+              <select
+                className="w-full rounded-md border px-3 py-2"
+                value={inst.disaggregation_method ?? "inherit"}
+                onChange={(e) =>
+                  updateSetting({ disaggregation_method: e.target.value })
+                }
+              >
+                <option value="inherit">Inherit (simple copy)</option>
+                <option value="weighted" disabled>
+                  Weighted (future)
+                </option>
+                <option value="uniform" disabled>
+                  Uniform (future)
+                </option>
+              </select>
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Category summary grid */}
       <CategorySummary
@@ -138,7 +144,7 @@ export default function InstancePage() {
         onOpenCategory={(cat) => setActiveCategory(cat)}
       />
 
-      {/* Compact preview for the selected category */}
+      {/* Composite preview for selected category */}
       <div className="rounded-lg border p-4 bg-white">
         <div className="flex items-center justify-between mb-3">
           <div className="font-medium">
@@ -168,10 +174,9 @@ export default function InstancePage() {
           open={true}
           onClose={() => setShowAddModal(null)}
           instanceId={instanceId}
-          category={showAddModal}    {/* ✅ pass the category explicitly */}
+          category={showAddModal}
           onAdded={async () => {
             setShowAddModal(null);
-            // refresh summary + (optional) preview
           }}
         />
       )}
