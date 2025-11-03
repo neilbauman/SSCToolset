@@ -102,12 +102,11 @@ export default function InstancePage({ params }: Props) {
 
       {showAddModal && (
         <AddLayerModal
-          open={!!showAddModal}
-          onClose={() => setShowAddModal(null)}
-          instanceId={instanceId}
-          category={showAddModal}
-          onAdded={onChanged}
-        />
+  open={!!showAddModal}
+  onClose={() => setShowAddModal(null)}
+  instanceId={instanceId}
+  onAdded={onChanged}
+/>
       )}
     </SidebarLayout>
   );
