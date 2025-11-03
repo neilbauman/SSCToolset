@@ -245,12 +245,11 @@ export default function InstancePage({ params }: Props) {
       {/* Add dataset modal */}
       {showAddModal && (
         <AddLayerModal
-          open={!!showAddModal}
-          onClose={() => setShowAddModal(null)}
-          instanceId={instanceId}
-          category={showAddModal}
-          onAdded={onAddedDataset}
-        />
+  open={!!showAddModal}
+  onClose={() => setShowAddModal(null)}
+  instanceId={instanceId}
+  onAdded={onAddedDataset}
+/>
       )}
     </SidebarLayout>
   );
