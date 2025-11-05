@@ -1,211 +1,276 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import SidebarLayout from "@/components/layout/SidebarLayout";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { RefreshCw, Settings2, Eye } from "lucide-react";
-import InterpretationModal from "@/components/SSC/InterpretationModal";
-import DataPreviewModal from "@/components/SSC/DataPreviewModal";
 
-export default function SSCDashboard({ params }: { params: { id: string; instance_id: string } }) {
-  const { id: countryId, instance_id } = params;
-  const [datasets, setDatasets] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState<any | null>(null);
-  const [showPreview, setShowPreview] = useState<any | null>(null);
+import AddLayerModal from "@/components/instances/AddLayerModal";
+import InstanceLayersList from "@/components/instances/InstanceLayersList";
+import CompositePreview from "@/components/instances/CompositePreview";
+import DataPreviewModal from "@/components/ssc/DataPreviewModal";
 
-  const headerProps = {
-    title: "SSC Analytical Framework",
-    group: "country-config" as const,
-    description:
-      "Define, interpret, view data, and aggregate datasets for this SSC instance.",
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Country", href: `/country/${countryId}` },
-          { label: "Instances", href: `/country/${countryId}/instances` },
-          { label: "Framework" },
-        ]}
-      />
-    ),
-  };
+type Props = { params: { id: string; instance_id: string } };
 
-  const loadData = async () => {
-    const { data } = await supabase.from("ssc_dataset_catalog").select("*").order("pillar");
-    setDatasets(data || []);
-  };
+const CATEGORY_LABELS: Record<string, string> = {
+  ssc_p1: "SSC P1 – Shelter Enclosure",
+  ssc_p2: "SSC P2 – Interior Livability",
+  ssc_p3: "SSC P3 – Settlement & Access",
+  hazard: "Hazards",
+  underlying_vulnerability: "Underlying Vulnerabilities",
+};
 
+const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS) as (keyof typeof CATEGORY_LABELS)[];
+
+type InstanceMeta = {
+  id: string;
+  title: string | null;
+  country_iso?: string | null;
+  target_admin_level?: string | null;
+  disaggregation_method?: string | null;
+  created_at?: string | null;
+};
+
+export default function InstancePage({ params }: Props) {
+  const countryId = params.id;
+  const instance_id = params.instance_id;
+
+  // header title
+  const [instanceTitle, setInstanceTitle] = useState("Instance");
+  const headerProps = useMemo(
+    () => ({
+      title: instanceTitle || "Instance",
+      group: "country-config" as const,
+      description:
+        "Configure the SSC instance, attach datasets to categories, and compute composites for preview.",
+      breadcrumbs: (
+        <Breadcrumbs
+          items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Country Configuration", href: "/country" },
+            { label: countryId, href: `/country/${countryId}` },
+            { label: "Instances", href: `/country/${countryId}/instances` },
+            { label: instanceTitle || "Instance" },
+          ]}
+        />
+      ),
+    }),
+    [countryId, instanceTitle]
+  );
+
+  // instance meta/settings
+  const [meta, setMeta] = useState<InstanceMeta | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [activeCategory, setActiveCategory] =
+    useState<keyof typeof CATEGORY_LABELS>("underlying_vulnerability");
+
+  // Add modal
+  const [showAddModal, setShowAddModal] = useState<keyof typeof CATEGORY_LABELS | null>(null);
+
+  // Data preview modal metric key
+  const [showPreview, setShowPreview] = useState<string | null>(null);
+
+  // Load instance label + details
   useEffect(() => {
-    loadData();
-  }, []);
+    (async () => {
+      const t = supabase.from("instances_list").select("title").eq("id", instance_id).maybeSingle();
+      const d = supabase
+        .from("ssc_instances")
+        .select("id, country_iso, target_admin_level, disaggregation_method, created_at, title")
+        .eq("id", instance_id)
+        .maybeSingle();
 
-  const handleApply = async (metric: string, source: string) => {
-    await supabase.rpc("apply_normalization_for_dataset_instance", {
-      p_instance_id: instance_id,
-      p_metric: metric,
-      p_source_note: source,
-    });
-    loadData();
+      const [{ data: titleRow }, { data: instRow }] = await Promise.all([t, d]);
+      if (titleRow?.title) setInstanceTitle(titleRow.title);
+      if (instRow) {
+        setMeta({
+          id: instRow.id,
+          title: instRow.title ?? titleRow?.title ?? null,
+          country_iso: instRow.country_iso ?? null,
+          target_admin_level: instRow.target_admin_level ?? null,
+          disaggregation_method: instRow.disaggregation_method ?? null,
+          created_at: instRow.created_at ?? null,
+        });
+      }
+    })();
+  }, [instance_id]);
+
+  // settings local state
+  const [targetAdm, setTargetAdm] = useState<string>("ADM4");
+  const [disagg, setDisagg] = useState<string>("inherit");
+  useEffect(() => {
+    if (!meta) return;
+    setTargetAdm(meta.target_admin_level || "ADM4");
+    setDisagg(meta.disaggregation_method || "inherit");
+  }, [meta]);
+
+  const saveSettings = async () => {
+    if (!meta) return;
+    setSavingSettings(true);
+    try {
+      const { error } = await supabase
+        .from("ssc_instances")
+        .update({
+          target_admin_level: targetAdm,
+          disaggregation_method: disagg,
+        })
+        .eq("id", meta.id);
+      if (error) throw error;
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
-  const grouped = {
-    framework: {
-      label: "SSC Framework",
-      subsections: [
-        { key: "ssc_p1", label: "P1 – The Shelter" },
-        { key: "ssc_p2", label: "P2 – Living Conditions" },
-        { key: "ssc_p3", label: "P3 – The Settlement" },
-      ],
+  // Compute category (server RPC)
+  const computeCategory = useCallback(
+    async (cat: keyof typeof CATEGORY_LABELS) => {
+      await supabase.rpc("apply_methodology_to_category", {
+        p_instance_id: instance_id,
+        p_category: cat,
+      });
+      setActiveCategory((_) => cat);
     },
-    hazard: { key: "ssc_hazard", label: "Hazards / Risks" },
-    vuln: { key: "ssc_vuln", label: "Underlying Vulnerabilities" },
+    [instance_id]
+  );
+
+  const onAddedDataset = async () => {
+    if (showAddModal) {
+      await computeCategory(showAddModal);
+      setShowAddModal(null);
+    }
   };
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="max-w-7xl mx-auto text-sm space-y-6">
-        {/* SSC Framework */}
-        <section className="border rounded-lg bg-white shadow-sm">
-          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
-            <h2 className="font-semibold">{grouped.framework.label}</h2>
-            <RefreshCw
-              onClick={loadData}
-              className="h-4 w-4 cursor-pointer hover:rotate-90 transition-transform"
-            />
-          </header>
-          {grouped.framework.subsections.map((sub) => (
-            <div key={sub.key} className="border-t">
-              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">
-                {sub.label}
-              </h3>
-              <DatasetTable
-                datasets={datasets.filter((d) => d.pillar === sub.key)}
-                onInterpret={setShowModal}
-                onView={setShowPreview}
-                onApply={handleApply}
-              />
+      <div className="mx-auto max-w-6xl space-y-6">
+        {/* Output settings */}
+        <section className="rounded-lg border bg-white p-4">
+          <h2 className="mb-3 font-semibold">Output Settings</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">Target Admin Level</label>
+              <select
+                value={targetAdm}
+                onChange={(e) => setTargetAdm(e.currentTarget.value)}
+                className="w-full rounded border px-3 py-2"
+              >
+                <option value="ADM2">ADM2</option>
+                <option value="ADM3">ADM3</option>
+                <option value="ADM4">ADM4</option>
+              </select>
             </div>
-          ))}
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">Disaggregation Method</label>
+              <select
+                value={disagg}
+                onChange={(e) => setDisagg(e.currentTarget.value)}
+                className="w-full rounded border px-3 py-2"
+              >
+                <option value="inherit">Inherit (simple copy)</option>
+                <option value="population_share">Population share (future)</option>
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={saveSettings}
+              disabled={savingSettings}
+              className="rounded bg-[color:var(--gsc-green)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {savingSettings ? "Saving…" : "Save settings"}
+            </button>
+          </div>
         </section>
 
-        {/* Hazards */}
-        <section className="border rounded-lg bg-white shadow-sm">
-          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
-            <h2 className="font-semibold">{grouped.hazard.label}</h2>
-          </header>
-          <DatasetTable
-            datasets={datasets.filter((d) => d.pillar === grouped.hazard.key)}
-            onInterpret={setShowModal}
-            onView={setShowPreview}
-            onApply={handleApply}
-          />
+        {/* Category chooser */}
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {CATEGORY_KEYS.map((cat) => {
+            const selected = activeCategory === cat;
+            return (
+              <div
+                key={cat}
+                className={`rounded-lg border p-4 ${selected ? "border-green-400 bg-green-50" : "bg-gray-50"}`}
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">{CATEGORY_LABELS[cat]}</h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowAddModal(cat)}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Add
+                    </button>
+                    <button
+                      onClick={() => setActiveCategory(cat)}
+                      className="text-sm text-gray-600 hover:underline"
+                    >
+                      View
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() => computeCategory(cat)}
+                    className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+                  >
+                    Compute / Refresh
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </section>
 
-        {/* Vulnerabilities */}
-        <section className="border rounded-lg bg-white shadow-sm">
-          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
-            <h2 className="font-semibold">{grouped.vuln.label}</h2>
-          </header>
-          <DatasetTable
-            datasets={datasets.filter((d) => d.pillar === grouped.vuln.key)}
-            onInterpret={setShowModal}
-            onView={setShowPreview}
-            onApply={handleApply}
-          />
+        {/* Active category details */}
+        <section className="rounded-lg border bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold">{CATEGORY_LABELS[activeCategory]}</h2>
+            {/* Quick preview buttons for common metrics (optional shortcuts) */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPreview("poverty_rate")}
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+              >
+                Preview poverty_rate
+              </button>
+              <button
+                onClick={() => setShowPreview("population_density")}
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+              >
+                Preview population_density
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <InstanceLayersList
+              instanceId={instance_id}
+              category={activeCategory}
+              onChanged={() => computeCategory(activeCategory)}
+            />
+            <CompositePreview instanceId={instance_id} category={activeCategory} />
+          </div>
         </section>
       </div>
 
-      {showModal && (
-        <InterpretationModal
-          open={!!showModal}
-          dataset={showModal}
+      {/* Add dataset modal */}
+      {showAddModal && (
+        <AddLayerModal
+          open={!!showAddModal}
+          onClose={() => setShowAddModal(null)}
           instanceId={instance_id}
-          onClose={() => setShowModal(null)}
-          onUpdated={loadData}
+          onAdded={onAddedDataset}
         />
       )}
 
+      {/* Data preview modal */}
       {showPreview && (
         <DataPreviewModal
           open={!!showPreview}
-          dataset={showPreview}
+          metric={showPreview}
           instanceId={instance_id}
           onClose={() => setShowPreview(null)}
         />
       )}
     </SidebarLayout>
-  );
-}
-
-function DatasetTable({
-  datasets,
-  onInterpret,
-  onView,
-  onApply,
-}: {
-  datasets: any[];
-  onInterpret: (ds: any) => void;
-  onView: (ds: any) => void;
-  onApply: (metric: string, source: string) => void;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-[13px]">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="p-2 text-left">Metric</th>
-            <th className="p-2 text-left">Method</th>
-            <th className="p-2 text-left">Direction</th>
-            <th className="p-2 text-left">Norm Params</th>
-            <th className="p-2 text-right w-40">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {datasets.length ? (
-            datasets.map((d) => (
-              <tr key={d.metric + d.source_note} className="border-t hover:bg-gray-50">
-                <td className="p-2 font-medium text-gray-700">{d.metric}</td>
-                <td className="p-2 text-gray-500">{d.norm_method}</td>
-                <td className="p-2 text-gray-500">
-                  {d.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
-                </td>
-                <td className="p-2 text-gray-500 truncate max-w-[180px]">
-                  {JSON.stringify(d.norm_params || {})}
-                </td>
-                <td className="p-2 text-right">
-                  <button
-                    onClick={() => onView(d)}
-                    className="text-xs text-gray-600 font-medium hover:underline mr-2"
-                  >
-                    <Eye className="inline h-3 w-3 mr-1" />
-                    View
-                  </button>
-                  <button
-                    onClick={() => onInterpret(d)}
-                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline mr-2"
-                  >
-                    <Settings2 className="inline h-3 w-3 mr-1" />
-                    Interpret
-                  </button>
-                  <button
-                    onClick={() => onApply(d.metric, d.source_note)}
-                    className="text-xs text-blue-600 font-medium hover:underline"
-                  >
-                    Apply
-                  </button>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={5} className="text-center text-gray-400 py-3">
-                No datasets
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
   );
 }
