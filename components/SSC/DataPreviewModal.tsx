@@ -1,206 +1,198 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X } from "lucide-react";
+import { X, ArrowUpDown } from "lucide-react";
 
 type DatasetRow = {
+  metric: string;
+  source_note: string;
+  pillar: string;
+  data_type: string;
+  norm_method: string | null;
+  norm_params: any | null;
+  higher_is_better: boolean | null;
+  admin_level?: string | null;
+};
+
+type PreviewRow = {
   admin_pcode: string;
-  admin_name: string;
-  raw_val: number;
+  admin_name: string | null;
+  raw_val: number | null;
   score: number | null;
 };
 
-type DataPreviewModalProps = {
+type Props = {
   open: boolean;
-  dataset: any;
+  dataset: DatasetRow;
   instanceId: string;
   onClose: () => void;
 };
 
-export default function DataPreviewModal({
-  open,
-  dataset,
-  instanceId,
-  onClose,
-}: DataPreviewModalProps) {
-  const [rows, setRows] = useState<DatasetRow[]>([]);
+export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
+  const [rows, setRows] = useState<PreviewRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rowLimit, setRowLimit] = useState<number>(100);
-  const [sortConfig, setSortConfig] = useState<{ key: keyof DatasetRow; direction: "asc" | "desc" } | null>(null);
 
-  const fetchPreview = async () => {
-    if (!dataset?.metric || !instanceId) return;
-    setLoading(true);
-    setError(null);
-    setRows([]);
+  // UI controls
+  const [sortKey, setSortKey] = useState<keyof PreviewRow>("admin_name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [limit, setLimit] = useState<number>(200); // user-controlled selector
 
-    try {
-      const { data, error } = await supabase
-        .rpc("get_dataset_preview", {
+  useEffect(() => {
+    if (!open || !dataset) return;
+
+    const load = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.rpc("get_dataset_preview", {
           p_instance_id: instanceId,
           p_metric: dataset.metric,
           p_source_note: dataset.source_note,
         });
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        setRows([]);
-        setError("No rows returned.");
+        if (error) throw error;
+        // data is an array of rows
+        setRows((data || []) as PreviewRow[]);
+      } finally {
         setLoading(false);
-        return;
       }
+    };
 
-      const limitedRows =
-        rowLimit === -1 ? data : data.slice(0, rowLimit);
-      setRows(limitedRows);
-    } catch (err: any) {
-      console.error("Error loading dataset preview:", err);
-      setError("Failed to load dataset preview.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    load();
+  }, [open, instanceId, dataset]);
 
-  const sortData = (key: keyof DatasetRow) => {
-    let direction: "asc" | "desc" = "asc";
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key, direction });
-    const sorted = [...rows].sort((a, b) => {
-      const valA = a[key] ?? "";
-      const valB = b[key] ?? "";
-      if (typeof valA === "number" && typeof valB === "number") {
-        return direction === "asc" ? valA - valB : valB - valA;
+  const sorted = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const va = a[sortKey];
+      const vb = b[sortKey];
+      if (va == null && vb == null) return 0;
+      if (va == null) return sortDir === "asc" ? -1 : 1;
+      if (vb == null) return sortDir === "asc" ? 1 : -1;
+      if (typeof va === "number" && typeof vb === "number") {
+        return sortDir === "asc" ? va - vb : vb - va;
       }
-      return direction === "asc"
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+      // string compare
+      return sortDir === "asc"
+        ? String(va).localeCompare(String(vb))
+        : String(vb).localeCompare(String(va));
     });
-    setRows(sorted);
-  };
+    return copy;
+  }, [rows, sortKey, sortDir]);
 
-  useEffect(() => {
-    if (open) fetchPreview();
-  }, [open, dataset, rowLimit]);
+  const shown = useMemo(() => sorted.slice(0, limit), [sorted, limit]);
+  const titleLevel = dataset?.admin_level || "—";
 
   if (!open) return null;
 
-  const adminLevel =
-    dataset?.source_note?.match(/adm\d/i)?.[0]?.toUpperCase() ?? "ADM?";
+  const toggleSort = (k: keyof PreviewRow) => {
+    setSortKey(k);
+    setSortDir((d) => (k === sortKey ? (d === "asc" ? "desc" : "asc") : "asc"));
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white w-[90%] max-w-6xl rounded-lg shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="bg-[color:var(--gsc-green)] text-white flex items-center justify-between px-4 py-3">
-          <h2 className="text-lg font-semibold">
-            Data Preview — {dataset.metric} ({adminLevel})
-          </h2>
+    <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-3">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] flex flex-col">
+        <header className="px-4 py-2 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-sm">
+            Preview: {dataset.metric} — <span className="text-gray-600">{dataset.source_note}</span>{" "}
+            <span className="text-gray-500">({titleLevel})</span>
+          </h3>
           <button
             onClick={onClose}
-            className="text-white hover:text-gray-200 transition"
+            className="text-gray-600 hover:text-black p-1 rounded"
+            title="Close"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
-        </div>
+        </header>
 
-        {/* Controls */}
-        <div className="flex items-center gap-4 p-3 text-sm border-b bg-gray-50">
-          <label className="flex items-center gap-2">
-            Filter:
-            <select className="border rounded px-2 py-1">
-              <option>Both</option>
-              <option>Raw only</option>
-              <option>Scored only</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            Rows:
-            <select
-              value={rowLimit}
-              onChange={(e) => setRowLimit(Number(e.target.value))}
-              className="border rounded px-2 py-1"
-            >
-              <option value={10}>10</option>
-              <option value={100}>100</option>
-              <option value={1000}>1000</option>
-              <option value={-1}>All</option>
-            </select>
-          </label>
-          <span className="text-gray-600 truncate">
-            Method: {dataset.norm_method ?? "n/a"} · Direction:{" "}
-            {dataset.higher_is_better
-              ? "↑ higher = worse"
-              : "↓ lower = worse"}{" "}
-            · Params: {JSON.stringify(dataset.norm_params ?? {})}
+        <div className="px-4 pt-3 pb-2 flex items-center gap-3 text-xs">
+          <label className="text-gray-600">Rows to show:</label>
+          <select
+            value={limit}
+            onChange={(e) => setLimit(parseInt(e.currentTarget.value, 10))}
+            className="border rounded px-2 py-1"
+          >
+            {[50, 100, 200, 500, 1000, 5000].map((n) => (
+              <option key={n} value={n}>
+                {n.toLocaleString()}
+              </option>
+            ))}
+          </select>
+          <span className="text-gray-500 ml-auto">
+            Total rows: {rows.length.toLocaleString()}
           </span>
         </div>
 
-        {/* Table */}
-        <div className="overflow-auto flex-1">
-          {loading ? (
-            <div className="text-center text-gray-500 py-8">Loading…</div>
-          ) : error ? (
-            <div className="text-center text-gray-500 py-8">{error}</div>
-          ) : (
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-100 sticky top-0">
+        <div className="px-4 pb-4 overflow-auto">
+          <div className="border rounded">
+            <table className="w-full text-[13px]">
+              <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  {["admin_pcode", "admin_name", "raw_val", "score"].map(
-                    (col) => (
-                      <th
-                        key={col}
-                        className="p-2 text-left cursor-pointer hover:bg-gray-200 select-none"
-                        onClick={() => sortData(col as keyof DatasetRow)}
-                      >
-                        {col
-                          .replace("_", " ")
-                          .replace(/\b\w/g, (c) => c.toUpperCase())}
-                        {sortConfig?.key === col
-                          ? sortConfig.direction === "asc"
-                            ? " ↑"
-                            : " ↓"
-                          : ""}
-                      </th>
-                    )
-                  )}
+                  <Th label="Admin (name)" onClick={() => toggleSort("admin_name")} active={sortKey === "admin_name"} dir={sortDir} />
+                  <Th label="Admin Pcode" onClick={() => toggleSort("admin_pcode")} active={sortKey === "admin_pcode"} dir={sortDir} />
+                  <Th label="Raw value" onClick={() => toggleSort("raw_val")} active={sortKey === "raw_val"} dir={sortDir} />
+                  <Th label="Score" onClick={() => toggleSort("score")} active={sortKey === "score"} dir={sortDir} />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr
-                    key={r.admin_pcode + i}
-                    className={i % 2 ? "bg-gray-50" : ""}
-                  >
-                    <td className="p-2">{r.admin_pcode}</td>
-                    <td className="p-2">{r.admin_name}</td>
-                    <td className="p-2 text-right">
-                      {r.raw_val?.toLocaleString()}
-                    </td>
-                    <td className="p-2 text-right">
-                      {r.score != null ? r.score.toFixed(2) : ""}
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="text-center text-gray-400 py-4">
+                      Loading…
                     </td>
                   </tr>
-                ))}
+                ) : shown.length ? (
+                  shown.map((r) => (
+                    <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
+                      <td className="p-2">{r.admin_name || "—"}</td>
+                      <td className="p-2 text-gray-600">{r.admin_pcode}</td>
+                      <td className="p-2 tabular-nums">{r.raw_val ?? "—"}</td>
+                      <td className="p-2 tabular-nums">{r.score ?? "—"}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="text-center text-gray-400 py-4">
+                      No rows
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t p-3 text-right bg-gray-50">
-          <button
-            onClick={onClose}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-1 rounded"
-          >
-            Close
-          </button>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function Th({
+  label,
+  onClick,
+  active,
+  dir,
+}: {
+  label: string;
+  onClick: () => void;
+  active: boolean;
+  dir: "asc" | "desc";
+}) {
+  return (
+    <th
+      className="p-2 text-left font-medium text-gray-600 cursor-pointer select-none"
+      onClick={onClick}
+      title="Sort"
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <ArrowUpDown
+          className={`h-3 w-3 ${active ? "text-gray-800" : "text-gray-400"}`}
+        />
+        {active && (
+          <span className="text-[10px] text-gray-500">{dir.toUpperCase()}</span>
+        )}
+      </span>
+    </th>
   );
 }
