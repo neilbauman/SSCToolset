@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpDown } from "lucide-react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-// ---------- Types ----------
 type DatasetRow = {
   admin_pcode: string;
   admin_name: string | null;
@@ -118,12 +117,10 @@ function computeScores(rows: DatasetRow[], meta: DatasetMeta): number[] {
   return rows.map(() => NaN);
 }
 
-// ---------- Component ----------
 export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
   const [rows, setRows] = useState<DatasetRow[]>([]);
   const [filter, setFilter] = useState<FilterMode>("both");
   const [loading, setLoading] = useState(false);
-
   const [sortKey, setSortKey] = useState<SortKey>("admin_pcode");
   const [sortDir, setSortDir] = useState<SortDir>(null);
 
@@ -203,8 +200,8 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
   const showing = renderedRows.length;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4">
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow-xl overflow-hidden">
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4 overflow-auto">
+      <div className="w-full max-w-6xl bg-white rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-4 py-3 bg-[color:var(--gsc-green)] text-white flex items-center justify-between">
           <h3 className="font-semibold">
             Data Preview — {dataset.metric}
@@ -214,7 +211,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-4 flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center gap-3 mb-3">
             <label className="text-sm text-gray-600">Filter:</label>
             <select
@@ -226,7 +223,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
               <option value="raw">Raw only</option>
               <option value="score">Score only</option>
             </select>
-            <div className="ml-auto text-xs text-gray-500">
+            <div className="ml-auto text-xs text-gray-500 truncate">
               Method: <span className="font-medium">{dataset.norm_method}</span>{" "}
               · Direction:{" "}
               <span className="font-medium">
@@ -239,19 +236,15 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
             </div>
           </div>
 
-          <div className="overflow-auto border rounded">
+          <div className="overflow-auto border rounded flex-1">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   {[
                     { key: "admin_pcode", label: "Admin PCode" },
                     { key: "admin_name", label: "Admin Name" },
-                    ...(filter !== "score"
-                      ? [{ key: "raw_value", label: "Raw Value" }]
-                      : []),
-                    ...(filter !== "raw"
-                      ? [{ key: "score_value", label: "Score (1–5)" }]
-                      : []),
+                    ...(filter !== "score" ? [{ key: "raw_value", label: "Raw Value" }] : []),
+                    ...(filter !== "raw" ? [{ key: "score_value", label: "Score (1–5)" }] : []),
                   ].map((col) => (
                     <th
                       key={col.key}
@@ -287,7 +280,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
                     </td>
                   </tr>
                 ) : (
-                  renderedRows.slice(0, 1000).map((r) => (
+                  renderedRows.map((r) => (
                     <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
                       <td className="px-3 py-2">{r.admin_pcode}</td>
                       <td className="px-3 py-2">{r.admin_name}</td>
