@@ -4,10 +4,26 @@ import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { X } from "lucide-react";
 
-export default function InterpretationModal({ open, dataset, instanceId, onClose, onUpdated }) {
+type InterpretationModalProps = {
+  open: boolean;
+  dataset: any;
+  instanceId: string;
+  onClose: () => void;
+  onUpdated: () => void;
+};
+
+export default function InterpretationModal({
+  open,
+  dataset,
+  instanceId,
+  onClose,
+  onUpdated,
+}: InterpretationModalProps) {
   const [method, setMethod] = useState(dataset.norm_method || "winsor_5_95");
   const [higher, setHigher] = useState(!!dataset.higher_is_better);
-  const [thresholds, setThresholds] = useState<number[]>(dataset.norm_params?.thresholds || []);
+  const [thresholds, setThresholds] = useState<number[]>(
+    dataset.norm_params?.thresholds || []
+  );
   const [saving, setSaving] = useState(false);
 
   if (!open) return null;
