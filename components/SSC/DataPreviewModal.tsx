@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { X } from "lucide-react";
 import {
@@ -14,13 +14,28 @@ import {
 
 type Props = {
   open: boolean;
-  dataset: any;
+  dataset: {
+    metric: string;
+    source_note: string;
+  };
   instanceId: string;
   onClose: () => void;
 };
 
-export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
-  const [rows, setRows] = useState<any[]>([]);
+type Row = {
+  admin_pcode: string;
+  admin_name: string | null;
+  raw_value: number | null;
+  score: number | null;
+};
+
+export default function DataPreviewModal({
+  open,
+  dataset,
+  instanceId,
+  onClose,
+}: Props) {
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<"raw" | "scored" | "both">("both");
 
@@ -28,17 +43,23 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
     if (!open) return;
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .rpc("get_dataset_preview", {
-          p_instance_id: instanceId,
-          p_metric: dataset.metric,
-          p_source_note: dataset.source_note,
-        })
-        .limit(2000);
-      if (!error) setRows(data || []);
+
+      // Fetch via RPC that joins admin_units for admin_name
+      const { data, error } = await supabase.rpc("get_dataset_preview", {
+        p_instance_id: instanceId,
+        p_metric: dataset.metric,
+        p_source_note: dataset.source_note,
+      });
+
+      if (!error && Array.isArray(data)) {
+        setRows(data as Row[]);
+      } else {
+        // graceful fallback (no drift): empty
+        setRows([]);
+      }
       setLoading(false);
     })();
-  }, [open, dataset, instanceId]);
+  }, [open, instanceId, dataset.metric, dataset.source_note]);
 
   const filteredRows = useMemo(() => {
     if (filter === "raw") return rows.filter((r) => r.score == null);
@@ -49,8 +70,8 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
   const histogram = useMemo(() => {
     const buckets: Record<string, number> = {};
     for (const r of rows) {
-      const bin = r.score != null ? Math.round(r.score) : 0;
-      if (bin === 0) continue;
+      if (r.score == null) continue;
+      const bin = Math.max(1, Math.min(5, Math.round(Number(r.score))));
       buckets[bin] = (buckets[bin] || 0) + 1;
     }
     return Object.entries(buckets).map(([bin, count]) => ({ bin, count }));
@@ -60,35 +81,36 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[85vh] flex flex-col">
+        {/* Header */}
         <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
-          <h3 className="font-semibold text-sm">
-            Data Preview – {dataset.metric}
-          </h3>
+          <h3 className="font-semibold text-sm">Data Preview – {dataset.metric}</h3>
           <X onClick={onClose} className="h-4 w-4 cursor-pointer" />
         </header>
 
-        <div className="flex-1 overflow-auto p-4 text-sm space-y-3">
-          <div className="flex justify-between items-center">
-            <div className="flex gap-2 items-center">
-              <span className="text-gray-600 text-sm">Filter:</span>
-              <select
-                value={filter}
-                onChange={(e) =>
-                  setFilter(e.target.value as "raw" | "scored" | "both")
-                }
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="both">Both</option>
-                <option value="raw">Raw only</option>
-                <option value="scored">Scored only</option>
-              </select>
-            </div>
-            <span className="text-gray-500 text-xs">
-              Showing {filteredRows.length} of {rows.length} rows
-            </span>
+        {/* Controls */}
+        <div className="px-4 pt-3 text-sm flex items-center justify-between">
+          <div className="flex gap-2 items-center">
+            <span className="text-gray-600 text-sm">Filter:</span>
+            <select
+              value={filter}
+              onChange={(e) =>
+                setFilter(e.target.value as "raw" | "scored" | "both")
+              }
+              className="border rounded px-2 py-1 text-sm"
+            >
+              <option value="both">Both</option>
+              <option value="raw">Raw only</option>
+              <option value="scored">Scored only</option>
+            </select>
           </div>
+          <span className="text-gray-500 text-xs">
+            Showing {filteredRows.length} of {rows.length} rows
+          </span>
+        </div>
 
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-4 text-sm space-y-3">
           {loading ? (
             <p>Loading…</p>
           ) : filteredRows.length === 0 ? (
@@ -129,7 +151,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
                         <XAxis dataKey="bin" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#16a34a" />
+                        <Bar dataKey="count" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
