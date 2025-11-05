@@ -39,6 +39,7 @@ type FilterMode = "both" | "raw" | "score";
 type SortKey = "admin_pcode" | "admin_name" | "raw_value" | "score_value";
 type SortDir = "asc" | "desc" | null;
 
+// ---------- Helpers ----------
 function fmt(n: number | null | undefined, d = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "NaN";
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -135,8 +136,8 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
             p_source_note: dataset.source_note,
             p_instance_id: instanceId,
           })
-          .select("*", { count: "exact" })
-          .limit(10000); // explicit high cap to override 10-row default
+          .select("*")
+          .limit(10000); // explicit high cap to override default truncation
 
         const normalized: DatasetRow[] = (data || []).map((r: any) => ({
           admin_pcode: r.admin_pcode ?? r.pcode ?? "",
