@@ -35,20 +35,28 @@ export default function SSCDashboard({
     ),
   };
 
+  // ✅ Fixed loadData with error handling and logging
   const loadData = async () => {
-    // Join the unified results to get admin level info if present
-    const { data, error } = await supabase
-      .from("ssc_dataset_catalog")
-      .select(
-        `
-        *,
-        unified_category_results!left(metric, admin_level)
-      `
-      )
-      .order("pillar");
+    try {
+      const { data, error } = await supabase
+        .from("ssc_dataset_catalog")
+        .select(
+          "id, metric, pillar, data_type, norm_method, higher_is_better, norm_params, source_note"
+        )
+        .order("pillar", { ascending: true });
 
-    if (error) console.error(error);
-    else setDatasets(data || []);
+      if (error) {
+        console.error("Error loading datasets:", error);
+        setDatasets([]);
+        return;
+      }
+
+      console.log("Loaded datasets:", data);
+      setDatasets(data || []);
+    } catch (err) {
+      console.error("Unexpected error loading datasets:", err);
+      setDatasets([]);
+    }
   };
 
   useEffect(() => {
@@ -79,23 +87,25 @@ export default function SSCDashboard({
 
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="mx-auto max-w-7xl space-y-6 text-sm">
+      <div className="max-w-7xl mx-auto text-sm space-y-6">
         {/* SSC Framework */}
-        <section className="rounded-lg border bg-white shadow-sm">
-          <header className="flex items-center justify-between rounded-t-lg bg-[color:var(--gsc-green)] px-4 py-2 text-white">
+        <section className="border rounded-lg bg-white shadow-sm">
+          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
             <h2 className="font-semibold">{grouped.framework.label}</h2>
             <RefreshCw
               onClick={loadData}
-              className="h-4 w-4 cursor-pointer transition-transform hover:rotate-90"
+              className="h-4 w-4 cursor-pointer hover:rotate-90 transition-transform"
             />
           </header>
           {grouped.framework.subsections.map((sub) => (
             <div key={sub.key} className="border-t">
-              <h3 className="bg-gray-50 px-4 py-2 font-semibold text-gray-700">
+              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">
                 {sub.label}
               </h3>
               <DatasetTable
-                datasets={datasets.filter((d) => d.pillar === sub.key)}
+                datasets={datasets.filter(
+                  (d) => d.pillar?.toLowerCase() === sub.key
+                )}
                 onInterpret={setShowModal}
                 onView={setShowPreview}
                 onApply={handleApply}
@@ -105,12 +115,14 @@ export default function SSCDashboard({
         </section>
 
         {/* Hazards */}
-        <section className="rounded-lg border bg-white shadow-sm">
-          <header className="flex items-center justify-between rounded-t-lg bg-[color:var(--gsc-green)] px-4 py-2 text-white">
+        <section className="border rounded-lg bg-white shadow-sm">
+          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
             <h2 className="font-semibold">{grouped.hazard.label}</h2>
           </header>
           <DatasetTable
-            datasets={datasets.filter((d) => d.pillar === grouped.hazard.key)}
+            datasets={datasets.filter(
+              (d) => d.pillar?.toLowerCase() === grouped.hazard.key
+            )}
             onInterpret={setShowModal}
             onView={setShowPreview}
             onApply={handleApply}
@@ -118,12 +130,14 @@ export default function SSCDashboard({
         </section>
 
         {/* Vulnerabilities */}
-        <section className="rounded-lg border bg-white shadow-sm">
-          <header className="flex items-center justify-between rounded-t-lg bg-[color:var(--gsc-green)] px-4 py-2 text-white">
+        <section className="border rounded-lg bg-white shadow-sm">
+          <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
             <h2 className="font-semibold">{grouped.vuln.label}</h2>
           </header>
           <DatasetTable
-            datasets={datasets.filter((d) => d.pillar === grouped.vuln.key)}
+            datasets={datasets.filter(
+              (d) => d.pillar?.toLowerCase() === grouped.vuln.key
+            )}
             onInterpret={setShowModal}
             onView={setShowPreview}
             onApply={handleApply}
@@ -131,6 +145,7 @@ export default function SSCDashboard({
         </section>
       </div>
 
+      {/* Interpretation Modal */}
       {showModal && (
         <InterpretationModal
           open={!!showModal}
@@ -141,10 +156,11 @@ export default function SSCDashboard({
         />
       )}
 
+      {/* Data Preview Modal */}
       {showPreview && (
         <DataPreviewModal
           open={!!showPreview}
-          metric={showPreview.metric}
+          dataset={showPreview}
           instanceId={instance_id}
           onClose={() => setShowPreview(null)}
         />
@@ -153,6 +169,7 @@ export default function SSCDashboard({
   );
 }
 
+// 📊 Reusable dataset table component
 function DatasetTable({
   datasets,
   onInterpret,
@@ -174,7 +191,7 @@ function DatasetTable({
             <th className="p-2 text-left">Method</th>
             <th className="p-2 text-left">Direction</th>
             <th className="p-2 text-left">Norm Params</th>
-            <th className="w-40 p-2 text-right">Actions</th>
+            <th className="p-2 text-right w-40">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -185,36 +202,34 @@ function DatasetTable({
                 className="border-t hover:bg-gray-50"
               >
                 <td className="p-2 font-medium text-gray-700">{d.metric}</td>
-                <td className="p-2 text-gray-600">
-                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
-                    {d.unified_category_results?.[0]?.admin_level ?? "—"}
-                  </span>
+                <td className="p-2 text-gray-500">
+                  {d.admin_level || "ADM3/ADM4"}
                 </td>
                 <td className="p-2 text-gray-500">{d.norm_method}</td>
                 <td className="p-2 text-gray-500">
                   {d.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
                 </td>
-                <td className="max-w-[180px] truncate p-2 text-gray-500">
+                <td className="p-2 text-gray-500 truncate max-w-[180px]">
                   {JSON.stringify(d.norm_params || {})}
                 </td>
                 <td className="p-2 text-right">
                   <button
                     onClick={() => onView(d)}
-                    className="mr-2 text-xs font-medium text-gray-600 hover:underline"
+                    className="text-xs text-gray-600 font-medium hover:underline mr-2"
                   >
-                    <Eye className="mr-1 inline h-3 w-3" />
+                    <Eye className="inline h-3 w-3 mr-1" />
                     View
                   </button>
                   <button
                     onClick={() => onInterpret(d)}
-                    className="mr-2 text-xs font-medium text-[color:var(--gsc-green)] hover:underline"
+                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline mr-2"
                   >
-                    <Settings2 className="mr-1 inline h-3 w-3" />
+                    <Settings2 className="inline h-3 w-3 mr-1" />
                     Interpret
                   </button>
                   <button
                     onClick={() => onApply(d.metric, d.source_note)}
-                    className="text-xs font-medium text-blue-600 hover:underline"
+                    className="text-xs text-blue-600 font-medium hover:underline"
                   >
                     Apply
                   </button>
@@ -223,7 +238,7 @@ function DatasetTable({
             ))
           ) : (
             <tr>
-              <td colSpan={6} className="py-3 text-center text-gray-400">
+              <td colSpan={6} className="text-center text-gray-400 py-3">
                 No datasets
               </td>
             </tr>
