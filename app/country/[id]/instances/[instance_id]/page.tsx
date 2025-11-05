@@ -50,14 +50,11 @@ export default function SSCDashboard({
         return;
       }
 
-      // Deduplicate by metric + pillar to prevent multiple definitions showing
       const unique = Array.from(
         new Map(
           (data || []).map((d) => [`${d.metric}_${d.pillar}`, d])
         ).values()
       );
-
-      console.log("Loaded unique datasets:", unique);
       setDatasets(unique);
     } catch (err) {
       console.error("Unexpected error loading datasets:", err);
@@ -151,7 +148,6 @@ export default function SSCDashboard({
         </section>
       </div>
 
-      {/* Interpretation Modal */}
       {showModal && (
         <InterpretationModal
           open={!!showModal}
@@ -162,7 +158,6 @@ export default function SSCDashboard({
         />
       )}
 
-      {/* Data Preview Modal */}
       {showPreview && (
         <DataPreviewModal
           open={!!showPreview}
@@ -186,9 +181,9 @@ function DatasetTable({
   onView: (ds: any) => void;
   onApply: (metric: string, source: string) => void;
 }) {
-  // --- Sorting state ---
   const [sortKey, setSortKey] = useState<string>("metric");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const sorted = [...datasets].sort((a, b) => {
     const valA = (a[sortKey] || "").toString();
@@ -204,24 +199,51 @@ function DatasetTable({
     }
   };
 
+  const handleDelete = async (metric: string, source: string) => {
+    const confirm = window.confirm(
+      `Remove dataset "${metric}" (${source}) from the SSC catalog?`
+    );
+    if (!confirm) return;
+
+    try {
+      setRemoving(metric);
+      const { error } = await supabase
+        .from("ssc_dataset_catalog")
+        .delete()
+        .eq("metric", metric)
+        .eq("source_note", source);
+
+      if (error) throw error;
+      window.location.reload();
+    } catch (err) {
+      console.error("Failed to delete dataset:", err);
+      alert("Error deleting dataset. Check console for details.");
+    } finally {
+      setRemoving(null);
+    }
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-[13px]">
         <thead className="bg-gray-50">
           <tr>
-            {["metric", "data_type", "norm_method", "higher_is_better", "norm_params"].map(
-              (key, idx) => (
-                <th
-                  key={idx}
-                  className="p-2 text-left cursor-pointer select-none"
-                  onClick={() => handleSort(key)}
-                >
-                  {key.replace("_", " ")}{" "}
-                  {sortKey === key ? (sortAsc ? "▲" : "▼") : ""}
-                </th>
-              )
-            )}
-            <th className="p-2 text-right w-40">Actions</th>
+            {[
+              ["metric", "Metric"],
+              ["data_type", "Type"],
+              ["norm_method", "Method"],
+              ["higher_is_better", "Direction"],
+              ["norm_params", "Norm Params"],
+            ].map(([key, label]) => (
+              <th
+                key={key}
+                className="p-2 text-left cursor-pointer select-none"
+                onClick={() => handleSort(key)}
+              >
+                {label} {sortKey === key ? (sortAsc ? "▲" : "▼") : ""}
+              </th>
+            ))}
+            <th className="p-2 text-right w-52">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -240,17 +262,17 @@ function DatasetTable({
                 <td className="p-2 text-gray-500 truncate max-w-[180px]">
                   {JSON.stringify(d.norm_params || {})}
                 </td>
-                <td className="p-2 text-right">
+                <td className="p-2 text-right space-x-2">
                   <button
                     onClick={() => onView(d)}
-                    className="text-xs text-gray-600 font-medium hover:underline mr-2"
+                    className="text-xs text-gray-600 font-medium hover:underline"
                   >
                     <Eye className="inline h-3 w-3 mr-1" />
                     View
                   </button>
                   <button
                     onClick={() => onInterpret(d)}
-                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline mr-2"
+                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline"
                   >
                     <Settings2 className="inline h-3 w-3 mr-1" />
                     Interpret
@@ -260,6 +282,16 @@ function DatasetTable({
                     className="text-xs text-blue-600 font-medium hover:underline"
                   >
                     Apply
+                  </button>
+                  <button
+                    onClick={() => handleDelete(d.metric, d.source_note)}
+                    className={`text-xs text-red-600 font-medium hover:underline ${
+                      removing === d.metric
+                        ? "opacity-50 pointer-events-none"
+                        : ""
+                    }`}
+                  >
+                    {removing === d.metric ? "Removing..." : "Remove"}
                   </button>
                 </td>
               </tr>
