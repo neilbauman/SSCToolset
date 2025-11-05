@@ -2,197 +2,196 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, ArrowUpDown } from "lucide-react";
 
-type DatasetRow = {
+type DatasetMeta = {
   metric: string;
   source_note: string;
-  pillar: string;
-  data_type: string;
-  norm_method: string | null;
-  norm_params: any | null;
-  higher_is_better: boolean | null;
   admin_level?: string | null;
-};
-
-type PreviewRow = {
-  admin_pcode: string;
-  admin_name: string | null;
-  raw_val: number | null;
-  score: number | null;
+  norm_method?: string | null;
+  norm_params?: any;
 };
 
 type Props = {
   open: boolean;
-  dataset: DatasetRow;
+  dataset: DatasetMeta | null; // comes from the table row you clicked
   instanceId: string;
   onClose: () => void;
 };
 
-export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
-  const [rows, setRows] = useState<PreviewRow[]>([]);
-  const [loading, setLoading] = useState(false);
+type Row = {
+  admin_pcode: string;
+  admin_name: string | null;
+  raw_value: number | null; // IMPORTANT: this is what we’ll show
+  score: number | null;
+};
 
-  // UI controls
-  const [sortKey, setSortKey] = useState<keyof PreviewRow>("admin_name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [limit, setLimit] = useState<number>(200); // user-controlled selector
+export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [limit, setLimit] = useState<number>(200);
+  const [total, setTotal] = useState<number | null>(null);
+
+  const title = useMemo(() => {
+    if (!dataset) return "Data Preview";
+    const lvl = dataset.admin_level ? ` (${dataset.admin_level})` : "";
+    return `Preview: ${dataset.metric} — ${dataset.source_note}${lvl}`;
+  }, [dataset]);
 
   useEffect(() => {
     if (!open || !dataset) return;
 
-    const load = async () => {
+    const fetchPreview = async () => {
       setLoading(true);
-      try {
-        const { data, error } = await supabase.rpc("get_dataset_preview", {
-          p_instance_id: instanceId,
-          p_metric: dataset.metric,
-          p_source_note: dataset.source_note,
-        });
-        if (error) throw error;
-        // data is an array of rows
-        setRows((data || []) as PreviewRow[]);
-      } finally {
-        setLoading(false);
+      setError(null);
+
+      // Many of our older builds used this exact signature.
+      // If your RPC name differs, just adjust here — everything else will still work.
+      const { data, error } = await supabase.rpc("get_dataset_preview", {
+        p_instance_id: instanceId,
+        p_metric: dataset.metric,
+        p_source_note: dataset.source_note,
+        p_limit: limit,
+      });
+
+      if (error) {
+        setError(error.message);
+        setRows([]);
+        setTotal(0);
+      } else {
+        // Expecting data like: [{ admin_pcode, admin_name, raw_value, score }, ...]
+        setRows((data?.rows as Row[]) ?? data ?? []);
+        // Support either shape: { rows, total } or just array
+        setTotal(typeof data?.total === "number" ? data.total : (data?.length ?? 0));
       }
+
+      setLoading(false);
     };
 
-    load();
-  }, [open, instanceId, dataset]);
+    fetchPreview();
+  }, [open, dataset, instanceId, limit]);
 
-  const sorted = useMemo(() => {
-    const copy = [...rows];
-    copy.sort((a, b) => {
-      const va = a[sortKey];
-      const vb = b[sortKey];
-      if (va == null && vb == null) return 0;
-      if (va == null) return sortDir === "asc" ? -1 : 1;
-      if (vb == null) return sortDir === "asc" ? 1 : -1;
-      if (typeof va === "number" && typeof vb === "number") {
-        return sortDir === "asc" ? va - vb : vb - va;
-      }
-      // string compare
-      return sortDir === "asc"
-        ? String(va).localeCompare(String(vb))
-        : String(vb).localeCompare(String(va));
-    });
-    return copy;
-  }, [rows, sortKey, sortDir]);
-
-  const shown = useMemo(() => sorted.slice(0, limit), [sorted, limit]);
-  const titleLevel = dataset?.admin_level || "—";
-
-  if (!open) return null;
-
-  const toggleSort = (k: keyof PreviewRow) => {
-    setSortKey(k);
-    setSortDir((d) => (k === sortKey ? (d === "asc" ? "desc" : "asc") : "asc"));
-  };
+  if (!open || !dataset) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-3">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] flex flex-col">
-        <header className="px-4 py-2 border-b flex items-center justify-between">
-          <h3 className="font-semibold text-sm">
-            Preview: {dataset.metric} — <span className="text-gray-600">{dataset.source_note}</span>{" "}
-            <span className="text-gray-500">({titleLevel})</span>
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-600 hover:text-black p-1 rounded"
-            title="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 w-[min(1200px,95vw)] max-h-[85vh] overflow-hidden rounded-lg bg-white shadow-xl">
+        <header className="px-4 py-3 border-b flex items-center justify-between">
+          <h2 className="font-semibold text-[15px]">{title}</h2>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-500">
+              {total !== null ? `Total rows: ${total.toLocaleString()}` : null}
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <label className="text-gray-500">Rows to show:</label>
+              <select
+                className="border rounded px-2 py-1"
+                value={limit}
+                onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <button
+              className="rounded px-3 py-1 text-sm border hover:bg-gray-50"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
         </header>
 
-        <div className="px-4 pt-3 pb-2 flex items-center gap-3 text-xs">
-          <label className="text-gray-600">Rows to show:</label>
-          <select
-            value={limit}
-            onChange={(e) => setLimit(parseInt(e.currentTarget.value, 10))}
-            className="border rounded px-2 py-1"
-          >
-            {[50, 100, 200, 500, 1000, 5000].map((n) => (
-              <option key={n} value={n}>
-                {n.toLocaleString()}
-              </option>
-            ))}
-          </select>
-          <span className="text-gray-500 ml-auto">
-            Total rows: {rows.length.toLocaleString()}
-          </span>
+        {/* method summary (nice to keep) */}
+        <div className="px-4 py-2 text-[12px] text-gray-600 border-b flex items-center gap-2 overflow-x-auto">
+          {dataset.norm_method ? (
+            <>
+              <span className="font-medium">Method:</span>
+              <span>{dataset.norm_method.replaceAll("_", " ")}</span>
+            </>
+          ) : null}
+          {typeof dataset?.norm_params !== "undefined" ? (
+            <>
+              <span className="font-medium ml-4">Params:</span>
+              <span className="truncate max-w-[65%]">
+                {typeof dataset.norm_params === "string"
+                  ? dataset.norm_params
+                  : JSON.stringify(dataset.norm_params)}
+              </span>
+            </>
+          ) : null}
         </div>
 
-        <div className="px-4 pb-4 overflow-auto">
-          <div className="border rounded">
-            <table className="w-full text-[13px]">
-              <thead className="bg-gray-50 sticky top-0">
+        <div className="p-0 overflow-auto" style={{ maxHeight: "65vh" }}>
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 sticky top-0 z-[1]">
+              <tr>
+                <Th>Admin (name)</Th>
+                <Th>Admin Pcode</Th>
+                <Th>Raw value</Th>
+                <Th>Score</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
                 <tr>
-                  <Th label="Admin (name)" onClick={() => toggleSort("admin_name")} active={sortKey === "admin_name"} dir={sortDir} />
-                  <Th label="Admin Pcode" onClick={() => toggleSort("admin_pcode")} active={sortKey === "admin_pcode"} dir={sortDir} />
-                  <Th label="Raw value" onClick={() => toggleSort("raw_val")} active={sortKey === "raw_val"} dir={sortDir} />
-                  <Th label="Score" onClick={() => toggleSort("score")} active={sortKey === "score"} dir={sortDir} />
+                  <td colSpan={4} className="py-8 text-center text-gray-500">
+                    Loading…
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={4} className="text-center text-gray-400 py-4">
-                      Loading…
-                    </td>
+              ) : error ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-red-600">
+                    {error}
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-gray-500">
+                    No rows
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r, i) => (
+                  <tr key={r.admin_pcode + ":" + i} className="border-b hover:bg-gray-50">
+                    <Td>{r.admin_name ?? "—"}</Td>
+                    <Td mono>{r.admin_pcode}</Td>
+
+                    {/* 👇 THIS is the important part: use r.raw_value */}
+                    <Td mono>
+                      {r.raw_value !== null && r.raw_value !== undefined
+                        ? Number(r.raw_value).toLocaleString()
+                        : "—"}
+                    </Td>
+
+                    <Td mono>
+                      {r.score !== null && r.score !== undefined
+                        ? Number(r.score).toFixed(2)
+                        : "—"}
+                    </Td>
                   </tr>
-                ) : shown.length ? (
-                  shown.map((r) => (
-                    <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
-                      <td className="p-2">{r.admin_name || "—"}</td>
-                      <td className="p-2 text-gray-600">{r.admin_pcode}</td>
-                      <td className="p-2 tabular-nums">{r.raw_val ?? "—"}</td>
-                      <td className="p-2 tabular-nums">{r.score ?? "—"}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="text-center text-gray-400 py-4">
-                      No rows
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
 }
 
-function Th({
-  label,
-  onClick,
-  active,
-  dir,
-}: {
-  label: string;
-  onClick: () => void;
-  active: boolean;
-  dir: "asc" | "desc";
-}) {
+function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th
-      className="p-2 text-left font-medium text-gray-600 cursor-pointer select-none"
-      onClick={onClick}
-      title="Sort"
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        <ArrowUpDown
-          className={`h-3 w-3 ${active ? "text-gray-800" : "text-gray-400"}`}
-        />
-        {active && (
-          <span className="text-[10px] text-gray-500">{dir.toUpperCase()}</span>
-        )}
-      </span>
+    <th className="text-left text-gray-600 font-medium px-3 py-2 border-b">
+      {children}
     </th>
+  );
+}
+function Td({ children, mono = false }: { children: React.ReactNode; mono?: boolean }) {
+  return (
+    <td className={`px-3 py-2 ${mono ? "font-mono tabular-nums" : ""}`}>{children}</td>
   );
 }
