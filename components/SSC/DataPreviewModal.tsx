@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, ChevronDown } from "lucide-react";
-
-type Props = {
-  open: boolean;
-  dataset: any;
-  instanceId: string;
-  onClose: () => void;
-};
+import { X } from "lucide-react";
 
 type DatasetRow = {
   admin_pcode: string;
   admin_name: string;
-  raw_value: number | null;
+  raw_val: number;
   score: number | null;
+};
+
+type DataPreviewModalProps = {
+  open: boolean;
+  dataset: any;
+  instanceId: string;
+  onClose: () => void;
 };
 
 export default function DataPreviewModal({
@@ -23,256 +23,184 @@ export default function DataPreviewModal({
   dataset,
   instanceId,
   onClose,
-}: Props) {
+}: DataPreviewModalProps) {
   const [rows, setRows] = useState<DatasetRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState("both");
-  const [limit, setLimit] = useState(100);
-  const [sortKey, setSortKey] = useState<keyof DatasetRow>("admin_pcode");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [error, setError] = useState<string | null>(null);
+  const [rowLimit, setRowLimit] = useState<number>(100);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof DatasetRow; direction: "asc" | "desc" } | null>(null);
 
-  const adminLevel = useMemo(() => {
-    if (dataset?.norm_params?.admin_level) return dataset.norm_params.admin_level;
-    const src = dataset?.source_note?.toUpperCase?.() || "";
-    if (src.includes("ADM4")) return "ADM4";
-    if (src.includes("ADM3")) return "ADM3";
-    if (src.includes("ADM2")) return "ADM2";
-    return "ADM?";
-  }, [dataset]);
-
-  const loadData = async () => {
-    if (!dataset?.metric) return;
+  const fetchPreview = async () => {
+    if (!dataset?.metric || !instanceId) return;
     setLoading(true);
+    setError(null);
+    setRows([]);
+
     try {
       const { data, error } = await supabase
-        .rpc("load_dataset_instance_preview", {
+        .rpc("get_dataset_preview", {
           p_instance_id: instanceId,
           p_metric: dataset.metric,
           p_source_note: dataset.source_note,
         });
 
       if (error) throw error;
-      setRows(data || []);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to load dataset preview.");
+
+      if (!data || data.length === 0) {
+        setRows([]);
+        setError("No rows returned.");
+        setLoading(false);
+        return;
+      }
+
+      const limitedRows =
+        rowLimit === -1 ? data : data.slice(0, rowLimit);
+      setRows(limitedRows);
+    } catch (err: any) {
+      console.error("Error loading dataset preview:", err);
+      setError("Failed to load dataset preview.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (open) loadData();
-  }, [open, dataset]);
-
-  const filtered = useMemo(() => {
-    if (filter === "raw") return rows.filter((r) => r.raw_value !== null);
-    if (filter === "score") return rows.filter((r) => r.score !== null);
-    return rows;
-  }, [rows, filter]);
-
-  const sorted = useMemo(() => {
-    const sortedRows = [...filtered].sort((a, b) => {
-      const av = a[sortKey] ?? "";
-      const bv = b[sortKey] ?? "";
-      if (typeof av === "number" && typeof bv === "number") {
-        return sortDir === "asc" ? av - bv : bv - av;
-      }
-      return sortDir === "asc"
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
-    });
-    return sortedRows.slice(0, limit);
-  }, [filtered, sortKey, sortDir, limit]);
-
-  const toggleSort = (key: keyof DatasetRow) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
+  const sortData = (key: keyof DatasetRow) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
     }
+    setSortConfig({ key, direction });
+    const sorted = [...rows].sort((a, b) => {
+      const valA = a[key] ?? "";
+      const valB = b[key] ?? "";
+      if (typeof valA === "number" && typeof valB === "number") {
+        return direction === "asc" ? valA - valB : valB - valA;
+      }
+      return direction === "asc"
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+    setRows(sorted);
   };
+
+  useEffect(() => {
+    if (open) fetchPreview();
+  }, [open, dataset, rowLimit]);
 
   if (!open) return null;
 
+  const adminLevel =
+    dataset?.source_note?.match(/adm\d/i)?.[0]?.toUpperCase() ?? "ADM?";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white w-full max-w-6xl rounded-lg shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white w-[90%] max-w-6xl rounded-lg shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex justify-between items-center bg-[color:var(--gsc-green)] text-white px-4 py-3">
-          <h2 className="font-semibold text-lg">
+        <div className="bg-[color:var(--gsc-green)] text-white flex items-center justify-between px-4 py-3">
+          <h2 className="text-lg font-semibold">
             Data Preview — {dataset.metric} ({adminLevel})
           </h2>
           <button
             onClick={onClose}
-            className="rounded p-1 hover:bg-white/20"
-            aria-label="Close"
+            className="text-white hover:text-gray-200 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-between px-4 py-2 border-b text-sm bg-gray-50">
-          <div className="flex items-center gap-3">
-            <label className="text-gray-600">
-              Filter:{" "}
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="both">Both</option>
-                <option value="raw">Raw Only</option>
-                <option value="score">Score Only</option>
-              </select>
-            </label>
-            <label className="text-gray-600">
-              Rows:{" "}
-              <select
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                {[10, 25, 50, 100, 500, 1000].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="text-gray-600 text-xs">
-            Showing {sorted.length} of {rows.length} rows
-          </div>
+        <div className="flex items-center gap-4 p-3 text-sm border-b bg-gray-50">
+          <label className="flex items-center gap-2">
+            Filter:
+            <select className="border rounded px-2 py-1">
+              <option>Both</option>
+              <option>Raw only</option>
+              <option>Scored only</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            Rows:
+            <select
+              value={rowLimit}
+              onChange={(e) => setRowLimit(Number(e.target.value))}
+              className="border rounded px-2 py-1"
+            >
+              <option value={10}>10</option>
+              <option value={100}>100</option>
+              <option value={1000}>1000</option>
+              <option value={-1}>All</option>
+            </select>
+          </label>
+          <span className="text-gray-600 truncate">
+            Method: {dataset.norm_method ?? "n/a"} · Direction:{" "}
+            {dataset.higher_is_better
+              ? "↑ higher = worse"
+              : "↓ lower = worse"}{" "}
+            · Params: {JSON.stringify(dataset.norm_params ?? {})}
+          </span>
         </div>
-
-        {/* Summary Line */}
-        {dataset.norm_method && (
-          <div className="px-4 py-2 border-b text-xs text-gray-600 bg-gray-50">
-            <span className="font-medium">Method:</span>{" "}
-            {dataset.norm_method.replace(/_/g, " ")} ·{" "}
-            <span className="font-medium">Direction:</span>{" "}
-            {dataset.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"} ·{" "}
-            <span className="font-medium">Params:</span>{" "}
-            {JSON.stringify(dataset.norm_params || {})}
-          </div>
-        )}
 
         {/* Table */}
         <div className="overflow-auto flex-1">
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
-              Loading…
-            </div>
-          ) : sorted.length ? (
-            <table className="min-w-full text-sm border-collapse">
+            <div className="text-center text-gray-500 py-8">Loading…</div>
+          ) : error ? (
+            <div className="text-center text-gray-500 py-8">{error}</div>
+          ) : (
+            <table className="min-w-full text-sm">
               <thead className="bg-gray-100 sticky top-0">
                 <tr>
-                  <Th
-                    label="Admin PCode"
-                    sortKey="admin_pcode"
-                    sortDir={sortDir}
-                    active={sortKey === "admin_pcode"}
-                    onClick={() => toggleSort("admin_pcode")}
-                  />
-                  <Th
-                    label="Admin Name"
-                    sortKey="admin_name"
-                    sortDir={sortDir}
-                    active={sortKey === "admin_name"}
-                    onClick={() => toggleSort("admin_name")}
-                  />
-                  <Th
-                    label="Raw Value"
-                    sortKey="raw_value"
-                    sortDir={sortDir}
-                    active={sortKey === "raw_value"}
-                    onClick={() => toggleSort("raw_value")}
-                  />
-                  <Th
-                    label="Score (1–5)"
-                    sortKey="score"
-                    sortDir={sortDir}
-                    active={sortKey === "score"}
-                    onClick={() => toggleSort("score")}
-                  />
+                  {["admin_pcode", "admin_name", "raw_val", "score"].map(
+                    (col) => (
+                      <th
+                        key={col}
+                        className="p-2 text-left cursor-pointer hover:bg-gray-200 select-none"
+                        onClick={() => sortData(col as keyof DatasetRow)}
+                      >
+                        {col
+                          .replace("_", " ")
+                          .replace(/\b\w/g, (c) => c.toUpperCase())}
+                        {sortConfig?.key === col
+                          ? sortConfig.direction === "asc"
+                            ? " ↑"
+                            : " ↓"
+                          : ""}
+                      </th>
+                    )
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((r, i) => (
+                {rows.map((r, i) => (
                   <tr
-                    key={i}
-                    className={
-                      i % 2 === 0
-                        ? "border-t bg-white"
-                        : "border-t bg-gray-50"
-                    }
+                    key={r.admin_pcode + i}
+                    className={i % 2 ? "bg-gray-50" : ""}
                   >
                     <td className="p-2">{r.admin_pcode}</td>
-                    <td className="p-2">{r.admin_name || "—"}</td>
+                    <td className="p-2">{r.admin_name}</td>
                     <td className="p-2 text-right">
-                      {r.raw_value != null
-                        ? Number(r.raw_value).toLocaleString()
-                        : "—"}
+                      {r.raw_val?.toLocaleString()}
                     </td>
                     <td className="p-2 text-right">
-                      {r.score != null ? r.score.toFixed(2) : "—"}
+                      {r.score != null ? r.score.toFixed(2) : ""}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <div className="flex items-center justify-center py-10 text-gray-500 text-sm">
-              No data available.
-            </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end px-4 py-2 border-t">
+        <div className="border-t p-3 text-right bg-gray-50">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded border text-sm hover:bg-gray-50"
+            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-1 rounded"
           >
             Close
           </button>
         </div>
       </div>
     </div>
-  );
-}
-
-function Th({
-  label,
-  sortKey,
-  active,
-  sortDir,
-  onClick,
-}: {
-  label: string;
-  sortKey: keyof DatasetRow;
-  active: boolean;
-  sortDir: "asc" | "desc";
-  onClick: () => void;
-}) {
-  return (
-    <th
-      className="p-2 text-left cursor-pointer select-none text-gray-700 font-medium border-b"
-      onClick={onClick}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        {active && (
-          <ChevronDown
-            className={`h-3 w-3 transition-transform ${
-              sortDir === "asc" ? "rotate-180" : ""
-            }`}
-          />
-        )}
-      </div>
-    </th>
   );
 }
