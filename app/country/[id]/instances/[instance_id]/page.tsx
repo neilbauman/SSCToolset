@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { Eye, Settings2, RefreshCw } from "lucide-react";
-import InterpretationModal from "@/components/ssc/InterpretationModal";
+import { RefreshCw, Settings2 } from "lucide-react";
+import InterpretationModal from "@/components/SSC/InterpretationModal";
 
 export default function SSCDashboard({ params }: { params: { id: string; instance_id: string } }) {
   const { id: countryId, instance_id } = params;
@@ -28,7 +28,6 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
     ),
   };
 
-  // Load datasets
   const loadData = async () => {
     const { data } = await supabase.from("ssc_dataset_catalog").select("*").order("pillar");
     setDatasets(data || []);
@@ -63,7 +62,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="max-w-7xl mx-auto text-sm space-y-6">
-        {/* SSC Framework Panel */}
+        {/* SSC Framework */}
         <section className="border rounded-lg bg-white shadow-sm">
           <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
             <h2 className="font-semibold">{grouped.framework.label}</h2>
@@ -72,11 +71,10 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
               className="h-4 w-4 cursor-pointer hover:rotate-90 transition-transform"
             />
           </header>
+
           {grouped.framework.subsections.map((sub) => (
             <div key={sub.key} className="border-t">
-              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">
-                {sub.label}
-              </h3>
+              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">{sub.label}</h3>
               <DatasetTable
                 datasets={datasets.filter((d) => d.pillar === sub.key)}
                 onInterpret={setShowModal}
