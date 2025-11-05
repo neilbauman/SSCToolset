@@ -8,7 +8,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import AddLayerModal from "@/components/instances/AddLayerModal";
 import InstanceLayersList from "@/components/instances/InstanceLayersList";
 import CompositePreview from "@/components/instances/CompositePreview";
-import DataPreviewModal from "@/components/ssc/DataPreviewModal";
+import DataPreviewModal from "@/components/SSC/DataPreviewModal";
 
 type Props = { params: { id: string; instance_id: string } };
 
