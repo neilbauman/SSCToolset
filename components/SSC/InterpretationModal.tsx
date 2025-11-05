@@ -1,36 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
+import { X, Plus, Trash2 } from "lucide-react";
 
-type Props = {
+interface Props {
   open: boolean;
-  dataset: any; // from ssc_dataset_catalog row
+  dataset: any;
   instanceId: string;
   onClose: () => void;
-  onUpdated?: () => void;
-};
-
-type Band =
-  | { op: "<" | "<=" | ">=" | ">" ; value: number; score: number }
-  | { op: "between"; min: number; max: number; score: number };
-
-const METHOD_LABELS: Record<string, string> = {
-  winsor_5_95: "Winsorize 5–95% (gradient)",
-  linear_1to4_to_1to5: "Linear (1–4 → 1–5) (categorical)",
-  threshold_categorical: "Threshold (categorical)",
-  threshold_bands: "Threshold Bands (gradient)",
-};
-
-const METHOD_OPTIONS = [
-  { value: "winsor_5_95", label: METHOD_LABELS["winsor_5_95"] },
-  { value: "linear_1to4_to_1to5", label: METHOD_LABELS["linear_1to4_to_1to5"] },
-  { value: "threshold_categorical", label: METHOD_LABELS["threshold_categorical"] },
-  { value: "threshold_bands", label: METHOD_LABELS["threshold_bands"] },
-];
-
-const SCORES = [1, 2, 3, 4, 5];
+  onUpdated: () => void;
+}
 
 export default function InterpretationModal({
   open,
@@ -39,386 +19,164 @@ export default function InterpretationModal({
   onClose,
   onUpdated,
 }: Props) {
+  const [method, setMethod] = useState(dataset?.norm_method || "winsor_5_95");
+  const [higherIsWorse, setHigherIsWorse] = useState(
+    dataset?.higher_is_better === false
+  );
+  const [thresholds, setThresholds] = useState<number[]>(
+    dataset?.norm_params?.thresholds || []
+  );
   const [saving, setSaving] = useState(false);
 
-  // base method/direction/params from current row
-  const initialMethod = useMemo(
-    () => dataset?.norm_method || "winsor_5_95",
-    [dataset]
-  );
-  const [method, setMethod] = useState<string>(initialMethod);
-
-  // Historically “higher_is_better” in your table was displayed as “↑ higher = worse”.
-  // To keep compatibility we preserve the same boolean flag:
-  // true  => higher values are worse (vulnerability ↑)   (ascending risk)
-  // false => lower values are worse (vulnerability ↑ when value ↓) (descending risk)
-  const [higherIsWorse, setHigherIsWorse] = useState<boolean>(
-    !!dataset?.higher_is_better
-  );
-
-  // Generic thresholds (kept for 'threshold_categorical' legacy)
-  const [thresholds, setThresholds] = useState<number[]>(
-    Array.isArray(dataset?.norm_params?.thresholds)
-      ? dataset.norm_params.thresholds
-      : []
-  );
-
-  // New: bands for gradient thresholding
-  const [bands, setBands] = useState<Band[]>(
-    Array.isArray(dataset?.norm_params?.bands)
-      ? dataset.norm_params.bands
-      : defaultBandsFor(dataset)
-  );
-
   useEffect(() => {
-    setMethod(initialMethod);
-    setHigherIsWorse(!!dataset?.higher_is_better);
-    setThresholds(
-      Array.isArray(dataset?.norm_params?.thresholds)
-        ? dataset.norm_params.thresholds
-        : []
-    );
-    setBands(
-      Array.isArray(dataset?.norm_params?.bands)
-        ? dataset.norm_params.bands
-        : defaultBandsFor(dataset)
-    );
-  }, [dataset, initialMethod]);
-
-  if (!open) return null;
-
-  const showDirectionToggle =
-    method !== "threshold_bands" && method !== "threshold_categorical";
-
-  const addThreshold = () => setThresholds((t) => [...t, 0]);
-
-  const updateThreshold = (i: number, val: number) => {
-    const next = [...thresholds];
-    next[i] = val;
-    setThresholds(next);
-  };
-
-  const removeThreshold = (i: number) =>
-    setThresholds((t) => t.filter((_, idx) => idx !== i));
-
-  // --- Bands helpers ---
-  const addBand = () =>
-    setBands((b) => [
-      ...b,
-      { op: "between", min: 0, max: 0, score: 3 } as Band,
-    ]);
-
-  const removeBand = (i: number) =>
-    setBands((b) => b.filter((_, idx) => idx !== i));
-
-  const updateBand = (i: number, patch: Partial<Band>) => {
-    setBands((b) => {
-      const next = [...b];
-      next[i] = { ...(next[i] as any), ...patch } as Band;
-      return next;
-    });
-  };
-
-  const normalizedParams = useMemo(() => {
-    if (method === "threshold_categorical") {
-      return { thresholds };
+    if (dataset) {
+      setMethod(dataset.norm_method || "winsor_5_95");
+      setHigherIsWorse(dataset.higher_is_better === false);
+      setThresholds(dataset.norm_params?.thresholds || []);
     }
-    if (method === "threshold_bands") {
-      return { bands };
-    }
-    return {};
-  }, [method, thresholds, bands]);
+  }, [dataset]);
 
-  const save = async () => {
+  const saveInterpretation = async () => {
+    setSaving(true);
     try {
-      setSaving(true);
-
-      // Build update payload
-      const payload: any = {
-        norm_method: method,
-        norm_params: normalizedParams,
-      };
-
-      // For gradient (winsor) or linear: keep direction switch
-      // For threshold_bands: score is explicitly carried by bands, so we ignore direction flag
-      if (method === "threshold_bands") {
-        payload.higher_is_better = null;
-      } else {
-        payload.higher_is_better = higherIsWorse ? true : false;
-      }
-
       const { error } = await supabase
         .from("ssc_dataset_catalog")
-        .update(payload)
+        .update({
+          norm_method: method,
+          higher_is_better: !higherIsWorse,
+          norm_params:
+            method.includes("threshold") || method.includes("band")
+              ? { thresholds }
+              : {},
+        })
         .eq("metric", dataset.metric)
         .eq("source_note", dataset.source_note);
 
       if (error) throw error;
-
-      onUpdated?.();
+      onUpdated();
       onClose();
-    } catch (e) {
-      console.error("Save interpretation failed:", e);
-      alert("Failed to save interpretation. See console for details.");
+    } catch (err) {
+      console.error("Failed to save interpretation:", err);
     } finally {
       setSaving(false);
     }
   };
 
+  if (!open || !dataset) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4">
-      <div className="w-full max-w-3xl rounded-lg bg-white shadow-lg">
-        <header className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="font-semibold text-lg">
-            Interpretation — <span className="text-gray-600">{dataset?.metric}</span>
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-gray-500 hover:bg-gray-100"
-            aria-label="Close"
+    <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex justify-center items-start p-6 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="text-xl font-semibold mb-4">
+          Interpretation — {dataset.metric}
+        </h2>
+
+        {/* Method Selector */}
+        <div className="mb-4">
+          <label className="block font-medium mb-1">
+            Normalization Method
+          </label>
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="w-full border rounded p-2"
           >
-            <X className="h-5 w-5" />
-          </button>
-        </header>
-
-        <div className="space-y-5 px-4 py-4 text-sm">
-          {/* Method */}
-          <div>
-            <label className="block text-gray-700 mb-1">Normalization Method</label>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.currentTarget.value)}
-              className="w-full border rounded px-3 py-2"
-            >
-              {METHOD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              <strong>Threshold Bands (gradient)</strong> lets you define explicit
-              value ranges (e.g., “&lt; 300”, “300–1500”, “≥ 1500”) and assign each a
-              score from 1–5. Use this when you need banded rules while keeping the
-              dataset treated as a gradient.
-            </p>
-          </div>
-
-          {/* Direction toggle (hidden when bands define the scoring explicitly) */}
-          {showDirectionToggle && (
-            <div className="flex items-center gap-2">
-              <input
-                id="dir"
-                type="checkbox"
-                checked={higherIsWorse}
-                onChange={(e) => setHigherIsWorse(e.currentTarget.checked)}
-              />
-              <label htmlFor="dir" className="text-gray-700">
-                Higher values = worse (vulnerability)
-              </label>
-            </div>
-          )}
-
-          {/* Threshold categorical (legacy) */}
-          {method === "threshold_categorical" && (
-            <div>
-              <label className="block text-gray-700 mb-2">Thresholds</label>
-              <div className="space-y-2">
-                {thresholds.map((t, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={t}
-                      onChange={(e) => updateThreshold(i, Number(e.currentTarget.value))}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                    <button
-                      onClick={() => removeThreshold(i)}
-                      className="text-red-600 text-sm hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={addThreshold}
-                className="mt-2 text-sm text-blue-600 hover:underline"
-              >
-                + Add Threshold
-              </button>
-              <p className="mt-1 text-xs text-gray-500">
-                Interprets thresholds as discrete cut points (category mapping). For
-                banded gradient rules, use <em>Threshold Bands (gradient)</em>.
-              </p>
-            </div>
-          )}
-
-          {/* Threshold bands (gradient) */}
-          {method === "threshold_bands" && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-gray-700">Bands (value → score)</label>
-                <button
-                  onClick={addBand}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  + Add Band
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {bands.map((b, i) => {
-                  const isBetween = (b as any).op === "between";
-                  return (
-                    <div
-                      key={i}
-                      className="grid grid-cols-12 gap-2 items-center border rounded p-2 bg-gray-50"
-                    >
-                      {/* Operator */}
-                      <div className="col-span-3">
-                        <select
-                          className="w-full border rounded px-2 py-1"
-                          value={b.op as any}
-                          onChange={(e) => {
-                            const op = e.currentTarget.value as Band["op"];
-                            if (op === "between") {
-                              updateBand(i, { op: "between", min: 0, max: 0 });
-                            } else {
-                              updateBand(i, { op, value: 0 });
-                            }
-                          }}
-                        >
-                          <option value="<">&lt;</option>
-                          <option value="<=">&le;</option>
-                          <option value="between">between</option>
-                          <option value=">=">&ge;</option>
-                          <option value=">">&gt;</option>
-                        </select>
-                      </div>
-
-                      {/* Values */}
-                      {isBetween ? (
-                        <>
-                          <div className="col-span-3">
-                            <input
-                              type="number"
-                              className="w-full border rounded px-2 py-1"
-                              value={(b as any).min ?? 0}
-                              onChange={(e) =>
-                                updateBand(i, { min: Number(e.currentTarget.value) } as any)
-                              }
-                              placeholder="min"
-                            />
-                          </div>
-                          <div className="col-span-3">
-                            <input
-                              type="number"
-                              className="w-full border rounded px-2 py-1"
-                              value={(b as any).max ?? 0}
-                              onChange={(e) =>
-                                updateBand(i, { max: Number(e.currentTarget.value) } as any)
-                              }
-                              placeholder="max"
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="col-span-6">
-                            <input
-                              type="number"
-                              className="w-full border rounded px-2 py-1"
-                              value={(b as any).value ?? 0}
-                              onChange={(e) =>
-                                updateBand(i, { value: Number(e.currentTarget.value) } as any)
-                              }
-                              placeholder="value"
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {/* Score */}
-                      <div className="col-span-2">
-                        <select
-                          className="w-full border rounded px-2 py-1"
-                          value={b.score}
-                          onChange={(e) =>
-                            updateBand(i, { score: Number(e.currentTarget.value) } as any)
-                          }
-                        >
-                          {SCORES.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Remove */}
-                      <div className="col-span-1 text-right">
-                        <button
-                          onClick={() => removeBand(i)}
-                          className="text-red-600 text-sm hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <p className="mt-2 text-xs text-gray-500">
-                Bands are evaluated in order. The first matching band assigns the
-                score. Define catch-all bands (e.g., “≥ 1500”) to avoid gaps.
-              </p>
-            </div>
-          )}
+            <option value="winsor_5_95">Winsorized Gradient (Continuous)</option>
+            <option value="linear_1to4_to_1to5">
+              Linear 1–4 to 1–5 (Continuous)
+            </option>
+            <option value="threshold_bands">
+              Threshold Bands (Categorical)
+            </option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Gradient methods create continuous 1–5 scaling. Threshold methods
+            assign discrete categories (e.g., Rural = 3, Urban = 1).
+          </p>
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t px-4 py-3">
+        {/* Directionality */}
+        <div className="mb-4">
+          <label className="inline-flex items-center">
+            <input
+              type="checkbox"
+              checked={higherIsWorse}
+              onChange={(e) => setHigherIsWorse(e.target.checked)}
+              className="mr-2"
+            />
+            Higher values = worse (vulnerability)
+          </label>
+        </div>
+
+        {/* Threshold bands */}
+        {method.includes("threshold") || method.includes("band") ? (
+          <div className="mb-4">
+            <label className="block font-medium mb-2">
+              Threshold Bands
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Define numeric thresholds to split continuous values into bands.
+              For example: 300 (rural ↦ 3), 1500 (urban ↦ 1). Values between are
+              assigned intermediate categories.
+            </p>
+
+            {thresholds.map((t, idx) => (
+              <div key={idx} className="flex items-center mb-2">
+                <input
+                  type="number"
+                  className="border rounded p-2 w-full"
+                  value={t}
+                  onChange={(e) => {
+                    const newVals = [...thresholds];
+                    newVals[idx] = parseFloat(e.target.value);
+                    setThresholds(newVals);
+                  }}
+                />
+                <button
+                  onClick={() =>
+                    setThresholds(thresholds.filter((_, i) => i !== idx))
+                  }
+                  className="ml-2 text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+
+            <button
+              onClick={() => setThresholds([...thresholds, 0])}
+              className="text-blue-600 text-sm mt-1 flex items-center"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Threshold
+            </button>
+          </div>
+        ) : null}
+
+        {/* Save */}
+        <div className="flex justify-end mt-6">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded border text-sm hover:bg-gray-50"
+            className="px-4 py-2 mr-3 rounded border border-gray-300 hover:bg-gray-100"
           >
             Cancel
           </button>
           <button
-            onClick={save}
             disabled={saving}
-            className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+            onClick={saveInterpretation}
+            className="px-4 py-2 rounded bg-[color:var(--gsc-green)] text-white font-medium hover:bg-green-700"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving..." : "Save"}
           </button>
-        </footer>
+        </div>
       </div>
     </div>
   );
-}
-
-/**
- * Provide sensible defaults for banded scoring when none exist.
- * We detect common metrics and pre-fill bands for faster UX.
- */
-function defaultBandsFor(dataset: any): Band[] {
-  const metric = (dataset?.metric || "").toLowerCase();
-
-  // Example: population_density desired default
-  if (metric.includes("population_density")) {
-    // <300 => 3, 300–1500 => 2, ≥1500 => 1  (user’s stated rule)
-    return [
-      { op: "<", value: 300, score: 3 },
-      { op: "between", min: 300, max: 1500, score: 2 },
-      { op: ">=", value: 1500, score: 1 },
-    ];
-  }
-
-  // Otherwise, provide neutral template (three bands)
-  return [
-    { op: "<", value: 0, score: 3 },
-    { op: "between", min: 0, max: 1, score: 2 },
-    { op: ">=", value: 1, score: 1 },
-  ];
 }
