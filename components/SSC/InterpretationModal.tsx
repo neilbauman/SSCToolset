@@ -1,24 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X, Plus, Trash2 } from "lucide-react";
 
-type Props = {
+interface Band {
+  op: string;
+  value?: number;
+  min?: number;
+  max?: number;
+  score: number;
+}
+
+interface Props {
   open: boolean;
   dataset: any;
   instanceId: string;
   onClose: () => void;
   onUpdated?: () => void;
-};
-
-type Band = {
-  op: "<" | ">" | "<=" | ">=" | "between";
-  min?: number;
-  max?: number;
-  value?: number;
-  score: number;
-};
+}
 
 export default function InterpretationModal({
   open,
@@ -27,70 +26,61 @@ export default function InterpretationModal({
   onClose,
   onUpdated,
 }: Props) {
-  const [saving, setSaving] = useState(false);
   const [method, setMethod] = useState(dataset.norm_method || "winsor_5_95");
   const [higherIsWorse, setHigherIsWorse] = useState(
     dataset.higher_is_better || false
   );
-  const [bands, setBands] = useState<Band[]>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    const params = dataset.norm_params || {};
-    if (params.bands) {
-      setBands(params.bands);
-    } else if (params.thresholds) {
-      // legacy threshold pair
-      const [min, max] = params.thresholds;
-      setBands([
-        { op: "<", value: min, score: 3 },
-        { op: "between", min, max, score: 2 },
-        { op: ">=", value: max, score: 1 },
-      ]);
-    } else {
-      setBands([]);
-    }
-  }, [dataset, open]);
+  const [bands, setBands] = useState<Band[]>(
+    dataset.norm_params?.bands || [
+      { op: "<", value: 300, score: 3 },
+      { op: "between", min: 300, max: 1500, score: 2 },
+      { op: ">=", value: 1500, score: 1 },
+    ]
+  );
+  const [saving, setSaving] = useState(false);
 
   if (!open) return null;
 
   const addBand = () =>
-    setBands([...bands, { op: "<", value: 0, score: 3 }]);
+    setBands([
+      ...bands,
+      { op: "<", value: 0, score: 3 },
+    ]);
 
-  const removeBand = (i: number) =>
-    setBands(bands.filter((_, idx) => idx !== i));
+  const removeBand = (idx: number) => {
+    const updated = [...bands];
+    updated.splice(idx, 1);
+    setBands(updated);
+  };
 
-  const updateBand = (i: number, next: Partial<Band>) => {
-    setBands((prev) => {
-      const clone = [...prev];
-      clone[i] = { ...clone[i], ...next };
-      return clone;
-    });
+  const updateBand = (idx: number, field: keyof Band, value: any) => {
+    const updated = [...bands];
+    (updated[idx] as any)[field] = value;
+    setBands(updated);
   };
 
   const save = async () => {
     setSaving(true);
     try {
-      let norm_params: any = {};
-      if (method.includes("threshold")) {
-        norm_params = { bands };
-      }
+      const norm_params =
+        method.includes("threshold") || method.includes("band")
+          ? { bands }
+          : {};
 
-      const { error } = await supabase
-        .from("ssc_dataset_catalog")
-        .update({
-          norm_method: method,
-          norm_params,
-          higher_is_better: higherIsWorse,
-          data_type: method.includes("threshold")
-            ? "categorical"
-            : "gradient",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("metric", dataset.metric)
-        .eq("source_note", dataset.source_note);
+      const dataType = method.includes("threshold") ? "categorical" : "gradient";
+
+      const { error } = await supabase.rpc("save_interpretation", {
+        p_metric: dataset.metric,
+        p_source_note: dataset.source_note,
+        p_pillar: dataset.pillar || "ssc_p3",
+        p_norm_method: method,
+        p_norm_params: norm_params,
+        p_higher_is_better: higherIsWorse,
+        p_data_type: dataType,
+      });
 
       if (error) throw error;
+
       if (onUpdated) onUpdated();
       onClose();
     } catch (err) {
@@ -102,211 +92,151 @@ export default function InterpretationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white w-full max-w-3xl rounded-lg shadow-lg overflow-hidden">
-        {/* Header */}
-        <div className="flex justify-between items-center border-b px-4 py-3">
-          <div>
-            <h2 className="text-lg font-semibold">
-              Interpretation — {dataset.metric}
-            </h2>
-            <p className="text-xs text-gray-500">
-              Define how values are converted to 1–5 scores.
-            </p>
-          </div>
-          <button
-            className="p-1 rounded hover:bg-gray-100"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <div
+      className={`fixed inset-0 flex items-center justify-center bg-black/50 z-50 ${
+        open ? "" : "hidden"
+      }`}
+    >
+      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6">
+        <h2 className="text-lg font-semibold mb-1">
+          Interpretation — {dataset.metric}
+        </h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Define how values are converted to 1–5 scores.
+        </p>
 
-        {/* Body */}
-        <div className="p-4 space-y-5">
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium mb-1">
               Normalization Method
             </label>
             <select
+              className="border rounded px-2 py-1 w-full"
               value={method}
               onChange={(e) => setMethod(e.target.value)}
-              className="border rounded px-3 py-2 w-72 text-sm"
             >
               <option value="winsor_5_95">
                 Winsorized Gradient (Continuous)
               </option>
               <option value="linear_1to4_to_1to5">
-                Linear 1–4 → 1–5 (Continuous)
+                Linear 1–4 to 1–5 (Continuous)
               </option>
-              <option value="threshold_bands">
-                Threshold Bands (Categorical)
-              </option>
+              <option value="threshold_bands">Threshold Bands</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              Gradient methods produce continuous 1–5 scaling.
-              Threshold bands assign discrete scores.
+              Gradient methods produce continuous scaling. Threshold bands assign
+              discrete scores (1–5).
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="dir"
-              type="checkbox"
-              checked={higherIsWorse}
-              onChange={(e) => setHigherIsWorse(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <label htmlFor="dir" className="text-sm text-gray-700">
-              Higher values = worse (vulnerability)
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={higherIsWorse}
+                onChange={(e) => setHigherIsWorse(e.target.checked)}
+              />
+              <span className="text-sm">
+                Higher values = worse (vulnerability)
+              </span>
             </label>
           </div>
 
-          {/* Threshold Bands Editor */}
           {method.includes("threshold") && (
             <div>
-              <h3 className="font-medium mb-1">Threshold Bands</h3>
-              <p className="text-xs text-gray-500 mb-3">
-                Define thresholds for discrete scoring. Example: {"<"}300 → 3, between 300–1500 → 2, ≥1500 → 1.
+              <h3 className="font-medium text-sm mt-2">Threshold Bands</h3>
+              <p className="text-xs text-gray-500 mb-2">
+                Define thresholds to split continuous values into bands.
               </p>
-              <div className="overflow-x-auto border rounded">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Operator</th>
-                      <th className="p-2 text-left">Min / Value</th>
-                      <th className="p-2 text-left">Max</th>
-                      <th className="p-2 text-left">Score (1–5)</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bands.map((b, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-2">
-                          <select
-                            value={b.op}
-                            onChange={(e) =>
-                              updateBand(i, { op: e.target.value as Band["op"] })
-                            }
-                            className="border rounded px-2 py-1"
-                          >
-                            <option value="<">&lt;</option>
-                            <option value="<=">&lt;=</option>
-                            <option value=">">&gt;</option>
-                            <option value=">=">&gt;=</option>
-                            <option value="between">between</option>
-                          </select>
-                        </td>
-                        <td className="p-2">
-                          {b.op === "between" ? (
-                            <input
-                              type="number"
-                              value={b.min ?? ""}
-                              onChange={(e) =>
-                                updateBand(i, {
-                                  min: Number(e.target.value),
-                                })
-                              }
-                              className="border rounded px-2 py-1 w-24"
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              value={b.value ?? ""}
-                              onChange={(e) =>
-                                updateBand(i, {
-                                  value: Number(e.target.value),
-                                })
-                              }
-                              className="border rounded px-2 py-1 w-24"
-                            />
-                          )}
-                        </td>
-                        <td className="p-2">
-                          {b.op === "between" ? (
-                            <input
-                              type="number"
-                              value={b.max ?? ""}
-                              onChange={(e) =>
-                                updateBand(i, {
-                                  max: Number(e.target.value),
-                                })
-                              }
-                              className="border rounded px-2 py-1 w-24"
-                            />
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="p-2">
-                          <select
-                            value={b.score}
-                            onChange={(e) =>
-                              updateBand(i, {
-                                score: Number(e.target.value),
-                              })
-                            }
-                            className="border rounded px-2 py-1 w-20"
-                          >
-                            {[1, 2, 3, 4, 5].map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="p-2 text-right">
-                          <button
-                            onClick={() => removeBand(i)}
-                            className="text-red-600 hover:underline text-xs"
-                          >
-                            <Trash2 className="inline h-3 w-3 mr-1" />
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {!bands.length && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="text-center text-gray-400 py-2"
-                        >
-                          No bands defined.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {bands.map((b, i) => (
+                <div
+                  key={i}
+                  className="flex items-center space-x-2 mb-1 text-sm"
+                >
+                  <select
+                    className="border rounded px-2 py-1"
+                    value={b.op}
+                    onChange={(e) => updateBand(i, "op", e.target.value)}
+                  >
+                    <option value="<">{"<"}</option>
+                    <option value="between">between</option>
+                    <option value=">=">{">="}</option>
+                  </select>
 
+                  {b.op === "between" ? (
+                    <>
+                      <input
+                        type="number"
+                        value={b.min || 0}
+                        onChange={(e) =>
+                          updateBand(i, "min", parseFloat(e.target.value))
+                        }
+                        className="border rounded px-2 py-1 w-20"
+                      />
+                      <span>–</span>
+                      <input
+                        type="number"
+                        value={b.max || 0}
+                        onChange={(e) =>
+                          updateBand(i, "max", parseFloat(e.target.value))
+                        }
+                        className="border rounded px-2 py-1 w-20"
+                      />
+                    </>
+                  ) : (
+                    <input
+                      type="number"
+                      value={b.value || 0}
+                      onChange={(e) =>
+                        updateBand(i, "value", parseFloat(e.target.value))
+                      }
+                      className="border rounded px-2 py-1 w-20"
+                    />
+                  )}
+
+                  <span className="ml-2">Score:</span>
+                  <input
+                    type="number"
+                    value={b.score}
+                    min={1}
+                    max={5}
+                    onChange={(e) =>
+                      updateBand(i, "score", parseInt(e.target.value))
+                    }
+                    className="border rounded px-2 py-1 w-16"
+                  />
+
+                  <button
+                    onClick={() => removeBand(i)}
+                    className="text-red-600 text-xs ml-2"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
               <button
                 onClick={addBand}
-                className="mt-3 flex items-center gap-2 text-sm border rounded px-3 py-1 hover:bg-gray-50"
+                className="text-sm text-blue-600 mt-2 hover:underline"
               >
-                <Plus className="h-4 w-4" />
-                Add Band
+                + Add Band
               </button>
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end items-center gap-2 border-t px-4 py-3">
+        <div className="flex justify-end space-x-2 mt-6">
           <button
-            className="border rounded px-4 py-2 text-sm hover:bg-gray-50"
             onClick={onClose}
+            className="px-3 py-1 border rounded text-sm text-gray-600"
           >
             Cancel
           </button>
           <button
             onClick={save}
             disabled={saving}
-            className="px-4 py-2 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+            className="px-3 py-1 bg-[color:var(--gsc-green)] text-white rounded text-sm"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
