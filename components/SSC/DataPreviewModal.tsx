@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { X } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 
 type Props = {
   open: boolean;
-  dataset: {
-    metric: string;
-    source_note: string;
-  };
+  metric: string;
   instanceId: string;
   onClose: () => void;
 };
@@ -29,135 +17,127 @@ type Row = {
   score: number | null;
 };
 
-export default function DataPreviewModal({
-  open,
-  dataset,
-  instanceId,
-  onClose,
-}: Props) {
+export default function DataPreviewModal({ open, metric, instanceId, onClose }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
+  const [filter, setFilter] = useState<"raw" | "score" | "both">("both");
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<"raw" | "scored" | "both">("both");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    (async () => {
+
+    const fetchData = async () => {
       setLoading(true);
+      setError(null);
+      try {
+        const { data, error } = await supabase
+          .from("unified_category_results")
+          .select(`
+            admin_pcode,
+            raw_value,
+            score,
+            admin_units ( name )
+          `)
+          .eq("instance_id", instanceId)
+          .eq("metric", metric)
+          .order("admin_pcode", { ascending: true })
+          .limit(200); // prevent massive load
 
-      // Fetch via RPC that joins admin_units for admin_name
-      const { data, error } = await supabase.rpc("get_dataset_preview", {
-        p_instance_id: instanceId,
-        p_metric: dataset.metric,
-        p_source_note: dataset.source_note,
-      });
+        if (error) throw error;
 
-      if (!error && Array.isArray(data)) {
-        setRows(data as Row[]);
-      } else {
-        // graceful fallback (no drift): empty
-        setRows([]);
+        const normalized = (data || []).map((d: any) => ({
+          admin_pcode: d.admin_pcode,
+          admin_name: d.admin_units?.name ?? null,
+          raw_value: d.raw_value,
+          score: d.score,
+        }));
+        setRows(normalized);
+      } catch (err: any) {
+        console.error("Error loading preview:", err);
+        setError(err.message || "Failed to load data");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    })();
-  }, [open, instanceId, dataset.metric, dataset.source_note]);
+    };
 
-  const filteredRows = useMemo(() => {
-    if (filter === "raw") return rows.filter((r) => r.score == null);
-    if (filter === "scored") return rows.filter((r) => r.score != null);
-    return rows;
-  }, [rows, filter]);
-
-  const histogram = useMemo(() => {
-    const buckets: Record<string, number> = {};
-    for (const r of rows) {
-      if (r.score == null) continue;
-      const bin = Math.max(1, Math.min(5, Math.round(Number(r.score))));
-      buckets[bin] = (buckets[bin] || 0) + 1;
-    }
-    return Object.entries(buckets).map(([bin, count]) => ({ bin, count }));
-  }, [rows]);
+    fetchData();
+  }, [open, instanceId, metric]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <header className="px-4 py-2 bg-[color:var(--gsc-green)] text-white flex justify-between items-center rounded-t-lg">
-          <h3 className="font-semibold text-sm">Data Preview – {dataset.metric}</h3>
-          <X onClick={onClose} className="h-4 w-4 cursor-pointer" />
-        </header>
-
-        {/* Controls */}
-        <div className="px-4 pt-3 text-sm flex items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <span className="text-gray-600 text-sm">Filter:</span>
-            <select
-              value={filter}
-              onChange={(e) =>
-                setFilter(e.target.value as "raw" | "scored" | "both")
-              }
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value="both">Both</option>
-              <option value="raw">Raw only</option>
-              <option value="scored">Scored only</option>
-            </select>
-          </div>
-          <span className="text-gray-500 text-xs">
-            Showing {filteredRows.length} of {rows.length} rows
-          </span>
+      <div className="bg-white w-full max-w-4xl rounded shadow-lg overflow-hidden">
+        <div className="bg-[color:var(--gsc-green)] text-white flex justify-between items-center p-3">
+          <h2 className="font-semibold">
+            Data Preview – {metric}
+          </h2>
+          <button onClick={onClose} className="text-white hover:text-gray-200">
+            ✕
+          </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-auto p-4 text-sm space-y-3">
-          {loading ? (
-            <p>Loading…</p>
-          ) : filteredRows.length === 0 ? (
-            <p className="text-gray-500">No rows found.</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto border rounded-lg">
-                <table className="min-w-full text-[13px]">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Admin PCode</th>
-                      <th className="p-2 text-left">Admin Name</th>
-                      <th className="p-2 text-left">Raw Value</th>
-                      <th className="p-2 text-left">Score (1–5)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.map((r) => (
-                      <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
-                        <td className="p-2 font-mono">{r.admin_pcode}</td>
-                        <td className="p-2">{r.admin_name ?? "—"}</td>
-                        <td className="p-2">{r.raw_value ?? "—"}</td>
-                        <td className="p-2">{r.score ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Filter:</label>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as any)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="both">Both</option>
+                <option value="raw">Raw only</option>
+                <option value="score">Score only</option>
+              </select>
+            </div>
+            <div className="text-sm text-gray-500">
+              Showing {rows.length} of 200 rows
+            </div>
+          </div>
 
-              {histogram.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-gray-700 font-medium mb-2 text-sm">
-                    Score Distribution
-                  </h4>
-                  <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={histogram}>
-                        <XAxis dataKey="bin" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-            </>
+          {loading && <p className="text-sm text-gray-600">Loading data…</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {!loading && !error && rows.length === 0 && (
+            <p className="text-sm text-gray-500 italic">No rows found.</p>
+          )}
+
+          {!loading && !error && rows.length > 0 && (
+            <div className="overflow-auto max-h-[70vh] border rounded">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium border-b">Admin PCode</th>
+                    <th className="px-3 py-2 text-left font-medium border-b">Admin Name</th>
+                    {(filter === "both" || filter === "raw") && (
+                      <th className="px-3 py-2 text-right font-medium border-b">Raw Value</th>
+                    )}
+                    {(filter === "both" || filter === "score") && (
+                      <th className="px-3 py-2 text-right font-medium border-b">Score (1–5)</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.admin_pcode} className="hover:bg-gray-50">
+                      <td className="px-3 py-1 border-b">{r.admin_pcode}</td>
+                      <td className="px-3 py-1 border-b">{r.admin_name ?? "—"}</td>
+                      {(filter === "both" || filter === "raw") && (
+                        <td className="px-3 py-1 border-b text-right">
+                          {r.raw_value !== null ? r.raw_value.toLocaleString() : "—"}
+                        </td>
+                      )}
+                      {(filter === "both" || filter === "score") && (
+                        <td className="px-3 py-1 border-b text-right">
+                          {r.score !== null ? r.score.toFixed(2) : "—"}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
