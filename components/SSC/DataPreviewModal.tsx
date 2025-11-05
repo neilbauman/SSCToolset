@@ -200,8 +200,9 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
   const showing = renderedRows.length;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4 overflow-auto">
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4 overflow-auto">
       <div className="w-full max-w-6xl bg-white rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
         <div className="px-4 py-3 bg-[color:var(--gsc-green)] text-white flex items-center justify-between">
           <h3 className="font-semibold">
             Data Preview — {dataset.metric}
@@ -211,6 +212,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
           </div>
         </div>
 
+        {/* Body */}
         <div className="p-4 flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center gap-3 mb-3">
             <label className="text-sm text-gray-600">Filter:</label>
@@ -236,7 +238,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
             </div>
           </div>
 
-          <div className="overflow-auto border rounded flex-1">
+          <div className="overflow-auto border rounded flex-1 max-h-[70vh]">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
@@ -302,6 +304,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
           </div>
         </div>
 
+        {/* Footer */}
         <div className="px-4 py-3 border-t bg-gray-50 flex justify-end">
           <button
             onClick={onClose}
