@@ -29,12 +29,12 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
     (async () => {
       setLoading(true);
       const { data, error } = await supabase
-        .from("unified_category_results")
-        .select("admin_pcode, raw_value, score")
-        .eq("metric", dataset.metric)
-        .eq("source_note", dataset.source_note)
-        .eq("instance_id", instanceId)
-        .limit(200);
+        .rpc("get_dataset_preview", {
+          p_instance_id: instanceId,
+          p_metric: dataset.metric,
+          p_source_note: dataset.source_note,
+        })
+        .limit(2000);
       if (!error) setRows(data || []);
       setLoading(false);
     })();
@@ -53,10 +53,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
       if (bin === 0) continue;
       buckets[bin] = (buckets[bin] || 0) + 1;
     }
-    return Object.entries(buckets).map(([bin, count]) => ({
-      bin,
-      count,
-    }));
+    return Object.entries(buckets).map(([bin, count]) => ({ bin, count }));
   }, [rows]);
 
   if (!open) return null;
@@ -93,7 +90,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
           </div>
 
           {loading ? (
-            <p>Loading...</p>
+            <p>Loading…</p>
           ) : filteredRows.length === 0 ? (
             <p className="text-gray-500">No rows found.</p>
           ) : (
@@ -103,17 +100,16 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-2 text-left">Admin PCode</th>
+                      <th className="p-2 text-left">Admin Name</th>
                       <th className="p-2 text-left">Raw Value</th>
                       <th className="p-2 text-left">Score (1–5)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRows.map((r) => (
-                      <tr
-                        key={r.admin_pcode}
-                        className="border-t hover:bg-gray-50"
-                      >
+                      <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
                         <td className="p-2 font-mono">{r.admin_pcode}</td>
+                        <td className="p-2">{r.admin_name ?? "—"}</td>
                         <td className="p-2">{r.raw_value ?? "—"}</td>
                         <td className="p-2">{r.score ?? "—"}</td>
                       </tr>
