@@ -34,6 +34,7 @@ export default function InterpretationModal({ open, dataset, instanceId, onClose
       })
       .eq("metric", dataset.metric)
       .eq("source_note", dataset.source_note);
+
     if (!error) {
       onUpdated?.();
       onClose();
