@@ -35,7 +35,6 @@ export default function SSCDashboard({
     ),
   };
 
-  // ✅ Fixed loadData with error handling and logging
   const loadData = async () => {
     try {
       const { data, error } = await supabase
@@ -51,8 +50,15 @@ export default function SSCDashboard({
         return;
       }
 
-      console.log("Loaded datasets:", data);
-      setDatasets(data || []);
+      // Deduplicate by metric + pillar to prevent multiple definitions showing
+      const unique = Array.from(
+        new Map(
+          (data || []).map((d) => [`${d.metric}_${d.pillar}`, d])
+        ).values()
+      );
+
+      console.log("Loaded unique datasets:", unique);
+      setDatasets(unique);
     } catch (err) {
       console.error("Unexpected error loading datasets:", err);
       setDatasets([]);
@@ -169,7 +175,6 @@ export default function SSCDashboard({
   );
 }
 
-// 📊 Reusable dataset table component
 function DatasetTable({
   datasets,
   onInterpret,
@@ -181,30 +186,53 @@ function DatasetTable({
   onView: (ds: any) => void;
   onApply: (metric: string, source: string) => void;
 }) {
+  // --- Sorting state ---
+  const [sortKey, setSortKey] = useState<string>("metric");
+  const [sortAsc, setSortAsc] = useState<boolean>(true);
+
+  const sorted = [...datasets].sort((a, b) => {
+    const valA = (a[sortKey] || "").toString();
+    const valB = (b[sortKey] || "").toString();
+    return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+  });
+
+  const handleSort = (key: string) => {
+    if (key === sortKey) setSortAsc(!sortAsc);
+    else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-[13px]">
         <thead className="bg-gray-50">
           <tr>
-            <th className="p-2 text-left">Metric</th>
-            <th className="p-2 text-left">Level</th>
-            <th className="p-2 text-left">Method</th>
-            <th className="p-2 text-left">Direction</th>
-            <th className="p-2 text-left">Norm Params</th>
+            {["metric", "data_type", "norm_method", "higher_is_better", "norm_params"].map(
+              (key, idx) => (
+                <th
+                  key={idx}
+                  className="p-2 text-left cursor-pointer select-none"
+                  onClick={() => handleSort(key)}
+                >
+                  {key.replace("_", " ")}{" "}
+                  {sortKey === key ? (sortAsc ? "▲" : "▼") : ""}
+                </th>
+              )
+            )}
             <th className="p-2 text-right w-40">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {datasets.length ? (
-            datasets.map((d) => (
+          {sorted.length ? (
+            sorted.map((d) => (
               <tr
                 key={d.metric + d.source_note}
                 className="border-t hover:bg-gray-50"
               >
                 <td className="p-2 font-medium text-gray-700">{d.metric}</td>
-                <td className="p-2 text-gray-500">
-                  {d.admin_level || "ADM3/ADM4"}
-                </td>
+                <td className="p-2 text-gray-500">{d.data_type}</td>
                 <td className="p-2 text-gray-500">{d.norm_method}</td>
                 <td className="p-2 text-gray-500">
                   {d.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
