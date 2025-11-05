@@ -4,18 +4,21 @@ import { useState, useEffect } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { RefreshCw, Settings2 } from "lucide-react";
+import { RefreshCw, Settings2, Eye } from "lucide-react";
 import InterpretationModal from "@/components/SSC/InterpretationModal";
+import DataPreviewModal from "@/components/SSC/DataPreviewModal";
 
 export default function SSCDashboard({ params }: { params: { id: string; instance_id: string } }) {
   const { id: countryId, instance_id } = params;
   const [datasets, setDatasets] = useState<any[]>([]);
   const [showModal, setShowModal] = useState<any | null>(null);
+  const [showPreview, setShowPreview] = useState<any | null>(null);
 
   const headerProps = {
     title: "SSC Analytical Framework",
     group: "country-config" as const,
-    description: "Define, interpret, and aggregate datasets for this SSC instance.",
+    description:
+      "Define, interpret, view data, and aggregate datasets for this SSC instance.",
     breadcrumbs: (
       <Breadcrumbs
         items={[
@@ -71,13 +74,15 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
               className="h-4 w-4 cursor-pointer hover:rotate-90 transition-transform"
             />
           </header>
-
           {grouped.framework.subsections.map((sub) => (
             <div key={sub.key} className="border-t">
-              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">{sub.label}</h3>
+              <h3 className="px-4 py-2 font-semibold text-gray-700 bg-gray-50">
+                {sub.label}
+              </h3>
               <DatasetTable
                 datasets={datasets.filter((d) => d.pillar === sub.key)}
                 onInterpret={setShowModal}
+                onView={setShowPreview}
                 onApply={handleApply}
               />
             </div>
@@ -92,6 +97,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
           <DatasetTable
             datasets={datasets.filter((d) => d.pillar === grouped.hazard.key)}
             onInterpret={setShowModal}
+            onView={setShowPreview}
             onApply={handleApply}
           />
         </section>
@@ -104,6 +110,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
           <DatasetTable
             datasets={datasets.filter((d) => d.pillar === grouped.vuln.key)}
             onInterpret={setShowModal}
+            onView={setShowPreview}
             onApply={handleApply}
           />
         </section>
@@ -118,6 +125,15 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
           onUpdated={loadData}
         />
       )}
+
+      {showPreview && (
+        <DataPreviewModal
+          open={!!showPreview}
+          dataset={showPreview}
+          instanceId={instance_id}
+          onClose={() => setShowPreview(null)}
+        />
+      )}
     </SidebarLayout>
   );
 }
@@ -125,10 +141,12 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
 function DatasetTable({
   datasets,
   onInterpret,
+  onView,
   onApply,
 }: {
   datasets: any[];
   onInterpret: (ds: any) => void;
+  onView: (ds: any) => void;
   onApply: (metric: string, source: string) => void;
 }) {
   return (
@@ -140,7 +158,7 @@ function DatasetTable({
             <th className="p-2 text-left">Method</th>
             <th className="p-2 text-left">Direction</th>
             <th className="p-2 text-left">Norm Params</th>
-            <th className="p-2 text-right w-32">Actions</th>
+            <th className="p-2 text-right w-40">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -150,15 +168,22 @@ function DatasetTable({
                 <td className="p-2 font-medium text-gray-700">{d.metric}</td>
                 <td className="p-2 text-gray-500">{d.norm_method}</td>
                 <td className="p-2 text-gray-500">
-                  {d.higher_is_better ? "↑ higher" : "↓ lower"}
+                  {d.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
                 </td>
                 <td className="p-2 text-gray-500 truncate max-w-[180px]">
                   {JSON.stringify(d.norm_params || {})}
                 </td>
                 <td className="p-2 text-right">
                   <button
+                    onClick={() => onView(d)}
+                    className="text-xs text-gray-600 font-medium hover:underline mr-2"
+                  >
+                    <Eye className="inline h-3 w-3 mr-1" />
+                    View
+                  </button>
+                  <button
                     onClick={() => onInterpret(d)}
-                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline mr-3"
+                    className="text-xs text-[color:var(--gsc-green)] font-medium hover:underline mr-2"
                   >
                     <Settings2 className="inline h-3 w-3 mr-1" />
                     Interpret
