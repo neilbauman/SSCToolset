@@ -39,7 +39,6 @@ type FilterMode = "both" | "raw" | "score";
 type SortKey = "admin_pcode" | "admin_name" | "raw_value" | "score_value";
 type SortDir = "asc" | "desc" | null;
 
-// ---------- Helpers ----------
 function fmt(n: number | null | undefined, d = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "NaN";
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -123,6 +122,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
   const [loading, setLoading] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("admin_pcode");
   const [sortDir, setSortDir] = useState<SortDir>(null);
+  const [rowLimit, setRowLimit] = useState<number | "all">(100);
 
   useEffect(() => {
     if (!open || !dataset) return;
@@ -135,7 +135,8 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
             p_source_note: dataset.source_note,
             p_instance_id: instanceId,
           })
-          .select("*");
+          .select("*", { count: "exact" })
+          .limit(10000); // explicit high cap to override 10-row default
 
         const normalized: DatasetRow[] = (data || []).map((r: any) => ({
           admin_pcode: r.admin_pcode ?? r.pcode ?? "",
@@ -172,7 +173,7 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
     });
 
     if (sortDir) {
-      return [...filtered].sort((a, b) => {
+      filtered.sort((a, b) => {
         const av = a[sortKey] ?? "";
         const bv = b[sortKey] ?? "";
         if (typeof av === "number" && typeof bv === "number") {
@@ -184,8 +185,9 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
       });
     }
 
-    return filtered;
-  }, [rows, liveScores, filter, sortKey, sortDir]);
+    if (rowLimit === "all") return filtered;
+    return filtered.slice(0, rowLimit);
+  }, [rows, liveScores, filter, sortKey, sortDir, rowLimit]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
@@ -205,103 +207,115 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
         {/* Header */}
         <div className="px-4 py-3 bg-[color:var(--gsc-green)] text-white flex items-center justify-between">
           <h3 className="font-semibold">
-            Data Preview — {dataset.metric}
+            Data Preview — {dataset.metric}{" "}
+            {dataset.admin_level ? `[${dataset.admin_level}]` : ""}
           </h3>
           <div className="text-sm opacity-90">
-            Showing {showing} rows
+            Showing {showing} of {rows.length} rows
           </div>
         </div>
 
-        {/* Body */}
-        <div className="p-4 flex-1 overflow-hidden flex flex-col">
-          <div className="flex items-center gap-3 mb-3">
-            <label className="text-sm text-gray-600">Filter:</label>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.currentTarget.value as FilterMode)}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value="both">Both</option>
-              <option value="raw">Raw only</option>
-              <option value="score">Score only</option>
-            </select>
-            <div className="ml-auto text-xs text-gray-500 truncate">
-              Method: <span className="font-medium">{dataset.norm_method}</span>{" "}
-              · Direction:{" "}
-              <span className="font-medium">
-                {dataset.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
-              </span>{" "}
-              · Params:{" "}
-              <span className="font-mono">
-                {JSON.stringify(dataset.norm_params || {})}
-              </span>
-            </div>
-          </div>
+        {/* Controls */}
+        <div className="px-4 pt-3 flex items-center gap-3 text-sm">
+          <label>Filter:</label>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.currentTarget.value as FilterMode)}
+            className="border rounded px-2 py-1 text-sm"
+          >
+            <option value="both">Both</option>
+            <option value="raw">Raw only</option>
+            <option value="score">Score only</option>
+          </select>
 
-          <div className="overflow-auto border rounded flex-1 max-h-[70vh]">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0 z-10">
+          <label className="ml-4">Rows:</label>
+          <select
+            value={rowLimit}
+            onChange={(e) =>
+              setRowLimit(e.target.value === "all" ? "all" : Number(e.target.value))
+            }
+            className="border rounded px-2 py-1 text-sm"
+          >
+            <option value={100}>100</option>
+            <option value={500}>500</option>
+            <option value={1000}>1000</option>
+            <option value="all">All</option>
+          </select>
+
+          <div className="ml-auto text-xs text-gray-500 truncate">
+            Method: <span className="font-medium">{dataset.norm_method}</span> · Direction:{" "}
+            <span className="font-medium">
+              {dataset.higher_is_better ? "↑ higher = worse" : "↓ lower = worse"}
+            </span>{" "}
+            · Params:{" "}
+            <span className="font-mono">{JSON.stringify(dataset.norm_params || {})}</span>
+          </div>
+        </div>
+
+        {/* Scrollable Table */}
+        <div className="p-4 overflow-auto flex-1 max-h-[75vh]">
+          <table className="min-w-full text-sm border">
+            <thead className="bg-gray-50 sticky top-0 z-10">
+              <tr>
+                {[
+                  { key: "admin_pcode", label: "Admin PCode" },
+                  { key: "admin_name", label: "Admin Name" },
+                  ...(filter !== "score" ? [{ key: "raw_value", label: "Raw Value" }] : []),
+                  ...(filter !== "raw" ? [{ key: "score_value", label: "Score (1–5)" }] : []),
+                ].map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key as SortKey)}
+                    className="px-3 py-2 text-left whitespace-nowrap cursor-pointer select-none hover:bg-gray-100"
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.label}
+                      {sortKey === col.key && sortDir && (
+                        <ArrowUpDown
+                          className={`h-3 w-3 transition-transform ${
+                            sortDir === "desc" ? "rotate-180" : ""
+                          }`}
+                        />
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
                 <tr>
-                  {[
-                    { key: "admin_pcode", label: "Admin PCode" },
-                    { key: "admin_name", label: "Admin Name" },
-                    ...(filter !== "score" ? [{ key: "raw_value", label: "Raw Value" }] : []),
-                    ...(filter !== "raw" ? [{ key: "score_value", label: "Score (1–5)" }] : []),
-                  ].map((col) => (
-                    <th
-                      key={col.key}
-                      onClick={() => toggleSort(col.key as SortKey)}
-                      className="px-3 py-2 text-left whitespace-nowrap cursor-pointer select-none hover:bg-gray-100"
-                    >
-                      <div className="flex items-center gap-1">
-                        {col.label}
-                        {sortKey === col.key && sortDir && (
-                          <ArrowUpDown
-                            className={`h-3 w-3 transition-transform ${
-                              sortDir === "desc" ? "rotate-180" : ""
-                            }`}
-                          />
-                        )}
-                      </div>
-                    </th>
-                  ))}
+                  <td colSpan={5} className="text-center py-8 text-gray-400">
+                    Loading…
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-8 text-gray-400">
-                      Loading…
-                    </td>
+              ) : renderedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-8 text-gray-400">
+                    No rows found.
+                  </td>
+                </tr>
+              ) : (
+                renderedRows.map((r) => (
+                  <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2">{r.admin_pcode}</td>
+                    <td className="px-3 py-2">{r.admin_name}</td>
+                    {filter !== "score" && (
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmt(r.raw_value, 2)}
+                      </td>
+                    )}
+                    {filter !== "raw" && (
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmt(r.score_value, 3)}
+                      </td>
+                    )}
                   </tr>
-                ) : renderedRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-8 text-gray-400">
-                      No rows found.
-                    </td>
-                  </tr>
-                ) : (
-                  renderedRows.map((r) => (
-                    <tr key={r.admin_pcode} className="border-t hover:bg-gray-50">
-                      <td className="px-3 py-2">{r.admin_pcode}</td>
-                      <td className="px-3 py-2">{r.admin_name}</td>
-                      {filter !== "score" && (
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {fmt(r.raw_value, 2)}
-                        </td>
-                      )}
-                      {filter !== "raw" && (
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {fmt(r.score_value, 3)}
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
 
         {/* Footer */}
