@@ -1,163 +1,97 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
+import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
-import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { FeatureCollection, Geometry } from "geojson";
+import { RefreshCw } from "lucide-react";
 
-// ✅ Inline route param type (replaces missing CountryInstanceParams)
-type Params = { id: string; instance_id: string };
-
-// ─────────────────────────────────────────────
-// Lazy-loaded Leaflet components
-// ─────────────────────────────────────────────
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer     = dynamic(() => import("react-leaflet").then(m => m.TileLayer),     { ssr: false });
-const GeoJSON       = dynamic(() => import("react-leaflet").then(m => m.GeoJSON),       { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
-// ─────────────────────────────────────────────
-// Helper functions
-// ─────────────────────────────────────────────
-const greenToRed = (s: number) => {
-  const t = Math.min(1, Math.max(0, (s - 1) / 4));
-  const r = Math.round(255 * t);
-  const g = Math.round(170 * (1 - t) + 50 * (1 - t));
-  return `rgb(${r},${g},80)`;
-};
-
-const SAFE_GRADES = [1, 2, 3, 4, 5];
-function safeArray<T>(v: T[] | null | undefined): T[] {
-  return Array.isArray(v) ? v : [];
-}
-
-// ─────────────────────────────────────────────
-// Dataset structure
-// ─────────────────────────────────────────────
-type MapDataset = {
-  key: string;
+type CountryInstanceParams = { id: string; instance_id: string };
+type GeoLayerOption = {
+  id: string;
   label: string;
   result_table: string;
-  admin_level: "ADM3" | "ADM4";
-  hasScore: boolean;
+  category: string;
+  subcategory?: string | null;
+  admin_level?: string;
 };
 
-// ─────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────
-export default function InstanceDashboard({ params }: { params: Params }) {
+export default function SSCDashboardPage({ params }: { params: CountryInstanceParams }) {
   const countryIso = params.id;
   const instanceId = params.instance_id;
 
-  const [datasets, setDatasets] = useState<MapDataset[]>([]);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [fc, setFc] = useState<FeatureCollection<Geometry> | null>(null);
+  const [layers, setLayers] = useState<GeoLayerOption[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [geojson, setGeojson] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const mapRef = useRef<any>(null);
 
-  // Build dataset list
-  useEffect(() => {
-    const ds: MapDataset[] = [
-      {
-        key: "p1_weighted",
-        label: "P1 — Weighted Building Typologies",
-        result_table: "derived_building_typology_ssc_adm3",
-        admin_level: "ADM3",
-        hasScore: true,
-      },
-      {
-        key: "p1_20pct",
-        label: "P1 — Building Typologies (20% Rule)",
-        result_table: "derived_building_typology_20pct_adm3",
-        admin_level: "ADM3",
-        hasScore: true,
-      },
-      {
-        key: "p3_density",
-        label: "P3 — Population density (ADM4)",
-        result_table: "derived_population_density_adm4",
-        admin_level: "ADM4",
-        hasScore: true,
-      },
-      {
-        key: "vuln_poverty",
-        label: "Vulnerability — derived_poverty_vulnerability_adm3",
-        result_table: "derived_poverty_vulnerability_adm3",
-        admin_level: "ADM3",
-        hasScore: true,
-      },
-    ];
-    setDatasets(ds);
-    setSelectedKey(ds[0]?.key ?? null);
-  }, []);
+  const fetchLayerCatalogue = async () => {
+    const { data, error } = await supabase
+      .from("instance_layers")
+      .select("id, category, subcategory, result_table")
+      .eq("instance_id", instanceId);
 
-  const selected = useMemo(
-    () => datasets.find(d => d.key === selectedKey) || null,
-    [datasets, selectedKey]
-  );
+    if (error) {
+      console.error("⚠️ Could not load layers", error);
+      return;
+    }
 
-  // ─────────────────────────────────────────────
-  // Fetch geojson safely
-  // ─────────────────────────────────────────────
-  const fetchGeo = async (rt: string, adm: "ADM3" | "ADM4") => {
+    const opts = (data || []).map((r: any) => ({
+      id: r.id,
+      category: r.category || "uncategorized",
+      subcategory: r.subcategory,
+      result_table: r.result_table,
+      label:
+        r.subcategory
+          ? `${r.category.toUpperCase()} – ${r.subcategory}`
+          : r.category.toUpperCase(),
+    }));
+    setLayers(opts);
+  };
+
+  const fetchGeoJSON = async (table: string, level?: string) => {
     setLoading(true);
-    setMsg(null);
     try {
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_country_iso: countryIso,
-        p_result_table: rt,
-        p_admin_level: adm,
-        p_limit: 100000,
+        p_result_table: table,
+        p_admin_level: level || null,
       });
-
       if (error) throw error;
-      if (!data) {
-        setFc(null);
-        setMsg("No data returned for this dataset.");
-        return;
-      }
-
-      const fc: FeatureCollection<Geometry> = typeof data === "string" ? JSON.parse(data) : data;
-      const feats = safeArray(fc.features);
-      if (feats.length === 0) {
-        setFc(null);
-        setMsg("No features or invalid geometry for this dataset.");
-        return;
-      }
-
-      feats.forEach(f => {
-        (f.properties as any) ||= {};
-        const p = f.properties as any;
-        if (p.score == null && p.SCORE != null) p.score = Number(p.SCORE);
-        if (p.raw_value == null && p.value != null) p.raw_value = Number(p.value);
-      });
-
-      setFc({ type: "FeatureCollection", features: feats });
-    } catch (e: any) {
-      console.error("Geo load failed:", e);
-      setFc(null);
-      setMsg("Failed to load map data. Please check if the dataset has valid geometry.");
+      if (!data) throw new Error("No GeoJSON returned");
+      setGeojson(data);
+    } catch (err) {
+      console.error("❌ GeoJSON load failed:", err);
+      setGeojson(null);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!selected) return;
-    fetchGeo(selected.result_table, selected.admin_level);
-  }, [selected?.key]); // eslint-disable-line
+    fetchLayerCatalogue();
+  }, []);
 
-  // Style
-  const styleFn = (f: any) => {
-    const s = Number(f?.properties?.score ?? 0);
-    const color = SAFE_GRADES.includes(s) ? greenToRed(s) : "#cccccc";
-    return { color: "#334155", weight: 0.8, fillColor: color, fillOpacity: 0.85 };
+  const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const table = e.target.value;
+    setSelected(table);
+    const sel = layers.find(l => l.result_table === table);
+    if (sel) fetchGeoJSON(sel.result_table, sel.admin_level || null);
   };
 
-  // ─────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────
+  const colorForScore = (score: number | null | undefined) => {
+    if (score == null) return "#cccccc";
+    const c = ["#00aa00", "#88cc00", "#ffee00", "#ff8800", "#cc0000"];
+    const idx = Math.max(1, Math.min(5, Math.round(score))) - 1;
+    return c[idx];
+  };
+
   return (
     <SidebarLayout
       headerProps={{
@@ -167,8 +101,7 @@ export default function InstanceDashboard({ params }: { params: Params }) {
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/" },
-              { label: "Country", href: "/country" },
-              { label: countryIso, href: `/country/${countryIso}` },
+              { label: "Country", href: `/country/${countryIso}` },
               { label: "Instance", href: `/country/${countryIso}/instances/${instanceId}` },
               { label: "Dashboard", href: "#" },
             ]}
@@ -176,57 +109,81 @@ export default function InstanceDashboard({ params }: { params: Params }) {
         ),
       }}
     >
-      <div className="p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Select dataset</label>
-            <select
-              value={selectedKey ?? ""}
-              onChange={(e) => setSelectedKey(e.currentTarget.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-            >
-              <optgroup label="P1">
-                <option value="p1_weighted">P1 — Weighted Building Typologies</option>
-                <option value="p1_20pct">P1 — Building Typologies (20% Rule)</option>
-              </optgroup>
-              <optgroup label="P3">
-                <option value="p3_density">P3 — Population density (ADM4)</option>
-              </optgroup>
-              <optgroup label="Vulnerability">
-                <option value="vuln_poverty">Vulnerability — derived_poverty_vulnerability_adm3</option>
-              </optgroup>
-            </select>
-          </div>
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">SSC Map Visualization</h2>
+          <button
+            onClick={() => selected && fetchGeoJSON(selected)}
+            disabled={!selected || loading}
+            className="flex items-center gap-1 px-3 py-1.5 rounded bg-[#640811] text-white hover:opacity-90 text-sm"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
         </div>
 
-        <div className="h-[640px] w-full border rounded relative overflow-hidden">
-          <MapContainer center={[12.8797, 121.774]} zoom={5} style={{ height: "100%", width: "100%" }}>
+        {/* Dataset selector */}
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="border rounded px-3 py-2 text-sm"
+            onChange={handleSelect}
+            value={selected || ""}
+          >
+            <option value="">Select Dataset…</option>
+            {layers
+              .filter(l => !!l.result_table)
+              .sort((a, b) => a.category.localeCompare(b.category))
+              .map(l => (
+                <option key={l.id} value={l.result_table}>
+                  {l.label}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        {/* Map */}
+        <div className="h-[600px] w-full border rounded overflow-hidden">
+          <MapContainer
+            center={[12.8797, 121.774]}
+            zoom={5}
+            style={{ height: "100%", width: "100%" }}
+            ref={mapRef}
+          >
             <TileLayer
-              attribution='&copy; OpenStreetMap'
+              attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {!!fc && safeArray(fc.features).length > 0 && (
-              <GeoJSON key={selectedKey ?? "k"} data={fc as any} style={styleFn} />
+            {geojson && (
+              <GeoJSON
+                key={selected}
+                data={geojson}
+                style={(feature: any) => ({
+                  color: "#000",
+                  weight: 0.5,
+                  fillColor: colorForScore(feature?.properties?.score),
+                  fillOpacity: 0.75,
+                })}
+                onEachFeature={(feature, layer) => {
+                  const p = feature.properties;
+                  const label = `${p.admin_name || p.admin_pcode}<br/>Score: ${p.score ?? "—"}<br/>Raw: ${
+                    p.raw_value ?? "—"
+                  }`;
+                  layer.bindTooltip(label, { sticky: true });
+                }}
+              />
             )}
           </MapContainer>
-
-          {loading && (
-            <div className="absolute inset-0 bg-white/60 flex items-center justify-center text-sm">Loading…</div>
-          )}
-          {!loading && msg && (
-            <div className="absolute inset-0 bg-white/80 flex items-center justify-center text-sm px-4 text-center">
-              {msg}
-            </div>
-          )}
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          {SAFE_GRADES.map(g => (
-            <div key={g} className="flex items-center gap-1">
-              <div className="w-5 h-3 rounded" style={{ background: greenToRed(g) }} />
-              <span>{g}</span>
-            </div>
-          ))}
+        {/* Legend */}
+        <div className="bg-white border rounded p-3 shadow w-fit text-sm">
+          <div className="font-semibold mb-1">Legend (score → color)</div>
+          <div className="flex gap-3">
+            <span className="flex items-center gap-1"><span className="w-4 h-4 bg-[#00aa00] inline-block rounded-sm"></span>1 (Low)</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-4 bg-[#88cc00] inline-block rounded-sm"></span>2</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-4 bg-[#ffee00] inline-block rounded-sm"></span>3</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-4 bg-[#ff8800] inline-block rounded-sm"></span>4</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-4 bg-[#cc0000] inline-block rounded-sm"></span>5 (High)</span>
+          </div>
         </div>
       </div>
     </SidebarLayout>
