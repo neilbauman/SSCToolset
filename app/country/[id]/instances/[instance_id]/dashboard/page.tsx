@@ -2,15 +2,13 @@
 
 import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { ChevronRight } from "lucide-react";
 import type { Map as LeafletMap } from "leaflet";
 import type { FeatureCollection } from "geojson";
 
-// Lazy-load Leaflet to prevent SSR issues
+// Lazy-load Leaflet
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
@@ -27,9 +25,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
   const [loading, setLoading] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
-  // ────────────────────────────────
-  // Load available datasets linked to this instance
-  // ────────────────────────────────
+  // Load datasets linked to instance
   useEffect(() => {
     const fetchDatasets = async () => {
       const { data, error } = await supabase
@@ -42,9 +38,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
     fetchDatasets();
   }, [instanceId]);
 
-  // ────────────────────────────────
-  // Load GIS underlay for selected admin level
-  // ────────────────────────────────
+  // Load GIS base layer
   useEffect(() => {
     const fetchUnderlay = async () => {
       const { data, error } = await supabase
@@ -69,9 +63,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
     fetchUnderlay();
   }, [adminLevel]);
 
-  // ────────────────────────────────
-  // Load overlay data for selected dataset
-  // ────────────────────────────────
+  // Load selected dataset overlay
   useEffect(() => {
     const fetchOverlay = async () => {
       if (!selectedDataset) return;
@@ -87,13 +79,13 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
   }, [selectedDataset]);
 
   // ────────────────────────────────
-  // Render map
+  // Render
   // ────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
         title: `${countryIso} – SSC Dashboard`,
-        group: "country",
+        group: "country-config", // ✅ fixed type-safe group key
         breadcrumbs: (
           <Breadcrumbs
             items={[
@@ -106,17 +98,16 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">SSC Dashboard</h2>
             <p className="text-xs text-gray-500">
-              View datasets and vulnerability layers across administrative boundaries.
+              Visualize SSC datasets and vulnerability layers across administrative levels.
             </p>
           </div>
         </div>
 
-        {/* Dataset and Admin selector */}
+        {/* Dataset and Admin Selectors */}
         <div className="bg-white border rounded-md p-3 flex flex-wrap items-center gap-4 text-sm shadow-sm">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Dataset</label>
@@ -149,7 +140,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
           </div>
         </div>
 
-        {/* Map */}
+        {/* Map Display */}
         <div className="h-[600px] w-full rounded-md overflow-hidden border relative">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10">
@@ -190,7 +181,6 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
             )}
           </MapContainer>
 
-          {/* Legend */}
           {geojsonOverlay && (
             <div className="absolute bottom-4 right-4 bg-white p-3 rounded-md shadow text-xs z-20">
               <h3 className="font-semibold mb-1">Legend (Score)</h3>
@@ -211,7 +201,7 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
   );
 }
 
-// Simple SSC 1–5 ramp
+// SSC color ramp 1–5
 function getColor(v: number) {
   return v === 1
     ? "#006837"
