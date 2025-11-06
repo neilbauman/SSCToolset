@@ -12,7 +12,7 @@ const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), 
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
 type CountryInstanceParams = { id: string; instance_id: string };
-type GeoLayerOption = {
+type LayerOption = {
   id: string;
   label: string;
   result_table: string;
@@ -25,16 +25,24 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
   const countryIso = params.id;
   const instanceId = params.instance_id;
 
-  const [layers, setLayers] = useState<GeoLayerOption[]>([]);
+  const [layers, setLayers] = useState<LayerOption[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [geojson, setGeojson] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const mapRef = useRef<any>(null);
 
+  // Load datasets linked to this instance
   const fetchLayerCatalogue = async () => {
     const { data, error } = await supabase
       .from("instance_layers")
-      .select("id, category, subcategory, result_table, normalization_type")
+      .select(`
+        id,
+        category,
+        subcategory,
+        result_table,
+        dataset_id,
+        ssc_dataset_catalog(title, source_note)
+      `)
       .eq("instance_id", instanceId);
 
     if (error) {
@@ -44,31 +52,38 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
 
     const opts = (data || []).map((r: any) => ({
       id: r.id,
-      category: r.category || "uncategorized",
-      subcategory: r.subcategory,
+      category: r.category?.toUpperCase() || "OTHER",
+      subcategory: r.subcategory || "",
       result_table: r.result_table,
       label:
-        r.subcategory
-          ? `${r.category.toUpperCase()} – ${r.subcategory}`
-          : r.category.toUpperCase(),
+        r.ssc_dataset_catalog?.title
+          ? `${r.ssc_dataset_catalog.title} — ${r.subcategory || r.category}`
+          : `${r.category} — ${r.subcategory || ""}`,
       admin_level:
-        r.normalization_type && r.normalization_type.toUpperCase().includes("ADM4")
+        r.result_table?.toLowerCase().includes("adm4")
           ? "ADM4"
-          : "ADM3",
+          : r.result_table?.toLowerCase().includes("adm3")
+          ? "ADM3"
+          : null,
     }));
+
     setLayers(opts);
   };
 
+  // Fetch GeoJSON via Supabase RPC
   const fetchGeoJSON = async (table: string, level?: string) => {
     setLoading(true);
+    console.log("🛰️ Fetching GeoJSON:", { countryIso, table, level });
     try {
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_country_iso: countryIso,
         p_result_table: table,
-        p_admin_level: level ?? undefined, // ✅ FIX: null-safe
+        p_admin_level: level ?? undefined,
       });
       if (error) throw error;
-      if (!data) throw new Error("No GeoJSON returned");
+      if (!data || !data.features || data.features.length === 0) {
+        console.warn("⚠️ No matching geometries returned for:", table);
+      }
       setGeojson(data);
     } catch (err) {
       console.error("❌ GeoJSON load failed:", err);
@@ -86,7 +101,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
     const table = e.target.value;
     setSelected(table);
     const sel = layers.find(l => l.result_table === table);
-    if (sel) fetchGeoJSON(sel.result_table, sel.admin_level ?? undefined); // ✅ FIX: convert null → undefined
+    if (sel) fetchGeoJSON(sel.result_table, sel.admin_level ?? undefined);
   };
 
   const colorForScore = (score: number | null | undefined) => {
@@ -114,6 +129,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
       }}
     >
       <div className="p-6 space-y-4">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">SSC Map Visualization</h2>
           <button
@@ -128,7 +144,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
         {/* Dataset selector */}
         <div className="flex flex-wrap gap-2">
           <select
-            className="border rounded px-3 py-2 text-sm"
+            className="border rounded px-3 py-2 text-sm w-full sm:w-1/2"
             onChange={handleSelect}
             value={selected || ""}
           >
