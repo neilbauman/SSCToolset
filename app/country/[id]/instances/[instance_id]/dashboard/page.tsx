@@ -9,10 +9,9 @@ import type { Map as LeafletMap } from "leaflet";
 import type { FeatureCollection } from "geojson";
 import L from "leaflet";
 
-// Lazy-load Leaflet to prevent SSR crashes
-const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
 export default function DashboardPage({ params }: { params: { id: string; instance_id: string } }) {
   const countryIso = params.id;
@@ -25,7 +24,7 @@ export default function DashboardPage({ params }: { params: { id: string; instan
   const [loading, setLoading] = useState(false);
 
   // ───────────────────────────────────────────────
-  // Load datasets connected to this SSC instance
+  // Load datasets for this SSC instance
   // ───────────────────────────────────────────────
   useEffect(() => {
     const fetchDatasets = async () => {
@@ -39,10 +38,20 @@ export default function DashboardPage({ params }: { params: { id: string; instan
     fetchDatasets();
   }, [instanceId]);
 
+  // Filter valid tables only
   const validDatasets = datasets.filter((d) => d.result_table && d.result_table.trim() !== "");
 
+  // Group them semantically
+  const grouped = {
+    P1: validDatasets.filter(d => d.category === "ssc_p1"),
+    P2: validDatasets.filter(d => d.category === "ssc_p2"),
+    P3: validDatasets.filter(d => d.category === "ssc_p3"),
+    Hazard: validDatasets.filter(d => d.category?.toLowerCase().includes("hazard")),
+    Vulnerability: validDatasets.filter(d => d.category?.toLowerCase().includes("underlying")),
+  };
+
   // ───────────────────────────────────────────────
-  // Fetch GeoJSON via RPC
+  // Fetch GeoJSON
   // ───────────────────────────────────────────────
   const fetchGeoJson = useCallback(async () => {
     if (!selectedDataset) return;
@@ -52,20 +61,18 @@ export default function DashboardPage({ params }: { params: { id: string; instan
         p_result_table: selectedDataset,
       });
       setLoading(false);
-
       if (error) throw error;
       if (!data) throw new Error("No data returned from RPC");
 
       const geo = typeof data === "string" ? JSON.parse(data) : data;
       setGeojson(geo);
 
-      // Auto-fit bounds
       if (mapRef.current && geo?.features?.length) {
         const layer = L.geoJSON(geo as any);
         mapRef.current.fitBounds(layer.getBounds(), { padding: [20, 20] });
       }
     } catch (err) {
-      console.error("❌ Failed to load GeoJSON:", err);
+      console.error("⚠️ Failed to load GeoJSON:", err);
       alert("⚠️ Failed to load map data. Please check if the dataset has valid geometry.");
     }
   }, [selectedDataset]);
@@ -73,6 +80,17 @@ export default function DashboardPage({ params }: { params: { id: string; instan
   useEffect(() => {
     fetchGeoJson();
   }, [fetchGeoJson]);
+
+  // Pretty label helper
+  function labelFor(table: string) {
+    if (!table) return "Unknown";
+    if (table.includes("20pct")) return "Building Typologies (20% Rule)";
+    if (table.includes("typology_ssc")) return "Weighted Building Typologies";
+    if (table.includes("population_density")) return "Population Density (ADM4)";
+    if (table.includes("underlying")) return "Underlying Vulnerability";
+    if (table.includes("layer_results")) return "Population / Exposure Result";
+    return table;
+  }
 
   // ───────────────────────────────────────────────
   // Render
@@ -94,35 +112,33 @@ export default function DashboardPage({ params }: { params: { id: string; instan
       }}
     >
       <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">SSC Dashboard</h2>
-            <p className="text-xs text-gray-500">
-              Visualize SSC-derived indicators by administrative level.
-            </p>
-          </div>
-        </div>
+        <h2 className="text-lg font-semibold">SSC Dashboard</h2>
+        <p className="text-xs text-gray-500">Visualize SSC datasets and derived indicators by pillar.</p>
 
-        {/* Dataset Selector */}
-        <div className="bg-white border rounded-md p-3 flex flex-wrap items-center gap-4 text-sm shadow-sm">
+        <div className="bg-white border rounded-md p-3 flex flex-wrap gap-4 items-center text-sm shadow-sm">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Dataset</label>
             <select
-              className="border rounded px-2 py-1 text-sm min-w-[240px]"
+              className="border rounded px-2 py-1 text-sm min-w-[280px]"
               value={selectedDataset}
               onChange={(e) => setSelectedDataset(e.target.value)}
             >
               <option value="">Select dataset</option>
-              {validDatasets.map((d) => (
-                <option key={d.id} value={d.result_table}>
-                  {d.category} — {d.result_table}
-                </option>
-              ))}
+              {Object.entries(grouped).map(([group, arr]) =>
+                arr.length ? (
+                  <optgroup key={group} label={group}>
+                    {arr.map((d) => (
+                      <option key={d.id} value={d.result_table}>
+                        {group} — {labelFor(d.result_table)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null
+              )}
             </select>
           </div>
         </div>
 
-        {/* Map */}
         <div className="h-[600px] w-full rounded-md overflow-hidden border relative">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10">
@@ -140,42 +156,32 @@ export default function DashboardPage({ params }: { params: { id: string; instan
               attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-
             {geojson && (
               <GeoJSON
                 data={geojson as any}
-                style={(feature: any) => {
-                  const p = feature.properties;
-                  return {
-                    fillColor: getColor(p.score),
-                    color: "#555",
-                    weight: 0.6,
-                    fillOpacity: 0.85,
-                  };
-                }}
+                style={(feature: any) => ({
+                  fillColor: getColor(feature.properties.score),
+                  color: "#555",
+                  weight: 0.6,
+                  fillOpacity: 0.85,
+                })}
                 onEachFeature={(feature, layer) => {
                   const p = feature.properties;
-                  if (p.admin_name) {
-                    layer.bindTooltip(
-                      `<b>${p.admin_name}</b><br/>Score: ${p.score ?? "—"}<br/>Raw: ${p.raw_value ?? "—"}`,
-                      { direction: "auto", sticky: true }
-                    );
-                  }
+                  layer.bindTooltip(
+                    `<b>${p.admin_name}</b><br/>Score: ${p.score ?? "—"}<br/>Raw: ${p.raw_value ?? "—"}`,
+                    { direction: "auto", sticky: true }
+                  );
                 }}
               />
             )}
           </MapContainer>
 
-          {/* Legend */}
           {geojson && (
             <div className="absolute bottom-4 right-4 bg-white p-3 rounded-md shadow text-xs z-20">
               <h3 className="font-semibold mb-1">Legend (Score)</h3>
               {[1, 2, 3, 4, 5].map((v) => (
                 <div key={v} className="flex items-center gap-2">
-                  <span
-                    className="w-4 h-4 rounded-sm"
-                    style={{ backgroundColor: getColor(v) }}
-                  ></span>
+                  <span className="w-4 h-4 rounded-sm" style={{ backgroundColor: getColor(v) }}></span>
                   <span>{v}</span>
                 </div>
               ))}
@@ -188,13 +194,13 @@ export default function DashboardPage({ params }: { params: { id: string; instan
 }
 
 // ───────────────────────────────────────────────
-// Color ramp: green → yellow → red
+// Color ramp (green → yellow → red)
 // ───────────────────────────────────────────────
 function getColor(v: number) {
-  if (v === 1) return "#006837"; // dark green (low vulnerability)
-  if (v === 2) return "#78c679"; // light green
-  if (v === 3) return "#ffff99"; // yellow
-  if (v === 4) return "#fdae61"; // orange
-  if (v === 5) return "#d73027"; // red (high vulnerability)
+  if (v === 1) return "#006837";
+  if (v === 2) return "#78c679";
+  if (v === 3) return "#ffff99";
+  if (v === 4) return "#fdae61";
+  if (v === 5) return "#d73027";
   return "#cccccc";
 }
