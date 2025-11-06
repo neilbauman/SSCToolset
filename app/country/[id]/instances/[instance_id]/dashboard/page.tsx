@@ -31,10 +31,12 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
   const [loading, setLoading] = useState(false);
   const mapRef = useRef<any>(null);
 
-  // Load datasets linked to this instance
+  // ────────────────────────────────
+  // Fetch datasets associated with this SSC instance
+  // ────────────────────────────────
   const fetchLayerCatalogue = async () => {
-    const { data, error } = await supabase
-      .from("instance_layers")
+    let { data, error } = await supabase
+      .from("instance_layers") // fallback name 1
       .select(`
         id,
         category,
@@ -45,8 +47,24 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
       `)
       .eq("instance_id", instanceId);
 
-    if (error) {
-      console.error("⚠️ Could not load layers", error);
+    // Fallback to alternative table if needed
+    if (error || !data?.length) {
+      const alt = await supabase
+        .from("ssc_instance_results_catalog") // fallback name 2
+        .select(`
+          id,
+          category,
+          subcategory,
+          result_table,
+          dataset_id,
+          ssc_dataset_catalog(title, source_note)
+        `)
+        .eq("instance_id", instanceId);
+      if (!alt.error) data = alt.data;
+    }
+
+    if (!data?.length) {
+      console.warn("⚠️ No datasets found for this instance:", instanceId);
       return;
     }
 
@@ -67,13 +85,16 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
           : null,
     }));
 
+    console.log("✅ Instance datasets loaded:", opts);
     setLayers(opts);
   };
 
-  // Fetch GeoJSON via Supabase RPC
+  // ────────────────────────────────
+  // Fetch GeoJSON from RPC
+  // ────────────────────────────────
   const fetchGeoJSON = async (table: string, level?: string) => {
     setLoading(true);
-    console.log("🛰️ Fetching GeoJSON:", { countryIso, table, level });
+    console.log("🛰️ Fetching GeoJSON:", { table, level });
     try {
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_country_iso: countryIso,
@@ -81,10 +102,8 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
         p_admin_level: level ?? undefined,
       });
       if (error) throw error;
-      if (!data || !data.features || data.features.length === 0) {
-        console.warn("⚠️ No matching geometries returned for:", table);
-      }
       setGeojson(data);
+      console.log("✅ GeoJSON loaded:", data?.features?.length || 0, "features");
     } catch (err) {
       console.error("❌ GeoJSON load failed:", err);
       setGeojson(null);
@@ -129,7 +148,6 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">SSC Map Visualization</h2>
           <button
@@ -149,14 +167,11 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
             value={selected || ""}
           >
             <option value="">Select Dataset…</option>
-            {layers
-              .filter(l => !!l.result_table)
-              .sort((a, b) => a.category.localeCompare(b.category))
-              .map(l => (
-                <option key={l.id} value={l.result_table}>
-                  {l.label}
-                </option>
-              ))}
+            {layers.map(l => (
+              <option key={l.id} value={l.result_table}>
+                {l.label}
+              </option>
+            ))}
           </select>
         </div>
 
