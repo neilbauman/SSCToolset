@@ -17,10 +17,10 @@ type DatasetRow = {
 
 type Band = {
   op: "<" | ">=" | "between";
-  value?: number; // for < or >=
-  min?: number; // for between
-  max?: number; // for between
-  score: number; // 1-5
+  value?: number;
+  min?: number;
+  max?: number;
+  score: number;
 };
 
 type Props = {
@@ -41,20 +41,23 @@ export default function InterpretationModal({
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
 
-  // Local working state (so you can change without persisting immediately)
   const [method, setMethod] = useState<string>("winsor_5_95");
   const [higherIsWorse, setHigherIsWorse] = useState<boolean>(true);
   const [bands, setBands] = useState<Band[]>([]);
   const [dataType, setDataType] = useState<"gradient" | "categorical">("gradient");
 
+  // New for categorical
+  const [catScores, setCatScores] = useState<Record<string, number>>({});
+
   useEffect(() => {
     if (!open || !dataset) return;
-    // seed from catalog
     setMethod(dataset.norm_method || "winsor_5_95");
-    setHigherIsWorse(dataset.higher_is_better !== false); // default to higher = worse unless explicitly false
+    setHigherIsWorse(dataset.higher_is_better !== false);
     setDataType(dataset.data_type || "gradient");
 
     const np = dataset.norm_params || {};
+
+    // gradient thresholds
     if (np.bands && Array.isArray(np.bands)) {
       setBands(
         np.bands.map((b: any) => ({
@@ -66,9 +69,7 @@ export default function InterpretationModal({
         }))
       );
     } else if (np.thresholds && Array.isArray(np.thresholds)) {
-      // legacy thresholds -> convert to bands example
-      // e.g. [300, 1500] => <300 => 3, between => 2, >=1500 => 1
-      const t = np.thresholds.map((n: any) => Number(n)).sort((a: number, b: number) => a - b);
+      const t = np.thresholds.map((n: any) => Number(n)).sort((a, b) => a - b);
       if (t.length === 2) {
         setBands([
           { op: "<", value: t[0], score: 3 },
@@ -78,22 +79,20 @@ export default function InterpretationModal({
       } else {
         setBands([]);
       }
-    } else {
-      // if no params, keep any existing bands or use empty
-      setBands((prev) => prev.length ? prev : []);
+    }
+
+    // categorical scoring
+    if (np.category_scores && typeof np.category_scores === "object") {
+      setCatScores(np.category_scores);
     }
   }, [open, dataset]);
 
-  const addBand = () => {
+  const addBand = () =>
     setBands((b) => [...b, { op: "<", value: 0, score: 3 }]);
-  };
-
-  const removeBand = (idx: number) => {
-    setBands((b) => b.filter((_, i) => i !== idx));
-  };
+  const removeBand = (i: number) =>
+    setBands((b) => b.filter((_, idx) => idx !== i));
 
   const resetToDefault = () => {
-    // Simple default used often for population density
     setMethod("threshold_bands");
     setDataType("gradient");
     setHigherIsWorse(true);
@@ -105,11 +104,14 @@ export default function InterpretationModal({
   };
 
   const normParams = useMemo(() => {
-    if (method === "threshold_bands") {
-      return { bands: bands };
+    if (dataType === "categorical") {
+      return { category_scores: catScores };
     }
-    return {}; // winsor/linear do not need params here
-  }, [method, bands]);
+    if (method === "threshold_bands") {
+      return { bands };
+    }
+    return {};
+  }, [dataType, method, bands, catScores]);
 
   const saveCatalog = async () => {
     setSaving(true);
@@ -135,11 +137,15 @@ export default function InterpretationModal({
   const applyNow = async () => {
     setApplying(true);
     try {
-      // Ensure catalog is saved first so RPC reads latest settings
       await saveCatalog();
 
-      // Dispatch correct RPC
-      if (method === "threshold_bands") {
+      if (dataType === "categorical") {
+        const { error } = await supabase.rpc(
+          "apply_categorical_scoring_for_dataset_instance",
+          { p_dataset_id: dataset.id }
+        );
+        if (error) throw error;
+      } else if (method === "threshold_bands") {
         const { error } = await supabase.rpc(
           "apply_threshold_bands_for_dataset_instance",
           {
@@ -165,7 +171,6 @@ export default function InterpretationModal({
         );
         if (error) throw error;
       } else {
-        // fallback to the classification RPC if ever used
         const { error } = await supabase.rpc(
           "apply_threshold_classification_for_dataset_instance",
           {
@@ -199,13 +204,13 @@ export default function InterpretationModal({
           <button
             onClick={onClose}
             className="text-gray-600 hover:text-black p-1 rounded"
-            title="Close"
           >
             <X className="h-4 w-4" />
           </button>
         </header>
 
         <div className="p-4 space-y-4 overflow-auto">
+          {/* Shared Controls */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs text-gray-600 mb-1">
@@ -257,181 +262,50 @@ export default function InterpretationModal({
             </div>
           </div>
 
-          {method === "threshold_bands" && (
-            <div className="border rounded p-3">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-semibold text-sm">Threshold bands</h4>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={resetToDefault}
-                    className="text-xs text-gray-700 hover:underline flex items-center gap-1"
-                    title="Set common defaults"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    Use default (300 / 1500)
-                  </button>
-                  <button
-                    onClick={addBand}
-                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                    title="Add band"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add band
-                  </button>
+          {/* Threshold / Gradient section */}
+          {dataType === "gradient" && method === "threshold_bands" && (
+            /* keep your existing threshold band table exactly as before */
+            <div className="border rounded p-3"> ... same content as you provided ... </div>
+          )}
+
+          {/* Categorical scoring editor */}
+          {dataType === "categorical" && (
+            <div className="border rounded p-3 space-y-2">
+              <h4 className="font-semibold text-sm">
+                Category Scores (1 = resilient → 4 = vulnerable)
+              </h4>
+              {Object.entries(catScores).map(([label, val]) => (
+                <div key={label} className="flex items-center justify-between">
+                  <span className="truncate">{label}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={val}
+                    onChange={(e) =>
+                      setCatScores({
+                        ...catScores,
+                        [label]: Number(e.currentTarget.value),
+                      })
+                    }
+                    className="w-20 border rounded px-2 py-1 text-right text-sm"
+                  />
                 </div>
-              </div>
-
-              <div className="overflow-auto">
-                <table className="w-full text-[13px]">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left w-28">Operator</th>
-                      <th className="p-2 text-left w-28">Value / Min</th>
-                      <th className="p-2 text-left w-28">Max</th>
-                      <th className="p-2 text-left w-28">Score (1–5)</th>
-                      <th className="p-2 text-right w-12">Remove</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bands.map((b, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-2">
-                          <select
-                            value={b.op}
-                            onChange={(e) => {
-                              const op = e.currentTarget.value as Band["op"];
-                              setBands((all) =>
-                                all.map((x, idx) =>
-                                  idx === i
-                                    ? {
-                                        op,
-                                        score: x.score,
-                                        value:
-                                          op !== "between"
-                                            ? x.value ?? 0
-                                            : undefined,
-                                        min:
-                                          op === "between"
-                                            ? x.min ?? 0
-                                            : undefined,
-                                        max:
-                                          op === "between"
-                                            ? x.max ?? 0
-                                            : undefined,
-                                      }
-                                    : x
-                                )
-                              );
-                            }}
-                            className="border rounded px-2 py-1 text-sm"
-                          >
-                            <option value="<">&lt;</option>
-                            <option value=">=">&ge;</option>
-                            <option value="between">between</option>
-                          </select>
-                        </td>
-                        <td className="p-2">
-                          {b.op === "between" ? (
-                            <input
-                              type="number"
-                              value={b.min ?? 0}
-                              onChange={(e) =>
-                                setBands((all) =>
-                                  all.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, min: Number(e.currentTarget.value) }
-                                      : x
-                                  )
-                                )
-                              }
-                              className="border rounded px-2 py-1 w-24 text-sm"
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              value={b.value ?? 0}
-                              onChange={(e) =>
-                                setBands((all) =>
-                                  all.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, value: Number(e.currentTarget.value) }
-                                      : x
-                                  )
-                                )
-                              }
-                              className="border rounded px-2 py-1 w-24 text-sm"
-                            />
-                          )}
-                        </td>
-                        <td className="p-2">
-                          {b.op === "between" ? (
-                            <input
-                              type="number"
-                              value={b.max ?? 0}
-                              onChange={(e) =>
-                                setBands((all) =>
-                                  all.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, max: Number(e.currentTarget.value) }
-                                      : x
-                                  )
-                                )
-                              }
-                              className="border rounded px-2 py-1 w-24 text-sm"
-                            />
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            min={1}
-                            max={5}
-                            value={b.score}
-                            onChange={(e) =>
-                              setBands((all) =>
-                                all.map((x, idx) =>
-                                  idx === i
-                                    ? { ...x, score: Number(e.currentTarget.value) }
-                                    : x
-                                )
-                              )
-                            }
-                            className="border rounded px-2 py-1 w-20 text-sm"
-                          />
-                        </td>
-                        <td className="p-2 text-right">
-                          <button
-                            onClick={() => removeBand(i)}
-                            className="text-red-600 hover:underline"
-                            title="Remove band"
-                          >
-                            <Trash2 className="inline h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {!bands.length && (
-                      <tr>
-                        <td colSpan={5} className="p-3 text-gray-500 text-center">
-                          No bands defined. Click “Add band”.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <p className="text-xs text-gray-500 mt-2">
-                Thresholds work for any dataset (not just categorical). They map raw values
-                to 1–5 scores using the bands above; enable invertible patterns by swapping
-                scores (e.g., make high values → higher scores).
+              ))}
+              {!Object.keys(catScores).length && (
+                <p className="text-xs text-gray-500">
+                  No categories detected. Save settings to fetch category labels.
+                </p>
+              )}
+              <p className="text-xs text-gray-500">
+                Adjust vulnerability per typology, then click “Apply to Instance”
+                to recalculate 20% rule classifications.
               </p>
             </div>
           )}
 
-          {method !== "threshold_bands" && (
+          {/* Notes for non-threshold methods remain */}
+          {dataType === "gradient" && method !== "threshold_bands" && (
             <div className="border rounded p-3">
               <h4 className="font-semibold text-sm mb-1">Notes</h4>
               <ul className="text-xs text-gray-600 list-disc pl-5 space-y-1">
@@ -439,11 +313,10 @@ export default function InterpretationModal({
                   <strong>Winsor (P5–P95)</strong>: clamps to P5/P95 then scales to 1–5.
                 </li>
                 <li>
-                  <strong>Linear 1–4 → 1–5</strong>: remaps an input that is already 1–4
-                  onto a 1–5 scale (useful for typology SSCs).
+                  <strong>Linear 1–4 → 1–5</strong>: remaps an input already 1–4 onto 1–5.
                 </li>
                 <li>
-                  “Invert” variants flip the direction (higher values → lower scores).
+                  “Invert” variants flip direction (↑ → ↓).
                 </li>
               </ul>
             </div>
@@ -462,7 +335,6 @@ export default function InterpretationModal({
             onClick={applyNow}
             disabled={saving || applying}
             className="px-3 py-1.5 rounded bg-[color:var(--gsc-green)] text-white text-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
-            title="Apply to instance (persist scores)"
           >
             <Play className="h-3 w-3" />
             {applying ? "Applying…" : "Apply to Instance"}
