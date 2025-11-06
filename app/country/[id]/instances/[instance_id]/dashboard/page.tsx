@@ -9,11 +9,10 @@ import type { Map as LeafletMap } from "leaflet";
 import type { FeatureCollection } from "geojson";
 import L from "leaflet";
 
-// Lazy-load Leaflet components (prevents SSR crash)
+// Lazy-load Leaflet to prevent SSR crashes
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
-const Tooltip = dynamic(() => import("react-leaflet").then((m) => m.Tooltip), { ssr: false });
 
 export default function DashboardPage({ params }: { params: { id: string; instance_id: string } }) {
   const countryIso = params.id;
@@ -23,10 +22,10 @@ export default function DashboardPage({ params }: { params: { id: string; instan
   const [datasets, setDatasets] = useState<any[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<string>("");
   const [geojson, setGeojson] = useState<FeatureCollection | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
 
   // ───────────────────────────────────────────────
-  // Load datasets linked to this SSC instance
+  // Load datasets connected to this SSC instance
   // ───────────────────────────────────────────────
   useEffect(() => {
     const fetchDatasets = async () => {
@@ -40,8 +39,10 @@ export default function DashboardPage({ params }: { params: { id: string; instan
     fetchDatasets();
   }, [instanceId]);
 
+  const validDatasets = datasets.filter((d) => d.result_table && d.result_table.trim() !== "");
+
   // ───────────────────────────────────────────────
-  // Fetch GeoJSON for selected dataset
+  // Fetch GeoJSON via RPC
   // ───────────────────────────────────────────────
   const fetchGeoJson = useCallback(async () => {
     if (!selectedDataset) return;
@@ -58,14 +59,14 @@ export default function DashboardPage({ params }: { params: { id: string; instan
       const geo = typeof data === "string" ? JSON.parse(data) : data;
       setGeojson(geo);
 
-      // Auto-zoom to bounds
+      // Auto-fit bounds
       if (mapRef.current && geo?.features?.length) {
         const layer = L.geoJSON(geo as any);
         mapRef.current.fitBounds(layer.getBounds(), { padding: [20, 20] });
       }
     } catch (err) {
-      console.error("Failed to load GeoJSON:", err);
-      alert("⚠️ Failed to load map data. Check console for details.");
+      console.error("❌ Failed to load GeoJSON:", err);
+      alert("⚠️ Failed to load map data. Please check if the dataset has valid geometry.");
     }
   }, [selectedDataset]);
 
@@ -74,7 +75,7 @@ export default function DashboardPage({ params }: { params: { id: string; instan
   }, [fetchGeoJson]);
 
   // ───────────────────────────────────────────────
-  // Render Map
+  // Render
   // ───────────────────────────────────────────────
   return (
     <SidebarLayout
@@ -93,17 +94,16 @@ export default function DashboardPage({ params }: { params: { id: string; instan
       }}
     >
       <div className="p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">SSC Dashboard</h2>
             <p className="text-xs text-gray-500">
-              Visualize derived indicators and categorical vulnerability layers.
+              Visualize SSC-derived indicators by administrative level.
             </p>
           </div>
         </div>
 
-        {/* Dataset selector */}
+        {/* Dataset Selector */}
         <div className="bg-white border rounded-md p-3 flex flex-wrap items-center gap-4 text-sm shadow-sm">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Dataset</label>
@@ -113,7 +113,7 @@ export default function DashboardPage({ params }: { params: { id: string; instan
               onChange={(e) => setSelectedDataset(e.target.value)}
             >
               <option value="">Select dataset</option>
-              {datasets.map((d) => (
+              {validDatasets.map((d) => (
                 <option key={d.id} value={d.result_table}>
                   {d.category} — {d.result_table}
                 </option>
@@ -122,7 +122,7 @@ export default function DashboardPage({ params }: { params: { id: string; instan
           </div>
         </div>
 
-        {/* Map Display */}
+        {/* Map */}
         <div className="h-[600px] w-full rounded-md overflow-hidden border relative">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10">
@@ -146,21 +146,18 @@ export default function DashboardPage({ params }: { params: { id: string; instan
                 data={geojson as any}
                 style={(feature: any) => {
                   const p = feature.properties;
-                  if (p.is_unmatched) {
-                    return { color: "#ccc", weight: 0.5, fillOpacity: 0.2 };
-                  }
                   return {
                     fillColor: getColor(p.score),
                     color: "#555",
                     weight: 0.6,
-                    fillOpacity: 0.8,
+                    fillOpacity: 0.85,
                   };
                 }}
                 onEachFeature={(feature, layer) => {
                   const p = feature.properties;
                   if (p.admin_name) {
                     layer.bindTooltip(
-                      `<b>${p.admin_name}</b><br/>Score: ${p.score ?? "N/A"}<br/>Raw: ${p.raw_value ?? "—"}`,
+                      `<b>${p.admin_name}</b><br/>Score: ${p.score ?? "—"}<br/>Raw: ${p.raw_value ?? "—"}`,
                       { direction: "auto", sticky: true }
                     );
                   }
@@ -191,13 +188,13 @@ export default function DashboardPage({ params }: { params: { id: string; instan
 }
 
 // ───────────────────────────────────────────────
-// SSC color ramp
+// Color ramp: green → yellow → red
 // ───────────────────────────────────────────────
 function getColor(v: number) {
-  if (v === 1) return "#006837"; // dark green
-  if (v === 2) return "#31a354"; // medium green
-  if (v === 3) return "#78c679"; // light green
-  if (v === 4) return "#c2e699"; // yellowish
-  if (v === 5) return "#ffffcc"; // pale yellow
-  return "#f0f0f0";
+  if (v === 1) return "#006837"; // dark green (low vulnerability)
+  if (v === 2) return "#78c679"; // light green
+  if (v === 3) return "#ffff99"; // yellow
+  if (v === 4) return "#fdae61"; // orange
+  if (v === 5) return "#d73027"; // red (high vulnerability)
+  return "#cccccc";
 }
