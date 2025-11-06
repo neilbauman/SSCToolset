@@ -5,6 +5,7 @@ import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import { X, Plus, Trash2, RotateCcw, Play } from "lucide-react";
 
 type DatasetRow = {
+  id?: string; // 👈 add this line
   metric: string;
   source_note: string;
   pillar: string;
