@@ -69,7 +69,9 @@ export default function InterpretationModal({
         }))
       );
     } else if (np.thresholds && Array.isArray(np.thresholds)) {
-      const t = np.thresholds.map((n: any) => Number(n)).sort((a, b) => a - b);
+      const t = (np.thresholds as number[])
+  .map((n: any) => Number(n))
+  .sort((a: number, b: number) => a - b);
       if (t.length === 2) {
         setBands([
           { op: "<", value: t[0], score: 3 },
