@@ -1,142 +1,163 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import type { Map as LeafletMap } from "leaflet";
-import type { FeatureCollection } from "geojson";
-import L from "leaflet";
+import type { FeatureCollection, Geometry } from "geojson";
+import type { CountryInstanceParams } from "@/app/country/types";
 
+// Leaflet (client only)
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
+const TileLayer     = dynamic(() => import("react-leaflet").then(m => m.TileLayer),     { ssr: false });
+const GeoJSON       = dynamic(() => import("react-leaflet").then(m => m.GeoJSON),       { ssr: false });
 
-type InstanceLayer = {
-  id: string;
-  result_table: string;
-  category: string | null;
-  subcategory: string | null;
+type MapDataset = {
+  key: string;                       // unique key for select
+  label: string;                     // human label
+  result_table: string;              // table/view to fetch
+  admin_level: "ADM3" | "ADM4";      // which backbone to join to
+  hasScore: boolean;                 // whether 'score' exists
 };
 
-type AdminLevel = "AUTO" | "ADM0" | "ADM1" | "ADM2" | "ADM3" | "ADM4";
+// ---------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------
+const greenToRed = (s: number) => {
+  // s in [1..5] → green→red
+  const t = Math.min(1, Math.max(0, (s - 1) / 4));
+  const r = Math.round(255 * t);
+  const g = Math.round(170 * (1 - t) + 50 * (1 - t)); // keep a bit darker
+  return `rgb(${r},${g},80)`;
+};
 
-export default function DashboardPage({ params }: { params: { id: string; instance_id: string } }) {
+const SAFE_GRADES = [1, 2, 3, 4, 5];
+
+function safeArray<T>(v: T[] | null | undefined): T[] {
+  return Array.isArray(v) ? v : [];
+}
+
+// ---------------------------------------------------------------
+
+export default function InstanceDashboard({ params }: { params: CountryInstanceParams }) {
   const countryIso = params.id;
   const instanceId = params.instance_id;
-  const mapRef = useRef<LeafletMap | null>(null);
 
-  const [datasets, setDatasets] = useState<InstanceLayer[]>([]);
-  const [selectedDataset, setSelectedDataset] = useState<string>("");
-  const [adminLevel, setAdminLevel] = useState<AdminLevel>("AUTO");
-  const [geojson, setGeojson] = useState<FeatureCollection | null>(null);
+  const [datasets, setDatasets] = useState<MapDataset[]>([]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [fc, setFc] = useState<FeatureCollection<Geometry> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  // ───────────────────────────────────────────────
-  // Load datasets for this SSC instance
-  // ───────────────────────────────────────────────
+  // build list once
   useEffect(() => {
-    const fetchDatasets = async () => {
-      const { data, error } = await supabase
-        .from("instance_layers")
-        .select("id, result_table, category, subcategory")
-        .eq("instance_id", instanceId);
+    // Keep human, readable names
+    const ds: MapDataset[] = [
+      {
+        key: "p1_weighted",
+        label: "P1 — Weighted Building Typologies",
+        result_table: "derived_building_typology_ssc_adm3",
+        admin_level: "ADM3",
+        hasScore: true,
+      },
+      {
+        key: "p1_20pct",
+        label: "P1 — Building Typologies (20% Rule)",
+        result_table: "derived_building_typology_20pct_adm3",
+        admin_level: "ADM3",
+        hasScore: true,
+      },
+      {
+        key: "p3_density",
+        label: "P3 — Population density (ADM4)",
+        // this must exist as a materialized view or table with columns:
+        // admin_pcode, admin_name, raw_value, score
+        result_table: "derived_population_density_adm4",
+        admin_level: "ADM4",
+        hasScore: true, // we map 'score' if present; raw_value is used for tooltip
+      },
+      {
+        key: "vuln_poverty",
+        label: "Vulnerability — derived_poverty_vulnerability_adm3",
+        result_table: "derived_poverty_vulnerability_adm3",
+        admin_level: "ADM3",
+        hasScore: true,
+      },
+    ];
+    setDatasets(ds);
+    setSelectedKey(ds[0]?.key ?? null);
+  }, []);
 
-      if (error) console.error(error);
-      else setDatasets((data || []).filter(d => d.result_table && d.result_table.trim() !== ""));
-    };
-    fetchDatasets();
-  }, [instanceId]);
+  const selected = useMemo(
+    () => datasets.find(d => d.key === selectedKey) || null,
+    [datasets, selectedKey]
+  );
 
-  // Dataset groups for cleaner labels
-  const grouped = {
-    "P1 – Shelter": datasets.filter(d => d.category === "ssc_p1"),
-    "P2 – Living Conditions": datasets.filter(d => d.category === "ssc_p2"),
-    "P3 – Population / Exposure": datasets.filter(d => d.category === "ssc_p3"),
-    "Hazard": datasets.filter(d => d.category?.toLowerCase().includes("hazard")),
-    "Underlying Vulnerabilities": datasets.filter(d => d.category?.toLowerCase().includes("underlying")),
-  };
-
-  // Pretty naming for result tables
-  function labelFor(table: string) {
-    if (!table) return "Unknown";
-    const t = table.toLowerCase();
-    if (t.includes("20pct")) return "Building Typologies (20% Rule)";
-    if (t.includes("typology_ssc")) return "Weighted Building Typologies";
-    if (t.includes("population_density")) return "Population Density";
-    if (t.includes("layer_results")) return "Population / Exposure Result";
-    if (t.includes("poverty") || t.includes("underlying")) return "Underlying Vulnerability";
-    return table;
-  }
-
-  // Auto-detect ADM level from result_table name (fallback to ADM3)
-  function inferLevel(table: string): Exclude<AdminLevel, "AUTO"> {
-    const m = table.toLowerCase().match(/adm([0-4])/);
-    if (m) return (`ADM${m[1]}` as AdminLevel) ?? "ADM3";
-    // common heuristics: P3 → ADM4, typology → ADM3
-    if (table.toLowerCase().includes("population") || table.toLowerCase().includes("layer_results")) return "ADM4";
-    return "ADM3";
-  }
-
-  // When dataset changes and adminLevel is AUTO, update inferred level
-  useEffect(() => {
-    if (selectedDataset && adminLevel === "AUTO") {
-      setAdminLevel(inferLevel(selectedDataset));
-    }
-  }, [selectedDataset, adminLevel]);
-
-  // ───────────────────────────────────────────────
-  // Fetch GeoJSON with level-aware RPC
-  // ───────────────────────────────────────────────
-  const fetchGeoJson = useCallback(async () => {
-    if (!selectedDataset) return;
-
-    const levelToUse: Exclude<AdminLevel, "AUTO"> =
-      adminLevel === "AUTO" ? inferLevel(selectedDataset) : adminLevel;
-
+  // fetch features
+  const fetchGeo = async (rt: string, adm: "ADM3" | "ADM4") => {
+    setLoading(true);
+    setMsg(null);
     try {
-      setLoading(true);
-
-      // Preferred: geometry-aware RPC (we just created)
-      let { data, error } = await supabase.rpc("get_geojson_for_result_table_level", {
-        p_result_table: selectedDataset,
-        p_admin_level: levelToUse,
+      // server-side function must join to admin_features_* and return a valid GeoJSON FC
+      const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
+        p_country_iso: countryIso,
+        p_result_table: rt,
+        p_admin_level: adm,
+        p_limit: 100000,
       });
 
-      // Fallback: old RPC if the new one isn't present
-      if (error && /function .* does not exist/i.test(String(error?.message))) {
-        const legacy = await supabase.rpc("get_geojson_for_result_table", {
-          p_result_table: selectedDataset,
-        });
-        error = legacy.error;
-        data = legacy.data;
-      }
-
-      setLoading(false);
       if (error) throw error;
-      if (!data) throw new Error("No data returned from RPC");
-
-      const geo = typeof data === "string" ? JSON.parse(data) : data;
-      setGeojson(geo);
-
-      if (mapRef.current && geo?.features?.length) {
-        const layer = L.geoJSON(geo as any);
-        mapRef.current.fitBounds(layer.getBounds(), { padding: [20, 20] });
+      if (!data) {
+        setFc(null);
+        setMsg("No data returned for this dataset.");
+        return;
       }
-    } catch (err: any) {
-      console.error("⚠️ Failed to load GeoJSON:", err);
-      alert("⚠️ Failed to load map data. Please check if the dataset has valid geometry.");
+
+      // Safety checks
+      const fc: FeatureCollection<Geometry> = typeof data === "string" ? JSON.parse(data) : data;
+      const feats = safeArray(fc.features);
+      if (feats.length === 0) {
+        setFc(null);
+        setMsg("No features or invalid geometry for this dataset.");
+        return;
+      }
+      // make sure properties exist to avoid style crashes
+      feats.forEach(f => {
+        (f.properties as any) ||= {};
+        const p = f.properties as any;
+        // normalize props we use in styles / tooltips
+        if (p.score == null && p.SCORE != null) p.score = Number(p.SCORE);
+        if (p.raw_value == null && p.value != null) p.raw_value = Number(p.value);
+      });
+
+      setFc({ type: "FeatureCollection", features: feats });
+    } catch (e: any) {
+      console.error("Geo load failed:", e);
+      setFc(null);
+      setMsg("Failed to load map data. Please check if the dataset has valid geometry.");
+    } finally {
+      setLoading(false);
     }
-  }, [selectedDataset, adminLevel]);
+  };
 
   useEffect(() => {
-    fetchGeoJson();
-  }, [fetchGeoJson]);
+    if (!selected) return;
+    fetchGeo(selected.result_table, selected.admin_level);
+  }, [selected?.key]); // eslint-disable-line
 
-  // ───────────────────────────────────────────────
-  // Render
-  // ───────────────────────────────────────────────
+  // legend + style (always safe)
+  const styleFn = (f: any) => {
+    const s = Number(f?.properties?.score ?? 0);
+    const color = SAFE_GRADES.includes(s) ? greenToRed(s) : "#cccccc";
+    return {
+      color: "#334155",
+      weight: 0.8,
+      fillColor: color,
+      fillOpacity: 0.85,
+    };
+  };
+
   return (
     <SidebarLayout
       headerProps={{
@@ -145,7 +166,9 @@ export default function DashboardPage({ params }: { params: { id: string; instan
         breadcrumbs: (
           <Breadcrumbs
             items={[
-              { label: "Country", href: `/country/${countryIso}` },
+              { label: "Dashboard", href: "/" },
+              { label: "Country", href: "/country" },
+              { label: countryIso, href: `/country/${countryIso}` },
               { label: "Instance", href: `/country/${countryIso}/instances/${instanceId}` },
               { label: "Dashboard", href: "#" },
             ]}
@@ -153,108 +176,61 @@ export default function DashboardPage({ params }: { params: { id: string; instan
         ),
       }}
     >
-      <div className="p-6 space-y-4">
-        <h2 className="text-lg font-semibold">SSC Dashboard</h2>
-        <p className="text-xs text-gray-500">Visualize SSC datasets by pillar and administrative level.</p>
-
-        {/* Controls */}
-        <div className="bg-white border rounded-md p-3 flex flex-wrap gap-6 items-end text-sm shadow-sm">
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Dataset</label>
+            <label className="block text-xs text-gray-600 mb-1">Select dataset</label>
             <select
-              className="border rounded px-2 py-1 text-sm min-w-[300px]"
-              value={selectedDataset}
-              onChange={(e) => setSelectedDataset(e.target.value)}
+              value={selectedKey ?? ""}
+              onChange={(e) => setSelectedKey(e.currentTarget.value)}
+              className="w-full border rounded px-2 py-1 text-sm"
             >
-              <option value="">Select dataset</option>
-              {Object.entries(grouped).map(([group, arr]) =>
-                arr.length ? (
-                  <optgroup key={group} label={group}>
-                    {arr.map((d) => (
-                      <option key={d.id} value={d.result_table}>
-                        {labelFor(d.result_table)} — <span className="text-gray-500">{d.result_table}</span>
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null
-              )}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Admin Level</label>
-            <select
-              className="border rounded px-2 py-1 text-sm"
-              value={adminLevel}
-              onChange={(e) => setAdminLevel(e.target.value as AdminLevel)}
-              title="AUTO chooses level from the dataset name (e.g., *_adm3 / *_adm4)."
-            >
-              <option value="AUTO">AUTO (infer)</option>
-              <option value="ADM0">ADM0</option>
-              <option value="ADM1">ADM1</option>
-              <option value="ADM2">ADM2</option>
-              <option value="ADM3">ADM3</option>
-              <option value="ADM4">ADM4</option>
+              <optgroup label="P1">
+                <option value="p1_weighted">P1 — Weighted Building Typologies</option>
+                <option value="p1_20pct">P1 — Building Typologies (20% Rule)</option>
+              </optgroup>
+              <optgroup label="P3">
+                <option value="p3_density">P3 — Population density (ADM4)</option>
+              </optgroup>
+              <optgroup label="Vulnerability">
+                <option value="vuln_poverty">Vulnerability — derived_poverty_vulnerability_adm3</option>
+              </optgroup>
             </select>
           </div>
         </div>
 
-        {/* Map */}
-        <div className="h-[600px] w-full rounded-md overflow-hidden border relative">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10">
-              <span className="text-gray-600 text-sm">Loading map data…</span>
-            </div>
-          )}
-          <MapContainer center={[12.8797, 121.774]} zoom={6} style={{ height: "100%", width: "100%" }} ref={mapRef}>
+        <div className="h-[640px] w-full border rounded relative overflow-hidden">
+          <MapContainer center={[12.8797, 121.774]} zoom={5} style={{ height: "100%", width: "100%" }}>
             <TileLayer
-              attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
+              attribution='&copy; OpenStreetMap'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {geojson && (
-              <GeoJSON
-                data={geojson as any}
-                style={(feature: any) => ({
-                  fillColor: getColor(feature.properties.score),
-                  color: "#555",
-                  weight: 0.6,
-                  fillOpacity: 0.85,
-                })}
-                onEachFeature={(feature, layer) => {
-                  const p = feature.properties;
-                  layer.bindTooltip(
-                    `<b>${p.admin_name ?? p.admin_pcode}</b><br/>Score: ${p.score ?? "—"}<br/>Raw: ${p.raw_value ?? "—"}`,
-                    { direction: "auto", sticky: true }
-                  );
-                }}
-              />
+            {!!fc && safeArray(fc.features).length > 0 && (
+              <GeoJSON key={selectedKey ?? "k"} data={fc as any} style={styleFn} />
             )}
           </MapContainer>
 
-          {/* Legend */}
-          {geojson && (
-            <div className="absolute bottom-4 right-4 bg-white p-3 rounded-md shadow text-xs z-20">
-              <h3 className="font-semibold mb-1">Legend (Score)</h3>
-              {[1, 2, 3, 4, 5].map((v) => (
-                <div key={v} className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-sm" style={{ backgroundColor: getColor(v) }}></span>
-                  <span>{v}</span>
-                </div>
-              ))}
+          {/* Overlay messages */}
+          {loading && (
+            <div className="absolute inset-0 bg-white/60 flex items-center justify-center text-sm">Loading…</div>
+          )}
+          {!loading && msg && (
+            <div className="absolute inset-0 bg-white/80 flex items-center justify-center text-sm px-4 text-center">
+              {msg}
             </div>
           )}
+        </div>
+
+        {/* Simple legend 1..5 green→red */}
+        <div className="flex items-center gap-2 text-xs">
+          {SAFE_GRADES.map(g => (
+            <div key={g} className="flex items-center gap-1">
+              <div className="w-5 h-3 rounded" style={{ background: greenToRed(g) }} />
+              <span>{g}</span>
+            </div>
+          ))}
         </div>
       </div>
     </SidebarLayout>
   );
-}
-
-// Color ramp (green → yellow → red)
-function getColor(v: number) {
-  if (v === 1) return "#006837";
-  if (v === 2) return "#78c679";
-  if (v === 3) return "#ffff99";
-  if (v === 4) return "#fdae61";
-  if (v === 5) return "#d73027";
-  return "#cccccc";
 }
