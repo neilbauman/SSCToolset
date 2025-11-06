@@ -1,31 +1,33 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { Map as LeafletMap } from "leaflet";
 import type { FeatureCollection } from "geojson";
+import L from "leaflet";
 
-// Lazy-load Leaflet
-const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
+// Lazy-load Leaflet components (prevents SSR crash)
+const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then((m) => m.GeoJSON), { ssr: false });
+const Tooltip = dynamic(() => import("react-leaflet").then((m) => m.Tooltip), { ssr: false });
 
-export default function SSCDashboard({ params }: { params: { id: string; instance_id: string } }) {
+export default function DashboardPage({ params }: { params: { id: string; instance_id: string } }) {
   const countryIso = params.id;
   const instanceId = params.instance_id;
+  const mapRef = useRef<LeafletMap | null>(null);
 
   const [datasets, setDatasets] = useState<any[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<string>("");
-  const [adminLevel, setAdminLevel] = useState<string>("ADM3");
-  const [geojsonUnderlay, setGeojsonUnderlay] = useState<FeatureCollection | null>(null);
-  const [geojsonOverlay, setGeojsonOverlay] = useState<FeatureCollection | null>(null);
-  const [loading, setLoading] = useState(false);
-  const mapRef = useRef<LeafletMap | null>(null);
+  const [geojson, setGeojson] = useState<FeatureCollection | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // Load datasets linked to instance
+  // ───────────────────────────────────────────────
+  // Load datasets linked to this SSC instance
+  // ───────────────────────────────────────────────
   useEffect(() => {
     const fetchDatasets = async () => {
       const { data, error } = await supabase
@@ -38,54 +40,47 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
     fetchDatasets();
   }, [instanceId]);
 
-  // Load GIS base layer
-  useEffect(() => {
-    const fetchUnderlay = async () => {
-      const { data, error } = await supabase
-        .from("gis_features")
-        .select("geom, pcode, name, admin_level")
-        .eq("admin_level", adminLevel)
-        .limit(10000);
-
-      if (error) console.error(error);
-      else {
-        const fc: FeatureCollection = {
-          type: "FeatureCollection",
-          features: (data || []).map((f: any) => ({
-            type: "Feature",
-            geometry: f.geom,
-            properties: { pcode: f.pcode, name: f.name },
-          })),
-        };
-        setGeojsonUnderlay(fc);
-      }
-    };
-    fetchUnderlay();
-  }, [adminLevel]);
-
-  // Load selected dataset overlay
-  useEffect(() => {
-    const fetchOverlay = async () => {
-      if (!selectedDataset) return;
+  // ───────────────────────────────────────────────
+  // Fetch GeoJSON for selected dataset
+  // ───────────────────────────────────────────────
+  const fetchGeoJson = useCallback(async () => {
+    if (!selectedDataset) return;
+    try {
       setLoading(true);
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_result_table: selectedDataset,
       });
       setLoading(false);
-      if (error) console.error(error);
-      else setGeojsonOverlay(data);
-    };
-    fetchOverlay();
+
+      if (error) throw error;
+      if (!data) throw new Error("No data returned from RPC");
+
+      const geo = typeof data === "string" ? JSON.parse(data) : data;
+      setGeojson(geo);
+
+      // Auto-zoom to bounds
+      if (mapRef.current && geo?.features?.length) {
+        const layer = L.geoJSON(geo as any);
+        mapRef.current.fitBounds(layer.getBounds(), { padding: [20, 20] });
+      }
+    } catch (err) {
+      console.error("Failed to load GeoJSON:", err);
+      alert("⚠️ Failed to load map data. Check console for details.");
+    }
   }, [selectedDataset]);
 
-  // ────────────────────────────────
-  // Render
-  // ────────────────────────────────
+  useEffect(() => {
+    fetchGeoJson();
+  }, [fetchGeoJson]);
+
+  // ───────────────────────────────────────────────
+  // Render Map
+  // ───────────────────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
         title: `${countryIso} – SSC Dashboard`,
-        group: "country-config", // ✅ fixed type-safe group key
+        group: "country-config",
         breadcrumbs: (
           <Breadcrumbs
             items={[
@@ -98,16 +93,17 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
       }}
     >
       <div className="p-6 space-y-4">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">SSC Dashboard</h2>
             <p className="text-xs text-gray-500">
-              Visualize SSC datasets and vulnerability layers across administrative levels.
+              Visualize derived indicators and categorical vulnerability layers.
             </p>
           </div>
         </div>
 
-        {/* Dataset and Admin Selectors */}
+        {/* Dataset selector */}
         <div className="bg-white border rounded-md p-3 flex flex-wrap items-center gap-4 text-sm shadow-sm">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Dataset</label>
@@ -122,20 +118,6 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
                   {d.category} — {d.result_table}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Admin Level</label>
-            <select
-              className="border rounded px-2 py-1 text-sm"
-              value={adminLevel}
-              onChange={(e) => setAdminLevel(e.target.value)}
-            >
-              <option value="ADM1">ADM1</option>
-              <option value="ADM2">ADM2</option>
-              <option value="ADM3">ADM3</option>
-              <option value="ADM4">ADM4</option>
             </select>
           </div>
         </div>
@@ -158,30 +140,37 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
               attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {geojsonUnderlay && (
+
+            {geojson && (
               <GeoJSON
-                data={geojsonUnderlay as any}
-                style={{
-                  color: "#999",
-                  weight: 0.4,
-                  fillOpacity: 0,
+                data={geojson as any}
+                style={(feature: any) => {
+                  const p = feature.properties;
+                  if (p.is_unmatched) {
+                    return { color: "#ccc", weight: 0.5, fillOpacity: 0.2 };
+                  }
+                  return {
+                    fillColor: getColor(p.score),
+                    color: "#555",
+                    weight: 0.6,
+                    fillOpacity: 0.8,
+                  };
                 }}
-              />
-            )}
-            {geojsonOverlay && (
-              <GeoJSON
-                data={geojsonOverlay as any}
-                style={(feature: any) => ({
-                  fillColor: getColor(feature.properties.score),
-                  color: "#444",
-                  weight: 0.6,
-                  fillOpacity: 0.75,
-                })}
+                onEachFeature={(feature, layer) => {
+                  const p = feature.properties;
+                  if (p.admin_name) {
+                    layer.bindTooltip(
+                      `<b>${p.admin_name}</b><br/>Score: ${p.score ?? "N/A"}<br/>Raw: ${p.raw_value ?? "—"}`,
+                      { direction: "auto", sticky: true }
+                    );
+                  }
+                }}
               />
             )}
           </MapContainer>
 
-          {geojsonOverlay && (
+          {/* Legend */}
+          {geojson && (
             <div className="absolute bottom-4 right-4 bg-white p-3 rounded-md shadow text-xs z-20">
               <h3 className="font-semibold mb-1">Legend (Score)</h3>
               {[1, 2, 3, 4, 5].map((v) => (
@@ -201,15 +190,14 @@ export default function SSCDashboard({ params }: { params: { id: string; instanc
   );
 }
 
-// SSC color ramp 1–5
+// ───────────────────────────────────────────────
+// SSC color ramp
+// ───────────────────────────────────────────────
 function getColor(v: number) {
-  return v === 1
-    ? "#006837"
-    : v === 2
-    ? "#31a354"
-    : v === 3
-    ? "#78c679"
-    : v === 4
-    ? "#c2e699"
-    : "#ffffcc";
+  if (v === 1) return "#006837"; // dark green
+  if (v === 2) return "#31a354"; // medium green
+  if (v === 3) return "#78c679"; // light green
+  if (v === 4) return "#c2e699"; // yellowish
+  if (v === 5) return "#ffffcc"; // pale yellow
+  return "#f0f0f0";
 }
