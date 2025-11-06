@@ -6,41 +6,47 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 import type { FeatureCollection, Geometry } from "geojson";
-import type { CountryInstanceParams } from "@/app/country/types";
 
-// Leaflet (client only)
+// ✅ Inline route param type (replaces missing CountryInstanceParams)
+type Params = { id: string; instance_id: string };
+
+// ─────────────────────────────────────────────
+// Lazy-loaded Leaflet components
+// ─────────────────────────────────────────────
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer     = dynamic(() => import("react-leaflet").then(m => m.TileLayer),     { ssr: false });
 const GeoJSON       = dynamic(() => import("react-leaflet").then(m => m.GeoJSON),       { ssr: false });
 
-type MapDataset = {
-  key: string;                       // unique key for select
-  label: string;                     // human label
-  result_table: string;              // table/view to fetch
-  admin_level: "ADM3" | "ADM4";      // which backbone to join to
-  hasScore: boolean;                 // whether 'score' exists
-};
-
-// ---------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------
+// ─────────────────────────────────────────────
+// Helper functions
+// ─────────────────────────────────────────────
 const greenToRed = (s: number) => {
-  // s in [1..5] → green→red
   const t = Math.min(1, Math.max(0, (s - 1) / 4));
   const r = Math.round(255 * t);
-  const g = Math.round(170 * (1 - t) + 50 * (1 - t)); // keep a bit darker
+  const g = Math.round(170 * (1 - t) + 50 * (1 - t));
   return `rgb(${r},${g},80)`;
 };
 
 const SAFE_GRADES = [1, 2, 3, 4, 5];
-
 function safeArray<T>(v: T[] | null | undefined): T[] {
   return Array.isArray(v) ? v : [];
 }
 
-// ---------------------------------------------------------------
+// ─────────────────────────────────────────────
+// Dataset structure
+// ─────────────────────────────────────────────
+type MapDataset = {
+  key: string;
+  label: string;
+  result_table: string;
+  admin_level: "ADM3" | "ADM4";
+  hasScore: boolean;
+};
 
-export default function InstanceDashboard({ params }: { params: CountryInstanceParams }) {
+// ─────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────
+export default function InstanceDashboard({ params }: { params: Params }) {
   const countryIso = params.id;
   const instanceId = params.instance_id;
 
@@ -50,9 +56,8 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // build list once
+  // Build dataset list
   useEffect(() => {
-    // Keep human, readable names
     const ds: MapDataset[] = [
       {
         key: "p1_weighted",
@@ -71,11 +76,9 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
       {
         key: "p3_density",
         label: "P3 — Population density (ADM4)",
-        // this must exist as a materialized view or table with columns:
-        // admin_pcode, admin_name, raw_value, score
         result_table: "derived_population_density_adm4",
         admin_level: "ADM4",
-        hasScore: true, // we map 'score' if present; raw_value is used for tooltip
+        hasScore: true,
       },
       {
         key: "vuln_poverty",
@@ -94,12 +97,13 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
     [datasets, selectedKey]
   );
 
-  // fetch features
+  // ─────────────────────────────────────────────
+  // Fetch geojson safely
+  // ─────────────────────────────────────────────
   const fetchGeo = async (rt: string, adm: "ADM3" | "ADM4") => {
     setLoading(true);
     setMsg(null);
     try {
-      // server-side function must join to admin_features_* and return a valid GeoJSON FC
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_country_iso: countryIso,
         p_result_table: rt,
@@ -114,7 +118,6 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
         return;
       }
 
-      // Safety checks
       const fc: FeatureCollection<Geometry> = typeof data === "string" ? JSON.parse(data) : data;
       const feats = safeArray(fc.features);
       if (feats.length === 0) {
@@ -122,11 +125,10 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
         setMsg("No features or invalid geometry for this dataset.");
         return;
       }
-      // make sure properties exist to avoid style crashes
+
       feats.forEach(f => {
         (f.properties as any) ||= {};
         const p = f.properties as any;
-        // normalize props we use in styles / tooltips
         if (p.score == null && p.SCORE != null) p.score = Number(p.SCORE);
         if (p.raw_value == null && p.value != null) p.raw_value = Number(p.value);
       });
@@ -146,18 +148,16 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
     fetchGeo(selected.result_table, selected.admin_level);
   }, [selected?.key]); // eslint-disable-line
 
-  // legend + style (always safe)
+  // Style
   const styleFn = (f: any) => {
     const s = Number(f?.properties?.score ?? 0);
     const color = SAFE_GRADES.includes(s) ? greenToRed(s) : "#cccccc";
-    return {
-      color: "#334155",
-      weight: 0.8,
-      fillColor: color,
-      fillOpacity: 0.85,
-    };
+    return { color: "#334155", weight: 0.8, fillColor: color, fillOpacity: 0.85 };
   };
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
     <SidebarLayout
       headerProps={{
@@ -210,7 +210,6 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
             )}
           </MapContainer>
 
-          {/* Overlay messages */}
           {loading && (
             <div className="absolute inset-0 bg-white/60 flex items-center justify-center text-sm">Loading…</div>
           )}
@@ -221,7 +220,6 @@ export default function InstanceDashboard({ params }: { params: CountryInstanceP
           )}
         </div>
 
-        {/* Simple legend 1..5 green→red */}
         <div className="flex items-center gap-2 text-xs">
           {SAFE_GRADES.map(g => (
             <div key={g} className="flex items-center gap-1">
