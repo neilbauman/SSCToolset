@@ -18,7 +18,7 @@ type GeoLayerOption = {
   result_table: string;
   category: string;
   subcategory?: string | null;
-  admin_level?: string;
+  admin_level?: string | null;
 };
 
 export default function SSCDashboardPage({ params }: { params: CountryInstanceParams }) {
@@ -34,7 +34,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
   const fetchLayerCatalogue = async () => {
     const { data, error } = await supabase
       .from("instance_layers")
-      .select("id, category, subcategory, result_table")
+      .select("id, category, subcategory, result_table, normalization_type")
       .eq("instance_id", instanceId);
 
     if (error) {
@@ -51,6 +51,10 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
         r.subcategory
           ? `${r.category.toUpperCase()} – ${r.subcategory}`
           : r.category.toUpperCase(),
+      admin_level:
+        r.normalization_type && r.normalization_type.toUpperCase().includes("ADM4")
+          ? "ADM4"
+          : "ADM3",
     }));
     setLayers(opts);
   };
@@ -61,7 +65,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
         p_country_iso: countryIso,
         p_result_table: table,
-        p_admin_level: level || null,
+        p_admin_level: level ?? undefined, // ✅ FIX: null-safe
       });
       if (error) throw error;
       if (!data) throw new Error("No GeoJSON returned");
@@ -82,7 +86,7 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
     const table = e.target.value;
     setSelected(table);
     const sel = layers.find(l => l.result_table === table);
-    if (sel) fetchGeoJSON(sel.result_table, sel.admin_level || null);
+    if (sel) fetchGeoJSON(sel.result_table, sel.admin_level ?? undefined); // ✅ FIX: convert null → undefined
   };
 
   const colorForScore = (score: number | null | undefined) => {
