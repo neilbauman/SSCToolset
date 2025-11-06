@@ -34,60 +34,91 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
   // ────────────────────────────────
   // Fetch datasets associated with this SSC instance
   // ────────────────────────────────
-  const fetchLayerCatalogue = async () => {
-    let { data, error } = await supabase
-      .from("instance_layers") // fallback name 1
-      .select(`
-        id,
-        category,
-        subcategory,
-        result_table,
-        dataset_id,
-        ssc_dataset_catalog(title, source_note)
-      `)
-      .eq("instance_id", instanceId);
+const fetchLayerCatalogue = async () => {
+  const candidates = [
+    "instance_layers",
+    "ssc_instance_results_catalog",
+    "ssc_instance_layers",
+    "ssc_instance_datasets",
+    "instance_results_catalog",
+  ];
 
-    // Fallback to alternative table if needed
-    if (error || !data?.length) {
-      const alt = await supabase
-        .from("ssc_instance_results_catalog") // fallback name 2
-        .select(`
-          id,
-          category,
-          subcategory,
-          result_table,
-          dataset_id,
-          ssc_dataset_catalog(title, source_note)
-        `)
-        .eq("instance_id", instanceId);
-      if (!alt.error) data = alt.data;
+  let foundTable: string | null = null;
+  let result: any[] = [];
+
+  for (const table of candidates) {
+    console.log(`🔍 Checking table: ${table}`);
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .limit(3);
+
+    if (!error && data && data.length) {
+      foundTable = table;
+      result = data;
+      console.log(`✅ Found table with data: ${table}`, data);
+      break;
+    } else {
+      console.warn(`⚠️ Table ${table} not found or empty.`);
     }
+  }
 
-    if (!data?.length) {
-      console.warn("⚠️ No datasets found for this instance:", instanceId);
-      return;
-    }
+  if (!foundTable) {
+    alert("No instance-layer table found in Supabase. Check console logs.");
+    return;
+  }
 
-    const opts = (data || []).map((r: any) => ({
-      id: r.id,
-      category: r.category?.toUpperCase() || "OTHER",
-      subcategory: r.subcategory || "",
-      result_table: r.result_table,
-      label:
-        r.ssc_dataset_catalog?.title
-          ? `${r.ssc_dataset_catalog.title} — ${r.subcategory || r.category}`
-          : `${r.category} — ${r.subcategory || ""}`,
-      admin_level:
-        r.result_table?.toLowerCase().includes("adm4")
-          ? "ADM4"
-          : r.result_table?.toLowerCase().includes("adm3")
-          ? "ADM3"
-          : null,
-    }));
+  // Extract fields dynamically
+  const hasInstance = "instance_id" in result[0];
+  const hasResultTable = "result_table" in result[0];
+  const hasCategory = "category" in result[0];
 
-    console.log("✅ Instance datasets loaded:", opts);
-    setLayers(opts);
-  };
+  console.log("🧩 Field check:", { hasInstance, hasResultTable, hasCategory });
+
+  // Fetch full dataset list for the current instance
+  const { data: layers, error } = await supabase
+    .from(foundTable)
+    .select(`
+      id,
+      category,
+      subcategory,
+      result_table,
+      dataset_id,
+      ssc_dataset_catalog(title, source_note)
+    `)
+    .eq(hasInstance ? "instance_id" : "id", instanceId);
+
+  if (error) {
+    console.error("❌ Error fetching layers:", error);
+    return;
+  }
+
+  console.log(`✅ Loaded ${layers?.length || 0} datasets from ${foundTable}:`, layers);
+
+  if (!layers?.length) {
+    alert(`No datasets found for instance ${instanceId} in table ${foundTable}`);
+    return;
+  }
+
+  const opts = (layers || []).map((r: any) => ({
+    id: r.id,
+    category: r.category?.toUpperCase() || "OTHER",
+    subcategory: r.subcategory || "",
+    result_table: r.result_table,
+    label:
+      r.ssc_dataset_catalog?.title
+        ? `${r.ssc_dataset_catalog.title} — ${r.subcategory || r.category}`
+        : `${r.category || "Dataset"} — ${r.subcategory || ""}`,
+    admin_level:
+      r.result_table?.toLowerCase().includes("adm4")
+        ? "ADM4"
+        : r.result_table?.toLowerCase().includes("adm3")
+        ? "ADM3"
+        : null,
+  }));
+
+  setLayers(opts);
+};
 
   // ────────────────────────────────
   // Fetch GeoJSON from RPC
