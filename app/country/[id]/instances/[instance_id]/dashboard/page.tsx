@@ -2,340 +2,295 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCw } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import type { FeatureCollection, Geometry } from "geojson";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-// Leaflet (client-only)
+// Dynamic import for Leaflet (client-only)
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
-const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
+const TileLayer     = dynamic(() => import("react-leaflet").then(m => m.TileLayer),     { ssr: false });
+const GeoJSON       = dynamic(() => import("react-leaflet").then(m => m.GeoJSON),       { ssr: false });
 
-// GREEN -> RED (1..5)
-const SCORE_COLORS = {
-  0: "#ffffff",
-  1: "#1a9850",
-  2: "#a6d96a",
-  3: "#ffffbf",
-  4: "#fdae61",
-  5: "#d73027",
+type CountryInstanceParams = { id: string; instance_id: string };
+
+type DatasetOption = {
+  id: string;                // instance_layers.id or synthetic id
+  label: string;             // UI label
+  result_table: string;      // e.g. "derived.derived_overall_adm3"
+  category: string;          // grouping key in UI
+  subcategory: string;       // optional
+  admin_level: "ADM1" | "ADM2" | "ADM3" | "ADM4" | null;
 };
 
-type LayerRow = {
-  id: string;
-  title: string | null;
-  result_table: string | null;
-  category: string | null;
-  subcategory: string | null;
-};
+export default function SSCDashboardPage({ params }: { params: CountryInstanceParams }) {
+  const countryIso = params.id;
+  const instanceId = params.instance_id;
 
-type GeoFeature = {
-  type: "Feature";
-  geometry: any;
-  properties: Record<string, any>;
-};
-type GeoJSONType = { type: "FeatureCollection"; features: GeoFeature[] };
-
-export default function Page({
-  params,
-}: {
-  params: { id: string; instance_id: string };
-}) {
-  const { id: countryId, instance_id } = params;
-
-  const headerProps = useMemo(
-    () => ({
-      title: "SSC Consolidated Dashboard",
-      group: "country-config" as const,
-      description:
-        "Filter affected ADM2 regions, switch map layers, and see summary totals.",
-      breadcrumbs: (
-        <Breadcrumbs
-          items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Country", href: `/country/${countryId}` },
-            { label: "Instances", href: `/country/${countryId}/instances` },
-            { label: "Dashboard" },
-          ]}
-        />
-      ),
-    }),
-    [countryId]
-  );
-
-  // UI state
-  const [layers, setLayers] = useState<LayerRow[]>([]);
-  const [selectedLayer, setSelectedLayer] = useState<LayerRow | null>(null);
-
-  const [geojson, setGeojson] = useState<GeoJSONType | null>(null);
-  const [adm2Options, setAdm2Options] = useState<{ code: string; name: string }[]>([]);
-  const [selectedAdm2, setSelectedAdm2] = useState<string[]>([]);
+  const [datasets, setDatasets] = useState<DatasetOption[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [geojson, setGeojson] = useState<FeatureCollection<Geometry> | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Load available layers for this instance
-  const loadLayers = async () => {
-    const { data, error } = await supabase
-      .from("instance_layers")
-      .select("id, title, result_table, category, subcategory")
-      .eq("instance_id", instance_id)
-      .order("title", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      setLayers([]);
-      setSelectedLayer(null);
-      return;
-    }
-
-    const usable = (data || []).filter(d => d.result_table);
-    setLayers(usable as LayerRow[]);
-    setSelectedLayer(usable[0] || null);
+  // ──────────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────────
+  const inferLevel = (table?: string | null): DatasetOption["admin_level"] => {
+    const t = (table || "").toLowerCase();
+    if (t.includes("adm4")) return "ADM4";
+    if (t.includes("adm3")) return "ADM3";
+    if (t.includes("adm2")) return "ADM2";
+    if (t.includes("adm1")) return "ADM1";
+    return null;
   };
 
-  // Load GeoJSON for a selected layer
-  const loadGeoJSON = async (layer: LayerRow | null) => {
-    setGeojson(null);
-    if (!layer?.result_table) return;
+  const loadGeoJSON = async (result_table: string, admin_level: DatasetOption["admin_level"]) => {
+    if (!result_table) return;
     setLoading(true);
+    setGeojson(null);
+
     try {
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
-        p_iso: null, // set "PHL" here if your RPC requires it
-        p_result_table: layer.result_table!,
-        p_admin_level: "ADM3",
-        p_limit: 200000,
+        p_iso: countryIso,
+        p_result_table: result_table,
+        p_admin_level: admin_level,
+        p_limit: 100000,
       });
+
       if (error) throw error;
-
-      const gj: GeoJSONType = (data as any) ?? { type: "FeatureCollection", features: [] };
-      setGeojson(gj);
-
-      // Build ADM2 list from properties
-      const map = new Map<string, string>();
-      for (const f of gj.features || []) {
-        const p = f.properties || {};
-        const code =
-          p.admin_pcode_adm2 || p.adm2_pcode || p.adm2_code || p.admin2Pcode || p.ADM2_PCODE;
-        const name =
-          p.admin_name_adm2 || p.adm2_name || p.admin2Name || p.ADM2_EN || code;
-        if (code) map.set(String(code), String(name ?? code));
+      if (data && data.type === "FeatureCollection") {
+        setGeojson(data as FeatureCollection<Geometry>);
+        // Auto-zoom is optional; keeping a fixed start for now.
+      } else {
+        alert("⚠️ No valid GeoJSON returned — check dataset geometry linkage.");
       }
-      const opts = Array.from(map.entries())
-        .map(([code, name]) => ({ code, name }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setAdm2Options(opts);
-      setSelectedAdm2(prev => prev.filter(c => map.has(c)));
-    } catch (e) {
-      console.error(e);
-      setGeojson({ type: "FeatureCollection", features: [] });
-      setAdm2Options([]);
-      setSelectedAdm2([]);
+    } catch (e: any) {
+      console.error("❌ GeoJSON load failed:", e?.message || e);
+      alert("Failed to load map data.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadLayers();
-  }, []);
+  // Probe for consolidated “overall” tables and add them if present.
+  const probeAndAddConsolidated = async (): Promise<DatasetOption[]> => {
+    const candidates: Array<{ table: string; level: DatasetOption["admin_level"]; label: string }> = [
+      { table: "derived.derived_overall_adm3", level: "ADM3", label: "OVERALL — Consolidated (ADM3)" },
+      { table: "derived.derived_overall_adm2", level: "ADM2", label: "OVERALL — Consolidated (ADM2)" },
+    ];
 
-  useEffect(() => {
-    loadGeoJSON(selectedLayer);
-  }, [selectedLayer?.id, selectedLayer?.result_table]);
-
-  const toggleAdm2 = (code: string) => {
-    setSelectedAdm2(prev =>
-      prev.includes(code) ? prev.filter(v => v !== code) : [...prev, code]
+    const checks = await Promise.allSettled(
+      candidates.map(async c => {
+        const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
+          p_iso: countryIso,
+          p_result_table: c.table,
+          p_admin_level: c.level,
+          p_limit: 1,
+        });
+        if (error) return null;
+        if (data?.type === "FeatureCollection" && (data.features?.length ?? 0) >= 0) {
+          const opt: DatasetOption = {
+            id: `overall-${c.level}`,
+            label: c.label,
+            result_table: c.table,
+            category: "OVERALL",
+            subcategory: "Consolidated",
+            admin_level: c.level,
+          };
+          return opt;
+        }
+        return null;
+      })
     );
+
+    return checks
+      .map(r => (r.status === "fulfilled" ? r.value : null))
+      .filter(Boolean) as DatasetOption[];
   };
 
-  const filteredFeatures = useMemo(() => {
-    if (!geojson?.features?.length) return [];
-    if (!selectedAdm2.length) return geojson.features;
-    return geojson.features.filter(f => {
-      const p = f.properties || {};
-      const code =
-        p.admin_pcode_adm2 || p.adm2_pcode || p.adm2_code || p.admin2Pcode || p.ADM2_PCODE;
-      return code ? selectedAdm2.includes(String(code)) : false;
-    });
-  }, [geojson, selectedAdm2]);
+  // Load all selectable datasets for this instance + consolidated (if available)
+  const loadDatasets = async () => {
+    const { data, error } = await supabase
+      .from("instance_layers")
+      .select("id,instance_id,category,subcategory,result_table,dataset_id")
+      .eq("instance_id", instanceId);
 
-  const summary = useMemo(() => {
-    if (!filteredFeatures.length) {
-      return {
-        totalPop: null as number | null,
-        popGte3: null as number | null,
-        poorGte3: null as number | null,
-      };
+    if (error) {
+      console.error("⚠️ Failed to load instance_layers:", error);
+      setDatasets([]);
+      return;
     }
 
-    const getPop = (p: any) =>
-      p.population ?? p.pop ?? p.pop_total ?? p.tot_pop ?? null;
-    const getPovRate = (p: any) =>
-      p.poverty_rate ?? p.pov_rate ?? p.poverty ?? null;
-    const getScore = (p: any) =>
-      p.score ?? p.SCORE ?? p.index ?? p.value ?? 0;
+    const fromInstance = (data || [])
+      .filter(d => d.result_table)
+      .map(d => {
+        const level = inferLevel(d.result_table);
+        const label =
+          `${(d.category || "").toUpperCase()} — ${d.subcategory || ""}`.trim() || d.result_table!;
+        return {
+          id: d.id,
+          label,
+          result_table: d.result_table!,
+          category: d.category || "OTHER",
+          subcategory: d.subcategory || "",
+          admin_level: level,
+        } as DatasetOption;
+      });
 
-    let totalPop = 0;
-    let popG3 = 0;
-    let poorG3 = 0;
-    let hasPop = false;
-    let hasPov = false;
+    const consolidated = await probeAndAddConsolidated();
 
-    for (const f of filteredFeatures) {
-      const p = f.properties || {};
-      const pop = Number(getPop(p));
-      const rate = Number(getPovRate(p));
-      const score = Number(getScore(p));
+    // De-dup by result_table then sort by category/label
+    const merged = [...consolidated, ...fromInstance].reduce<DatasetOption[]>((acc, cur) => {
+      if (!acc.find(a => a.result_table === cur.result_table)) acc.push(cur);
+      return acc;
+    }, []);
 
-      if (!Number.isNaN(pop)) {
-        hasPop = true;
-        totalPop += pop;
-        if (score >= 3) {
-          popG3 += pop;
-          if (!Number.isNaN(rate)) {
-            hasPov = true;
-            poorG3 += pop * rate;
-          }
-        }
-      }
+    merged.sort((a, b) =>
+      a.category === b.category ? a.label.localeCompare(b.label) : a.category.localeCompare(b.category)
+    );
+
+    setDatasets(merged);
+
+    // Default-select overall if present; else first item
+    const prefer = merged.find(d => d.category === "OVERALL") || merged[0];
+    if (prefer) {
+      setSelected(prefer.result_table);
+      loadGeoJSON(prefer.result_table, prefer.admin_level);
     }
+  };
 
-    return {
-      totalPop: hasPop ? Math.round(totalPop) : null,
-      popGte3: hasPop ? Math.round(popG3) : null,
-      poorGte3: hasPov ? Math.round(poorG3) : null,
-    };
-  }, [filteredFeatures]);
+  const grouped = useMemo(() => {
+    const groups: Record<string, DatasetOption[]> = {};
+    for (const d of datasets) {
+      const g = d.category || "OTHER";
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(d);
+    }
+    return groups;
+  }, [datasets]);
+
+  useEffect(() => {
+    loadDatasets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <SidebarLayout headerProps={headerProps}>
-      <div className="max-w-7xl mx-auto p-4 space-y-4">
-
-        <div className="flex items-center justify-between">
-          <div className="flex gap-3 items-center">
-            <select
-              className="border rounded-md px-3 py-2 text-sm"
-              value={selectedLayer?.id ?? ""}
-              onChange={(e) => {
-                const next = layers.find(l => l.id === e.target.value) || null;
-                setSelectedLayer(next);
-              }}
-            >
-              {layers.length === 0 && <option value="">Consolidated (ADM3)</option>}
-              {layers.map(l => (
-                <option key={l.id} value={l.id}>
-                  {l.title || `${l.category} — ${l.subcategory}`}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => {
-              loadLayers().then(() => loadGeoJSON(selectedLayer));
+    <SidebarLayout
+      headerProps={{
+        title: `${countryIso} — SSC Map Dashboard`,
+        group: "country-config",
+        breadcrumbs: (
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/" },
+              { label: "Country", href: `/country/${countryIso}` },
+              { label: "Instance", href: `/country/${countryIso}/instances/${instanceId}` },
+              { label: "Map Dashboard", href: "#" },
+            ]}
+          />
+        ),
+      }}
+    >
+      <div className="p-6 space-y-4">
+        {/* Dataset selector */}
+        <div>
+          <label className="text-sm font-semibold text-gray-700">Select Dataset</label>
+          <select
+            value={selected}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelected(val);
+              const layer = datasets.find(d => d.result_table === val);
+              if (layer) loadGeoJSON(layer.result_table, layer.admin_level);
             }}
-            className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
-            title="Reload lists and map"
+            className="block w-full border rounded px-3 py-2 mt-1"
           >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
+            <option value="">Select dataset...</option>
+            {Object.entries(grouped).map(([cat, arr]) => (
+              <optgroup key={cat} label={cat.toUpperCase()}>
+                {arr.map(d => (
+                  <option key={d.result_table} value={d.result_table}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </div>
 
-        <div className="border rounded-md p-3">
-          <div className="font-semibold mb-2">Affected Area (ADM2)</div>
-          {adm2Options.length === 0 ? (
-            <div className="text-sm text-gray-500">No ADM2 list found in this layer.</div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-56 overflow-y-auto">
-              {adm2Options.map(opt => (
-                <label key={opt.code} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-400"
-                    checked={selectedAdm2.includes(opt.code)}
-                    onChange={() => toggleAdm2(opt.code)}
-                  />
-                  {opt.name}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border rounded-md overflow-hidden" style={{ height: 600 }}>
+        {/* Map display */}
+        <div className="h-[600px] w-full border rounded overflow-hidden relative">
           <MapContainer
+            center={[12.8797, 121.774]} // Philippines
+            zoom={5}
             style={{ height: "100%", width: "100%" }}
-            center={[12.8797, 121.774]}
-            zoom={6}
-            scrollWheelZoom
           >
             <TileLayer
-              attribution='&copy; OpenStreetMap'
+              attribution='&copy; <a href="https://osm.org">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {geojson && (
               <GeoJSON
-                key={selectedLayer?.id || "layer"}
-                data={filteredFeatures.length ? { type: "FeatureCollection", features: filteredFeatures } : geojson}
-                style={(feat: any) => {
-                  const s = Number(
-                    feat?.properties?.score ??
-                      feat?.properties?.SCORE ??
-                      feat?.properties?.index ??
-                      0
-                  );
-                  const clamped = Math.max(0, Math.min(5, s)) as 0|1|2|3|4|5;
-                  return {
-                    color: "#555",
-                    weight: 0.6,
-                    fillColor: SCORE_COLORS[clamped],
-                    fillOpacity: 0.7,
-                  };
+                key={selected}
+                data={geojson as any}
+                style={(feature: any) => {
+                  const s = Number(feature?.properties?.score ?? 0);
+                  const colors = ["#00A000", "#8DC63F", "#FFD700", "#FF8C00", "#CC0000"];
+                  const color = s >= 1 && s <= 5 ? colors[s - 1] : "#AAAAAA";
+                  return { color: "#000", weight: 0.5, fillColor: color, fillOpacity: 0.7 };
+                }}
+                onEachFeature={(feature, layer) => {
+                  const p: any = feature.properties || {};
+                  const lines = [
+                    `<strong>${p.admin_name || p.admin_pcode || "—"}</strong>`,
+                    `Score: ${p.score ?? "—"}`,
+                    `Raw: ${p.raw_value ?? "—"}`,
+                  ];
+
+                  // If consolidated fields exist, show them
+                  if (p.p1_score ?? p.p3_score ?? p.hazard_score ?? p.vuln_score) {
+                    lines.push(
+                      `<hr style="margin:4px 0;"/>`,
+                      `<div><em>Components</em></div>`,
+                      `P1: ${p.p1_score ?? "—"}`,
+                      `P3: ${p.p3_score ?? "—"}`,
+                      `Hazard: ${p.hazard_score ?? "—"}`,
+                      `Vulnerability: ${p.vuln_score ?? "—"}`
+                    );
+                  }
+                  if (p.population !== undefined) lines.push(`Population: ${p.population}`);
+                  if (p.vulnerable_people !== undefined) lines.push(`Vulnerable people: ${p.vulnerable_people}`);
+
+                  layer.bindTooltip(lines.join("<br/>"), { sticky: true });
                 }}
               />
             )}
           </MapContainer>
-        </div>
 
-        <div className="border rounded-md">
-          <div className="px-4 py-3 border-b font-semibold">
-            Summary — {selectedAdm2.length ? "Selected ADM2" : "All ADM3"}
+          {/* Simple legend */}
+          <div className="absolute bottom-3 left-3 bg-white/90 rounded shadow px-2 py-1 text-xs">
+            <div className="font-semibold mb-1">Score (1–5)</div>
+            <div className="flex items-center gap-2">
+              {[
+                { c: "#00A000", t: "1" },
+                { c: "#8DC63F", t: "2" },
+                { c: "#FFD700", t: "3" },
+                { c: "#FF8C00", t: "4" },
+                { c: "#CC0000", t: "5" },
+              ].map(k => (
+                <div key={k.t} className="flex items-center gap-1">
+                  <span className="inline-block w-4 h-4 rounded" style={{ background: k.c }} />
+                  <span>{k.t}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left px-4 py-2">Metric</th>
-                <th className="text-right px-4 py-2">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t">
-                <td className="px-4 py-2">Total population in affected area</td>
-                <td className="px-4 py-2 text-right">
-                  {summary.totalPop !== null ? summary.totalPop.toLocaleString() : "—"}
-                </td>
-              </tr>
-              <tr className="border-t">
-                <td className="px-4 py-2">Population in ADM3 areas with score ≥ 3</td>
-                <td className="px-4 py-2 text-right">
-                  {summary.popGte3 !== null ? summary.popGte3.toLocaleString() : "—"}
-                </td>
-              </tr>
-              <tr className="border-t">
-                <td className="px-4 py-2">Poor people (poverty rate × population) with score ≥ 3</td>
-                <td className="px-4 py-2 text-right">
-                  {summary.poorGte3 !== null ? summary.poorGte3.toLocaleString() : "—"}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="px-4 py-2 text-xs text-gray-500 border-t">
-            Notes: Calculated client-side from feature properties. Expected fields include
-            <code className="mx-1">population</code>/<code>pop</code>,
-            <code className="mx-1">poverty_rate</code>, and <code className="mx-1">score</code>.
-          </div>
+
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-gray-600 text-sm">
+              Loading map…
+            </div>
+          )}
         </div>
       </div>
     </SidebarLayout>
