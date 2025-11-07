@@ -100,11 +100,12 @@ export default function SSCDashboardPage({ params }: { params: CountryInstancePa
 
     try {
       const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
-        p_iso: countryIso,
-        p_result_table: result_table,
-        p_admin_level: admin_level,
-        p_limit: 100000,
-      });
+  p_admin_level: ds.admin_level ?? null,    // e.g. 'ADM2' for rainfall; 'ADM3' for others
+  p_iso: countryIso,                        // 'PHL'
+  p_schema: 'public',
+  p_result_table: ds.source_note || result_table, // whichever field you use to store the table name
+  p_limit: 100000
+});
 
       if (error) throw error;
       if (data && data.type === "FeatureCollection") {
