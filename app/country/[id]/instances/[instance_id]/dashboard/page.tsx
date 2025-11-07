@@ -1,17 +1,43 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { RefreshCw } from "lucide-react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import { RefreshCw } from "lucide-react";
-import dynamic from "next/dynamic";
 
+// Leaflet (client-only)
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
 const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
-export default function SSCDashboard({
+// GREEN -> RED (1..5)
+const SCORE_COLORS = {
+  0: "#ffffff",
+  1: "#1a9850",
+  2: "#a6d96a",
+  3: "#ffffbf",
+  4: "#fdae61",
+  5: "#d73027",
+};
+
+type LayerRow = {
+  id: string;
+  title: string | null;
+  result_table: string | null;
+  category: string | null;
+  subcategory: string | null;
+};
+
+type GeoFeature = {
+  type: "Feature";
+  geometry: any;
+  properties: Record<string, any>;
+};
+type GeoJSONType = { type: "FeatureCollection"; features: GeoFeature[] };
+
+export default function Page({
   params,
 }: {
   params: { id: string; instance_id: string };
@@ -23,7 +49,7 @@ export default function SSCDashboard({
       title: "SSC Consolidated Dashboard",
       group: "country-config" as const,
       description:
-        "Filter affected ADM2 regions, visualize vulnerability, and view consolidated summaries.",
+        "Filter affected ADM2 regions, switch map layers, and see summary totals.",
       breadcrumbs: (
         <Breadcrumbs
           items={[
@@ -38,191 +64,279 @@ export default function SSCDashboard({
     [countryId]
   );
 
-  const [adm2List, setAdm2List] = useState<any[]>([]);
+  // UI state
+  const [layers, setLayers] = useState<LayerRow[]>([]);
+  const [selectedLayer, setSelectedLayer] = useState<LayerRow | null>(null);
+
+  const [geojson, setGeojson] = useState<GeoJSONType | null>(null);
+  const [adm2Options, setAdm2Options] = useState<{ code: string; name: string }[]>([]);
   const [selectedAdm2, setSelectedAdm2] = useState<string[]>([]);
-  const [summary, setSummary] = useState<any[]>([]);
-  const [geojson, setGeojson] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  // Load ADM2 list
-  const loadAdm2List = async () => {
+  // Load available layers for this instance
+  const loadLayers = async () => {
     const { data, error } = await supabase
-      .from("derived_overall_summary")
-      .select("admin_pcode_adm2, admin_name_adm2")
-      .order("admin_name_adm2", { ascending: true });
-    if (error) console.error(error);
-    setAdm2List(data || []);
-  };
+      .from("instance_layers")
+      .select("id, title, result_table, category, subcategory")
+      .eq("instance_id", instance_id)
+      .order("title", { ascending: true });
 
-  // Load summary for selected ADM2
-  const loadSummary = async () => {
-    if (!selectedAdm2.length) {
-      setSummary([]);
+    if (error) {
+      console.error(error);
+      setLayers([]);
+      setSelectedLayer(null);
       return;
     }
+
+    const usable = (data || []).filter(d => d.result_table);
+    setLayers(usable as LayerRow[]);
+    setSelectedLayer(usable[0] || null);
+  };
+
+  // Load GeoJSON for a selected layer
+  const loadGeoJSON = async (layer: LayerRow | null) => {
+    setGeojson(null);
+    if (!layer?.result_table) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("derived_overall_summary")
-        .select("*")
-        .in("admin_pcode_adm2", selectedAdm2);
+      const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
+        p_iso: null, // set "PHL" here if your RPC requires it
+        p_result_table: layer.result_table!,
+        p_admin_level: "ADM3",
+        p_limit: 200000,
+      });
       if (error) throw error;
-      setSummary(data || []);
+
+      const gj: GeoJSONType = (data as any) ?? { type: "FeatureCollection", features: [] };
+      setGeojson(gj);
+
+      // Build ADM2 list from properties
+      const map = new Map<string, string>();
+      for (const f of gj.features || []) {
+        const p = f.properties || {};
+        const code =
+          p.admin_pcode_adm2 || p.adm2_pcode || p.adm2_code || p.admin2Pcode || p.ADM2_PCODE;
+        const name =
+          p.admin_name_adm2 || p.adm2_name || p.admin2Name || p.ADM2_EN || code;
+        if (code) map.set(String(code), String(name ?? code));
+      }
+      const opts = Array.from(map.entries())
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setAdm2Options(opts);
+      setSelectedAdm2(prev => prev.filter(c => map.has(c)));
     } catch (e) {
       console.error(e);
-      setSummary([]);
+      setGeojson({ type: "FeatureCollection", features: [] });
+      setAdm2Options([]);
+      setSelectedAdm2([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load GeoJSON map
-  const loadMap = async () => {
-    try {
-      const { data, error } = await supabase.rpc(
-        "get_geojson_for_result_table",
-        {
-          p_iso: "PHL",
-          p_result_table: "derived.derived_overall_adm3",
-          p_admin_level: "ADM3",
-          p_limit: 100000,
-        }
-      );
-      if (error) throw error;
-      setGeojson(data);
-    } catch (e) {
-      console.error(e);
-      setGeojson(null);
-    }
-  };
-
   useEffect(() => {
-    loadAdm2List();
-    loadMap();
+    loadLayers();
   }, []);
 
   useEffect(() => {
-    loadSummary();
-  }, [selectedAdm2]);
+    loadGeoJSON(selectedLayer);
+  }, [selectedLayer?.id, selectedLayer?.result_table]);
 
   const toggleAdm2 = (code: string) => {
-    setSelectedAdm2((prev) =>
-      prev.includes(code)
-        ? prev.filter((c) => c !== code)
-        : [...prev, code]
+    setSelectedAdm2(prev =>
+      prev.includes(code) ? prev.filter(v => v !== code) : [...prev, code]
     );
   };
 
+  const filteredFeatures = useMemo(() => {
+    if (!geojson?.features?.length) return [];
+    if (!selectedAdm2.length) return geojson.features;
+    return geojson.features.filter(f => {
+      const p = f.properties || {};
+      const code =
+        p.admin_pcode_adm2 || p.adm2_pcode || p.adm2_code || p.admin2Pcode || p.ADM2_PCODE;
+      return code ? selectedAdm2.includes(String(code)) : false;
+    });
+  }, [geojson, selectedAdm2]);
+
+  const summary = useMemo(() => {
+    if (!filteredFeatures.length) {
+      return {
+        totalPop: null as number | null,
+        popGte3: null as number | null,
+        poorGte3: null as number | null,
+      };
+    }
+
+    const getPop = (p: any) =>
+      p.population ?? p.pop ?? p.pop_total ?? p.tot_pop ?? null;
+    const getPovRate = (p: any) =>
+      p.poverty_rate ?? p.pov_rate ?? p.poverty ?? null;
+    const getScore = (p: any) =>
+      p.score ?? p.SCORE ?? p.index ?? p.value ?? 0;
+
+    let totalPop = 0;
+    let popG3 = 0;
+    let poorG3 = 0;
+    let hasPop = false;
+    let hasPov = false;
+
+    for (const f of filteredFeatures) {
+      const p = f.properties || {};
+      const pop = Number(getPop(p));
+      const rate = Number(getPovRate(p));
+      const score = Number(getScore(p));
+
+      if (!Number.isNaN(pop)) {
+        hasPop = true;
+        totalPop += pop;
+        if (score >= 3) {
+          popG3 += pop;
+          if (!Number.isNaN(rate)) {
+            hasPov = true;
+            poorG3 += pop * rate;
+          }
+        }
+      }
+    }
+
+    return {
+      totalPop: hasPop ? Math.round(totalPop) : null,
+      popGte3: hasPop ? Math.round(popG3) : null,
+      poorGte3: hasPov ? Math.round(poorG3) : null,
+    };
+  }, [filteredFeatures]);
+
   return (
     <SidebarLayout headerProps={headerProps}>
-      <div className="max-w-7xl mx-auto p-6 space-y-6 bg-white rounded-lg shadow">
-        {/* Filter Header */}
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Affected Area Filter
-          </h2>
+      <div className="max-w-7xl mx-auto p-4 space-y-4">
+
+        <div className="flex items-center justify-between">
+          <div className="flex gap-3 items-center">
+            <select
+              className="border rounded-md px-3 py-2 text-sm"
+              value={selectedLayer?.id ?? ""}
+              onChange={(e) => {
+                const next = layers.find(l => l.id === e.target.value) || null;
+                setSelectedLayer(next);
+              }}
+            >
+              {layers.length === 0 && <option value="">Consolidated (ADM3)</option>}
+              {layers.map(l => (
+                <option key={l.id} value={l.id}>
+                  {l.title || `${l.category} — ${l.subcategory}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             onClick={() => {
-              loadAdm2List();
-              loadSummary();
-              loadMap();
+              loadLayers().then(() => loadGeoJSON(selectedLayer));
             }}
             className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
+            title="Reload lists and map"
           >
-            <RefreshCw className="w-4 h-4" /> Refresh
+            <RefreshCw className="w-4 h-4" />
+            Refresh
           </button>
         </div>
 
-        {/* Checkbox Filter */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 border p-3 rounded-md max-h-[300px] overflow-y-auto">
-          {adm2List.map((r) => (
-            <label
-              key={r.admin_pcode_adm2}
-              className="flex items-center gap-2 text-sm text-gray-700"
-            >
-              <input
-                type="checkbox"
-                checked={selectedAdm2.includes(r.admin_pcode_adm2)}
-                onChange={() => toggleAdm2(r.admin_pcode_adm2)}
-                className="rounded border-gray-400"
-              />
-              {r.admin_name_adm2 || r.admin_pcode_adm2}
-            </label>
-          ))}
+        <div className="border rounded-md p-3">
+          <div className="font-semibold mb-2">Affected Area (ADM2)</div>
+          {adm2Options.length === 0 ? (
+            <div className="text-sm text-gray-500">No ADM2 list found in this layer.</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-56 overflow-y-auto">
+              {adm2Options.map(opt => (
+                <label key={opt.code} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-400"
+                    checked={selectedAdm2.includes(opt.code)}
+                    onChange={() => toggleAdm2(opt.code)}
+                  />
+                  {opt.name}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Map */}
-        {geojson ? (
-          <div className="border rounded-md overflow-hidden h-[600px]">
-            <MapContainer
-              style={{ height: "100%", width: "100%" }}
-              center={[12.8797, 121.774]} // Philippines center
-              zoom={6}
-              scrollWheelZoom={true}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        <div className="border rounded-md overflow-hidden" style={{ height: 600 }}>
+          <MapContainer
+            style={{ height: "100%", width: "100%" }}
+            center={[12.8797, 121.774]}
+            zoom={6}
+            scrollWheelZoom
+          >
+            <TileLayer
+              attribution='&copy; OpenStreetMap'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {geojson && (
+              <GeoJSON
+                key={selectedLayer?.id || "layer"}
+                data={filteredFeatures.length ? { type: "FeatureCollection", features: filteredFeatures } : geojson}
+                style={(feat: any) => {
+                  const s = Number(
+                    feat?.properties?.score ??
+                      feat?.properties?.SCORE ??
+                      feat?.properties?.index ??
+                      0
+                  );
+                  const clamped = Math.max(0, Math.min(5, s)) as 0|1|2|3|4|5;
+                  return {
+                    color: "#555",
+                    weight: 0.6,
+                    fillColor: SCORE_COLORS[clamped],
+                    fillOpacity: 0.7,
+                  };
+                }}
               />
-              {geojson && (
-                <GeoJSON
-                  data={geojson}
-                  style={(feature: any) => {
-                    const score = feature?.properties?.score || 0;
-                    const colors = ["#d4d4d4", "#fee0d2", "#fcbba1", "#fb6a4a", "#de2d26", "#a50f15"];
-                    return {
-                      color: "#555",
-                      weight: 0.5,
-                      fillColor: colors[score] || "#ccc",
-                      fillOpacity: 0.7,
-                    };
-                  }}
-                />
-              )}
-            </MapContainer>
-          </div>
-        ) : (
-          <p className="text-gray-500 text-sm">Loading map…</p>
-        )}
+            )}
+          </MapContainer>
+        </div>
 
-        {/* Summary Table */}
-        {loading ? (
-          <p className="text-gray-500 text-sm">Loading summary…</p>
-        ) : summary.length ? (
-          <div className="mt-4 border-t pt-4">
-            <h3 className="text-base font-semibold text-gray-800 mb-2">
-              Summary for Selected ADM2 Regions
-            </h3>
-            <table className="min-w-full border text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-3 py-2 text-left">ADM2 Name</th>
-                  <th className="px-3 py-2 text-right">Total Population</th>
-                  <th className="px-3 py-2 text-right">Pop (Score ≥ 3)</th>
-                  <th className="px-3 py-2 text-right">Poor Pop (Score ≥ 3)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.map((r) => (
-                  <tr key={r.admin_pcode_adm2} className="border-t">
-                    <td className="px-3 py-2">{r.admin_name_adm2}</td>
-                    <td className="px-3 py-2 text-right">
-                      {r.total_population?.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {r.pop_score_3plus?.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {r.poor_score_3plus?.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="border rounded-md">
+          <div className="px-4 py-3 border-b font-semibold">
+            Summary — {selectedAdm2.length ? "Selected ADM2" : "All ADM3"}
           </div>
-        ) : (
-          <p className="text-gray-500 text-sm">Select one or more regions.</p>
-        )}
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left px-4 py-2">Metric</th>
+                <th className="text-right px-4 py-2">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t">
+                <td className="px-4 py-2">Total population in affected area</td>
+                <td className="px-4 py-2 text-right">
+                  {summary.totalPop !== null ? summary.totalPop.toLocaleString() : "—"}
+                </td>
+              </tr>
+              <tr className="border-t">
+                <td className="px-4 py-2">Population in ADM3 areas with score ≥ 3</td>
+                <td className="px-4 py-2 text-right">
+                  {summary.popGte3 !== null ? summary.popGte3.toLocaleString() : "—"}
+                </td>
+              </tr>
+              <tr className="border-t">
+                <td className="px-4 py-2">Poor people (poverty rate × population) with score ≥ 3</td>
+                <td className="px-4 py-2 text-right">
+                  {summary.poorGte3 !== null ? summary.poorGte3.toLocaleString() : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="px-4 py-2 text-xs text-gray-500 border-t">
+            Notes: Calculated client-side from feature properties. Expected fields include
+            <code className="mx-1">population</code>/<code>pop</code>,
+            <code className="mx-1">poverty_rate</code>, and <code className="mx-1">score</code>.
+          </div>
+        </div>
       </div>
     </SidebarLayout>
   );
