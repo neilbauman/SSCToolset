@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
-import dynamic from "next/dynamic";
 import { RefreshCw } from "lucide-react";
+import dynamic from "next/dynamic";
 
-const Map = dynamic(() => import("@/components/Map/SSCMap"), { ssr: false });
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const GeoJSON = dynamic(() => import("react-leaflet").then(m => m.GeoJSON), { ssr: false });
 
 export default function SSCDashboard({
   params,
@@ -42,7 +44,7 @@ export default function SSCDashboard({
   const [geojson, setGeojson] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  // Load ADM2 regions
+  // Load ADM2 list
   const loadAdm2List = async () => {
     const { data, error } = await supabase
       .from("derived_overall_summary")
@@ -52,9 +54,12 @@ export default function SSCDashboard({
     setAdm2List(data || []);
   };
 
-  // Load summary for selected ADM2 regions
+  // Load summary for selected ADM2
   const loadSummary = async () => {
-    if (!selectedAdm2.length) return;
+    if (!selectedAdm2.length) {
+      setSummary([]);
+      return;
+    }
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -71,7 +76,7 @@ export default function SSCDashboard({
     }
   };
 
-  // Load map GeoJSON
+  // Load GeoJSON map
   const loadMap = async () => {
     try {
       const { data, error } = await supabase.rpc(
@@ -100,10 +105,18 @@ export default function SSCDashboard({
     loadSummary();
   }, [selectedAdm2]);
 
+  const toggleAdm2 = (code: string) => {
+    setSelectedAdm2((prev) =>
+      prev.includes(code)
+        ? prev.filter((c) => c !== code)
+        : [...prev, code]
+    );
+  };
+
   return (
     <SidebarLayout headerProps={headerProps}>
       <div className="max-w-7xl mx-auto p-6 space-y-6 bg-white rounded-lg shadow">
-        {/* Filter Section */}
+        {/* Filter Header */}
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-800">
             Affected Area Filter
@@ -120,30 +133,53 @@ export default function SSCDashboard({
           </button>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-gray-600">Select ADM2 Regions:</label>
-          <select
-            multiple
-            value={selectedAdm2}
-            onChange={(e) =>
-              setSelectedAdm2(
-                Array.from(e.target.selectedOptions, (opt) => opt.value)
-              )
-            }
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full h-48"
-          >
-            {adm2List.map((r) => (
-              <option key={r.admin_pcode_adm2} value={r.admin_pcode_adm2}>
-                {r.admin_name_adm2 || r.admin_pcode_adm2}
-              </option>
-            ))}
-          </select>
+        {/* Checkbox Filter */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 border p-3 rounded-md max-h-[300px] overflow-y-auto">
+          {adm2List.map((r) => (
+            <label
+              key={r.admin_pcode_adm2}
+              className="flex items-center gap-2 text-sm text-gray-700"
+            >
+              <input
+                type="checkbox"
+                checked={selectedAdm2.includes(r.admin_pcode_adm2)}
+                onChange={() => toggleAdm2(r.admin_pcode_adm2)}
+                className="rounded border-gray-400"
+              />
+              {r.admin_name_adm2 || r.admin_pcode_adm2}
+            </label>
+          ))}
         </div>
 
         {/* Map */}
         {geojson ? (
           <div className="border rounded-md overflow-hidden h-[600px]">
-            <Map geojson={geojson} />
+            <MapContainer
+              style={{ height: "100%", width: "100%" }}
+              center={[12.8797, 121.774]} // Philippines center
+              zoom={6}
+              scrollWheelZoom={true}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {geojson && (
+                <GeoJSON
+                  data={geojson}
+                  style={(feature: any) => {
+                    const score = feature?.properties?.score || 0;
+                    const colors = ["#d4d4d4", "#fee0d2", "#fcbba1", "#fb6a4a", "#de2d26", "#a50f15"];
+                    return {
+                      color: "#555",
+                      weight: 0.5,
+                      fillColor: colors[score] || "#ccc",
+                      fillOpacity: 0.7,
+                    };
+                  }}
+                />
+              )}
+            </MapContainer>
           </div>
         ) : (
           <p className="text-gray-500 text-sm">Loading map…</p>
