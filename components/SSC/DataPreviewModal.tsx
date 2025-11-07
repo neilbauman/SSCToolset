@@ -1,198 +1,147 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { supabaseBrowser as supabase } from "@/lib/supabase/supabaseBrowser";
 
-type DatasetMeta = {
+type DatasetRow = {
   metric: string;
   source_note: string;
+  pillar: "ssc_p1" | "ssc_p2" | "ssc_p3" | "ssc_hazard" | "ssc_vuln";
+  data_type: "gradient" | "categorical";
+  norm_method: string | null;
+  norm_params: any | null;
+  higher_is_better: boolean | null;
   admin_level?: string | null;
-  norm_method?: string | null;
-  norm_params?: any;
 };
 
-type Props = {
+export default function DataPreviewModal({
+  open,
+  dataset,
+  instanceId,
+  onClose,
+}: {
   open: boolean;
-  dataset: DatasetMeta | null; // comes from the table row you clicked
+  dataset: DatasetRow | null;
   instanceId: string;
   onClose: () => void;
-};
+}) {
+  const params = useParams<{ id: string; instance_id: string }>();
+  const countryIso = useMemo(() => (params?.id || "").toUpperCase(), [params?.id]);
 
-type Row = {
-  admin_pcode: string;
-  admin_name: string | null;
-  raw_value: number | null; // IMPORTANT: this is what we’ll show
-  score: number | null;
-};
-
-export default function DataPreviewModal({ open, dataset, instanceId, onClose }: Props) {
-  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [limit, setLimit] = useState<number>(200);
-  const [total, setTotal] = useState<number | null>(null);
-
-  const title = useMemo(() => {
-    if (!dataset) return "Data Preview";
-    const lvl = dataset.admin_level ? ` (${dataset.admin_level})` : "";
-    return `Preview: ${dataset.metric} — ${dataset.source_note}${lvl}`;
-  }, [dataset]);
+  const [geojson, setGeojson] = useState<any | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !dataset) return;
 
     const fetchPreview = async () => {
       setLoading(true);
-      setError(null);
+      setErrorMsg(null);
+      setGeojson(null);
 
-      // Many of our older builds used this exact signature.
-      // If your RPC name differs, just adjust here — everything else will still work.
-      const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
-  p_admin_level: ds.admin_level ?? null,    // e.g. 'ADM2' for rainfall; 'ADM3' for others
-  p_iso: countryIso,                        // 'PHL'
-  p_schema: 'public',
-  p_result_table: ds.source_note || result_table, // whichever field you use to store the table name
-  p_limit: 100000
-});
+      try {
+        // Strip optional "public." prefix if present
+        const table = (dataset.source_note ?? "").replace(/^public\./, "");
 
-      if (error) {
-        setError(error.message);
-        setRows([]);
-        setTotal(0);
-      } else {
-        // Expecting data like: [{ admin_pcode, admin_name, raw_value, score }, ...]
-        setRows((data?.rows as Row[]) ?? data ?? []);
-        // Support either shape: { rows, total } or just array
-        setTotal(typeof data?.total === "number" ? data.total : (data?.length ?? 0));
+        const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
+          p_admin_level: dataset.admin_level ?? null, // e.g. ADM2 for rainfall
+          p_iso: countryIso,                           // e.g. PHL
+          p_schema: "public",
+          p_result_table: table,
+          p_limit: 5000,
+        });
+
+        if (error) throw error;
+        setGeojson(data);
+      } catch (err: any) {
+        setErrorMsg(err?.message || "Failed to load preview.");
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     fetchPreview();
-  }, [open, dataset, instanceId, limit]);
+  }, [open, dataset, countryIso]);
 
   if (!open || !dataset) return null;
 
+  const features = Array.isArray(geojson?.features) ? geojson.features : [];
+  const sampleProps =
+    features.length > 0 ? Object.keys(features[0]?.properties || {}) : [];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-[min(1200px,95vw)] max-h-[85vh] overflow-hidden rounded-lg bg-white shadow-xl">
+    <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-3xl bg-white rounded-lg shadow-lg overflow-hidden">
         <header className="px-4 py-3 border-b flex items-center justify-between">
-          <h2 className="font-semibold text-[15px]">{title}</h2>
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-500">
-              {total !== null ? `Total rows: ${total.toLocaleString()}` : null}
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <label className="text-gray-500">Rows to show:</label>
-              <select
-                className="border rounded px-2 py-1"
-                value={limit}
-                onChange={(e) => setLimit(parseInt(e.target.value, 10))}
-              >
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-              </select>
-            </div>
-            <button
-              className="rounded px-3 py-1 text-sm border hover:bg-gray-50"
-              onClick={onClose}
-            >
-              Close
-            </button>
-          </div>
+          <h3 className="font-semibold text-gray-800">
+            Preview • {dataset.metric} — {dataset.source_note}
+          </h3>
+          <button onClick={onClose} className="text-gray-600 hover:text-gray-900">✕</button>
         </header>
 
-        {/* method summary (nice to keep) */}
-        <div className="px-4 py-2 text-[12px] text-gray-600 border-b flex items-center gap-2 overflow-x-auto">
-          {dataset.norm_method ? (
-            <>
-              <span className="font-medium">Method:</span>
-              <span>{dataset.norm_method.replaceAll("_", " ")}</span>
-            </>
-          ) : null}
-          {typeof dataset?.norm_params !== "undefined" ? (
-            <>
-              <span className="font-medium ml-4">Params:</span>
-              <span className="truncate max-w-[65%]">
-                {typeof dataset.norm_params === "string"
-                  ? dataset.norm_params
-                  : JSON.stringify(dataset.norm_params)}
-              </span>
-            </>
-          ) : null}
-        </div>
+        <div className="p-4 space-y-3">
+          {loading && <p className="text-sm text-gray-500">Loading…</p>}
+          {errorMsg && (
+            <p className="text-sm text-red-600">
+              {errorMsg}
+            </p>
+          )}
 
-        <div className="p-0 overflow-auto" style={{ maxHeight: "65vh" }}>
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0 z-[1]">
-              <tr>
-                <Th>Admin (name)</Th>
-                <Th>Admin Pcode</Th>
-                <Th>Raw value</Th>
-                <Th>Score</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-gray-500">
-                    Loading…
-                  </td>
-                </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-red-600">
-                    {error}
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-gray-500">
-                    No rows
-                  </td>
-                </tr>
+          {!loading && !errorMsg && (
+            <>
+              <div className="text-sm text-gray-700">
+                <div>Admin level: <span className="font-mono">{dataset.admin_level || "—"}</span></div>
+                <div>Country: <span className="font-mono">{countryIso || "—"}</span></div>
+                <div>Features: <span className="font-mono">{features.length}</span></div>
+              </div>
+
+              {features.length > 0 ? (
+                <div className="border rounded">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="p-2 text-left">admin_pcode</th>
+                        <th className="p-2 text-left">admin_name</th>
+                        <th className="p-2 text-left">raw_value</th>
+                        <th className="p-2 text-left">score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {features.slice(0, 12).map((f: any, i: number) => (
+                        <tr key={i} className="border-t">
+                          <td className="p-2">{f?.properties?.admin_pcode ?? "—"}</td>
+                          <td className="p-2">{f?.properties?.admin_name ?? "—"}</td>
+                          <td className="p-2">{f?.properties?.raw_value ?? "—"}</td>
+                          <td className="p-2">{f?.properties?.score ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
-                rows.map((r, i) => (
-                  <tr key={r.admin_pcode + ":" + i} className="border-b hover:bg-gray-50">
-                    <Td>{r.admin_name ?? "—"}</Td>
-                    <Td mono>{r.admin_pcode}</Td>
-
-                    {/* 👇 THIS is the important part: use r.raw_value */}
-                    <Td mono>
-                      {r.raw_value !== null && r.raw_value !== undefined
-                        ? Number(r.raw_value).toLocaleString()
-                        : "—"}
-                    </Td>
-
-                    <Td mono>
-                      {r.score !== null && r.score !== undefined
-                        ? Number(r.score).toFixed(2)
-                        : "—"}
-                    </Td>
-                  </tr>
-                ))
+                <p className="text-sm text-gray-500">No features returned.</p>
               )}
-            </tbody>
-          </table>
+
+              {sampleProps.length > 0 && (
+                <p className="text-[11px] text-gray-500">
+                  Properties: {sampleProps.join(", ")}
+                </p>
+              )}
+            </>
+          )}
         </div>
+
+        <footer className="px-4 py-3 border-t bg-gray-50 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300"
+          >
+            Close
+          </button>
+        </footer>
       </div>
     </div>
-  );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="text-left text-gray-600 font-medium px-3 py-2 border-b">
-      {children}
-    </th>
-  );
-}
-function Td({ children, mono = false }: { children: React.ReactNode; mono?: boolean }) {
-  return (
-    <td className={`px-3 py-2 ${mono ? "font-mono tabular-nums" : ""}`}>{children}</td>
   );
 }
