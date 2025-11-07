@@ -47,12 +47,13 @@ export default function DataPreviewModal({ open, dataset, instanceId, onClose }:
 
       // Many of our older builds used this exact signature.
       // If your RPC name differs, just adjust here — everything else will still work.
-      const { data, error } = await supabase.rpc("get_dataset_preview", {
-        p_instance_id: instanceId,
-        p_metric: dataset.metric,
-        p_source_note: dataset.source_note,
-        p_limit: limit,
-      });
+      const { data, error } = await supabase.rpc("get_geojson_for_result_table", {
+  p_admin_level: ds.admin_level ?? null,    // e.g. 'ADM2' for rainfall; 'ADM3' for others
+  p_iso: countryIso,                        // 'PHL'
+  p_schema: 'public',
+  p_result_table: ds.source_note || result_table, // whichever field you use to store the table name
+  p_limit: 100000
+});
 
       if (error) {
         setError(error.message);
